@@ -38,25 +38,25 @@ concepts:
   description: 订单的具体行项，记录需要交付的货品、数量和交期
   attributes:
   - name: 订单编号
-    type: text
+    type: string
     required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品编号
-    type: text
+    type: string
     required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品名称
-    type: text
+    type: string
     required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 起排日期
-    type: date
+    type: string
     required: true
     display_name: ''
     example: ''
@@ -74,7 +74,7 @@ concepts:
     example: ''
     constraint: ''
   - name: 优先级
-    type: text
+    type: string
     required: true
     display_name: ''
     example: ''
@@ -121,7 +121,7 @@ concepts:
     example: ''
     constraint: ''
   - name: 主副单位换算比
-    type: number
+    type: float
     required: false
     display_name: ''
     example: ''
