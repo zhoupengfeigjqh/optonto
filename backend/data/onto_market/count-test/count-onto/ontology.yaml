@@ -1,0 +1,51 @@
+concepts:
+- name: C1
+  description: c1
+  attributes:
+  - name: '123'
+    type: string
+    required: true
+    display_name: '123'
+  - name: '232'
+    type: string
+    required: true
+    display_name: '132'
+  - name: '123'
+    type: string
+    required: true
+    display_name: '23'
+  display_name: ''
+- name: C2
+  description: c2
+  attributes: []
+  display_name: ''
+- name: User
+  description: test
+  attributes: []
+  display_name: user display
+relations:
+- name: R1
+  source: C1
+  target: C2
+  cardinality: 1:N
+  description: ''
+  display_name: ''
+behaviors:
+- name: B1
+  type: CREATE
+  description: ''
+  protocol: HTTP
+  url: /test
+  sql_code: ''
+  method: POST
+  params: {}
+  related_concepts: []
+  display_name: ''
+rules:
+- id: 1
+  name: Rule1
+  description: test
+  related_concepts: []
+  display_name: ''
+events: []
+business_processes: []

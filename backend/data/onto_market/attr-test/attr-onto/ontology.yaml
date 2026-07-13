@@ -1,0 +1,15 @@
+concepts:
+- name: User
+  description: user info
+  attributes:
+  - name: email
+    type: string
+    required: true
+  - name: phone
+    type: string
+    required: false
+relations: []
+behaviors: []
+rules: []
+events: []
+business_processes: []

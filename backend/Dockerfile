@@ -1,0 +1,24 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies (use Tsinghua mirror for China)
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+
+# Copy backend source (maintains backend/ structure so config.py paths work)
+COPY backend/ ./backend/
+
+# Create data directories
+RUN mkdir -p onto_market config
+
+ENV PYTHONPATH=/app/backend:$PYTHONPATH
+
+EXPOSE 8000
+
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,375 @@
+concepts:
+- name: Equipment
+  description: 生产加工用的机器或产线
+  attributes:
+  - name: 设备组名称
+    type: string
+    required: false
+    display_name: ''
+  - name: 设备编号
+    type: string
+    required: true
+    display_name: ''
+  - name: 设备名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 所属部门
+    type: string
+    required: false
+    display_name: ''
+  - name: 负荷率上限
+    type: number
+    required: false
+    display_name: ''
+  - name: 资源费率
+    type: number
+    required: false
+    display_name: ''
+  - name: 是否公用
+    type: boolean
+    required: false
+    display_name: ''
+  display_name: 设备
+- name: EquipGroup
+  description: 同类型或同工作中心的设备集合
+  attributes:
+  - name: 设备组编号
+    type: string
+    required: true
+    display_name: ''
+  - name: 设备组名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 资源制约
+    type: boolean
+    required: false
+    display_name: ''
+  - name: 组批工时是否按单件工时
+    type: boolean
+    required: false
+    display_name: ''
+  - name: 是否炉内资源
+    type: boolean
+    required: false
+    display_name: ''
+  display_name: 设备组
+- name: PersonnelGroup
+  description: 同技能或同工种的人员集合
+  attributes:
+  - name: 人员组编号
+    type: string
+    required: true
+    display_name: ''
+  - name: 人员组名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 资源制约
+    type: boolean
+    required: false
+    display_name: ''
+  - name: 组批工时是否按单件工时
+    type: boolean
+    required: false
+    display_name: ''
+  - name: 是否炉内资源
+    type: boolean
+    required: false
+    display_name: ''
+  display_name: 人员组
+- name: Department
+  description: 企业组织架构单元
+  attributes:
+  - name: 机构编码
+    type: string
+    required: true
+    display_name: ''
+  - name: 部门名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 是否生产部门
+    type: boolean
+    required: true
+    display_name: ''
+  - name: 地址
+    type: string
+    required: false
+    display_name: ''
+  display_name: 部门
+- name: ResCalendar
+  description: 设备或人员的工作日历，定义作息和休假规则
+  attributes:
+  - name: 资源编号
+    type: string
+    required: true
+    display_name: ''
+  - name: 资源名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 开始时间
+    type: date
+    required: true
+    display_name: ''
+  - name: 结束时间
+    type: date
+    required: true
+    display_name: ''
+  - name: 是否包含休息日
+    type: boolean
+    required: false
+    display_name: ''
+  - name: 班次名称
+    type: string
+    required: true
+    display_name: ''
+  display_name: 资源日历
+- name: Shift
+  description: 每日工作时间段，含开始结束时间和休息时段
+  attributes:
+  - name: 班次名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 开始时间
+    type: string
+    required: true
+    display_name: ''
+  - name: 结束时间
+    type: string
+    required: true
+    display_name: ''
+  - name: 休息时段
+    type: string
+    required: false
+    display_name: ''
+  - name: 可生产时间
+    type: number
+    required: false
+    display_name: ''
+  display_name: 班次
+- name: EquipDowntime
+  description: 设备在指定时间段内的异常停机记录
+  attributes:
+  - name: 设备编号
+    type: string
+    required: true
+    display_name: ''
+  - name: 设备名称
+    type: string
+    required: true
+    display_name: ''
+  - name: 设备组名称
+    type: string
+    required: false
+    display_name: ''
+  - name: 异常开始时间
+    type: date
+    required: true
+    display_name: ''
+  - name: 异常结束时间
+    type: date
+    required: true
+    display_name: ''
+  - name: 异常类型
+    type: string
+    required: true
+    display_name: ''
+  display_name: 设备异常记录
+relations:
+- name: belongsToGroup
+  source: Equipment
+  target: EquipGroup
+  cardinality: N:1
+  description: 1台设备只属于1个设备组
+  display_name: 属于设备组
+- name: belongsToDept
+  source: Equipment
+  target: Department
+  cardinality: N:1
+  description: 1台设备只属于1个部门
+  display_name: 属于部门
+- name: containsShift
+  source: ResCalendar
+  target: Shift
+  cardinality: N:1
+  description: 1个日历含1个班次
+  display_name: 包含班次
+- name: hasDowntime
+  source: Equipment
+  target: EquipDowntime
+  cardinality: 1:N
+  description: 1台设备可有多条异常记录
+  display_name: 有异常记录
+- name: hasCalendar
+  source: Equipment
+  target: ResCalendar
+  cardinality: N:1
+  description: 设备关联资源日历
+  display_name: 关联日历
+behaviors:
+- name: CreateCalendar
+  type: CREATE
+  description: 智能体或用户创建资源日历
+  protocol: HTTP
+  url: /api/calendar/create
+  sql_code: ''
+  method: POST
+  params:
+    resourceName: string
+    startDate: string
+    endDate: string
+    shiftName: string
+  related_concepts:
+  - ResCalendar
+  display_name: 创建资源日历
+- name: CreateShift
+  type: CREATE
+  description: 智能体或用户创建班次
+  protocol: HTTP
+  url: /api/shift/create
+  sql_code: ''
+  method: POST
+  params:
+    shiftName: string
+    startTime: string
+    endTime: string
+  related_concepts:
+  - Shift
+  display_name: 创建班次
+- name: QueryEquipment
+  type: READ
+  description: 用户或智能体查询设备基本信息
+  protocol: HTTP
+  url: /api/equipment
+  sql_code: ''
+  method: GET
+  params:
+    deviceId: string
+    deviceName: string
+  related_concepts:
+  - Equipment
+  display_name: 查询设备信息
+- name: QueryPersonnel
+  type: READ
+  description: 用户或智能体查询人员基本信息
+  protocol: HTTP
+  url: /api/personnel
+  sql_code: ''
+  method: GET
+  params:
+    personId: string
+    personName: string
+  related_concepts: []
+  display_name: 查询人员信息
+- name: QueryCalendar
+  type: READ
+  description: 用户或智能体查询日历信息
+  protocol: HTTP
+  url: /api/calendar
+  sql_code: ''
+  method: GET
+  params:
+    resourceId: string
+    resourceName: string
+  related_concepts:
+  - ResCalendar
+  display_name: 查询日历信息
+- name: QueryEquipGroup
+  type: READ
+  description: 用户或智能体查询设备组信息
+  protocol: HTTP
+  url: /api/equipment/groups
+  sql_code: ''
+  method: GET
+  params:
+    groupId: string
+    groupName: string
+  related_concepts:
+  - EquipGroup
+  display_name: 查询设备组信息
+- name: QueryPersonnelGroup
+  type: READ
+  description: 用户或智能体查询人员组信息
+  protocol: HTTP
+  url: /api/personnel/groups
+  sql_code: ''
+  method: GET
+  params:
+    groupId: string
+    groupName: string
+  related_concepts:
+  - PersonnelGroup
+  display_name: 查询人员组信息
+- name: QueryShift
+  type: READ
+  description: 用户或智能体查询班次信息
+  protocol: HTTP
+  url: /api/shift
+  sql_code: ''
+  method: GET
+  params:
+    shiftName: string
+  related_concepts:
+  - Shift
+  display_name: 查询班次信息
+- name: CreateDowntimeRecord
+  type: CREATE
+  description: 智能体或用户记录设备异常停机
+  protocol: HTTP
+  url: /api/equipment/downtime
+  sql_code: ''
+  method: POST
+  params:
+    deviceId: string
+    deviceName: string
+    startTime: string
+    endTime: string
+    downtimeType: string
+  related_concepts:
+  - EquipDowntime
+  display_name: 记录设备异常
+rules:
+- id: 1
+  name: CalendarEndDateValid
+  description: 资源日历.结束时间 > 资源日历.开始时间
+  related_concepts:
+  - ResCalendar
+  display_name: 日历结束时间校验
+- id: 2
+  name: ShiftEndTimeValid
+  description: 班次.结束时间 > 班次.开始时间
+  related_concepts:
+  - Shift
+  display_name: 班次结束时间校验
+- id: 3
+  name: ShiftExistsValid
+  description: 资源日历.班次名称 必须存在于 班次
+  related_concepts:
+  - ResCalendar
+  - Shift
+  display_name: 日历班次存在性校验
+- id: 4
+  name: ResExistsValid
+  description: 资源日历.资源名称 必须存在于 设备 或 人员
+  related_concepts:
+  - ResCalendar
+  - Equipment
+  display_name: 日历资源存在性校验
+events:
+- name: CalendarCreated
+  description: 资源日历创建成功
+  related_behavior: CreateCalendar
+  display_name: 日历创建事件
+- name: ShiftCreated
+  description: 班次创建成功
+  related_behavior: CreateShift
+  display_name: 班次创建事件
+- name: DowntimeRecorded
+  description: 设备异常记录创建成功/失败
+  related_behavior: CreateDowntimeRecord
+  display_name: 设备异常记录事件
+business_processes: []

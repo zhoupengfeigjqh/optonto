@@ -1,0 +1,8 @@
+from .scenarios import router as scenarios_router
+from .ontologies import router as ontologies_router
+from .concepts import router as concepts_router
+from .relations import router as relations_router
+from .behaviors import router as behaviors_router
+from .rules import router as rules_router
+from .events import router as events_router
+from .files import router as files_router
