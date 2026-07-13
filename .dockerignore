@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+.history
+
+# Node - frontend
+frontend/node_modules/
+frontend/.next/
+frontend/package-lock.json
+frontend/next-env.d.ts
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.venv/
+**/venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.codeartsdoer/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+**/.claude/
+**/.env*
+.history/
+readme.md

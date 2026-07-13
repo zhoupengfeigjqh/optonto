@@ -1,3 +1,0 @@
-models:
-- api_key: $DEEPSEEK_API_KEY
-  model: deepseek-v4-flash
