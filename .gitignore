@@ -33,9 +33,6 @@ node_modules/
 # Docker
 .docker/
 
-# Data (business data, YAML, conversations, DB)
-backend/.data/
-
 # Environment
 .env
 .env.local

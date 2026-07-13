@@ -1,0 +1,767 @@
+concepts:
+- name: Order
+  description: 客户销售订单或询单，包含订单头信息
+  attributes:
+  - name: 订单编号
+    type: text
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 订单名称
+    type: text
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 订单批次号
+    type: text
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 订单缓冲周期
+    type: text
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 订单类型
+    type: text
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 订单
+  classification: ''
+- name: OrderDetail
+  description: 订单的具体行项，记录需要交付的货品、数量和交期
+  attributes:
+  - name: 订单编号
+    type: text
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 货品编号
+    type: text
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 货品名称
+    type: text
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 起排日期
+    type: date
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 截止日期
+    type: date
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 交付数量
+    type: int
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 优先级
+    type: text
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 订单明细
+  classification: ''
+- name: Product
+  description: 企业生产输出的物料，包含成品和半成品
+  attributes:
+  - name: 货品编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 货品名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 货品大类
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 物料类型
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 主单位
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 副单位
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 主副单位换算比
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 管理部门
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 生产部门
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 预设仓库
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 规格
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 货品
+  classification: ''
+- name: BOMInfo
+  description: 生产该货品所需的物料清单
+  attributes:
+  - name: BOM编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: BOM名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 货品编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 货品名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: BOM版本
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: BOM基本信息
+  classification: ''
+- name: SchedTask
+  description: 根据订单创建的生产排程任务
+  attributes:
+  - name: 订单编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 订单名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产任务编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产任务名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产任务描述
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产场景
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 任务状态
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 排产任务
+  classification: ''
+- name: SchedResult
+  description: 排产任务执行后产出的调度方案及关键指标
+  attributes:
+  - name: 排产任务编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产任务名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产场景
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 方案名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 方案状态
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 总产品数量
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 总工序数量
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 平均生产周期
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 延期工件数量
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 延期率
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 总加工成本
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 总利润
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 设备平均利用率
+    type: number
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 排产结果
+  classification: ''
+- name: ShortageDetail
+  description: 下发排产结果与当前库存对比后得出的缺料清单
+  attributes:
+  - name: 排产任务编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产任务名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产场景
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 原材料编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 原材料名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 欠料明细
+  classification: ''
+- name: AlgoParams
+  description: 排产任务的优化目标参数，定义排产策略和约束
+  attributes:
+  - name: 排产任务编号
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产任务名称
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 排产方式
+    type: string
+    required: true
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 设备利用率目标
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 订单交期目标
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 加工成本最低
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 使用剩余产能
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  - name: 附件转换率最低
+    type: string
+    required: false
+    display_name: ''
+    example: ''
+    constraint: ''
+  display_name: 算法参数
+  classification: ''
+relations:
+- name: hasDetail
+  source: Order
+  target: OrderDetail
+  cardinality: 1:N
+  description: 1个订单含多个明细项
+  display_name: 包含明细
+- name: hasProduct
+  source: OrderDetail
+  target: Product
+  cardinality: N:1
+  description: 1个订单明细只包含1个货品
+  display_name: 关联货品
+- name: hasBOM
+  source: Product
+  target: BOMInfo
+  cardinality: '1:1'
+  description: 1个货品有1个BOM
+  display_name: 包含BOM
+- name: drivesScheduling
+  source: Order
+  target: SchedTask
+  cardinality: 1:N
+  description: 1个订单可以产生多个排产任务
+  display_name: 驱动排产
+- name: producesPlan
+  source: SchedTask
+  target: SchedResult
+  cardinality: '1:1'
+  description: 1个排产任务产出1个排产结果
+  display_name: 产出结果
+- name: hasShortageDetail
+  source: SchedResult
+  target: ShortageDetail
+  cardinality: 1:N
+  description: 1个排产结果对应多个原料欠料明细
+  display_name: 包含欠料
+- name: hasScheduleParams
+  source: SchedTask
+  target: AlgoParams
+  cardinality: '1:1'
+  description: 1个排产任务有1组算法参数
+  display_name: 包含参数
+- name: hasVersion
+  source: SchedTask
+  target: SchedTask
+  cardinality: 1:N
+  description: 排产任务的版本派生关系
+  display_name: 版本派生
+behaviors:
+- name: CreateOrder
+  description: 用户或智能体创建新的订单及其明细
+  url: /api/orders
+  method: POST
+  params:
+    orderName:
+      type: string
+      required: true
+    orderBatch:
+      type: string
+      required: true
+    orderType:
+      type: string
+      required: true
+    orderDetails:
+      type: array
+      required: true
+  related_concepts:
+  - Order
+  - OrderDetail
+  display_name: 创建订单
+- name: UpdateOrder
+  description: 用户或智能体更新已有订单信息及明细
+  url: /api/orders
+  method: PUT
+  params:
+    orderId: string
+    orderName: string
+  related_concepts:
+  - Order
+  - OrderDetail
+  display_name: 更新订单
+- name: DeleteOrder
+  description: 用户或智能体删除已有订单及明细
+  url: /api/orders
+  method: DELETE
+  params:
+    orderId: string
+  related_concepts:
+  - Order
+  display_name: 删除订单
+- name: QueryOrder
+  description: 用户或智能体查询订单及明细
+  url: /api/orders
+  method: GET
+  params:
+    orderId: string
+    orderName: string
+  related_concepts:
+  - Order
+  - OrderDetail
+  display_name: 查询订单
+- name: CreateSchedTask
+  description: 用户或智能体根据订单信息创建排产任务
+  url: /api/scheduling/tasks
+  method: POST
+  params:
+    orderId: string
+  related_concepts:
+  - Order
+  - SchedTask
+  display_name: 创建排产任务
+- name: AddSchedTask
+  description: 基于已有排产任务创建新场景下的排产任务
+  url: /api/scheduling/scenarios
+  method: POST
+  params:
+    scheduleId: string
+    scenario: string
+  related_concepts:
+  - SchedTask
+  display_name: 新增排产任务
+- name: CreateAlgoParams
+  description: 用户或智能体为排产任务创建算法参数
+  url: /api/scheduling/params
+  method: POST
+  params:
+    scheduleId: string
+  related_concepts:
+  - SchedTask
+  - AlgoParams
+  display_name: 创建算法参数
+- name: StartSchedTask
+  description: 用户或智能体选择排产任务并执行
+  url: /api/scheduling/execute
+  method: POST
+  params:
+    scheduleId: string
+  related_concepts:
+  - SchedTask
+  display_name: 启动排产任务
+- name: QuerySchedTask
+  description: 用户或智能体查询排产任务的当前状态
+  url: /api/scheduling/tasks/status
+  method: GET
+  params:
+    scheduleId: string
+    orderId: string
+  related_concepts:
+  - SchedTask
+  display_name: 查询排产任务
+- name: QuerySchedResult
+  description: 用户或智能体查询排产任务结果
+  url: /api/scheduling/results
+  method: GET
+  params:
+    scheduleId: string
+    orderId: string
+  related_concepts:
+  - SchedResult
+  display_name: 查询排产结果
+- name: DeploySchedResult
+  description: 用户或智能体将已成功执行的排产任务下发
+  url: /api/scheduling/tasks/deploy
+  method: POST
+  params:
+    scheduleId: string
+  related_concepts:
+  - SchedTask
+  - SchedResult
+  display_name: 排产结果下发
+- name: RecallSchedResult
+  description: 用户或智能体取消已下发的排产结果
+  url: /api/scheduling/plans/deploy/cancel
+  method: POST
+  params:
+    scheduleId: string
+  related_concepts:
+  - SchedTask
+  - SchedResult
+  display_name: 排产结果撤回
+- name: QueryShortage
+  description: 用户或智能体查询订单下发后的齐套欠料信息
+  url: /api/material/shortages
+  method: GET
+  params:
+    scheduleId: string
+    orderId: string
+  related_concepts:
+  - ShortageDetail
+  display_name: 查询欠料明细
+- name: StartPollingTask
+  description: 后台启动定时任务轮询排产任务状态
+  url: /api/scheduling/poll/start
+  method: POST
+  params:
+    scheduleId:
+      type: string
+      required: true
+    intervalMinutes:
+      type: number
+      required: true
+    checkCnt:
+      type: number
+      required: true
+  related_concepts:
+  - SchedTask
+  display_name: 启动定时查询
+rules:
+- name: OrderTypeValid
+  description: 订单明细.类型 只能是询单或销售二选一
+  related_behaviors:
+  - CreateOrder
+  display_name: 订单类型校验
+  rule_type: 验证规则
+  position: 前置
+- name: ProductExistsValid
+  description: 订单明细.货品编号和货品名称 必须存在于 货品
+  related_behaviors:
+  - CreateOrder
+  display_name: 货品存在性校验
+  rule_type: 验证规则
+  position: ''
+- name: DueDateValid
+  description: 订单明细.截止日期 > 订单明细.起排日期
+  related_behaviors:
+  - CreateOrder
+  display_name: 截止日期约束
+  rule_type: 验证规则
+  position: ''
+- name: QtyValid
+  description: 订单明细.交付数量 > 0
+  related_behaviors:
+  - CreateOrder
+  display_name: 交付数量约束
+  rule_type: 验证规则
+  position: ''
+- name: PriorityValid
+  description: 订单明细.优先级 只能是按期交付或可延期交付
+  related_behaviors:
+  - CreateOrder
+  display_name: 优先级约束
+  rule_type: 验证规则
+  position: ''
+- name: NoSchedOnUpdate
+  description: 订单更新时，该订单必须未创建排产任务，否则拒绝
+  related_behaviors:
+  - UpdateOrder
+  display_name: 未排产约束（更新）
+  rule_type: 验证规则
+  position: ''
+- name: NoSchedOnDelete
+  description: 订单删除时，该订单必须未创建排产任务，否则拒绝
+  related_behaviors:
+  - DeleteOrder
+  display_name: 未排产约束（删除）
+  rule_type: 验证规则
+  position: ''
+- name: SchedUniqueValid
+  description: 创建排产任务时，该订单只能创建一次排产任务
+  related_behaviors:
+  - CreateSchedTask
+  display_name: 排产唯一性约束
+  rule_type: 验证规则
+  position: ''
+- name: AddSchedStateValid
+  description: 新增排产任务时，排产任务状态需为已排产
+  related_behaviors:
+  - AddSchedTask
+  display_name: 新增任务状态约束
+  rule_type: 验证规则
+  position: ''
+- name: StartSchedStateValid
+  description: 启动排产任务时，该任务还未开启过排产
+  related_behaviors:
+  - StartSchedTask
+  display_name: 启动任务状态约束
+  rule_type: 验证规则
+  position: ''
+- name: DeployStateValid
+  description: 排产结果下发时，排产任务为已排产，方案状态为未锁定
+  related_behaviors:
+  - DeploySchedResult
+  display_name: 下发状态约束
+  rule_type: 验证规则
+  position: ''
+- name: RecallStateValid
+  description: 排产结果撤回时，方案状态为已下发
+  related_behaviors:
+  - RecallSchedResult
+  display_name: 撤回状态约束
+  rule_type: 验证规则
+  position: ''
+- name: CanAddAfterSched
+  description: 排产任务.任务状态=已排产 -> 可新增场景任务
+  related_behaviors:
+  - QuerySchedTask
+  display_name: 已排产可新增任务
+  rule_type: 推理规则
+  position: ''
+- name: PromptSchedAfterOrder
+  description: 订单创建成功 -> 提示可对该订单创建排产任务
+  related_behaviors:
+  - CreateOrder
+  display_name: 创建后提示排产
+  rule_type: 推理规则
+  position: ''
+- name: PromptWaitAfterStart
+  description: 排产任务启动 -> 提示等待结果
+  related_behaviors:
+  - StartSchedTask
+  display_name: 启动后提示等待
+  rule_type: 推理规则
+  position: ''
+events:
+- name: OrderCreated
+  description: 订单创建成功
+  related_behavior: CreateOrder
+  trigger_behaviors: []
+  display_name: 订单创建事件
+- name: OrderUpdated
+  description: 订单更新成功
+  related_behavior: UpdateOrder
+  trigger_behaviors: []
+  display_name: 订单更新事件
+- name: OrderDeleted
+  description: 订单删除成功
+  related_behavior: DeleteOrder
+  trigger_behaviors: []
+  display_name: 订单删除事件
+- name: SchedTaskCreated
+  description: 排产任务创建成功
+  related_behavior: CreateSchedTask
+  trigger_behaviors: []
+  display_name: 排产任务创建事件
+- name: SchedTaskAdded
+  description: 新增排产场景成功
+  related_behavior: AddSchedTask
+  trigger_behaviors: []
+  display_name: 新增排产任务事件
+- name: SchedTaskStarted
+  description: 排产任务启动成功
+  related_behavior: StartSchedTask
+  trigger_behaviors: []
+  display_name: 排产任务启动事件
+- name: SchedResultDeployed
+  description: 排产结果下发成功
+  related_behavior: DeploySchedResult
+  trigger_behaviors: []
+  display_name: 排产结果下发事件
+- name: SchedResultRecalled
+  description: 排产结果撤回成功
+  related_behavior: RecallSchedResult
+  trigger_behaviors: []
+  display_name: 排产结果撤回事件
+- name: AlgoParamsCreated
+  description: 算法参数创建成功
+  related_behavior: CreateAlgoParams
+  trigger_behaviors: []
+  display_name: 算法参数创建事件
