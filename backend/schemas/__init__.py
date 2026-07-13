@@ -48,6 +48,7 @@ class OntologyOut(BaseModel):
     name: str
     description: str
     creator: str
+    scenario_name: str = Field("", description="所属场景名称")
     created_at: datetime
     updated_at: datetime
 
@@ -70,6 +71,7 @@ class ConceptItem(BaseModel):
     description: str = Field("", description="概念描述")
     attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表")
     display_name: str = Field("", description="展示名称")
+    classification: str = Field("", description="概念分类")
 
 
 class RelationItem(BaseModel):

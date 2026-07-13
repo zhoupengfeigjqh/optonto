@@ -1,0 +1,311 @@
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import { Button, Input, Modal, message, Space, Spin } from 'antd';
+import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, CheckCircleFilled, CheckCircleOutlined } from '@ant-design/icons';
+import { getThread, chatStream, clearChat, exportThread, ThreadMessage } from '@/api/client';
+import { renderMarkdown } from '@/lib/markdown';
+
+interface Props {
+  threadId: string;
+  onBack: () => void;
+}
+
+export default function ConversationChat({ threadId, onBack }: Props) {
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [title, setTitle] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [exporting, setExporting] = useState(false);
+  const [showTitleModal, setShowTitleModal] = useState(false);
+  const [docTitle, setDocTitle] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const thread = await getThread(threadId);
+      setTitle(thread.title);
+      setMessages(thread.messages || []);
+    } catch (e: any) {
+      message.error('加载对话失败: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [threadId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    setInput('');
+    setSending(true);
+
+    const userMsg: ThreadMessage = { role: 'user', content: text, timestamp: new Date().toISOString() };
+    setMessages(prev => [...prev, userMsg]);
+
+    const assistantMsg: ThreadMessage = { role: 'assistant', content: '', timestamp: '' };
+    setMessages(prev => [...prev, assistantMsg]);
+
+    abortRef.current = new AbortController();
+    try {
+      const response = await chatStream(threadId, text);
+      if (!response.ok) throw new Error(await response.text());
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('无法获取响应流');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.done) break;
+            setMessages(prev => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last.role === 'assistant') {
+                updated[updated.length - 1] = { ...last, content: last.content + (data.token || '') };
+              }
+              return updated;
+            });
+          } catch { /* skip parse errors */ }
+        }
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        setMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last.role === 'assistant' && !last.content) {
+            updated[updated.length - 1] = { ...last, content: `\n\n[错误: ${e.message}]` };
+          }
+          return updated;
+        });
+      }
+    } finally {
+      setSending(false);
+      abortRef.current = null;
+    }
+  };
+
+  const toggleSelect = (idx: number) => {
+    setSelectedIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const handleExport = () => {
+    setDocTitle('');
+    setShowTitleModal(true);
+  };
+
+  const handleConfirmExport = async () => {
+    if (!docTitle.trim()) { message.warning('请输入文档标题'); return; }
+    setShowTitleModal(false);
+    setExporting(true);
+    try {
+      const selectedList = Array.from(selectedIndices);
+      const result = await exportThread(threadId, docTitle.trim(), selectedList);
+      message.success(`文档已生成: ${result.filename}`);
+      setSelectedIndices(new Set());
+    } catch (e: any) {
+      message.error('导出失败: ' + e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleClear = () => {
+    Modal.confirm({
+      title: <span style={{color:'#fff'}}>确认清空</span>,
+      content: <span className="text-text-secondary">清空当前对话的所有消息，此操作不可恢复。</span>,
+      okText: '确认清空', cancelText: '取消', okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await clearChat(threadId);
+          setMessages([]);
+          setSelectedIndices(new Set());
+          message.success('对话已清空');
+        } catch (e: any) { message.error(e.message); }
+      },
+    });
+  };
+
+  const hasSelected = selectedIndices.size > 0;
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64"><Spin /></div>;
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} className="text-text-muted hover:text-text-primary" />
+          <h3 className="text-base font-semibold text-text-primary truncate max-w-md">{title || '新对话'}</h3>
+        </div>
+        <Space>
+          <Button icon={<FileTextOutlined />} onClick={handleExport} disabled={!hasSelected} size="small">导出文档</Button>
+          <Button icon={<ClearOutlined />} onClick={handleClear} disabled={messages.length === 0} size="small">清空对话</Button>
+        </Space>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-48 text-text-muted">
+            <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+            <p className="text-sm">开始一段新的需求探索对话</p>
+            <p className="text-xs mt-1">输入您的问题或需求描述，AI 将协助您梳理</p>
+          </div>
+        )}
+        {messages.map((msg, idx) => {
+          const isAssistant = msg.role === 'assistant';
+          const isSelected = selectedIndices.has(idx);
+          const hasContent = !!msg.content.trim();
+
+          return (
+            <div key={idx} className={`flex gap-3 ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+              {isAssistant && (
+                <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
+                  <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
+                </div>
+              )}
+              <div className={`relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm ${
+                isAssistant
+                  ? 'bg-dark-card border border-dark-border text-text-primary'
+                  : 'bg-accent-blue text-white'
+              } ${isSelected ? 'ring-2 ring-accent-blue' : ''}`}>
+                {isAssistant && msg.content ? (
+                  // Last streaming message: plain text to avoid raw markdown tokens; others: rendered
+                  sending && idx === messages.length - 1 ? (
+                    <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
+                  ) : (
+                    <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                  )
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">{msg.content || (idx === messages.length - 1 && isAssistant ? <Spin size="small" /> : '')}</div>
+                )}
+                {msg.timestamp && (
+                  <div className={`text-xs mt-1 ${isAssistant ? 'text-text-muted' : 'text-white/60'}`}>
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </div>
+                )}
+                {/* Selection checkmark for assistant messages */}
+                {isAssistant && hasContent && (
+                  <div
+                    className="absolute -bottom-2 -right-2 cursor-pointer transition-colors"
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(idx); }}
+                  >
+                    {isSelected ? (
+                      <CheckCircleFilled style={{ color: '#3b82f6', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
+                    ) : (
+                      <CheckCircleOutlined style={{ color: '#64748b', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
+                    )}
+                  </div>
+                )}
+              </div>
+              {!isAssistant && (
+                <div className="w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center shrink-0">
+                  <UserOutlined style={{ color: '#10b981', fontSize: 16 }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Footer hint */}
+      {messages.length > 0 && !hasSelected && (
+        <div className="text-center text-text-muted text-xs mb-2">
+          点击助手回复右下角的 ○ 选中内容，然后点击「导出文档」
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="flex gap-2 items-end border-t border-dark-border pt-3">
+        <Input.TextArea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          placeholder="输入您的需求或问题... (Shift+Enter 换行)"
+          rows={2}
+          className="bg-dark-bg border-dark-border text-text-primary"
+          disabled={sending}
+        />
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          onClick={handleSend}
+          loading={sending}
+          disabled={!input.trim()}
+          className="mb-0.5"
+        >
+          发送
+        </Button>
+      </div>
+
+      {/* Title input modal */}
+      <Modal
+        title="导出需求文档"
+        open={showTitleModal}
+        onOk={handleConfirmExport}
+        onCancel={() => setShowTitleModal(false)}
+        okText="确认导出"
+        cancelText="取消"
+      >
+        <div className="py-3">
+          <label className="text-text-secondary text-sm block mb-2">请输入文档标题</label>
+          <Input
+            placeholder="例如：原材料采购需求分析"
+            value={docTitle}
+            onChange={e => setDocTitle(e.target.value)}
+            onPressEnter={handleConfirmExport}
+            className="bg-dark-bg border-dark-border text-text-primary"
+            autoFocus
+          />
+          <p className="text-text-muted text-xs mt-2">已选中 {selectedIndices.size} 条助手回复</p>
+        </div>
+      </Modal>
+
+      {/* Exporting modal */}
+      <Modal
+        title="导出文档"
+        open={exporting}
+        footer={null}
+        closable={false}
+        centered
+        width={300}
+      >
+        <div className="flex flex-col items-center py-6 gap-3">
+          <Spin size="large" />
+          <p className="text-text-secondary text-sm">正在保存文档...</p>
+        </div>
+      </Modal>
+    </div>
+  );
+}

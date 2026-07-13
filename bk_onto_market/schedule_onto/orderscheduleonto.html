@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>订单计算本体 - Schema图</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+  #network { width: 100vw; height: 100vh; background: #f8f9fc; }
+  #panel { position: absolute; top: 10px; right: 10px; z-index: 10; width: 400px; max-height: 94vh; overflow-y: auto;
+    background: #fff; padding: 12px 14px; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.15); font-size: 12px; }
+  #panel h3 { font-size: 13px; margin: 10px 0 4px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 3px; }
+  #panel h3:first-child { margin-top: 0; }
+  #panel .r { margin: 5px 0; line-height: 1.4; }
+  #panel .r b { color: #d81b60; }
+  #panel .i b { color: #e65100; }
+  #panel .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+  #title { position: absolute; top: 10px; left: 10px; z-index: 10; background: #fff; padding: 6px 12px; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.12); font-size: 14px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="title">订单计算本体 · Schema（概念 / 行为 / 验证规则 / 关系）</div>
+<div id="panel">
+  <h3>图例</h3>
+  <div class="r"><span class="lg" style="background:#ef6c00"></span>概念（方框）</div>
+  <div class="r"><span class="lg" style="background:#6a1b9a"></span>行为（圆角框，含CRUD）</div>
+  <div class="r"><span class="lg" style="background:#d81b60"></span>验证规则（椭圆）</div>
+  <div class="r">灰实线=关系　紫线=行为作用概念　红实线=规则绑定行为　粉虚线=规则涉及概念</div>
+  <h3>验证规则 (SHACL) — 绑定行为</h3>
+  <div class="r"><b>V01</b> 订单类型〔创建订单〕只能询单/销售</div>
+  <div class="r"><b>V02</b> 货品存在性〔创建订单〕货品编号/名称 存在于 货品</div>
+  <div class="r"><b>V03</b> 截止日期约束〔创建订单〕截止 &gt; 起排</div>
+  <div class="r"><b>V04</b> 交付数量约束〔创建订单〕交付数量 &gt; 0</div>
+  <div class="r"><b>V05</b> 优先级约束〔创建订单〕按期/可延期交付</div>
+  <div class="r"><b>V06</b> 未排产约束〔订单更新〕订单未创建排产任务</div>
+  <div class="r"><b>V07</b> 未排产约束〔订单删除〕订单未创建排产任务</div>
+  <div class="r"><b>V08</b> 唯一性〔创建排产任务〕订单仅能创建一次</div>
+  <div class="r"><b>V09</b> 状态约束〔新增排产任务〕scheduleId 需为已排产</div>
+  <div class="r"><b>V10</b> 状态约束〔启动排产任务〕scheduleId 还未开启排产</div>
+  <div class="r"><b>V11</b> 状态约束〔启动定时查询〕任务刚启动，非已完成/数据错误</div>
+  <div class="r"><b>V12</b> 状态约束〔排产结果下发〕已排产 且 方案未锁定</div>
+  <div class="r"><b>V13</b> 状态约束〔排产结果撤回〕已排产 且 方案已下发</div>
+  <h3>推理规则 (SWRL)</h3>
+  <div class="r i"><b>I01</b> 已排产 → 可新增场景任务重算</div>
+  <div class="r i"><b>I02</b> 方案已下发 → 提示查欠料</div>
+  <div class="r i"><b>I03</b> 欠料且采购不满足 → 提示创建采购单</div>
+  <div class="r i"><b>I04</b> 订单创建成功 → 提示创建排产任务</div>
+  <div class="r i"><b>I05</b> 排产任务创建/新增 → 提示创建算法参数</div>
+  <div class="r i"><b>I06</b> 排产启动 → 提示等待，已自动轮询</div>
+  <div class="r i"><b>I07</b> 排产结果撤回 → 提示是否撤回采购</div>
+  <div class="r i"><b>I08</b> 算法参数创建成功 → 提示可启动排产任务</div>
+</div>
+<div id="network"></div>
+<script>
+const A = (t, attrs) => t + "\n" + "─".repeat(16) + "\n" + attrs.join("\n");
+const B = (type, name) => name + "\n" + "─".repeat(12) + "\n" + type;
+
+const nodes = new vis.DataSet([
+  // 概念
+  { id: "订单", group: "c", label: A("订单", ["订单编号","订单名称","订单批次号","订单缓冲周期","订单类型"]) },
+  { id: "订单明细", group: "c", label: A("订单明细", ["订单编号","货品编号","货品名称","起排日期","截止日期","交付数量","优先级"]) },
+  { id: "货品", group: "c", label: A("货品", ["货品编号","货品名称","货品大类","物料类型","主单位","生产部门","规格"]) },
+  { id: "BOM基本信息", group: "c", label: A("BOM基本信息", ["BOM编号","BOM名称","货品编号","货品名称","BOM版本"]) },
+  { id: "排产任务", group: "c", label: A("排产任务", ["订单编号","订单名称","排产任务编号","排产任务名称","排产任务描述","排产场景","任务状态"]) },
+  { id: "算法参数", group: "c", label: A("算法参数", ["排产任务编号","排产任务名称","排产方式","设备利用率目标","订单交期目标","加工成本最低","使用剩余产能","附件转换率最低"]) },
+  { id: "排产结果", group: "c", label: A("排产结果", ["排产任务编号","排产任务名称","排产场景","方案名称","方案状态","总产品数量","延期率","设备平均利用率","最早开始时间","最晚结束时间"]) },
+  { id: "欠料明细", group: "c", label: A("欠料明细", ["排产任务编号","排产任务名称","排产场景","原材料编号","原材料名称","欠料结果"]) },
+  // 行为
+  { id: "创建订单", group: "a", label: B("CREATE", "创建订单") },
+  { id: "订单更新", group: "a", label: B("UPDATE", "订单更新") },
+  { id: "订单删除", group: "a", label: B("DELETE", "订单删除") },
+  { id: "查询订单", group: "a", label: B("READ", "查询订单") },
+  { id: "创建排产任务", group: "a", label: B("CREATE", "创建排产任务") },
+  { id: "新增排产任务", group: "a", label: B("CREATE", "新增排产任务") },
+  { id: "创建算法参数", group: "a", label: B("CREATE", "创建算法参数") },
+  { id: "启动排产任务", group: "a", label: B("EXECUTE", "启动排产任务") },
+  { id: "查询排产任务信息", group: "a", label: B("READ", "查询排产任务信息") },
+  { id: "查询排产任务结果", group: "a", label: B("READ", "查询排产任务结果") },
+  { id: "启动排产任务查询定时任务", group: "a", label: B("CREATE", "启动排产任务查询定时任务") },
+  { id: "排产结果下发", group: "a", label: B("UPDATE", "排产结果下发") },
+  { id: "排产结果撤回", group: "a", label: B("UPDATE", "排产结果撤回") },
+  { id: "查询排产结果欠料明细", group: "a", label: B("READ", "查询排产结果欠料明细") },
+  // 验证规则
+  { id: "V01", group: "v", label: "V01\n订单创建-订单类型" },
+  { id: "V02", group: "v", label: "V02\n订单明细-货品存在性" },
+  { id: "V03", group: "v", label: "V03\n订单明细-截止日期约束" },
+  { id: "V04", group: "v", label: "V04\n订单明细-交付数量约束" },
+  { id: "V05", group: "v", label: "V05\n订单明细-优先级约束" },
+  { id: "V06", group: "v", label: "V06\n订单更新-未排产约束" },
+  { id: "V07", group: "v", label: "V07\n订单删除-未排产约束" },
+  { id: "V08", group: "v", label: "V08\n创建排产任务-唯一性" },
+  { id: "V09", group: "v", label: "V09\n新增排产任务-状态约束" },
+  { id: "V10", group: "v", label: "V10\n启动排产任务-状态约束" },
+  { id: "V11", group: "v", label: "V11\n启动定时查询-状态约束" },
+  { id: "V12", group: "v", label: "V12\n排产结果下发-状态约束" },
+  { id: "V13", group: "v", label: "V13\n排产结果撤回-状态约束" },
+]);
+
+const ef = { size: 11, face: "Microsoft YaHei", strokeWidth: 3, strokeColor: "#fff" };
+const R  = (from, to, name, card, dash) => ({ from, to, label: name + "\n" + card, font: ef, arrows: "to", color: { color: "#90a4ae" }, width: 1.5, dashes: !!dash });
+const BC = (from, to) => ({ from, to, arrows: "to", color: { color: "#8e24aa" }, width: 1, dashes: [4,4] });
+const VB = (from, to) => ({ from, to, label: "绑定", font: ef, arrows: "to", color: { color: "#d81b60" }, width: 1.5 });
+const VC = (from, to) => ({ from, to, arrows: "to", color: { color: "#f48fb1" }, width: 1, dashes: true });
+
+const edges = new vis.DataSet([
+  // 关系
+  R("订单", "订单明细", "hasDetail", "1:N"),
+  R("订单明细", "货品", "hasProduct", "N:1"),
+  R("货品", "BOM基本信息", "hasBOM", "1:1"),
+  R("订单", "排产任务", "drivesScheduling", "1:N"),
+  R("排产任务", "排产任务", "hasVersionDerivative", "1:N", true),
+  R("排产任务", "算法参数", "hasScheduleParams", "1:1"),
+  R("排产任务", "排产结果", "producesPlan", "1:1"),
+  R("排产结果", "欠料明细", "hasShortageDetail", "1:N"),
+  // 行为作用于概念
+  BC("创建订单", "订单"),
+  BC("订单更新", "订单"),
+  BC("订单删除", "订单"),
+  BC("查询订单", "订单"),
+  BC("创建排产任务", "排产任务"),
+  BC("新增排产任务", "排产任务"),
+  BC("创建算法参数", "算法参数"),
+  BC("启动排产任务", "排产任务"),
+  BC("查询排产任务信息", "排产任务"),
+  BC("查询排产任务结果", "排产结果"),
+  BC("启动排产任务查询定时任务", "排产任务"),
+  BC("排产结果下发", "排产结果"),
+  BC("排产结果撤回", "排产结果"),
+  BC("查询排产结果欠料明细", "欠料明细"),
+  // 验证规则 绑定行为
+  VB("V01", "创建订单"), VB("V02", "创建订单"), VB("V03", "创建订单"), VB("V04", "创建订单"), VB("V05", "创建订单"),
+  VB("V06", "订单更新"), VB("V07", "订单删除"), VB("V08", "创建排产任务"),
+  VB("V09", "新增排产任务"), VB("V10", "启动排产任务"), VB("V11", "启动排产任务查询定时任务"),
+  VB("V12", "排产结果下发"), VB("V13", "排产结果撤回"),
+  // 验证规则 涉及概念
+  VC("V01", "订单"),
+  VC("V02", "订单明细"), VC("V02", "货品"),
+  VC("V03", "订单明细"), VC("V04", "订单明细"), VC("V05", "订单明细"),
+  VC("V06", "订单"), VC("V06", "排产任务"),
+  VC("V07", "订单"), VC("V07", "排产任务"),
+  VC("V08", "订单"), VC("V08", "排产任务"),
+  VC("V09", "排产任务"),
+  VC("V10", "排产任务"), VC("V10", "算法参数"),
+  VC("V11", "排产任务"),
+  VC("V12", "排产任务"), VC("V12", "排产结果"),
+  VC("V13", "排产任务"), VC("V13", "排产结果"),
+]);
+
+const nf = { size: 13, face: "Microsoft YaHei" };
+new vis.Network(document.getElementById("network"), { nodes, edges }, {
+  groups: {
+    c: { shape: "box", widthConstraint: 190, font: nf, color: { background: "#fff3e0", border: "#ef6c00", highlight: { background: "#ffe0b2" } } },
+    a: { shape: "box", shapeProperties: { borderRadius: 14 }, widthConstraint: 170, font: { size: 12, face: "Microsoft YaHei", color: "#fff" }, color: { background: "#8e24aa", border: "#6a1b9a", highlight: { background: "#ab47bc" } } },
+    v: { shape: "ellipse", font: { size: 12, face: "Microsoft YaHei", color: "#880e4f" }, color: { background: "#fce4ec", border: "#d81b60", highlight: { background: "#f8bbd0" } } },
+  },
+  physics: { enabled: true, solver: "barnesHut", barnesHut: { gravitationalConstant: -16000, springLength: 200, springConstant: 0.02, avoidOverlap: 0.5 }, stabilization: { iterations: 600 } },
+  edges: { smooth: { type: "continuous" } },
+  interaction: { dragNodes: true, dragView: true, zoomView: true },
+});
+</script>
+</body>
+</html>

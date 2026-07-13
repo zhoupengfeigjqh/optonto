@@ -1,9 +1,7 @@
 """CRUD API for relations within an ontology."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException
 
-from database import get_db
 from dependencies import get_ontology_names
 from schemas import RelationItem
 from services import load_ontology_data, save_ontology_data
@@ -12,15 +10,15 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/relations", tags=["å…³ç
 
 
 @router.get("")
-async def list_relations(ontology_id: int, db: AsyncSession = Depends(get_db)):
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+async def list_relations(ontology_id: int):
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.relations
 
 
 @router.post("", status_code=201)
-async def create_relation(ontology_id: int, item: RelationItem, db: AsyncSession = Depends(get_db)):
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+async def create_relation(ontology_id: int, item: RelationItem):
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
     if any(r.name == item.name for r in data.relations):
@@ -32,9 +30,9 @@ async def create_relation(ontology_id: int, item: RelationItem, db: AsyncSession
 
 
 @router.put("/{relation_name}")
-async def update_relation(ontology_id: int, relation_name: str, item: RelationItem, db: AsyncSession = Depends(get_db)):
+async def update_relation(ontology_id: int, relation_name: str, item: RelationItem):
     """Update a relation."""
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
     idx = next((i for i, r in enumerate(data.relations) if r.name == relation_name), -1)
@@ -50,8 +48,8 @@ async def update_relation(ontology_id: int, relation_name: str, item: RelationIt
 
 
 @router.delete("/{relation_name}")
-async def delete_relation(ontology_id: int, relation_name: str, db: AsyncSession = Depends(get_db)):
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+async def delete_relation(ontology_id: int, relation_name: str):
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
     idx = next((i for i, r in enumerate(data.relations) if r.name == relation_name), -1)

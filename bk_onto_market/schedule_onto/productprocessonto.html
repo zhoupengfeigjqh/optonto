@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>货品本体 - Schema图</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+  #network { width: 100vw; height: 100vh; background: #f8f9fc; }
+  #panel { position: absolute; top: 10px; right: 10px; z-index: 10; width: 380px; max-height: 94vh; overflow-y: auto;
+    background: #fff; padding: 12px 14px; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.15); font-size: 12px; }
+  #panel h3 { font-size: 13px; margin: 10px 0 4px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 3px; }
+  #panel h3:first-child { margin-top: 0; }
+  #panel .r { margin: 5px 0; line-height: 1.4; }
+  #panel .i b { color: #e65100; }
+  #panel .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+  #title { position: absolute; top: 10px; left: 10px; z-index: 10; background: #fff; padding: 6px 12px; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.12); font-size: 14px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="title">货品本体 · Schema（概念 / 行为 / 验证规则 / 关系）</div>
+<div id="panel">
+  <h3>图例</h3>
+  <div class="r"><span class="lg" style="background:#1565c0"></span>概念（方框，蓝=主体，灰=需求）</div>
+  <div class="r"><span class="lg" style="background:#6a1b9a"></span>行为（圆角框，含CRUD）</div>
+  <div class="r"><span class="lg" style="background:#d81b60"></span>验证规则（椭圆）— 本体无</div>
+  <div class="r">灰实线=关系　紫线=行为作用概念</div>
+  <h3>验证规则 (SHACL)</h3>
+  <div class="r">无</div>
+  <h3>推理规则 (SWRL)</h3>
+  <div class="r i"><b>I01</b> 查询BOM后引导：提示可进一步查询该BOM的原料/设备组/人员组需求</div>
+  <div class="r i"><b>I02</b> 查询BOM明细后引导：提示可进一步查询对应工艺路径的原料/设备组/人员组需求</div>
+</div>
+<div id="network"></div>
+<script>
+const A = (t, attrs) => t + "\n" + "─".repeat(16) + "\n" + attrs.join("\n");
+const B = (type, name) => name + "\n" + "─".repeat(12) + "\n" + type;
+
+const nodes = new vis.DataSet([
+  // 概念（主体）
+  { id: "货品", group: "c", label: A("货品", ["货品编号","货品名称","货品大类","物料类型","主单位","副单位","主副单位换算比","管理部门","生产部门","预设仓库","规格"]) },
+  { id: "货品库存", group: "c", label: A("货品库存", ["材料编号","材料名称","材料类型","可用库存","单位"]) },
+  { id: "BOM基本信息", group: "c", label: A("BOM基本信息", ["BOM编号","BOM名称","货品编号","货品名称","BOM版本"]) },
+  { id: "BOM明细", group: "c", label: A("BOM明细", ["BOM编号","货品编号","货品名称","需求量","BOM层级","工艺路径编号","工艺路径名称"]) },
+  { id: "工艺路径", group: "c", label: A("工艺路径", ["工艺路径编号","工艺路径名称","类型","工艺版本号"]) },
+  // 概念（需求）
+  { id: "BOM原料需求", group: "req", label: A("BOM原料需求", ["BOM编号","原料编号","原料名称","总需求量"]) },
+  { id: "BOM设备组需求", group: "req", label: A("BOM设备组需求", ["BOM编号","设备组编号","设备组名称"]) },
+  { id: "BOM人员组需求", group: "req", label: A("BOM人员组需求", ["BOM编号","人员组编号","人员组名称"]) },
+  { id: "工艺路径原料需求", group: "req", label: A("工艺路径原料需求", ["工艺路径编号","原料编号","原料名称","需求量"]) },
+  { id: "工艺路径设备组需求", group: "req", label: A("工艺路径设备组需求", ["工艺路径编号","设备组编号","设备组名称"]) },
+  { id: "工艺路径人员组需求", group: "req", label: A("工艺路径人员组需求", ["工艺路径编号","人员组编号","人员组名称"]) },
+  // 行为（全 READ）
+  { id: "查询货品信息", group: "a", label: B("READ", "查询货品信息") },
+  { id: "查询货品库存信息", group: "a", label: B("READ", "查询货品库存信息") },
+  { id: "查询BOM基本信息", group: "a", label: B("READ", "查询BOM基本信息") },
+  { id: "查询BOM原料需求", group: "a", label: B("READ", "查询BOM原料需求") },
+  { id: "查询BOM设备组需求", group: "a", label: B("READ", "查询BOM设备组需求") },
+  { id: "查询BOM人员组需求", group: "a", label: B("READ", "查询BOM人员组需求") },
+  { id: "查询BOM明细信息", group: "a", label: B("READ", "查询BOM明细信息") },
+  { id: "查询工艺路径信息", group: "a", label: B("READ", "查询工艺路径信息") },
+  { id: "查询工艺路径原料需求", group: "a", label: B("READ", "查询工艺路径原料需求") },
+  { id: "查询工艺路径设备组需求", group: "a", label: B("READ", "查询工艺路径设备组需求") },
+  { id: "查询工艺路径人员组需求", group: "a", label: B("READ", "查询工艺路径人员组需求") },
+]);
+
+const ef = { size: 11, face: "Microsoft YaHei", strokeWidth: 3, strokeColor: "#fff" };
+const R  = (from, to, name, card, dash) => ({ from, to, label: name + "\n" + card, font: ef, arrows: "to", color: { color: "#90a4ae" }, width: 1.5, dashes: !!dash });
+const BC = (from, to) => ({ from, to, arrows: "to", color: { color: "#8e24aa" }, width: 1, dashes: [4,4] });
+
+const edges = new vis.DataSet([
+  // 关系
+  R("货品", "货品库存", "hasProductInventory", "1:1"),
+  R("货品", "BOM基本信息", "hasBOM", "1:1"),
+  R("BOM基本信息", "BOM明细", "hasBOMDetail", "1:N"),
+  R("BOM明细", "货品", "refersToProduct", "N:1", true),
+  R("BOM明细", "工艺路径", "hasRoute", "N:1"),
+  R("BOM基本信息", "BOM原料需求", "requiresMaterial", "1:N"),
+  R("BOM基本信息", "BOM设备组需求", "requiresEquipGroup", "1:N"),
+  R("BOM基本信息", "BOM人员组需求", "requiresPersonGroup", "1:N"),
+  R("工艺路径", "工艺路径原料需求", "requiresMaterial", "1:N"),
+  R("工艺路径", "工艺路径设备组需求", "requiresEquipGroup", "1:N"),
+  R("工艺路径", "工艺路径人员组需求", "requiresPersonGroup", "1:N"),
+  // 行为作用于概念
+  BC("查询货品信息", "货品"),
+  BC("查询货品库存信息", "货品库存"),
+  BC("查询BOM基本信息", "BOM基本信息"),
+  BC("查询BOM原料需求", "BOM原料需求"),
+  BC("查询BOM设备组需求", "BOM设备组需求"),
+  BC("查询BOM人员组需求", "BOM人员组需求"),
+  BC("查询BOM明细信息", "BOM明细"),
+  BC("查询工艺路径信息", "工艺路径"),
+  BC("查询工艺路径原料需求", "工艺路径原料需求"),
+  BC("查询工艺路径设备组需求", "工艺路径设备组需求"),
+  BC("查询工艺路径人员组需求", "工艺路径人员组需求"),
+]);
+
+const nf = { size: 13, face: "Microsoft YaHei" };
+new vis.Network(document.getElementById("network"), { nodes, edges }, {
+  groups: {
+    c:   { shape: "box", widthConstraint: 185, font: nf, color: { background: "#e3f2fd", border: "#1565c0", highlight: { background: "#bbdefb" } } },
+    req: { shape: "box", widthConstraint: 180, font: nf, color: { background: "#eceff1", border: "#78909c", highlight: { background: "#cfd8dc" } } },
+    a:   { shape: "box", shapeProperties: { borderRadius: 14 }, widthConstraint: 165, font: { size: 12, face: "Microsoft YaHei", color: "#fff" }, color: { background: "#8e24aa", border: "#6a1b9a", highlight: { background: "#ab47bc" } } },
+  },
+  physics: { enabled: true, solver: "barnesHut", barnesHut: { gravitationalConstant: -14000, springLength: 190, springConstant: 0.025, avoidOverlap: 0.5 }, stabilization: { iterations: 500 } },
+  edges: { smooth: { type: "continuous" } },
+  interaction: { dragNodes: true, dragView: true, zoomView: true },
+});
+</script>
+</body>
+</html>

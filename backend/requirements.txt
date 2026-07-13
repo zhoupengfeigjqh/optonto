@@ -1,7 +1,9 @@
 fastapi==0.115.6
 uvicorn==0.34.0
-sqlalchemy==2.0.36
-aiosqlite==0.20.0
 pyyaml==6.0.2
 pydantic==2.10.3
 python-multipart==0.0.17
+langchain==0.3.21
+langchain-openai==0.3.8
+httpx==0.28.1
+python-dotenv==1.0.1

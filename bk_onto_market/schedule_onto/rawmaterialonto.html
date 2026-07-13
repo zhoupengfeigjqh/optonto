@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原材料本体 - Schema图</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+  #network { width: 100vw; height: 100vh; background: #f8f9fc; }
+  #panel { position: absolute; top: 10px; right: 10px; z-index: 10; width: 380px; max-height: 94vh; overflow-y: auto;
+    background: #fff; padding: 12px 14px; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.15); font-size: 12px; }
+  #panel h3 { font-size: 13px; margin: 10px 0 4px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 3px; }
+  #panel h3:first-child { margin-top: 0; }
+  #panel .r { margin: 5px 0; line-height: 1.4; }
+  #panel .r b { color: #d81b60; }
+  #panel .i b { color: #e65100; }
+  #panel .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+  #title { position: absolute; top: 10px; left: 10px; z-index: 10; background: #fff; padding: 6px 12px; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.12); font-size: 14px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="title">原材料本体 · Schema（概念 / 行为 / 验证规则 / 关系）</div>
+<div id="panel">
+  <h3>图例</h3>
+  <div class="r"><span class="lg" style="background:#2e7d32"></span>概念（方框）</div>
+  <div class="r"><span class="lg" style="background:#6a1b9a"></span>行为（圆角框，含CRUD）</div>
+  <div class="r"><span class="lg" style="background:#d81b60"></span>验证规则（椭圆）</div>
+  <div class="r">灰实线=关系　紫线=行为作用概念　红实线=规则绑定行为　粉虚线=规则涉及概念</div>
+  <h3>验证规则 (SHACL) — 绑定行为</h3>
+  <div class="r"><b>V01</b> 采购-原料单位一致性〔创建原材料采购单〕单位 = 原材料.单位</div>
+  <div class="r"><b>V02</b> 库存-原料单位一致性〔入库原材料〕单位 = 原材料.单位</div>
+  <div class="r"><b>V03</b> 到位时间合理性〔创建原材料采购单〕到位时间 &gt; 采购时间</div>
+  <div class="r"><b>V04</b> 采购-原料存在性〔创建原材料采购单〕原材料名称 必须存在于 原材料</div>
+  <div class="r"><b>V05</b> 采购-供应商存在性〔创建原材料采购单〕供应商名称 必须存在于 供应商</div>
+  <div class="r"><b>V06</b> 采购-订单存在性〔创建原材料采购单〕关联订单非空时必须存在于 客户订单</div>
+  <h3>推理规则 (SWRL)</h3>
+  <div class="r i"><b>I01</b> 安全库存预警：可用库存 &lt; 安全库存 → 推送采购/转库存</div>
+  <div class="r i"><b>I02</b> 采购到位超期预警：当前日期 ≥ 到位时间 → 提示入库</div>
+  <div class="r i"><b>I03</b> 采购目的推理：关联订单为空 → 补充库存</div>
+  <div class="r i"><b>I04</b> 采购关联订单校验：关联订单不在客户订单表 → 提示确认是否取消采购单</div>
+</div>
+<div id="network"></div>
+<script>
+const A = (t, attrs) => t + "\n" + "─".repeat(16) + "\n" + attrs.join("\n");
+const B = (type, name) => name + "\n" + "─".repeat(12) + "\n" + type;
+
+const nodes = new vis.DataSet([
+  // 概念
+  { id: "客户订单", group: "c", label: A("客户订单", ["订单编号","订单名称","订单批次号","订单缓冲周期","订单类型"]) },
+  { id: "原材料采购记录", group: "c", label: A("原材料采购记录", ["采购单号","原材料编号","原材料名称","采购时间","到位时间","到位数量","单位","等待周期","供应商名称","关联订单编号","关联订单名称"]) },
+  { id: "供应商", group: "c", label: A("供应商", ["供应商名称","地址","联系人","联系电话","原材料编号","原材料名称","采购周期"]) },
+  { id: "原材料", group: "c", label: A("原材料", ["原材料编号","原材料名称","单位","安全库存"]) },
+  { id: "原材料库存", group: "c", label: A("原材料库存", ["原材料编号","原材料名称","材料类型","待入库量","累计库存量","可用库存","单位"]) },
+  // 行为
+  { id: "创建原材料采购单", group: "a", label: B("CREATE", "创建原材料采购单") },
+  { id: "取消原材料采购单", group: "a", label: B("DELETE", "取消原材料采购单") },
+  { id: "入库原材料", group: "a", label: B("UPDATE", "入库原材料") },
+  { id: "查询原材料库存信息", group: "a", label: B("READ", "查询原材料库存信息") },
+  { id: "查询原材料采购单信息", group: "a", label: B("READ", "查询原材料采购单信息") },
+  { id: "查询原材料基本信息", group: "a", label: B("READ", "查询原材料基本信息") },
+  { id: "查询供应商信息", group: "a", label: B("READ", "查询供应商信息") },
+  // 验证规则
+  { id: "V01", group: "v", label: "V01\n采购-原料单位一致性" },
+  { id: "V02", group: "v", label: "V02\n库存-原料单位一致性" },
+  { id: "V03", group: "v", label: "V03\n到位时间合理性" },
+  { id: "V04", group: "v", label: "V04\n采购-原料存在性" },
+  { id: "V05", group: "v", label: "V05\n采购-供应商存在性" },
+  { id: "V06", group: "v", label: "V06\n采购-订单存在性" },
+]);
+
+const ef = { size: 11, face: "Microsoft YaHei", strokeWidth: 3, strokeColor: "#fff" };
+const R  = (from, to, name, card, dash) => ({ from, to, label: name + "\n" + card, font: ef, arrows: "to", color: { color: "#90a4ae" }, width: 1.5, dashes: !!dash });
+const BC = (from, to) => ({ from, to, arrows: "to", color: { color: "#8e24aa" }, width: 1, dashes: [4,4] });
+const VB = (from, to) => ({ from, to, label: "绑定", font: ef, arrows: "to", color: { color: "#d81b60" }, width: 1.5 });
+const VC = (from, to) => ({ from, to, arrows: "to", color: { color: "#f48fb1" }, width: 1, dashes: true });
+
+const edges = new vis.DataSet([
+  // 关系
+  R("原材料", "原材料库存", "hasRawInventory", "1:1"),
+  R("原材料采购记录", "原材料", "recordsRawMaterial", "N:1"),
+  R("原材料采购记录", "供应商", "orderedFromSupplier", "N:1"),
+  R("供应商", "原材料", "suppliesRawMaterial", "N:M", true),
+  R("客户订单", "原材料采购记录", "containsPurchaseRecord", "1:N"),
+  // 行为作用于概念
+  BC("创建原材料采购单", "原材料采购记录"),
+  BC("取消原材料采购单", "原材料采购记录"),
+  BC("入库原材料", "原材料库存"),
+  BC("查询原材料库存信息", "原材料库存"),
+  BC("查询原材料采购单信息", "原材料采购记录"),
+  BC("查询原材料基本信息", "原材料"),
+  BC("查询供应商信息", "供应商"),
+  // 验证规则 绑定行为
+  VB("V01", "创建原材料采购单"),
+  VB("V02", "入库原材料"),
+  VB("V03", "创建原材料采购单"),
+  VB("V04", "创建原材料采购单"),
+  VB("V05", "创建原材料采购单"),
+  VB("V06", "创建原材料采购单"),
+  // 验证规则 涉及概念
+  VC("V01", "原材料采购记录"), VC("V01", "原材料"),
+  VC("V02", "原材料库存"), VC("V02", "原材料"),
+  VC("V03", "原材料采购记录"),
+  VC("V04", "原材料采购记录"), VC("V04", "原材料"),
+  VC("V05", "原材料采购记录"), VC("V05", "供应商"),
+  VC("V06", "原材料采购记录"), VC("V06", "客户订单"),
+]);
+
+const nf = { size: 13, face: "Microsoft YaHei" };
+new vis.Network(document.getElementById("network"), { nodes, edges }, {
+  groups: {
+    c: { shape: "box", widthConstraint: 195, font: nf, color: { background: "#e8f5e9", border: "#2e7d32", highlight: { background: "#c8e6c9" } } },
+    a: { shape: "box", shapeProperties: { borderRadius: 14 }, widthConstraint: 160, font: { size: 12, face: "Microsoft YaHei", color: "#fff" }, color: { background: "#8e24aa", border: "#6a1b9a", highlight: { background: "#ab47bc" } } },
+    v: { shape: "ellipse", font: { size: 12, face: "Microsoft YaHei", color: "#880e4f" }, color: { background: "#fce4ec", border: "#d81b60", highlight: { background: "#f8bbd0" } } },
+  },
+  physics: { enabled: true, solver: "barnesHut", barnesHut: { gravitationalConstant: -12000, springLength: 180, springConstant: 0.03, avoidOverlap: 0.5 }, stabilization: { iterations: 400 } },
+  edges: { smooth: { type: "continuous" } },
+  interaction: { dragNodes: true, dragView: true, zoomView: true },
+});
+</script>
+</body>
+</html>

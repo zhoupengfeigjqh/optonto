@@ -1,0 +1,35 @@
+networks:
+  optonto-net:
+    driver: bridge
+
+services:
+  # ─── 前端 (Nginx + Next.js 合并) ───────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: optonto_frontend
+    restart: unless-stopped
+    ports:
+      - "81:81"
+    depends_on:
+      - backend
+    networks:
+      - optonto-net
+
+  # ─── 后端 API (FastAPI) ────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: optonto_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/.data:/app/backend/.data
+      - ./config:/app/config
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - optonto-net

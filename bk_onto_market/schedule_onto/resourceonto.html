@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>资源本体 - Schema图</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+  #network { width: 100vw; height: 100vh; background: #f8f9fc; }
+  #panel { position: absolute; top: 10px; right: 10px; z-index: 10; width: 360px; max-height: 94vh; overflow-y: auto;
+    background: #fff; padding: 12px 14px; border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.15); font-size: 12px; }
+  #panel h3 { font-size: 13px; margin: 10px 0 4px; color: #333; border-bottom: 2px solid #eee; padding-bottom: 3px; }
+  #panel h3:first-child { margin-top: 0; }
+  #panel .r { margin: 5px 0; line-height: 1.4; }
+  #panel .r b { color: #d81b60; }
+  #panel .i b { color: #e65100; }
+  #panel .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+  #title { position: absolute; top: 10px; left: 10px; z-index: 10; background: #fff; padding: 6px 12px; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.12); font-size: 14px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="title">资源本体 · Schema（概念 / 行为 / 验证规则 / 关系）</div>
+<div id="panel">
+  <h3>图例</h3>
+  <div class="r"><span class="lg" style="background:#1976d2"></span>概念（方框）</div>
+  <div class="r"><span class="lg" style="background:#6a1b9a"></span>行为（圆角框，含CRUD）</div>
+  <div class="r"><span class="lg" style="background:#d81b60"></span>验证规则（椭圆）</div>
+  <div class="r">灰实线=关系　紫线=行为作用概念　红实线=规则绑定行为　粉虚线=规则涉及概念</div>
+  <h3>验证规则 (SHACL) — 绑定行为</h3>
+  <div class="r"><b>V01</b> 资源日历-结束时间合理性〔创建资源日历〕结束时间 &gt; 开始时间</div>
+  <div class="r"><b>V02</b> 班次-结束时间合理性〔创建班次〕结束时间 &gt; 开始时间</div>
+  <div class="r"><b>V03</b> 资源日历-班次存在性〔创建资源日历〕班次名称 必须存在于 班次</div>
+  <div class="r"><b>V04</b> 资源日历-资源存在性〔创建资源日历〕资源名称 必须存在于 设备 或 人员</div>
+  <h3>推理规则 (SWRL)</h3>
+  <div class="r i"><b>I01</b> 可用时长/产能计算引导：先取班次起止 → 取日历有效起止 → 分析设备异常记录</div>
+</div>
+<div id="network"></div>
+<script>
+const A = (t, attrs) => t + "\n" + "─".repeat(16) + "\n" + attrs.join("\n");
+const B = (type, name) => name + "\n" + "─".repeat(12) + "\n" + type;
+
+const nodes = new vis.DataSet([
+  // 概念
+  { id: "部门", group: "c", label: A("部门", ["机构编码","部门名称","是否生产部门","地址"]) },
+  { id: "设备组", group: "c", label: A("设备组", ["设备组编号","设备组名称","资源制约","组批是否按单件工时","是否炉内资源"]) },
+  { id: "人员组", group: "c", label: A("人员组", ["人员组编号","人员组名称","资源制约","组批是否按单件工时","是否炉内资源"]) },
+  { id: "设备", group: "c", label: A("设备", ["设备编号","设备名称","设备组名称","所属部门","负荷率上限","资源费率","是否公用"]) },
+  { id: "人员", group: "c", label: A("人员", ["人员编号","人员名称","人员组名称","所属部门","人工成本","职称","是否可跨场工作"]) },
+  { id: "资源日历", group: "c", label: A("资源日历", ["资源编号","资源名称","开始时间","结束时间","是否包含休息日","班次名称"]) },
+  { id: "班次", group: "c", label: A("班次", ["班次名称","开始时间","结束时间","休息时段","可生产时间"]) },
+  { id: "设备异常记录", group: "c", label: A("设备异常记录", ["设备编号","设备名称","设备组名称","异常开始时间","异常结束时间","异常类型"]) },
+  // 行为
+  { id: "创建资源日历", group: "a", label: B("CREATE", "创建资源日历") },
+  { id: "创建班次", group: "a", label: B("CREATE", "创建班次") },
+  { id: "创建设备异常记录", group: "a", label: B("CREATE", "创建设备异常记录") },
+  { id: "查询设备信息", group: "a", label: B("READ", "查询设备信息") },
+  { id: "查询人员信息", group: "a", label: B("READ", "查询人员信息") },
+  { id: "查询人员设备日历信息", group: "a", label: B("READ", "查询人员设备日历信息") },
+  { id: "查询设备组信息", group: "a", label: B("READ", "查询设备组信息") },
+  { id: "查询人员组信息", group: "a", label: B("READ", "查询人员组信息") },
+  { id: "查询班次信息", group: "a", label: B("READ", "查询班次信息") },
+  // 验证规则
+  { id: "V01", group: "v", label: "V01\n日历-结束时间合理性" },
+  { id: "V02", group: "v", label: "V02\n班次-结束时间合理性" },
+  { id: "V03", group: "v", label: "V03\n日历-班次存在性" },
+  { id: "V04", group: "v", label: "V04\n日历-资源存在性" },
+]);
+
+const ef = { size: 11, face: "Microsoft YaHei", strokeWidth: 3, strokeColor: "#fff" };
+const R  = (from, to, name, card) => ({ from, to, label: name + "\n" + card, font: ef, arrows: "to", color: { color: "#90a4ae" }, width: 1.5 });
+const BC = (from, to) => ({ from, to, arrows: "to", color: { color: "#8e24aa" }, width: 1, dashes: [4,4] });
+const VB = (from, to) => ({ from, to, label: "绑定", font: ef, arrows: "to", color: { color: "#d81b60" }, width: 1.5 });
+const VC = (from, to) => ({ from, to, arrows: "to", color: { color: "#f48fb1" }, width: 1, dashes: true });
+
+const edges = new vis.DataSet([
+  // 关系
+  R("设备", "设备组", "belongsToGroup", "N:1"),
+  R("设备", "部门", "belongsToDept", "N:1"),
+  R("人员", "人员组", "belongsToGroup", "N:1"),
+  R("人员", "部门", "belongsToDept", "N:1"),
+  R("资源日历", "班次", "containsShift", "N:1"),
+  R("设备", "设备异常记录", "hasDowntime", "1:N"),
+  R("设备", "资源日历", "hasCalendar", "N:1"),
+  R("人员", "资源日历", "hasCalendar", "N:1"),
+  // 行为作用于概念
+  BC("创建资源日历", "资源日历"),
+  BC("创建班次", "班次"),
+  BC("创建设备异常记录", "设备异常记录"),
+  BC("查询设备信息", "设备"),
+  BC("查询人员信息", "人员"),
+  BC("查询人员设备日历信息", "资源日历"),
+  BC("查询设备组信息", "设备组"),
+  BC("查询人员组信息", "人员组"),
+  BC("查询班次信息", "班次"),
+  // 验证规则 绑定行为
+  VB("V01", "创建资源日历"),
+  VB("V02", "创建班次"),
+  VB("V03", "创建资源日历"),
+  VB("V04", "创建资源日历"),
+  // 验证规则 涉及概念
+  VC("V01", "资源日历"),
+  VC("V02", "班次"),
+  VC("V03", "资源日历"), VC("V03", "班次"),
+  VC("V04", "资源日历"), VC("V04", "设备"), VC("V04", "人员"),
+]);
+
+const nf = { size: 13, face: "Microsoft YaHei" };
+new vis.Network(document.getElementById("network"), { nodes, edges }, {
+  groups: {
+    c: { shape: "box", widthConstraint: 170, font: nf, color: { background: "#e3f2fd", border: "#1976d2", highlight: { background: "#bbdefb" } } },
+    a: { shape: "box", shapeProperties: { borderRadius: 14 }, widthConstraint: 150, font: { size: 12, face: "Microsoft YaHei", color: "#fff" }, color: { background: "#8e24aa", border: "#6a1b9a", highlight: { background: "#ab47bc" } } },
+    v: { shape: "ellipse", font: { size: 12, face: "Microsoft YaHei", color: "#880e4f" }, color: { background: "#fce4ec", border: "#d81b60", highlight: { background: "#f8bbd0" } } },
+  },
+  physics: { enabled: true, solver: "barnesHut", barnesHut: { gravitationalConstant: -12000, springLength: 170, springConstant: 0.03, avoidOverlap: 0.5 }, stabilization: { iterations: 400 } },
+  edges: { smooth: { type: "continuous" } },
+  interaction: { dragNodes: true, dragView: true, zoomView: true },
+});
+</script>
+</body>
+</html>

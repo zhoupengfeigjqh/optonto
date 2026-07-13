@@ -1,9 +1,7 @@
 """CRUD API for concepts within an ontology."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException
 
-from database import get_db
 from dependencies import get_ontology_names
 from schemas import ConceptItem, AttributeItem
 from services import load_ontology_data, save_ontology_data
@@ -12,16 +10,16 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/concepts", tags=["概�
 
 
 @router.get("")
-async def list_concepts(ontology_id: int, db: AsyncSession = Depends(get_db)):
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+async def list_concepts(ontology_id: int):
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.concepts
 
 
 @router.put("/{concept_name}/attributes")
-async def update_attributes(ontology_id: int, concept_name: str, attributes: list[dict], db: AsyncSession = Depends(get_db)):
+async def update_attributes(ontology_id: int, concept_name: str, attributes: list[dict]):
     """Update the attribute list of a concept."""
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
     concept = next((c for c in data.concepts if c.name == concept_name), None)
@@ -34,9 +32,9 @@ async def update_attributes(ontology_id: int, concept_name: str, attributes: lis
 
 
 @router.put("/{concept_name}")
-async def update_concept(ontology_id: int, concept_name: str, item: ConceptItem, db: AsyncSession = Depends(get_db)):
+async def update_concept(ontology_id: int, concept_name: str, item: ConceptItem):
     """Update a concept."""
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
     idx = next((i for i, c in enumerate(data.concepts) if c.name == concept_name), -1)
@@ -52,11 +50,10 @@ async def update_concept(ontology_id: int, concept_name: str, item: ConceptItem,
 
 
 @router.post("", status_code=201)
-async def create_concept(ontology_id: int, item: ConceptItem, db: AsyncSession = Depends(get_db)):
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+async def create_concept(ontology_id: int, item: ConceptItem):
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    # Check duplicate
     if any(c.name == item.name for c in data.concepts):
         raise HTTPException(status_code=400, detail="概念名称已存在")
 
@@ -66,8 +63,8 @@ async def create_concept(ontology_id: int, item: ConceptItem, db: AsyncSession =
 
 
 @router.delete("/{concept_name}")
-async def delete_concept(ontology_id: int, concept_name: str, db: AsyncSession = Depends(get_db)):
-    sc_name, on_name = await get_ontology_names(ontology_id, db)
+async def delete_concept(ontology_id: int, concept_name: str):
+    sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
     idx = next((i for i, c in enumerate(data.concepts) if c.name == concept_name), -1)
@@ -76,7 +73,7 @@ async def delete_concept(ontology_id: int, concept_name: str, db: AsyncSession =
 
     data.concepts.pop(idx)
 
-    # Also remove from relations that reference this concept
+    # Remove from relations that reference this concept
     data.relations = [
         r for r in data.relations
         if r.source != concept_name and r.target != concept_name

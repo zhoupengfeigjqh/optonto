@@ -42,6 +42,7 @@ export interface Ontology {
   name: string;
   description: string;
   creator: string;
+  scenario_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -91,6 +92,7 @@ export interface Concept {
   description: string;
   attributes?: Attribute[];
   display_name?: string;
+  classification?: string;
 }
 
 export const getConcepts = (ontologyId: number) =>
@@ -202,6 +204,90 @@ export const updateEvent = (ontologyId: number, name: string, data: Event) =>
 
 // ─── Business Process ──────────────────────────────────────────────────────
 
+
+// ─── Thread / Chat ────────────────────────────────────────────────────────
+
+export interface ThreadSummary {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  scenario_name?: string;
+  ontology_name?: string;
+}
+
+export interface ThreadMessage {
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface Thread {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  messages: ThreadMessage[];
+}
+
+export const getThreads = (query: string = '') =>
+  request<ThreadSummary[]>(`/api/threads${query ? '?' + query : ''}`);
+
+export const createThread = (title: string = '新对话', scenario_name: string = '', ontology_name: string = '') =>
+  request<Thread>('/api/threads', { method: 'POST', body: JSON.stringify({ title, scenario_name, ontology_name }) });
+
+export const getThread = (id: string) =>
+  request<Thread>(`/api/threads/${id}`);
+
+export const deleteThread = (id: string) =>
+  request<{ message: string }>(`/api/threads/${id}`, { method: 'DELETE' });
+
+export const updateThread = (id: string, data: { title?: string; status?: string }) =>
+  request<Thread>(`/api/threads/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const clearChat = (id: string) =>
+  request<{ message: string }>(`/api/threads/${id}/clear`, { method: 'POST' });
+
+export const generateOntology = (threadId: string, filename: string) =>
+  request<{ message: string; scenario: string; ontology: string; concepts: number; relations: number; behaviors: number; rules: number; events: number }>(
+    `/api/threads/${threadId}/generate-ontology`, { method: 'POST', body: JSON.stringify({ filename }) }
+  );
+
+export const exportThread = (id: string, title: string = 'requirement', selectedIndices: number[] = []) =>
+  request<{ message: string; path: string; filename: string }>(`/api/threads/${id}/export`, { method: 'POST', body: JSON.stringify({ title, selected_indices: selectedIndices }) });
+
+export const chatStream = (threadId: string, message: string): Promise<Response> =>
+  fetch(`/api/threads/${threadId}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+
+// ─── Requirement Files ───────────────────────────────────────────────────
+
+export interface RequirementItem {
+  filename: string;
+  req_name: string;
+  thread_id: string;
+  thread_title: string;
+  created_at: string;
+  updated_at: string;
+  has_ontology: boolean;
+}
+
+export const listRequirements = () =>
+  request<RequirementItem[]>('/api/threads/requirements/list');
+
+export const getRequirementFile = (threadId: string, filename: string) =>
+  request<{ content: string; filename: string; thread_id: string }>(`/api/threads/${threadId}/requirements/${filename}`);
+
+export const saveRequirementFile = (threadId: string, filename: string, content: string) =>
+  request<{ message: string }>(`/api/threads/${threadId}/requirements/${filename}`, { method: 'PUT', body: JSON.stringify({ content }) });
+
+export const deleteRequirementFile = (threadId: string, filename: string) =>
+  request<{ message: string }>(`/api/threads/${threadId}/requirements/${filename}`, { method: 'DELETE' });
 
 export interface YamlFile {
   path: string;

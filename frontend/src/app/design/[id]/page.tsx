@@ -9,6 +9,9 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ArrowLeftOutlined,
+  CompassOutlined,
+  UnorderedListOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
 import ConceptTable from '@/components/Design/ConceptTable';
@@ -17,6 +20,8 @@ import BehaviorTable from '@/components/Design/BehaviorTable';
 import RuleTable from '@/components/Design/RuleTable';
 import EventTable from '@/components/Design/EventTable';
 import FileViewer from '@/components/Design/FileViewer';
+import ConversationManager from '@/components/Design/ConversationManager';
+import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
 
 const DESIGN_TABS = [
@@ -35,9 +40,10 @@ export default function DesignPage() {
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'design' | 'view'>('design');
+  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [threadParam, setThreadParam] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -51,6 +57,14 @@ export default function DesignPage() {
         setLoading(false);
       }
     })();
+    // Check for ?thread=xxx query param to switch to requirements tab
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get('thread');
+    if (tid) {
+      setThreadParam(tid);
+      setActiveSection('requirements');
+      setActiveTab('requirements');
+    }
   }, [ontologyId]);
 
   if (loading) {
@@ -72,6 +86,14 @@ export default function DesignPage() {
   const renderContent = () => {
     if (activeSection === 'view') {
       return <OntologyGraph ontologyId={ontologyId} />;
+    }
+    if (activeSection === 'requirements') {
+      return (
+        <div>
+          <div style={{ display: activeTab === 'requirements' ? '' : 'none' }}><ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} /></div>
+          <div style={{ display: activeTab === 'requirement-confirm' ? '' : 'none' }}><RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} /></div>
+        </div>
+      );
     }
 
     return (
@@ -105,7 +127,50 @@ export default function DesignPage() {
 
         {/* Main nav */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-          {/* 本体设计 */}
+          {/* 业务分析 */}
+          <div>
+            <button
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
+                activeSection === 'requirements'
+                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
+                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
+              }`}
+              onClick={() => setActiveSection('requirements')}
+              title="业务分析"
+            >
+              <CompassOutlined />
+              {!sidebarCollapsed && <span>业务分析</span>}
+            </button>
+
+            {!sidebarCollapsed && activeSection === 'requirements' && (
+              <div className="ml-4 mt-1 space-y-0.5">
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'requirements'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveTab('requirements'); }}
+                >
+                  <UnorderedListOutlined style={{ fontSize: 12 }} />
+                  <span>对话管理</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'requirement-confirm'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveTab('requirement-confirm'); }}
+                >
+                  <CheckCircleOutlined style={{ fontSize: 12 }} />
+                  <span>需求确认</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 本体明细 */}
           <div>
             <button
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
@@ -114,10 +179,10 @@ export default function DesignPage() {
                   : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
               }`}
               onClick={() => setActiveSection('design')}
-              title="本体设计"
+              title="本体明细"
             >
               <DatabaseOutlined />
-              {!sidebarCollapsed && <span>本体设计</span>}
+              {!sidebarCollapsed && <span>本体明细</span>}
             </button>
 
             {/* Sub-items */}
@@ -165,6 +230,8 @@ export default function DesignPage() {
             <span className="mx-2">/</span>
             {activeSection === 'design'
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
+              : activeSection === 'requirements'
+              ? activeTab === 'requirements' ? '对话管理' : '需求确认'
               : '本体视图'}
           </span>
           <button
@@ -173,7 +240,7 @@ export default function DesignPage() {
             title="返回本体市场"
           >
             <ArrowLeftOutlined />
-            <span>返回</span>
+            <span>返回本体市场</span>
           </button>
         </header>
 
