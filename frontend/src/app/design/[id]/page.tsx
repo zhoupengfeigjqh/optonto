@@ -43,6 +43,7 @@ export default function DesignPage() {
   const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>('design');
   const [threadParam, setThreadParam] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function DesignPage() {
     if (tid) {
       setThreadParam(tid);
       setActiveSection('requirements');
+      setExpandedSection('requirements');
       setActiveTab('requirements');
     }
   }, [ontologyId]);
@@ -83,30 +85,19 @@ export default function DesignPage() {
     );
   }
 
-  const renderContent = () => {
-    if (activeSection === 'view') {
-      return <OntologyGraph ontologyId={ontologyId} />;
-    }
-    if (activeSection === 'requirements') {
-      return (
-        <div>
-          <div style={{ display: activeTab === 'requirements' ? '' : 'none' }}><ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} /></div>
-          <div style={{ display: activeTab === 'requirement-confirm' ? '' : 'none' }}><RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} /></div>
-        </div>
-      );
-    }
-
-    return (
-      <div>
-        <div style={{ display: activeTab === 'concepts' ? '' : 'none' }}><ConceptTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-        <div style={{ display: activeTab === 'relations' ? '' : 'none' }}><RelationTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-        <div style={{ display: activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-        <div style={{ display: activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-        <div style={{ display: activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-        <div style={{ display: activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
-      </div>
-    );
-  };
+  const renderContent = () => (
+    <div>
+      <div style={{ display: activeSection === 'view' ? '' : 'none' }}><OntologyGraph ontologyId={ontologyId} /></div>
+      <div style={{ display: activeSection === 'requirements' && activeTab === 'requirements' ? '' : 'none' }}><ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} /></div>
+      <div style={{ display: activeSection === 'requirements' && activeTab === 'requirement-confirm' ? '' : 'none' }}><RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'concepts' ? '' : 'none' }}><ConceptTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'relations' ? '' : 'none' }}><RelationTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
+    </div>
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-dark-bg">
@@ -131,18 +122,20 @@ export default function DesignPage() {
           <div>
             <button
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
-                activeSection === 'requirements'
+                expandedSection === 'requirements'
                   ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
                   : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
               }`}
-              onClick={() => setActiveSection('requirements')}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'requirements' ? null : 'requirements');
+                }}
               title="业务分析"
             >
               <CompassOutlined />
               {!sidebarCollapsed && <span>业务分析</span>}
             </button>
 
-            {!sidebarCollapsed && activeSection === 'requirements' && (
+            {!sidebarCollapsed && expandedSection === 'requirements' && (
               <div className="ml-4 mt-1 space-y-0.5">
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
@@ -150,7 +143,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveTab('requirements'); }}
+                  onClick={() => { setActiveSection('requirements'); setActiveTab('requirements'); }}
                 >
                   <UnorderedListOutlined style={{ fontSize: 12 }} />
                   <span>对话管理</span>
@@ -161,7 +154,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveTab('requirement-confirm'); }}
+                  onClick={() => { setActiveSection('requirements'); setActiveTab('requirement-confirm'); }}
                 >
                   <CheckCircleOutlined style={{ fontSize: 12 }} />
                   <span>需求确认</span>
@@ -174,11 +167,13 @@ export default function DesignPage() {
           <div>
             <button
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
-                activeSection === 'design'
+                expandedSection === 'design'
                   ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
                   : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
               }`}
-              onClick={() => setActiveSection('design')}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'design' ? null : 'design');
+                }}
               title="本体明细"
             >
               <DatabaseOutlined />
@@ -186,7 +181,7 @@ export default function DesignPage() {
             </button>
 
             {/* Sub-items */}
-            {!sidebarCollapsed && activeSection === 'design' && (
+            {!sidebarCollapsed && expandedSection === 'design' && (
               <div className="ml-4 mt-1 space-y-0.5">
                 {DESIGN_TABS.map(tab => (
                   <button
@@ -196,7 +191,7 @@ export default function DesignPage() {
                         ? 'text-accent-blue bg-accent-blue/5'
                         : 'text-text-muted hover:text-text-secondary'
                     }`}
-                    onClick={() => setActiveTab(tab.key)}
+                    onClick={() => { setActiveSection('design'); setActiveTab(tab.key); }}
                   >
                     {tab.label}
                   </button>
@@ -205,19 +200,38 @@ export default function DesignPage() {
             )}
           </div>
 
-          {/* 本体视图 */}
-          <button
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
-              activeSection === 'view'
-                ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
-                : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
-            }`}
-            onClick={() => setActiveSection('view')}
-            title="本体视图"
-          >
-            <NodeIndexOutlined />
-            {!sidebarCollapsed && <span>本体视图</span>}
-          </button>
+          {/* 可视化分析 */}
+          <div>
+            <button
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
+                expandedSection === 'view'
+                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
+                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
+              }`}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'view' ? null : 'view');
+                }}
+              title="可视化分析"
+            >
+              <NodeIndexOutlined />
+              {!sidebarCollapsed && <span>可视化分析</span>}
+            </button>
+
+            {!sidebarCollapsed && expandedSection === 'view' && (
+              <div className="ml-4 mt-1 space-y-0.5">
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                    activeSection === 'view'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('view'); }}
+                >
+                  本体视图
+                </button>
+              </div>
+            )}
+          </div>
         </nav>
       </aside>
 

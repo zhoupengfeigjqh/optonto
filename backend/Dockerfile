@@ -14,6 +14,9 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r re
 # Copy backend source (maintains backend/ structure so config.py paths work)
 COPY backend/ ./backend/
 
+# Copy analysis prompt
+COPY analysis_system_prompt.md .
+
 # Create data directories
 RUN mkdir -p onto_market config
 

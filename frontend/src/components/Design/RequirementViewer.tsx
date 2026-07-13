@@ -77,7 +77,7 @@ export default function RequirementViewer({ threadId, filename, onBack }: Props)
           <span className="text-text-muted text-xs">会话: {threadId.slice(0, 8)}...</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button icon={<RobotOutlined />} onClick={() => setShowConfirm(true)} loading={generating} size="small">智能生成本体</Button>
+          <Button icon={<RobotOutlined />} onClick={() => setShowConfirm(true)} loading={generating} size="small">本体智能生成</Button>
           <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving} disabled={!dirty} size="small">保存</Button>
         </div>
       </div>
@@ -107,7 +107,7 @@ export default function RequirementViewer({ threadId, filename, onBack }: Props)
 
       {/* Confirm generate ontology */}
       <Modal
-        title="智能生成本体"
+        title="本体智能生成"
         open={showConfirm}
         onOk={handleGenerate}
         onCancel={() => setShowConfirm(false)}

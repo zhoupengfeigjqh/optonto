@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, memo } from 'react';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
 import { TooltipComponent, TitleComponent } from 'echarts/components';
@@ -33,7 +33,7 @@ interface GraphEdge {
   lineStyle?: any;
 }
 
-export default function OntologyGraph({ ontologyId }: Props) {
+export default memo(function OntologyGraph({ ontologyId }: Props) {
   const [data, setData] = useState<OntologyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedConcept, setSelectedConcept] = useState<GraphNode | null>(null);
@@ -348,4 +348,4 @@ export default function OntologyGraph({ ontologyId }: Props) {
       </Modal>
     </div>
   );
-}
+});

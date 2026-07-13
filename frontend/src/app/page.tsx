@@ -45,7 +45,7 @@ export default function HomePage() {
         setSelectedScenarioId(list[0].id);
       }
     } catch (e: any) {
-      message.error('加载场景失败: ' + e.message);
+      message.error('加载业务场景失败: ' + e.message);
     }
   };
 
@@ -83,10 +83,10 @@ export default function HomePage() {
 
   // ── New Scenario ──
   const handleCreateScenario = async () => {
-    if (!newScName.trim()) { message.warning('请输入场景名称'); return; }
+    if (!newScName.trim()) { message.warning('请输入业务场景名称'); return; }
     try {
       await createScenario({ name: newScName.trim(), description: newScDesc.trim() });
-      message.success('场景创建成功');
+      message.success('业务场景创建成功');
       setShowNewScenario(false);
       setNewScName('');
       setNewScDesc('');
@@ -100,12 +100,12 @@ export default function HomePage() {
   const handleDeleteScenario = async () => {
     if (!selectedScenarioId) return;
     if (deleteConfirmText !== selectedScenario?.name) {
-      message.warning('输入的场景名称不匹配');
+      message.warning('输入的业务场景名称不匹配');
       return;
     }
     try {
       await deleteScenario(selectedScenarioId);
-      message.success('场景已删除');
+      message.success('业务场景已删除');
       setShowDeleteScenario(false);
       setDeleteConfirmText('');
       setSelectedScenarioId(null);
@@ -118,10 +118,10 @@ export default function HomePage() {
   // ── Edit Scenario ──
   const handleEditScenario = async () => {
     if (!showEditScenario) return;
-    if (!editScName.trim()) { message.warning('请输入场景名称'); return; }
+    if (!editScName.trim()) { message.warning('请输入业务场景名称'); return; }
     try {
       await updateScenario(showEditScenario.id, { name: editScName.trim(), description: editScDesc.trim() });
-      message.success('场景已更新');
+      message.success('业务场景已更新');
       setShowEditScenario(null);
       await loadScenarios();
     } catch (e: any) {
@@ -146,7 +146,7 @@ export default function HomePage() {
   // ── New Ontology ──
   const handleCreateOntology = async () => {
     if (!newOnName.trim()) { message.warning('请输入本体名称'); return; }
-    if (!selectedScenarioId) { message.warning('请先选择场景'); return; }
+    if (!selectedScenarioId) { message.warning('请先选择业务场景'); return; }
     try {
       const onto = await createOntology({
         scenario_id: selectedScenarioId,
@@ -192,7 +192,7 @@ export default function HomePage() {
         {/* Header */}
         <div className="p-4 border-b border-dark-border">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">场景</h2>
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">业务场景</h2>
             <Button
               type="primary"
               size="small"
@@ -241,7 +241,7 @@ export default function HomePage() {
             </div>
           ))}
           {scenarios.length === 0 && (
-            <p className="text-text-muted text-xs text-center py-4">暂无场景，点击 + 新建</p>
+            <p className="text-text-muted text-xs text-center py-4">暂无业务场景，点击 + 新建</p>
           )}
         </div>
       </aside>
@@ -281,7 +281,7 @@ export default function HomePage() {
                     icon={<DeleteOutlined />}
                     onClick={() => { setDeleteConfirmText(''); setShowDeleteScenario(true); }}
                   >
-                    删除场景
+                    删除业务场景
                   </Button>
                 </div>
               </div>
@@ -289,7 +289,7 @@ export default function HomePage() {
               {/* Ontology card list */}
               {ontologies.length === 0 ? (
                 <Empty
-                  description={<span className="text-text-muted">该场景下暂无本体</span>}
+                  description={<span className="text-text-muted">该业务场景下暂无本体</span>}
                   className="mt-20"
                 />
               ) : (
@@ -351,7 +351,7 @@ export default function HomePage() {
           ) : (
             <div className="flex items-center justify-center h-full">
               <Empty
-                description={<span className="text-text-muted">请从左侧选择一个场景</span>}
+                description={<span className="text-text-muted">请从左侧选择一个业务场景</span>}
               />
             </div>
           )}
@@ -362,7 +362,7 @@ export default function HomePage() {
 
       {/* New Scenario */}
       <Modal
-        title="新建场景"
+        title="新建业务场景"
         open={showNewScenario}
         onOk={handleCreateScenario}
         onCancel={() => setShowNewScenario(false)}
@@ -371,18 +371,18 @@ export default function HomePage() {
       >
         <div className="space-y-3 pt-2">
           <div>
-            <label className="text-text-secondary text-sm block mb-1">场景名称 *</label>
+            <label className="text-text-secondary text-sm block mb-1">业务场景名称 *</label>
             <Input
-              placeholder="请输入场景名称"
+              placeholder="请输入业务场景名称"
               value={newScName}
               onChange={e => setNewScName(e.target.value)}
               className="bg-dark-bg border-dark-border text-text-primary"
             />
           </div>
           <div>
-            <label className="text-text-secondary text-sm block mb-1">场景描述</label>
+            <label className="text-text-secondary text-sm block mb-1">业务场景描述</label>
             <Input.TextArea
-              placeholder="请输入场景描述（可选）"
+              placeholder="请输入业务场景描述（可选）"
               value={newScDesc}
               onChange={e => setNewScDesc(e.target.value)}
               rows={3}
@@ -435,7 +435,7 @@ export default function HomePage() {
 
       {/* Edit Scenario */}
       <Modal
-        title="编辑场景"
+        title="编辑业务场景"
         open={!!showEditScenario}
         onOk={handleEditScenario}
         onCancel={() => setShowEditScenario(null)}
@@ -444,18 +444,18 @@ export default function HomePage() {
       >
         <div className="space-y-3 pt-2">
           <div>
-            <label className="text-text-secondary text-sm block mb-1">场景名称 *</label>
+            <label className="text-text-secondary text-sm block mb-1">业务场景名称 *</label>
             <Input
-              placeholder="请输入场景名称"
+              placeholder="请输入业务场景名称"
               value={editScName}
               onChange={e => setEditScName(e.target.value)}
               className="bg-dark-bg border-dark-border text-text-primary"
             />
           </div>
           <div>
-            <label className="text-text-secondary text-sm block mb-1">场景描述</label>
+            <label className="text-text-secondary text-sm block mb-1">业务场景描述</label>
             <Input.TextArea
-              placeholder="请输入场景描述"
+              placeholder="请输入业务场景描述"
               value={editScDesc}
               onChange={e => setEditScDesc(e.target.value)}
               rows={3}
@@ -508,7 +508,7 @@ export default function HomePage() {
 
       {/* Confirm Delete Scenario */}
       <Modal
-        title="确认删除场景"
+        title="确认删除业务场景"
         open={showDeleteScenario}
         onOk={handleDeleteScenario}
         onCancel={() => { setShowDeleteScenario(false); setDeleteConfirmText(''); }}
@@ -518,8 +518,8 @@ export default function HomePage() {
       >
         <div className="space-y-3 pt-2">
           <p className="text-text-secondary text-sm">
-            删除场景 <strong className="text-red-400">{selectedScenario?.name}</strong> 将同时删除该场景下所有本体，
-            且该场景下的本体必须为空才能删除。请输入场景名称以确认：
+            删除业务场景 <strong className="text-red-400">{selectedScenario?.name}</strong> 将同时删除该业务场景下所有本体，
+            且该业务场景下的本体必须为空才能删除。请输入业务场景名称以确认：
           </p>
           <Input
             placeholder={`请输入 "${selectedScenario?.name || ''}" 确认删除`}

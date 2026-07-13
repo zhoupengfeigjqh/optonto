@@ -28,7 +28,7 @@ COPY --from=builder /app/public ./public
 # 复制 Nginx 配置和启动脚本
 COPY frontend/nginx.conf /etc/nginx/http.d/default.conf
 COPY frontend/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 81
 
