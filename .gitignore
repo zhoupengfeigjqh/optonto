@@ -12,6 +12,9 @@
 # History backups
 .history/
 
+# Backup
+bk_onto_market/
+
 # Config (contains API keys)
 config/
 
