@@ -277,12 +277,12 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 bg-dark-card border border-dark-border rounded-xl overflow-hidden">
+      <div className="flex-1 bg-dark-card border border-dark-border rounded-xl overflow-hidden" style={{ minHeight: 0 }}>
         <ReactEChartsCore
           ref={chartRef}
           echarts={echarts}
           option={getOption()}
-          style={{ height: '100%', minHeight: '65vh' }}
+          style={{ height: '100%', minHeight: 400 }}
           onEvents={onEvents}
           notMerge
           lazyUpdate

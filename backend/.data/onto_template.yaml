@@ -1,4 +1,10 @@
 # 本体 YAML 模板 — 严格遵循此格式输出
+metadata:
+  name: ''
+  source_file: ''
+  source_thread: ''
+  created_at: ''
+
 concepts:
 - name: ConceptName
   description: 概念描述
@@ -43,7 +49,10 @@ rules:
 
 events:
 - name: eventName
-  description: 事件描述
+  event_type: 输入事件
+  trigger_condition: 触发条件描述
+  related_concepts:
+  - ConceptName
   related_behavior: behaviorName
   trigger_behaviors: []
   display_name: 事件展示名称

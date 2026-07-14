@@ -3,31 +3,31 @@ concepts:
   description: 客户销售订单或询单，包含订单头信息
   attributes:
   - name: 订单编号
-    type: text
+    type: string
     required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单名称
-    type: text
+    type: string
     required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单批次号
-    type: text
+    type: string
     required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单缓冲周期
-    type: text
+    type: int
     required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单类型
-    type: text
+    type: string
     required: true
     display_name: ''
     example: ''
@@ -721,47 +721,65 @@ rules:
   position: ''
 events:
 - name: OrderCreated
-  description: 订单创建成功
+  event_type: 输入事件
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: CreateOrder
   trigger_behaviors: []
   display_name: 订单创建事件
 - name: OrderUpdated
-  description: 订单更新成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: UpdateOrder
   trigger_behaviors: []
   display_name: 订单更新事件
 - name: OrderDeleted
-  description: 订单删除成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: DeleteOrder
   trigger_behaviors: []
   display_name: 订单删除事件
 - name: SchedTaskCreated
-  description: 排产任务创建成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: CreateSchedTask
   trigger_behaviors: []
   display_name: 排产任务创建事件
 - name: SchedTaskAdded
-  description: 新增排产场景成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: AddSchedTask
   trigger_behaviors: []
   display_name: 新增排产任务事件
 - name: SchedTaskStarted
-  description: 排产任务启动成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: StartSchedTask
   trigger_behaviors: []
   display_name: 排产任务启动事件
 - name: SchedResultDeployed
-  description: 排产结果下发成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: DeploySchedResult
   trigger_behaviors: []
   display_name: 排产结果下发事件
 - name: SchedResultRecalled
-  description: 排产结果撤回成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: RecallSchedResult
   trigger_behaviors: []
   display_name: 排产结果撤回事件
 - name: AlgoParamsCreated
-  description: 算法参数创建成功
+  event_type: ''
+  trigger_condition: ''
+  related_concepts: []
   related_behavior: CreateAlgoParams
   trigger_behaviors: []
   display_name: 算法参数创建事件

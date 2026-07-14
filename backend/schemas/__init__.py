@@ -71,7 +71,6 @@ class ConceptItem(BaseModel):
     description: str = Field("", description="概念描述")
     attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表")
     display_name: str = Field("", description="展示名称")
-    classification: str = Field("", description="概念分类")
 
 
 class RelationItem(BaseModel):
@@ -104,7 +103,9 @@ class RuleItem(BaseModel):
 
 class EventItem(BaseModel):
     name: str = Field(..., description="事件名")
-    description: str = Field("", description="事件描述")
+    event_type: str = Field("", description="事件类型（输入事件/输出事件）")
+    trigger_condition: str = Field("", description="触发条件")
+    related_concepts: list[str] = Field(default_factory=list, description="关联概念（可多选）")
     related_behavior: Optional[str] = Field(None, description="关联行为")
     trigger_behaviors: list[str] = Field(default_factory=list, description="后续触发行为（可多选）")
     display_name: str = Field("", description="展示名称")
@@ -112,6 +113,7 @@ class EventItem(BaseModel):
 
 class OntologyData(BaseModel):
     """本体完整数据结构，对应 YAML 文件内容。"""
+    metadata: dict = Field(default_factory=dict, description="元数据（名称、来源等）")
     concepts: list[ConceptItem] = Field(default_factory=list)
     relations: list[RelationItem] = Field(default_factory=list)
     behaviors: list[BehaviorItem] = Field(default_factory=list)

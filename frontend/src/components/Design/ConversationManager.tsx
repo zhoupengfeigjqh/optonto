@@ -107,7 +107,7 @@ export default function ConversationManager({ ontologyId: _ontologyId, activeTab
         <h3 className="text-base font-semibold text-text-primary">对话管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleNew}>新建对话</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">管理和查看所有需求探索对话。点击「对话」进入聊天，点击标题进入，点击「新建对话」开始新的探索。</p>
+      <p className="text-text-muted text-xs mb-3">管理和查看所有需求探索对话。点击「对话」或「会话标题」进入聊天，点击「新建对话」开始新的探索。通过对话探索，你可以对需求进行智能评估验证，并生成需求文档</p>
       <Table
         dataSource={threads}
         columns={columns}

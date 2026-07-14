@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Spin } from 'antd';
-import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, CheckCircleFilled, CheckCircleOutlined } from '@ant-design/icons';
-import { getThread, chatStream, clearChat, exportThread, ThreadMessage } from '@/api/client';
+import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined } from '@ant-design/icons';
+import { getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
 
 interface Props {
@@ -23,6 +23,9 @@ export default function ConversationChat({ threadId, onBack }: Props) {
   const [exporting, setExporting] = useState(false);
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [docTitle, setDocTitle] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [validateResult, setValidateResult] = useState('');
+  const [showValidateModal, setShowValidateModal] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -137,6 +140,21 @@ export default function ConversationChat({ threadId, onBack }: Props) {
     }
   };
 
+  const handleValidate = async () => {
+    setValidating(true);
+    setValidateResult('');
+    setShowValidateModal(true);
+    try {
+      const selectedList = Array.from(selectedIndices);
+      const result = await validateAnalysis(threadId, selectedList);
+      setValidateResult(result.result);
+    } catch (e: any) {
+      setValidateResult(`验证失败: ${e.message}`);
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const handleClear = () => {
     Modal.confirm({
       title: <span style={{color:'#fff'}}>确认清空</span>,
@@ -168,6 +186,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
           <h3 className="text-base font-semibold text-text-primary truncate max-w-md">{title || '新对话'}</h3>
         </div>
         <Space>
+          <Button icon={<AuditOutlined />} onClick={handleValidate} disabled={!hasSelected} size="small">验证</Button>
           <Button icon={<FileTextOutlined />} onClick={handleExport} disabled={!hasSelected} size="small">导出文档</Button>
           <Button icon={<ClearOutlined />} onClick={handleClear} disabled={messages.length === 0} size="small">清空对话</Button>
         </Space>
@@ -304,6 +323,29 @@ export default function ConversationChat({ threadId, onBack }: Props) {
         <div className="flex flex-col items-center py-6 gap-3">
           <Spin size="large" />
           <p className="text-text-secondary text-sm">正在保存文档...</p>
+        </div>
+      </Modal>
+
+      {/* Validation result modal */}
+      <Modal
+        title="需求分析验证结果"
+        open={showValidateModal}
+        onCancel={() => setShowValidateModal(false)}
+        footer={<Button onClick={() => setShowValidateModal(false)}>关闭</Button>}
+        width={700}
+      >
+        <div className="py-3">
+          {validating ? (
+            <div className="flex flex-col items-center py-6 gap-3">
+              <Spin size="large" />
+              <p className="text-text-secondary text-sm">正在进行一致性和逻辑自洽性检查...</p>
+              <p className="text-text-muted text-xs">从本体建模角度检查概念重叠、规则冲突等问题</p>
+            </div>
+          ) : (
+            <div className="text-text-secondary text-sm whitespace-pre-wrap max-h-96 overflow-y-auto">
+              {validateResult || '无验证结果'}
+            </div>
+          )}
         </div>
       </Modal>
     </div>

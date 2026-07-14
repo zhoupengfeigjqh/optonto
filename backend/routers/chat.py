@@ -6,6 +6,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator
 
+from config import (
+    ANALYSIS_SYSTEM_PROMPT,
+    ONTOLOGY_GENERATE_SYSTEM_PROMPT,
+    ONTOLOGY_GENERATE_PROMPT_TEMPLATE,
+    VALIDATION_SYSTEM_PROMPT,
+    VALIDATION_PROMPT_TEMPLATE,
+    TITLE_SUMMARIZE_PROMPT,
+)
+
 import yaml
 
 from fastapi import APIRouter, HTTPException
@@ -77,21 +86,9 @@ async def _mock_stream(prompt: str) -> AsyncGenerator[str, None]:
     yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
 
 
-def _load_system_prompt() -> str:
-    """Load system prompt from analysis_system_prompt.md, falling back to default."""
-    prompt_path = Path(__file__).resolve().parent.parent.parent / "analysis_system_prompt.md"
-    try:
-        if prompt_path.exists():
-            return prompt_path.read_text(encoding="utf-8").strip()
-    except Exception:
-        pass
-    return "你是一个专业的需求分析助手，帮助用户梳理和确认需求。"
-
-
 def _build_system_message(messages: list) -> str:
-    """Build system message: load prompt template and inject business info from first user message."""
-    prompt = _load_system_prompt()
-    # Find the first user message to use as {business_info}
+    """Build system message: inject business info from first user message into the analysis system prompt."""
+    prompt = ANALYSIS_SYSTEM_PROMPT
     business_info = ""
     for msg in messages:
         if msg["role"] == "user" and msg["content"].strip():
@@ -182,7 +179,7 @@ async def chat(thread_id: str, body: dict):
                     try:
                         from langchain_core.messages import HumanMessage, SystemMessage
                         summary = await llm.ainvoke([
-                            SystemMessage(content="请用10个字以内概括以下问题的核心主题，只输出概括文字，不要标点和引号。"),
+                            SystemMessage(content=TITLE_SUMMARIZE_PROMPT),
                             HumanMessage(content=msg["content"].strip()),
                         ])
                         thread["title"] = summary.content.strip()[:20] or msg["content"].strip()[:10]
@@ -289,25 +286,17 @@ async def generate_ontology(thread_id: str, body: dict):
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    prompt = (
-        "你是一个本体建模专家。请根据以下需求分析文档和YAML模板，生成完整的ontology.yaml文件。\n\n"
-        "要求：\n"
-        "1. 严格遵循模板的YAML结构和字段顺序\n"
-        "2. 概念名使用英文（首字母大写），display_name使用中文\n"
-        "3. 属性类型只能为：string / int / float / date / boolean\n"
-        "4. 基数只能为：1:N / N:1 / N:M / '1:1'\n"
-        "5. 行为方法只能为：POST / GET\n"
-        "6. 规则类型只能为：计算规则 / 验证规则 / 推理规则\n"
-        "7. 只输出YAML内容，不要任何解释说明\n"
-        "8. 确保YAML格式正确，可以被yaml.safe_load解析\n\n"
-        f"【YAML模板】\n{template_content}\n\n"
-        f"【需求分析文档】\n{markdown_content}\n\n"
-        "请输出完整的ontology.yaml："
+    prompt = ONTOLOGY_GENERATE_PROMPT_TEMPLATE.format(
+        template_content=template_content,
+        markdown_content=markdown_content,
+        source_file=filename,
+        source_thread=thread.get("title", ""),
+        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
     )
 
     try:
         response = await llm.ainvoke([
-            SystemMessage(content="你是一个本体建模专家，只输出YAML，不输出其他内容。"),
+            SystemMessage(content=ONTOLOGY_GENERATE_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])
         yaml_text = response.content.strip()
@@ -353,3 +342,43 @@ async def clear_chat(thread_id: str):
     thread["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_thread(thread)
     return {"message": "对话已清空"}
+
+
+@router.post("/{thread_id}/validate")
+async def validate_analysis(thread_id: str, body: dict):
+    """Validate selected analysis content for consistency and logical coherence from ontology perspective."""
+    thread, sc, onto = _load_thread(thread_id)
+
+    selected_indices = body.get("selected_indices", [])
+    if not selected_indices:
+        raise HTTPException(status_code=400, detail="请先选择要验证的助手回复内容")
+
+    # Collect selected assistant messages
+    selected_content: list[str] = []
+    for idx in selected_indices:
+        if idx < len(thread["messages"]) and thread["messages"][idx]["role"] == "assistant":
+            content = thread["messages"][idx].get("content", "").strip()
+            if content:
+                selected_content.append(content)
+
+    if not selected_content:
+        raise HTTPException(status_code=400, detail="选中的内容为空，无法验证")
+
+    analysis_text = "\n\n---\n\n".join(selected_content)
+
+    llm = _build_llm()
+    if llm is None:
+        raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行验证")
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    prompt = VALIDATION_PROMPT_TEMPLATE.format(analysis_content=analysis_text)
+
+    try:
+        response = await llm.ainvoke([
+            SystemMessage(content=VALIDATION_SYSTEM_PROMPT),
+            HumanMessage(content=prompt),
+        ])
+        return {"result": response.content.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"验证失败: {str(e)}")

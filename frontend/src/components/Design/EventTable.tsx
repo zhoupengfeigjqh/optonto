@@ -1,16 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, Modal, message, Space } from 'antd';
+import { Button, Input, Select, Modal, message, Space, Tag } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { getEvents, createEvent, updateEvent, deleteEvent, getBehaviors, Event, Behavior } from '@/api/client';
+import { getEvents, createEvent, updateEvent, deleteEvent, getBehaviors, getConcepts, Event, Behavior, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
+const EVENT_TYPE_OPTIONS = [
+  { label: '输入事件', value: '输入事件' },
+  { label: '输出事件', value: '输出事件' },
+];
+
 export default function EventTable({ ontologyId, activeTab }: Props) {
   const [events, setEvents] = useState<Event[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
+  const [concepts, setConcepts] = useState<Concept[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
@@ -18,8 +24,8 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [evtList, behList] = await Promise.all([getEvents(ontologyId), getBehaviors(ontologyId)]);
-      setEvents(evtList); setBehaviors(behList);
+      const [evtList, behList, conList] = await Promise.all([getEvents(ontologyId), getBehaviors(ontologyId), getConcepts(ontologyId)]);
+      setEvents(evtList); setBehaviors(behList); setConcepts(conList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
@@ -27,15 +33,16 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
 
   const isEditing = (record: Event) => record.name === editingKey;
   const behaviorOptions = behaviors.map(b => ({ label: b.name, value: b.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.name, value: c.name }));
 
-  const handleAdd = () => { setEditData({ name: '', display_name: '', description: '', related_behavior: undefined, trigger_behaviors: [] }); setEditingKey('__new__'); };
-  const handleEdit = (e: Event) => { setEditData({ name: e.name, display_name: e.display_name || '', description: e.description, related_behavior: e.related_behavior || undefined, trigger_behaviors: e.trigger_behaviors || [] }); setEditingKey(e.name); };
+  const handleAdd = () => { setEditData({ name: '', display_name: '', event_type: undefined, trigger_condition: '', related_concepts: [], related_behavior: undefined, trigger_behaviors: [] }); setEditingKey('__new__'); };
+  const handleEdit = (e: Event) => { setEditData({ name: e.name, display_name: e.display_name || '', event_type: e.event_type || undefined, trigger_condition: e.trigger_condition || '', related_concepts: e.related_concepts || [], related_behavior: e.related_behavior || undefined, trigger_behaviors: e.trigger_behaviors || [] }); setEditingKey(e.name); };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Event) => {
     if (!editData.name?.trim()) { message.warning('请输入事件名称'); return; }
     try {
-      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', related_behavior: editData.related_behavior || null, trigger_behaviors: editData.trigger_behaviors || [] };
+      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', event_type: editData.event_type || '', trigger_condition: editData.trigger_condition?.trim() || '', related_concepts: editData.related_concepts || [], related_behavior: editData.related_behavior || null, trigger_behaviors: editData.trigger_behaviors || [] };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (events.some(e => e.name === data.name)) { message.warning('事件名称已存在'); return; }
@@ -60,21 +67,25 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
     if (!editing && editingKey !== '__new__') return render ? render(val) : (val || '-');
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behavior') return <Select size="small" allowClear placeholder="选择" value={editData.related_behavior} onChange={v => setEditData(p => ({...p, related_behavior: v}))} options={behaviorOptions} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'trigger_behaviors') return <Select size="small" mode="multiple" placeholder="多选" value={editData.trigger_behaviors || []} onChange={v => setEditData(p => ({...p, trigger_behaviors: v}))} options={behaviorOptions} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'event_type') return <Select size="small" placeholder="选择" value={editData.event_type} onChange={v => setEditData(p => ({...p, event_type: v}))} options={EVENT_TYPE_OPTIONS} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'trigger_condition') return <Input size="small" value={editData.trigger_condition || ''} onChange={e => setEditData(p => ({...p, trigger_condition: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="触发条件" />;
+    if (dataIndex === 'related_concepts') return <Select size="small" mode="multiple" placeholder="多选" value={editData.related_concepts || []} onChange={v => setEditData(p => ({...p, related_concepts: v}))} options={conceptOptions} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
     return render ? render(val) : (val || '-');
   };
 
   const dataSource = events.map(e => ({ ...e, _key: e.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_behavior: null, trigger_behaviors: [] } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', event_type: '', trigger_condition: '', related_concepts: [], related_behavior: null, trigger_behaviors: [] } as any);
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name', width: 90, render: (v: any, r: Event) => renderCell(v, r, 'name') },
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 90, render: (v: any, r: Event) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
-    { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Event) => renderCell(v, r, 'description') },
-    { title: '关联行为', dataIndex: 'related_behavior', key: 'related_behavior', width: 200, render: (v: any, r: Event) => renderCell(v, r, 'related_behavior', (v2: string|null) => v2 || '-') },
-    { title: '后续触发', dataIndex: 'trigger_behaviors', key: 'trigger_behaviors', width: 200, render: (v: any, r: Event) => renderCell(v, r, 'trigger_behaviors', (list: string[]) => list?.join(', ') || '-') },
+    { title: '名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Event) => renderCell(v, r, 'name') },
+    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Event) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '事件类型', dataIndex: 'event_type', key: 'event_type', width: 90, render: (v: any, r: Event) => renderCell(v, r, 'event_type', (v2: string) => v2 ? <Tag color="purple">{v2}</Tag> : '-') },
+    { title: '触发条件', dataIndex: 'trigger_condition', key: 'trigger_condition', width: 150, ellipsis: true, render: (v: any, r: Event) => renderCell(v, r, 'trigger_condition') },
+    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 150, ellipsis: true, render: (v: any, r: Event) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.join(', ') || '-') },
+    { title: '关联行为', dataIndex: 'related_behavior', key: 'related_behavior', width: 120, render: (v: any, r: Event) => renderCell(v, r, 'related_behavior', (v2: string|null) => v2 || '-') },
+    { title: '后续触发', dataIndex: 'trigger_behaviors', key: 'trigger_behaviors', width: 120, render: (v: any, r: Event) => renderCell(v, r, 'trigger_behaviors', (list: string[]) => list?.join(', ') || '-') },
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, record: Event) => {

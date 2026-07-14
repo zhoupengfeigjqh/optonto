@@ -92,7 +92,6 @@ export interface Concept {
   description: string;
   attributes?: Attribute[];
   display_name?: string;
-  classification?: string;
 }
 
 export const getConcepts = (ontologyId: number) =>
@@ -184,7 +183,9 @@ export const updateRule = (ontologyId: number, name: string, data: Rule) =>
 
 export interface Event {
   name: string;
-  description: string;
+  event_type?: string;
+  trigger_condition?: string;
+  related_concepts?: string[];
   related_behavior: string | null;
   trigger_behaviors: string[];
   display_name?: string;
@@ -249,6 +250,9 @@ export const updateThread = (id: string, data: { title?: string; status?: string
 
 export const clearChat = (id: string) =>
   request<{ message: string }>(`/api/threads/${id}/clear`, { method: 'POST' });
+
+export const validateAnalysis = (threadId: string, selectedIndices: number[]) =>
+  request<{ result: string }>(`/api/threads/${threadId}/validate`, { method: 'POST', body: JSON.stringify({ selected_indices: selectedIndices }) });
 
 export const generateOntology = (threadId: string, filename: string) =>
   request<{ message: string; scenario: string; ontology: string; concepts: number; relations: number; behaviors: number; rules: number; events: number }>(

@@ -12,6 +12,8 @@ import {
   CompassOutlined,
   UnorderedListOutlined,
   CheckCircleOutlined,
+  FileTextOutlined,
+  BugOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
 import ConceptTable from '@/components/Design/ConceptTable';
@@ -30,7 +32,6 @@ const DESIGN_TABS = [
   { key: 'behaviors', label: '行为' },
   { key: 'rules', label: '规则' },
   { key: 'events', label: '事件' },
-{ key: 'files', label: '文件浏览' },
 ];
 
 export default function DesignPage() {
@@ -40,7 +41,7 @@ export default function DesignPage() {
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements'>('design');
+  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'test'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>('design');
@@ -86,8 +87,11 @@ export default function DesignPage() {
   }
 
   const renderContent = () => (
-    <div>
-      <div style={{ display: activeSection === 'view' ? '' : 'none' }}><OntologyGraph ontologyId={ontologyId} /></div>
+    <div className={activeSection === 'view' ? 'h-full' : ''}>
+      <div style={{ display: activeSection === 'view' && activeTab === 'view' ? '' : 'none' }} className="h-full"><OntologyGraph ontologyId={ontologyId} /></div>
+      <div style={{ display: activeSection === 'view' && activeTab === 'instance' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>实例视图 — 开发中</p></div>
+      </div>
       <div style={{ display: activeSection === 'requirements' && activeTab === 'requirements' ? '' : 'none' }}><ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} /></div>
       <div style={{ display: activeSection === 'requirements' && activeTab === 'requirement-confirm' ? '' : 'none' }}><RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'concepts' ? '' : 'none' }}><ConceptTable ontologyId={ontologyId} activeTab={activeTab} /></div>
@@ -95,7 +99,16 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'requirements' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'test' && activeTab === 'behavior-test' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>行为测试 — 开发中</p></div>
+      </div>
+      <div style={{ display: activeSection === 'test' && activeTab === 'rule-test' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>规则测试 — 开发中</p></div>
+      </div>
+      <div style={{ display: activeSection === 'test' && activeTab === 'event-test' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>事件测试 — 开发中</p></div>
+      </div>
     </div>
   );
 
@@ -118,7 +131,7 @@ export default function DesignPage() {
 
         {/* Main nav */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-          {/* 业务分析 */}
+          {/* 业务探索 */}
           <div>
             <button
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
@@ -129,10 +142,10 @@ export default function DesignPage() {
               onClick={() => {
                   setExpandedSection(expandedSection === 'requirements' ? null : 'requirements');
                 }}
-              title="业务分析"
+              title="业务探索"
             >
               <CompassOutlined />
-              {!sidebarCollapsed && <span>业务分析</span>}
+              {!sidebarCollapsed && <span>业务探索</span>}
             </button>
 
             {!sidebarCollapsed && expandedSection === 'requirements' && (
@@ -158,6 +171,17 @@ export default function DesignPage() {
                 >
                   <CheckCircleOutlined style={{ fontSize: 12 }} />
                   <span>需求确认</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'files'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('requirements'); setActiveTab('files'); }}
+                >
+                  <FileTextOutlined style={{ fontSize: 12 }} />
+                  <span>本体文件</span>
                 </button>
               </div>
             )}
@@ -200,7 +224,7 @@ export default function DesignPage() {
             )}
           </div>
 
-          {/* 可视化分析 */}
+          {/* 本体展示 */}
           <div>
             <button
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
@@ -211,23 +235,86 @@ export default function DesignPage() {
               onClick={() => {
                   setExpandedSection(expandedSection === 'view' ? null : 'view');
                 }}
-              title="可视化分析"
+              title="本体展示"
             >
               <NodeIndexOutlined />
-              {!sidebarCollapsed && <span>可视化分析</span>}
+              {!sidebarCollapsed && <span>本体展示</span>}
             </button>
 
             {!sidebarCollapsed && expandedSection === 'view' && (
               <div className="ml-4 mt-1 space-y-0.5">
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                    activeSection === 'view'
+                    activeTab === 'view'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('view'); }}
+                  onClick={() => { setActiveSection('view'); setActiveTab('view'); }}
                 >
                   本体视图
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                    activeTab === 'instance'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('view'); setActiveTab('instance'); }}
+                >
+                  实例视图
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 本体测试 */}
+          <div>
+            <button
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
+                expandedSection === 'test'
+                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
+                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
+              }`}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'test' ? null : 'test');
+                }}
+              title="本体测试"
+            >
+              <BugOutlined />
+              {!sidebarCollapsed && <span>本体测试</span>}
+            </button>
+
+            {!sidebarCollapsed && expandedSection === 'test' && (
+              <div className="ml-4 mt-1 space-y-0.5">
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'behavior-test'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('test'); setActiveTab('behavior-test'); }}
+                >
+                  <span>行为测试</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'rule-test'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('test'); setActiveTab('rule-test'); }}
+                >
+                  <span>规则测试</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'event-test'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('test'); setActiveTab('event-test'); }}
+                >
+                  <span>事件测试</span>
                 </button>
               </div>
             )}
@@ -245,8 +332,10 @@ export default function DesignPage() {
             {activeSection === 'design'
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
-              ? activeTab === 'requirements' ? '对话管理' : '需求确认'
-              : '本体视图'}
+              ? activeTab === 'requirements' ? '对话管理' : activeTab === 'requirement-confirm' ? '需求确认' : '本体文件'
+              : activeSection === 'test'
+              ? activeTab === 'behavior-test' ? '行为测试' : activeTab === 'rule-test' ? '规则测试' : '事件测试'
+              : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
           <button
             className="flex items-center gap-1 text-text-muted hover:text-accent-blue transition-colors text-sm"

@@ -39,12 +39,12 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
 
   const handleAdd = () => {
     const newKey = '__new__';
-    setEditData({ name: '', display_name: '', description: '', classification: '' });
+    setEditData({ name: '', display_name: '', description: '' });
     setEditingKey(newKey);
   };
 
   const handleEdit = (record: Concept) => {
-    setEditData({ name: record.name, display_name: record.display_name || '', description: record.description, classification: record.classification || '' });
+    setEditData({ name: record.name, display_name: record.display_name || '', description: record.description });
     setEditingKey(record.name);
   };
 
@@ -56,7 +56,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const handleSave = async (record: Concept) => {
     if (!editData.name?.trim()) { message.warning('请输入概念名称'); return; }
     try {
-      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', classification: editData.classification?.trim() || '', attributes: editingKey === '__new__' ? [] : (record.attributes || []) };
+      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', attributes: editingKey === '__new__' ? [] : (record.attributes || []) };
       const isNew = editingKey === '__new__';
       if (isNew) {
         // Check duplicate
@@ -118,16 +118,13 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'description') {
       return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     }
-    if (dataIndex === 'classification') {
-      return <Input size="small" value={editData.classification || ''} onChange={e => setEditData(p => ({...p, classification: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="例如：核心实体" />;
-    }
     return render ? render(val) : (val || '-');
   };
 
   // 显示数据：加上新增空行
   const dataSource = concepts.map(c => ({ ...c, _key: c.name }));
   if (editingKey === '__new__') {
-    dataSource.push({ name: '__new__', description: '', display_name: '', classification: '', attributes: [] } as any);
+    dataSource.push({ name: '__new__', description: '', display_name: '', attributes: [] } as any);
   }
 
   const columns = [
@@ -137,8 +134,6 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       render: (v: any, r: Concept) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true,
       render: (v: any, r: Concept) => renderCell(v, r, 'description') },
-    { title: '分类', dataIndex: 'classification', key: 'classification', width: 120,
-      render: (v: any, r: Concept) => renderCell(v, r, 'classification', (v2: string) => v2 ? <Tag>{v2}</Tag> : '-') },
     { title: '属性数', key: 'attr_count', width: 70,
       render: (_: any, r: Concept) => <Tag color="blue">{r.attributes?.length || 0}</Tag> },
     {

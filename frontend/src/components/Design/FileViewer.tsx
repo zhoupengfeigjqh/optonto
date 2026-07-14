@@ -47,6 +47,25 @@ export default function FileViewer({ ontologyId, activeTab }: Props) {
   const [editValue, setEditValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [metadata, setMetadata] = useState<{ name: string; source_file: string; source_thread: string; created_at: string } | null>(null);
+
+  const parseMetadata = useCallback((lines: string[]) => {
+    const meta: { name: string; source_file: string; source_thread: string; created_at: string } = { name: '', source_file: '', source_thread: '', created_at: '' };
+    let inMeta = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === 'metadata:') { inMeta = true; continue; }
+      if (inMeta) {
+        const indent = line.length - line.trimStart().length;
+        if (indent < 2 || !trimmed.includes(':')) { inMeta = false; continue; }
+        const colonIdx = trimmed.indexOf(':');
+        const key = trimmed.substring(0, colonIdx).trim();
+        const val = trimmed.substring(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (key in meta) (meta as any)[key] = val;
+      }
+    }
+    return meta;
+  }, []);
 
   const buildTree = useCallback((lines: string[]): TreeLine[] => {
     const result: TreeLine[] = [];
@@ -87,12 +106,14 @@ export default function FileViewer({ ontologyId, activeTab }: Props) {
       setCollapsedSet(new Set());
       setDirty(false);
       setShowRaw(false);
+      setMetadata(parseMetadata(lines));
     } catch (e: any) {
       if (e.message.includes('不存在')) {
         const placeholder = '# 本体 YAML 文件\n# 将在创建概念后自动生成\n';
         const lines = placeholder.split('\n');
         setRawLines([...lines]);
         setTree(buildTree(lines));
+        setMetadata(null);
       } else {
         message.error('加载文件失败: ' + e.message);
       }
@@ -304,6 +325,24 @@ export default function FileViewer({ ontologyId, activeTab }: Props) {
           ? '编辑 YAML 文件后点击保存，修改将同步到前后端。'
           : '点击 ▶ 展开/收拢节点，点击值进行编辑。'}
       </p>
+
+      {/* Metadata display */}
+      {metadata && (metadata.source_file || metadata.created_at) && (
+        <div className="flex justify-center mb-4">
+          <div className="flex items-center gap-6 px-5 py-2 rounded-lg bg-dark-card border border-dark-border text-sm">
+            {metadata.source_file && (
+              <span className="text-text-muted">
+                来源文件：<span className="text-text-primary font-medium">{metadata.source_file}</span>
+              </span>
+            )}
+            {metadata.created_at && (
+              <span className="text-text-muted">
+                创建日期：<span className="text-text-primary">{metadata.created_at}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 border border-dark-border rounded-lg overflow-hidden bg-dark-bg">
         {showRaw ? (

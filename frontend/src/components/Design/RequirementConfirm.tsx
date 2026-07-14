@@ -71,6 +71,7 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab }: Prop
         <h3 className="text-base font-semibold text-text-primary">需求确认</h3>
         <Button onClick={load} loading={loading} size="small">刷新</Button>
       </div>
+      <p className="text-text-muted text-xs mb-3">查看和管理所有已导出的需求文档。点击「查看」进入文档详情，可进行修改和智能生成本体。输出的本体文件，可通过点击任务栏「本体文件」进行浏览。</p>
       {items.length === 0 ? (
         <div className="flex items-center justify-center h-48 text-text-muted">
           <p>暂无导出的需求文档，请先在对话中导出文档</p>
