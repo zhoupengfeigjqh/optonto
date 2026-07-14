@@ -47,7 +47,7 @@ export default function FileViewer({ ontologyId, activeTab }: Props) {
   const [editValue, setEditValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showRaw, setShowRaw] = useState(false);
-  const [metadata, setMetadata] = useState<{ name: string; source_file: string; source_thread: string; created_at: string } | null>(null);
+  const [metadata, setMetadata] = useState<{ name: string; source_file: string; source_thread: string; created_at: string; updated_at?: string } | null>(null);
 
   const parseMetadata = useCallback((lines: string[]) => {
     const meta: { name: string; source_file: string; source_thread: string; created_at: string } = { name: '', source_file: '', source_thread: '', created_at: '' };
@@ -106,7 +106,7 @@ export default function FileViewer({ ontologyId, activeTab }: Props) {
       setCollapsedSet(new Set());
       setDirty(false);
       setShowRaw(false);
-      setMetadata(parseMetadata(lines));
+      setMetadata({ ...parseMetadata(lines), updated_at: file.updated_at });
     } catch (e: any) {
       if (e.message.includes('不存在')) {
         const placeholder = '# 本体 YAML 文件\n# 将在创建概念后自动生成\n';
@@ -335,9 +335,9 @@ export default function FileViewer({ ontologyId, activeTab }: Props) {
                 来源文件：<span className="text-text-primary font-medium">{metadata.source_file}</span>
               </span>
             )}
-            {metadata.created_at && (
+            {(metadata.updated_at || metadata.created_at) && (
               <span className="text-text-muted">
-                创建日期：<span className="text-text-primary">{metadata.created_at}</span>
+                更新日期：<span className="text-text-primary">{metadata.updated_at || metadata.created_at}</span>
               </span>
             )}
           </div>

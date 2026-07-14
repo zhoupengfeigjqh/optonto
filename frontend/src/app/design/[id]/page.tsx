@@ -10,9 +10,6 @@ import {
   MenuUnfoldOutlined,
   ArrowLeftOutlined,
   CompassOutlined,
-  UnorderedListOutlined,
-  CheckCircleOutlined,
-  FileTextOutlined,
   BugOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
@@ -21,10 +18,13 @@ import RelationTable from '@/components/Design/RelationTable';
 import BehaviorTable from '@/components/Design/BehaviorTable';
 import RuleTable from '@/components/Design/RuleTable';
 import EventTable from '@/components/Design/EventTable';
+import ProcessTable from '@/components/Design/ProcessTable';
+import SecurityTable from '@/components/Design/SecurityTable';
 import FileViewer from '@/components/Design/FileViewer';
 import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
+import APITestTable from '@/components/Test/APITestTable';
 
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
@@ -32,6 +32,8 @@ const DESIGN_TABS = [
   { key: 'behaviors', label: '行为' },
   { key: 'rules', label: '规则' },
   { key: 'events', label: '事件' },
+  { key: 'processes', label: '流程' },
+  { key: 'securities', label: '安全' },
 ];
 
 export default function DesignPage() {
@@ -99,7 +101,10 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'processes' ? '' : 'none' }}><ProcessTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'requirements' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'test' && activeTab === 'api-test' ? '' : 'none' }}><APITestTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'test' && activeTab === 'behavior-test' ? '' : 'none' }}>
         <div className="flex items-center justify-center h-48 text-text-muted"><p>行为测试 — 开发中</p></div>
       </div>
@@ -158,7 +163,6 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('requirements'); setActiveTab('requirements'); }}
                 >
-                  <UnorderedListOutlined style={{ fontSize: 12 }} />
                   <span>对话管理</span>
                 </button>
                 <button
@@ -169,7 +173,6 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('requirements'); setActiveTab('requirement-confirm'); }}
                 >
-                  <CheckCircleOutlined style={{ fontSize: 12 }} />
                   <span>需求确认</span>
                 </button>
                 <button
@@ -180,7 +183,6 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('requirements'); setActiveTab('files'); }}
                 >
-                  <FileTextOutlined style={{ fontSize: 12 }} />
                   <span>本体文件</span>
                 </button>
               </div>
@@ -288,6 +290,16 @@ export default function DesignPage() {
               <div className="ml-4 mt-1 space-y-0.5">
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'api-test'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('test'); setActiveTab('api-test'); }}
+                >
+                  <span>API单元测试</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
                     activeTab === 'behavior-test'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
@@ -334,7 +346,7 @@ export default function DesignPage() {
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '对话管理' : activeTab === 'requirement-confirm' ? '需求确认' : '本体文件'
               : activeSection === 'test'
-              ? activeTab === 'behavior-test' ? '行为测试' : activeTab === 'rule-test' ? '规则测试' : '事件测试'
+              ? activeTab === 'api-test' ? 'API单元测试' : activeTab === 'behavior-test' ? '行为测试' : activeTab === 'rule-test' ? '规则测试' : '事件测试'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
           <button

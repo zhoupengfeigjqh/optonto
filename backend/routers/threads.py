@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from config import ONTO_MARKET_DIR
+from services import load_ontology_data
 
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
 
@@ -195,6 +196,15 @@ async def list_requirements():
             except (json.JSONDecodeError, KeyError):
                 continue
 
+        # Check if this scenario/ontology has been generated from a requirement
+        onto_source_file = None
+        if sc_name and onto_name:
+            try:
+                onto_data = load_ontology_data(sc_name, onto_name)
+                onto_source_file = onto_data.metadata.get("source_file", "") if onto_data.metadata else ""
+            except Exception:
+                pass
+
         for f in sorted(tdir.glob("*.md")):
             stat = f.stat()
             filename = f.name
@@ -206,7 +216,7 @@ async def list_requirements():
                 "thread_title": thread_data.get("title", "") if thread_data else "",
                 "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
                 "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                "has_ontology": False,
+                "has_ontology": onto_source_file == filename if onto_source_file else False,
                 "scenario_name": sc_name,
                 "ontology_name": onto_name,
             })

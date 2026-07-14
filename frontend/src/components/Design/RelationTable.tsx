@@ -9,7 +9,7 @@ import ResizableTable from '@/components/ResizableTable';
 interface Props { ontologyId: number; activeTab?: string; }
 
 const CARDINALITY_OPTIONS = [
-  { label: '1:N', value: '1:N' }, { label: 'N:1', value: 'N:1' }, { label: 'N:M', value: 'N:M' },
+  { label: '1:1', value: '1:1' }, { label: '1:N', value: '1:N' }, { label: 'N:1', value: 'N:1' }, { label: 'N:M', value: 'N:M' },
 ];
 
 export default function RelationTable({ ontologyId, activeTab }: Props) {

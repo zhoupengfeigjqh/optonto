@@ -34,6 +34,10 @@ behaviors:
     paramName:
       type: string
       required: true
+  response:
+    fieldName:
+      type: string
+      required: true
   related_concepts:
   - ConceptName
   display_name: 行为展示名称
@@ -56,3 +60,22 @@ events:
   related_behavior: behaviorName
   trigger_behaviors: []
   display_name: 事件展示名称
+
+processes:
+- name: processName
+  display_name: 流程展示名称
+  goal: 流程目标
+  description: 流程描述
+  steps:
+  - current_step: ''
+    previous_step: ''
+    name: stepName
+    display_name: 步骤展示名称
+    description: 步骤描述
+    related_action: behaviorName
+    connection_type: 串行
+
+securities:
+- action_name: behaviorName
+  audit_node: 前置
+  audit_content: 审核内容描述

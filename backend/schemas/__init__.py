@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ─── Scenario ─────────────────────────────────────────────────────────────────
@@ -65,6 +65,11 @@ class AttributeItem(BaseModel):
     example: str = Field("", description="示例")
     constraint: str = Field("", description="约束")
 
+    @field_validator('example', mode='before')
+    @classmethod
+    def coerce_example(cls, v: any) -> str:
+        return str(v) if v is not None else ""
+
 
 class ConceptItem(BaseModel):
     name: str = Field(..., description="概念名")
@@ -81,6 +86,13 @@ class RelationItem(BaseModel):
     description: str = Field("", description="关系说明")
     display_name: str = Field("", description="展示名称")
 
+    @field_validator('cardinality', mode='before')
+    @classmethod
+    def coerce_cardinality(cls, v: any) -> str:
+        valid = {'1:1', 'N:1', '1:N', 'N:M'}
+        s = str(v) if v is not None else "1:N"
+        return s if s in valid else "1:N"
+
 
 class BehaviorItem(BaseModel):
     name: str = Field(..., description="行为名称")
@@ -88,6 +100,7 @@ class BehaviorItem(BaseModel):
     url: str = Field("", description="HTTP URL")
     method: str = Field("POST", description="请求方式 (POST/GET)")
     params: dict = Field(default_factory=dict, description="接口参数 (JSON)")
+    response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念")
     display_name: str = Field("", description="展示名称")
 
@@ -111,6 +124,44 @@ class EventItem(BaseModel):
     display_name: str = Field("", description="展示名称")
 
 
+class ProcessStep(BaseModel):
+    current_step: str = Field("", description="当前步骤")
+    previous_step: str = Field("", description="上一步骤")
+    name: str = Field(..., description="步骤英文名称")
+    display_name: str = Field("", description="步骤展示名称")
+    description: str = Field("", description="步骤描述")
+    related_action: str = Field("", description="关联动作")
+    connection_type: str = Field("串行", description="衔接类型（串行/并行）")
+
+    @field_validator('connection_type', mode='before')
+    @classmethod
+    def coerce_connection_type(cls, v: any) -> str:
+        valid = {'串行', '并行'}
+        s = str(v) if v is not None else "串行"
+        return s if s in valid else "串行"
+
+
+class ProcessItem(BaseModel):
+    name: str = Field(..., description="流程英文名称")
+    display_name: str = Field("", description="流程展示名称")
+    goal: str = Field("", description="流程目标")
+    description: str = Field("", description="流程描述")
+    steps: list[ProcessStep] = Field(default_factory=list, description="流程步骤列表")
+
+
+class SecurityItem(BaseModel):
+    action_name: str = Field(..., description="动作名称（选自行为列表）")
+    audit_node: str = Field("前置", description="审核节点（前置/后置）")
+    audit_content: str = Field("", description="审核内容")
+
+    @field_validator('audit_node', mode='before')
+    @classmethod
+    def coerce_audit_node(cls, v: any) -> str:
+        valid = {'前置', '后置'}
+        s = str(v) if v is not None else "前置"
+        return s if s in valid else "前置"
+
+
 class OntologyData(BaseModel):
     """本体完整数据结构，对应 YAML 文件内容。"""
     metadata: dict = Field(default_factory=dict, description="元数据（名称、来源等）")
@@ -119,6 +170,8 @@ class OntologyData(BaseModel):
     behaviors: list[BehaviorItem] = Field(default_factory=list)
     rules: list[RuleItem] = Field(default_factory=list)
     events: list[EventItem] = Field(default_factory=list)
+    processes: list[ProcessItem] = Field(default_factory=list)
+    securities: list[SecurityItem] = Field(default_factory=list)
 
 
 # ─── YAML file list ───────────────────────────────────────────────────────────
@@ -126,3 +179,4 @@ class OntologyData(BaseModel):
 class YamlFileOut(BaseModel):
     path: str
     content: str
+    updated_at: str = ""

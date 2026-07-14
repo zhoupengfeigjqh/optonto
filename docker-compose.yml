@@ -29,5 +29,6 @@ services:
       - ./config:/app/config
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
     networks:
       - optonto-net

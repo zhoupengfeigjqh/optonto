@@ -1,0 +1,607 @@
+metadata:
+  name: 原材料采购管理
+  source_file: 原材料采购需求分析.md
+  source_thread: 原材料管理
+  created_at: '2026-07-14 16:17:18'
+concepts:
+- name: RawMaterial
+  description: 生产过程中消耗的外部输入物料，是采购和库存管理的核心对象。
+  attributes:
+  - name: rawMaterialId
+    type: string
+    required: true
+    display_name: 原材料编号
+    example: RM-001
+    constraint: 唯一标识
+  - name: rawMaterialName
+    type: string
+    required: true
+    display_name: 原材料名称
+    example: 高强度钢板
+    constraint: ''
+  - name: unit
+    type: string
+    required: true
+    display_name: 单位
+    example: 吨
+    constraint: ''
+  - name: safetyStock
+    type: int
+    required: true
+    display_name: 安全库存
+    example: '100'
+    constraint: ≥ 0
+  display_name: 原材料
+- name: PurchaseRecord
+  description: 记录一次原材料采购的详细信息，关联一个具体的原材料、一个供应商，并可选地关联一个客户订单。
+  attributes:
+  - name: purchaseOrderId
+    type: string
+    required: true
+    display_name: 采购单号
+    example: PO-20231027-001
+    constraint: 唯一标识
+  - name: rawMaterialId
+    type: string
+    required: true
+    display_name: 原材料编号
+    example: RM-001
+    constraint: ''
+  - name: rawMaterialName
+    type: string
+    required: true
+    display_name: 原材料名称
+    example: 高强度钢板
+    constraint: ''
+  - name: unit
+    type: string
+    required: true
+    display_name: 单位
+    example: 吨
+    constraint: ''
+  - name: purchaseTime
+    type: date
+    required: true
+    display_name: 采购时间
+    example: '2023-10-27'
+    constraint: yyyy-mm-dd
+  - name: arrivalTime
+    type: date
+    required: true
+    display_name: 到位时间
+    example: '2023-11-10'
+    constraint: yyyy-mm-dd
+  - name: arrivalQuantity
+    type: int
+    required: true
+    display_name: 到位数量
+    example: '500'
+    constraint: ≥ 0
+  - name: supplierName
+    type: string
+    required: true
+    display_name: 供应商名称
+    example: XX钢铁集团
+    constraint: ''
+  - name: relatedOrderId
+    type: string
+    required: false
+    display_name: 关联订单编号
+    example: SO-20231020-005
+    constraint: 可为空
+  - name: relatedOrderName
+    type: string
+    required: false
+    display_name: 关联订单名称
+    example: 20231020-客户A-订单
+    constraint: 可为空
+  display_name: 原材料采购记录
+- name: Supplier
+  description: 为生产提供原材料的供应方实体。
+  attributes:
+  - name: supplierName
+    type: string
+    required: true
+    display_name: 供应商名称
+    example: XX钢铁集团
+    constraint: 唯一标识
+  - name: address
+    type: string
+    required: false
+    display_name: 地址
+    example: XX省XX市XX路
+    constraint: ''
+  - name: contactPerson
+    type: string
+    required: false
+    display_name: 联系人
+    example: 张三
+    constraint: ''
+  - name: contactPhone
+    type: string
+    required: false
+    display_name: 联系电话
+    example: 138xxxxxx
+    constraint: ''
+  - name: rawMaterialId
+    type: string
+    required: false
+    display_name: 原材料编号
+    example: RM-001
+    constraint: ''
+  - name: rawMaterialName
+    type: string
+    required: false
+    display_name: 原材料名称
+    example: 高强度钢板
+    constraint: ''
+  - name: leadTime
+    type: int
+    required: true
+    display_name: 采购周期
+    example: '7'
+    constraint: ≥ 0
+  display_name: 供应商
+- name: Inventory
+  description: 反映某一原材料在当前时刻的库存快照，包括待入库、累计、可用库存和已消耗量。
+  attributes:
+  - name: rawMaterialId
+    type: string
+    required: true
+    display_name: 原材料编号
+    example: RM-001
+    constraint: 唯一标识
+  - name: rawMaterialName
+    type: string
+    required: true
+    display_name: 原材料名称
+    example: 高强度钢板
+    constraint: ''
+  - name: unit
+    type: string
+    required: true
+    display_name: 单位
+    example: 吨
+    constraint: ''
+  - name: pendingReceiptQuantity
+    type: int
+    required: true
+    display_name: 待入库量
+    example: '200'
+    constraint: ≥ 0
+  - name: cumulativeStockQuantity
+    type: int
+    required: true
+    display_name: 累计库存量
+    example: '1500'
+    constraint: ≥ 0
+  - name: availableQuantity
+    type: int
+    required: true
+    display_name: 可用库存
+    example: '1200'
+    constraint: 可小于0
+  - name: consumedQuantity
+    type: int
+    required: true
+    display_name: 已消耗量
+    example: '300'
+    constraint: ≥ 0
+  display_name: 原材料库存
+- name: CustomerOrder
+  description: 客户的销售订单或询单，是驱动原材料采购的源头。
+  attributes:
+  - name: orderId
+    type: string
+    required: true
+    display_name: 订单编号
+    example: SO-20231020-005
+    constraint: 唯一标识
+  - name: orderName
+    type: string
+    required: true
+    display_name: 订单名称
+    example: 20231020-客户A-订单
+    constraint: ''
+  - name: batchNumber
+    type: string
+    required: false
+    display_name: 订单批次号
+    example: BATCH-001
+    constraint: ''
+  - name: bufferPeriod
+    type: int
+    required: true
+    display_name: 订单缓冲周期
+    example: '3'
+    constraint: ≥ 0
+  - name: orderType
+    type: string
+    required: true
+    display_name: 订单类型
+    example: 销售
+    constraint: ''
+  display_name: 客户订单
+relations:
+- name: hasRawInventory
+  source: RawMaterial
+  target: Inventory
+  cardinality: '1:1'
+  description: 每种原材料有且仅有一条对应的当前库存快照。
+  display_name: 具有库存
+- name: recordsRawMaterial
+  source: PurchaseRecord
+  target: RawMaterial
+  cardinality: N:1
+  description: 多条采购记录可以关联同一种原材料，但一条采购记录只针对一种原材料。
+  display_name: 记录原材料
+- name: orderedFromSupplier
+  source: PurchaseRecord
+  target: Supplier
+  cardinality: N:1
+  description: 一个供应商可以接收多个采购单，但一个采购单只对应一个供应商。
+  display_name: 向供应商采购
+- name: suppliesRawMaterial
+  source: Supplier
+  target: RawMaterial
+  cardinality: N:M
+  description: 一个供应商可以供应多种原材料，一种原材料也可以由多个供应商供应。
+  display_name: 供应原材料
+- name: containsPurchaseRecord
+  source: CustomerOrder
+  target: PurchaseRecord
+  cardinality: 1:N
+  description: 一个客户订单可以包含多个采购记录，但一个采购记录最多只属于一个客户订单。
+  display_name: 包含采购记录
+behaviors:
+- name: CreatePurchaseRecord
+  description: 智能体发起一个新的原材料采购请求，生成采购记录。
+  url: /api/purchase-records
+  method: POST
+  params:
+    rawMaterialId:
+      type: string
+      required: true
+    purchaseQuantity:
+      type: int
+      required: true
+    supplierName:
+      type: string
+      required: true
+    arrivalTime:
+      type: date
+      required: true
+    relatedOrderId:
+      type: string
+      required: false
+  response:
+    purchaseOrderId:
+      type: string
+      required: true
+    rawMaterialId:
+      type: string
+      required: true
+    rawMaterialName:
+      type: string
+      required: true
+    unit:
+      type: string
+      required: true
+    purchaseTime:
+      type: date
+      required: true
+    arrivalTime:
+      type: date
+      required: true
+    arrivalQuantity:
+      type: int
+      required: true
+    supplierName:
+      type: string
+      required: true
+    relatedOrderId:
+      type: string
+      required: false
+    relatedOrderName:
+      type: string
+      required: false
+    status:
+      type: string
+      required: true
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterial
+  - Supplier
+  - CustomerOrder
+  display_name: 创建原材料采购单
+- name: CancelPurchaseRecord
+  description: 智能体取消一个已创建但尚未入库的采购记录。
+  url: /api/purchase-records/{purchaseOrderId}
+  method: POST
+  params:
+    purchaseOrderId:
+      type: string
+      required: true
+  response:
+    purchaseOrderId:
+      type: string
+      required: true
+    rawMaterialId:
+      type: string
+      required: true
+    rawMaterialName:
+      type: string
+      required: true
+    status:
+      type: string
+      required: true
+  related_concepts:
+  - PurchaseRecord
+  display_name: 取消原材料采购单
+- name: ReceiveRawMaterial
+  description: 智能体确认采购的原材料已到货并完成入库，更新库存信息。
+  url: /api/purchase-records/{purchaseOrderId}/receive
+  method: POST
+  params:
+    purchaseOrderId:
+      type: string
+      required: true
+  response:
+    purchaseOrderId:
+      type: string
+      required: true
+    rawMaterialId:
+      type: string
+      required: true
+    rawMaterialName:
+      type: string
+      required: true
+    unit:
+      type: string
+      required: true
+    arrivalQuantity:
+      type: int
+      required: true
+    inventory:
+      type: object
+      required: true
+    status:
+      type: string
+      required: true
+  related_concepts:
+  - PurchaseRecord
+  - Inventory
+  - RawMaterial
+  display_name: 入库原材料
+- name: QueryInventory
+  description: 智能体查询指定原材料的库存快照。
+  url: /api/inventories
+  method: GET
+  params:
+    rawMaterialId:
+      type: string
+      required: false
+    rawMaterialName:
+      type: string
+      required: false
+  response:
+    inventories:
+      type: array
+      required: true
+  related_concepts:
+  - Inventory
+  - RawMaterial
+  display_name: 查询原材料库存信息
+- name: QueryPurchaseRecord
+  description: 智能体根据条件查询采购记录列表。
+  url: /api/purchase-records
+  method: GET
+  params:
+    purchaseOrderId:
+      type: string
+      required: false
+    rawMaterialId:
+      type: string
+      required: false
+    rawMaterialName:
+      type: string
+      required: false
+    relatedOrderId:
+      type: string
+      required: false
+  response:
+    purchaseRecords:
+      type: array
+      required: true
+  related_concepts:
+  - PurchaseRecord
+  display_name: 查询原材料采购单信息
+- name: QueryRawMaterial
+  description: 智能体查询原材料的基础信息。
+  url: /api/raw-materials
+  method: GET
+  params:
+    rawMaterialId:
+      type: string
+      required: false
+    rawMaterialName:
+      type: string
+      required: false
+  response:
+    rawMaterials:
+      type: array
+      required: true
+  related_concepts:
+  - RawMaterial
+  display_name: 查询原材料基本信息
+- name: QuerySupplier
+  description: 智能体根据条件查询供应商列表。
+  url: /api/suppliers
+  method: GET
+  params:
+    supplierName:
+      type: string
+      required: false
+    rawMaterialId:
+      type: string
+      required: false
+  response:
+    suppliers:
+      type: array
+      required: true
+  related_concepts:
+  - Supplier
+  display_name: 查询供应商信息
+rules:
+- name: C01_CalculateWaitingPeriod
+  description: PurchaseRecord.等待周期 = PurchaseRecord.arrivalTime - PurchaseRecord.purchaseTime，即到位时间减去采购时间，结果以天为单位。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 计算等待周期
+  rule_type: 计算规则
+  position: 后置
+- name: V01_UnitConsistency_Purchase
+  description: 创建采购单时，PurchaseRecord 中记录的 unit 必须与关联的 RawMaterial 实例中的 unit 属性值完全一致，否则创建失败。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 采购-原料单位一致性
+  rule_type: 验证规则
+  position: 前置
+- name: V02_UnitConsistency_Inventory
+  description: 入库或查询库存时，Inventory 中记录的 unit 必须与关联的 RawMaterial 实例中的 unit 属性值完全一致，否则操作失败或提示数据异常。
+  related_behaviors:
+  - ReceiveRawMaterial
+  - QueryInventory
+  display_name: 库存-原料单位一致性
+  rule_type: 验证规则
+  position: 前置
+- name: V03_ArrivalTimeValidity
+  description: 创建采购单时，PurchaseRecord.arrivalTime 必须晚于 PurchaseRecord.purchaseTime，即到位日期必须在采购日期之后。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 到位时间合理性
+  rule_type: 验证规则
+  position: 前置
+- name: V04_RawMaterialExistence
+  description: 创建采购单时，输入的 rawMaterialId 或 rawMaterialName 必须在 RawMaterial 概念中已存在对应的实例，否则创建失败。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 采购-原料存在性
+  rule_type: 验证规则
+  position: 前置
+- name: V05_SupplierExistence
+  description: 创建采购单时，输入的 supplierName 必须在 Supplier 概念中已存在对应的实例，否则创建失败。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 采购-供应商存在性
+  rule_type: 验证规则
+  position: 前置
+- name: V06_OrderExistence
+  description: 创建采购单时，如果 relatedOrderId 字段非空，则该值必须在 CustomerOrder 概念中已存在对应的实例，否则创建失败。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 采购-订单存在性
+  rule_type: 验证规则
+  position: 前置
+- name: I01_SafetyStockAlert
+  description: IF Inventory.availableQuantity < RawMaterial.safetyStock THEN 系统推送预警信息，提示智能体该原材料库存不足，建议尽快创建采购单。
+  related_behaviors:
+  - ReceiveRawMaterial
+  - QueryInventory
+  display_name: 安全库存预警
+  rule_type: 推理规则
+  position: 后置
+- name: I02_ArrivalOverdueAlert
+  description: IF 当前日期 >= PurchaseRecord.arrivalTime AND 该采购记录尚未执行 ReceiveRawMaterial
+    操作 THEN 系统提示智能体该采购单已到期或超期，建议确认是否启动入库操作。
+  related_behaviors:
+  - QueryPurchaseRecord
+  display_name: 采购到位超期预警
+  rule_type: 推理规则
+  position: 后置
+- name: I03_PurchasePurposeInference
+  description: IF PurchaseRecord.relatedOrderId 为空 THEN 系统自动将该采购单的目的标记为“补充库存”。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 采购目的推理
+  rule_type: 推理规则
+  position: 后置
+- name: I04_OrderValidation
+  description: IF PurchaseRecord.relatedOrderId 不为空 AND 该ID在 CustomerOrder 中不存在对应的实例
+    THEN 系统提示智能体该客户订单可能已被取消或删除，请确认是否继续保留或取消该采购单。
+  related_behaviors:
+  - CreatePurchaseRecord
+  display_name: 采购关联订单校验
+  rule_type: 推理规则
+  position: 后置
+events:
+- name: PurchaseRecordCreated
+  event_type: 输出事件
+  trigger_condition: CreatePurchaseRecord 动作成功执行后触发。
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterial
+  - Supplier
+  related_behavior: CreatePurchaseRecord
+  trigger_behaviors: []
+  display_name: 原材料采购订单创建事件
+- name: PurchaseRecordCancelled
+  event_type: 输出事件
+  trigger_condition: CancelPurchaseRecord 动作成功执行后触发。
+  related_concepts:
+  - PurchaseRecord
+  related_behavior: CancelPurchaseRecord
+  trigger_behaviors: []
+  display_name: 原材料采购订单取消事件
+- name: RawMaterialReceived
+  event_type: 输出事件
+  trigger_condition: ReceiveRawMaterial 动作成功执行后触发。
+  related_concepts:
+  - PurchaseRecord
+  - Inventory
+  - RawMaterial
+  related_behavior: ReceiveRawMaterial
+  trigger_behaviors: []
+  display_name: 原材料入库事件
+processes:
+- name: PurchaseToReceivingProcess
+  display_name: 原材料采购到入库流程
+  goal: 完成从创建采购单到原材料入库的全过程，确保库存数据准确更新。
+  description: 智能体根据需求创建采购单，等待原材料到货，并在到货后确认入库，更新库存信息。
+  steps:
+  - current_step: ''
+    previous_step: ''
+    name: CreatePurchaseOrderStep
+    display_name: 创建采购单
+    description: 智能体发起采购请求，系统执行前置验证规则后创建采购记录，并触发后续计算和推理规则。
+    related_action: CreatePurchaseRecord
+    connection_type: 串行
+  - current_step: ''
+    previous_step: CreatePurchaseOrderStep
+    name: ReceiveMaterialStep
+    display_name: 确认入库
+    description: 智能体确认原材料到货，系统执行入库操作并更新库存，触发安全库存预警。
+    related_action: ReceiveRawMaterial
+    connection_type: 串行
+- name: CancelPurchaseProcess
+  display_name: 取消原材料采购单流程
+  goal: 取消一个已创建但尚未入库的采购单。
+  description: 智能体根据需要取消指定的采购记录。
+  steps:
+  - current_step: ''
+    previous_step: ''
+    name: CancelPurchaseOrderStep
+    display_name: 取消采购单
+    description: 智能体取消一个采购记录，系统触发后续库存查询操作。
+    related_action: CancelPurchaseRecord
+    connection_type: 串行
+securities:
+- action_name: CreatePurchaseRecord
+  audit_node: 前置
+  audit_content: 审核采购需求合理性：原材料名称、采购数量、供应商、到位日期是否与生产计划或客户订单匹配，以及采购预算是否在允许范围内。
+- action_name: CancelPurchaseRecord
+  audit_node: 前置
+  audit_content: 审核取消原因：确认取消该采购单的原因是否合理（如订单取消、供应商问题等），以及是否已通知相关方。
+- action_name: ReceiveRawMaterial
+  audit_node: 前置
+  audit_content: 审核到货信息：确认实际到货数量、质量与采购单及送货单一致，验收无误。

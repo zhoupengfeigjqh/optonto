@@ -53,6 +53,8 @@ export interface OntologyData {
   behaviors: Behavior[];
   rules: Rule[];
   events: Event[];
+  processes: Process[];
+  securities: Security[];
 }
 
 export const getOntologies = (scenarioId: number) =>
@@ -140,6 +142,7 @@ export interface Behavior {
   url: string;
   method: string;
   params: Record<string, unknown>;
+  response?: Record<string, unknown>;
   related_concepts: string[];
   display_name?: string;
 }
@@ -205,6 +208,63 @@ export const updateEvent = (ontologyId: number, name: string, data: Event) =>
 
 // ─── Business Process ──────────────────────────────────────────────────────
 
+export interface ProcessStep {
+  current_step: string;
+  previous_step: string;
+  name: string;
+  display_name?: string;
+  description?: string;
+  related_action?: string;
+  connection_type?: string;
+}
+
+export interface Process {
+  name: string;
+  display_name?: string;
+  goal?: string;
+  description?: string;
+  steps?: ProcessStep[];
+}
+
+export const getProcesses = (ontologyId: number) =>
+  request<Process[]>(`/api/ontologies/${ontologyId}/processes`);
+
+export const createProcess = (ontologyId: number, data: Process) =>
+  request<Process>(`/api/ontologies/${ontologyId}/processes`, { method: 'POST', body: JSON.stringify(data) });
+
+export const deleteProcess = (ontologyId: number, name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/processes/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+export const updateProcess = (ontologyId: number, name: string, data: Process) =>
+  request<Process>(`/api/ontologies/${ontologyId}/processes/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── Security ──────────────────────────────────────────────────────────────
+
+export interface Security {
+  action_name: string;
+  audit_node: string;
+  audit_content?: string;
+}
+
+export const getSecurities = (ontologyId: number) =>
+  request<Security[]>(`/api/ontologies/${ontologyId}/securities`);
+
+export const createSecurity = (ontologyId: number, data: Security) =>
+  request<Security>(`/api/ontologies/${ontologyId}/securities`, { method: 'POST', body: JSON.stringify(data) });
+
+export const deleteSecurity = (ontologyId: number, action_name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/securities/${encodeURIComponent(action_name)}`, { method: 'DELETE' });
+
+export const updateSecurity = (ontologyId: number, action_name: string, data: Security) =>
+  request<Security>(`/api/ontologies/${ontologyId}/securities/${encodeURIComponent(action_name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── Test ──────────────────────────────────────────────────────────────────
+
+export const testBehaviorAPI = (ontologyId: number, behaviorName: string, params: Record<string, any>) =>
+  request<{ status: string; method: string; url: string; sent_params: Record<string, any>; data: any }>(
+    `/api/ontologies/${ontologyId}/test/behavior`,
+    { method: 'POST', body: JSON.stringify({ behavior_name: behaviorName, params }) }
+  );
 
 // ─── Thread / Chat ────────────────────────────────────────────────────────
 
@@ -296,6 +356,7 @@ export const deleteRequirementFile = (threadId: string, filename: string) =>
 export interface YamlFile {
   path: string;
   content: string;
+  updated_at?: string;
 }
 
 export const getFileContent = (ontologyId: number) =>
