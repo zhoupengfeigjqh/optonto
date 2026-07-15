@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, Modal, message, Space, Tag } from 'antd';
+import { Button, Input, Select, Modal, message, Space, Tag, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined } from '@ant-design/icons';
 import { getBehaviors, createBehavior, updateBehavior, deleteBehavior, getConcepts, Behavior, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
@@ -31,7 +31,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
   const isEditing = (record: Behavior) => record.name === editingKey;
   const isNewRow = (record: Behavior) => editingKey === '__new__' && record.name === '__new__';
-  const conceptOptions = concepts.map(c => ({ label: c.name, value: c.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => {
     setEditData({ name: '', display_name: '', description: '', method: 'POST', url: '', params: '{}', response: '{}', related_concepts: [] });
@@ -41,11 +41,11 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const handleEdit = (b: Behavior) => {
     // Normalize old-format params ({key: "type"}) to new format ({key: {type, required}})
     const rawParams = b.params || {};
-    const normParams: Record<string, {type: string; required: boolean}> = {};
+    const normParams: Record<string, {type: string; required: boolean; description: string; example: string}> = {};
     for (const [k, v] of Object.entries(rawParams)) {
-      if (typeof v === 'string') normParams[k] = { type: v, required: true };
-      else if (typeof v === 'object' && v !== null) normParams[k] = { type: (v as any).type || 'string', required: (v as any).required !== false };
-      else normParams[k] = { type: String(v), required: true };
+      if (typeof v === 'string') normParams[k] = { type: v, required: true, description: '', example: '' };
+      else if (typeof v === 'object' && v !== null) normParams[k] = { type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' };
+      else normParams[k] = { type: String(v), required: true, description: '', example: '' };
     }
     setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, method: b.method, url: b.url, params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', related_concepts: b.related_concepts });
     setEditingKey(b.name);
@@ -100,7 +100,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={setF('name')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={setF('display_name')} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'method') return <Select size="small" value={editData.method || 'POST'} onChange={setF('method')} options={[{ label: 'POST', value: 'POST' }, { label: 'GET', value: 'GET' }]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'method') return <Select size="small" value={editData.method || 'POST'} onChange={setF('method')} options={[{ label: 'GET', value: 'GET' }, { label: 'POST', value: 'POST' }, { label: 'PATCH', value: 'PATCH' }, { label: 'DELETE', value: 'DELETE' }]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'url') return <Input size="small" value={editData.url || ''} onChange={setF('url')} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />;
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
@@ -115,38 +115,50 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const columns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
     { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
-    { title: '方法', dataIndex: 'method', key: 'method', width: 65, render: (v: any, r: Behavior) => renderCell(v, r, 'method', (v2: string) => v2 ? <Tag>{v2}</Tag> : '-') },
+    { title: '方法', dataIndex: 'method', key: 'method', width: 65, render: (v: any, r: Behavior) => renderCell(v, r, 'method', (v2: string) => v2 ? <Tag color={v2 === 'GET' ? 'green' : v2 === 'DELETE' ? 'red' : 'blue'}>{v2}</Tag> : '-') },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'description') },
     { title: 'API接口', key: 'url', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Input size="small" value={editData.url || ''} onChange={e => setEditData((p: any) => ({...p, url: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />;
       return r.url || '-';
     } },
-    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.join(',') || '-') },
+    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
       const raw = r.params || {};
-      const items: { name: string; type: string; required: boolean }[] = [];
+      const items: { name: string; type: string; required: boolean; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') items.push({ name: k, type: v, required: true });
-        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false });
-        else items.push({ name: k, type: String(v), required: true });
+        if (typeof v === 'string') items.push({ name: k, type: v, required: true, description: '', example: '' });
+        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' });
+        else items.push({ name: k, type: String(v), required: true, description: '', example: '' });
       }
-      return items.length > 0 ? items.map((p, i) => (
-        <Tag key={i} color={p.required ? 'blue' : 'default'} className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>
-      )) : '-';
+      return items.length > 0 ? items.map((p, i) => {
+        const tip = [];
+        if (p.description) tip.push(`描述: ${p.description}`);
+        if (p.example) tip.push(`示例: ${p.example}`);
+        const tag = (
+          <Tag key={i} color={p.required ? 'blue' : 'default'} className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>
+        );
+        return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
+      }) : '-';
     } },
     { title: '返回结构', key: 'response', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={openResponseEditor}>编辑</Button>;
       const raw = r.response || {};
-      const items: { name: string; type: string; required: boolean }[] = [];
+      const items: { name: string; type: string; required: boolean; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') items.push({ name: k, type: v, required: true });
-        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false });
-        else items.push({ name: k, type: String(v), required: true });
+        if (typeof v === 'string') items.push({ name: k, type: v, required: true, description: '', example: '' });
+        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' });
+        else items.push({ name: k, type: String(v), required: true, description: '', example: '' });
       }
-      return items.length > 0 ? items.map((p, i) => (
-        <Tag key={i} color={p.required ? 'green' : 'default'} className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>
-      )) : '-';
+      return items.length > 0 ? items.map((p, i) => {
+        const tip = [];
+        if (p.description) tip.push(`描述: ${p.description}`);
+        if (p.example) tip.push(`示例: ${p.example}`);
+        const tag = (
+          <Tag key={i} color={p.required ? 'green' : 'default'} className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>
+        );
+        return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
+      }) : '-';
     } },
     {
       title: '操作', key: 'actions', width: 80,
@@ -171,7 +183,6 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       <Modal title="编辑接口参数" open={paramsEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.params || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }
         setParamsError(''); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
-        <p className="text-text-muted text-xs mb-2">每个参数可定义为简单类型 <code className="text-accent-blue">{'"name": "string"'}</code> 或带必填标记 <code className="text-accent-blue">{'"name": {"type": "string", "required": true}'}</code></p>
         <Input.TextArea value={editData.params || '{}'} onChange={e => setEditData((p: any) => ({ ...p, params: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
         {paramsError && <p className="text-red-400 text-xs mt-1">{paramsError}</p>}
       </Modal>
@@ -179,7 +190,6 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.response || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }
         setResponseError(''); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
-        <p className="text-text-muted text-xs mb-2">每个字段可定义为简单类型 <code className="text-accent-blue">{'"name": "string"'}</code> 或带必填标记 <code className="text-accent-blue">{'"name": {"type": "string", "required": true}'}</code></p>
         <Input.TextArea value={editData.response || '{}'} onChange={e => setEditData((p: any) => ({ ...p, response: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
         {responseError && <p className="text-red-400 text-xs mt-1">{responseError}</p>}
       </Modal>

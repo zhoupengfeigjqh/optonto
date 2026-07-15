@@ -53,6 +53,16 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
 
   useEffect(() => { load(); }, [ontologyId]);
 
+  useEffect(() => {
+    if (!loading && data && chartRef.current) {
+      const timer = setTimeout(() => {
+        const instance = chartRef.current?.getEchartsInstance();
+        instance?.dispatchAction({ type: 'restore' });
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, data]);
+
   const getDisplayName = (item: { name: string; display_name?: string }): string =>
     item.display_name || item.name;
 

@@ -44,7 +44,13 @@ export default function APITestTable({ ontologyId, activeTab }: Props) {
       if (typeof v === 'string') {
         fields.push({ name: k, type: v, required: true, value: '' });
       } else if (typeof v === 'object' && v !== null) {
-        fields.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, value: (v as any).type === 'boolean' ? false : '' });
+        const t = (v as any).type || 'string';
+        const req = (v as any).required !== false;
+        let def: any = '';
+        if (t === 'object') def = '{}';
+        else if (t === 'array' || t === 'array[object]') def = '[]';
+        else if (t === 'boolean') def = false;
+        fields.push({ name: k, type: t, required: req, value: def });
       }
     }
     setTestParams(fields);
@@ -70,7 +76,11 @@ export default function APITestTable({ ontologyId, activeTab }: Props) {
     const body: Record<string, any> = {};
     testParams.forEach(p => {
       if (p.value !== '' && p.value !== null && p.value !== undefined) {
-        body[p.name] = p.value;
+        if ((p.type === 'object' || p.type === 'array' || p.type === 'array[object]') && typeof p.value === 'string') {
+          try { body[p.name] = JSON.parse(p.value); } catch { body[p.name] = p.value; }
+        } else {
+          body[p.name] = p.value;
+        }
       }
     });
     return JSON.stringify(body, null, 2);
@@ -87,7 +97,11 @@ export default function APITestTable({ ontologyId, activeTab }: Props) {
     const params: Record<string, any> = {};
     testParams.forEach(p => {
       if (p.value !== '' && p.value !== null && p.value !== undefined) {
-        params[p.name] = p.value;
+        if ((p.type === 'object' || p.type === 'array' || p.type === 'array[object]') && typeof p.value === 'string') {
+          try { params[p.name] = JSON.parse(p.value); } catch { params[p.name] = p.value; }
+        } else {
+          params[p.name] = p.value;
+        }
       }
     });
     setTestLoading(true);
@@ -102,7 +116,10 @@ export default function APITestTable({ ontologyId, activeTab }: Props) {
     if (p.type === 'boolean') {
       return <Switch checked={p.value} onChange={v => setParamValue(idx, v)} />;
     }
-    if (p.type === 'int' || p.type === 'float') {
+    if (p.type === 'object' || p.type === 'array' || p.type === 'array[object]') {
+      return <Input.TextArea size="small" value={p.value || ''} onChange={e => setParamValue(idx, e.target.value)} rows={3} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" placeholder={p.required ? '必填' : '可选'} />;
+    }
+    if (p.type === 'int' || p.type === 'integer' || p.type === 'float') {
       return <InputNumber size="small" value={p.value || undefined} onChange={v => setParamValue(idx, v)} className="w-full bg-dark-bg border-dark-border text-text-primary" placeholder={p.required ? '必填' : '可选'} />;
     }
     return <Input size="small" value={p.value || ''} onChange={e => setParamValue(idx, e.target.value)} className="bg-dark-bg border-dark-border text-text-primary" placeholder={p.required ? '必填' : '可选'} />;

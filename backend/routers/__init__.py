@@ -11,3 +11,4 @@ from .test_api import router as test_api_router
 from .files import router as files_router
 from .threads import router as threads_router
 from .chat import router as chat_router
+from .data_engines import router as data_engines_router

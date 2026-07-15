@@ -246,10 +246,20 @@ async def save_requirement_file(thread_id: str, filename: str, body: dict):
 
 @router.delete("/{thread_id}/requirements/{filename}")
 async def delete_requirement_file(thread_id: str, filename: str):
-    """Delete a requirement markdown file."""
-    tdir, _, _ = _find_thread(thread_id)
+    """Delete a requirement markdown file and its linked ontology if exists."""
+    tdir, scenario_name, ontology_name = _find_thread(thread_id)
     file_path = tdir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
+
+    # 检查是否为已输出的本体，若是则一并删除本体目录
+    onto_dir = ONTO_MARKET_DIR / scenario_name / ontology_name
+    try:
+        onto_data = load_ontology_data(scenario_name, ontology_name)
+        if onto_data.metadata and onto_data.metadata.get("source_file") == filename:
+            shutil.rmtree(onto_dir)
+    except Exception:
+        pass
+
     file_path.unlink()
     return {"message": "文件已删除"}

@@ -30,7 +30,7 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
   useEffect(() => { if (activeTab === 'relations') load(); }, [ontologyId, activeTab]);
 
   const isEditing = (record: Relation) => record.name === editingKey;
-  const conceptOptions = concepts.map(c => ({ label: c.name, value: c.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => { setEditData({ name: '', display_name: '', source: undefined, target: undefined, cardinality: '1:N', description: '' }); setEditingKey('__new__'); };
   const handleEdit = (r: Relation) => { setEditData({ name: r.name, display_name: r.display_name || '', source: r.source, target: r.target, cardinality: r.cardinality, description: r.description }); setEditingKey(r.name); };
@@ -80,8 +80,8 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
   const columns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'name') },
     { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
-    { title: '源概念', dataIndex: 'source', key: 'source', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'source') },
-    { title: '目标概念', dataIndex: 'target', key: 'target', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'target') },
+    { title: '源概念', dataIndex: 'source', key: 'source', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'source', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
+    { title: '目标概念', dataIndex: 'target', key: 'target', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'target', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
     { title: '基数', dataIndex: 'cardinality', key: 'cardinality', width: 65, render: (v: any, r: Relation) => renderCell(v, r, 'cardinality', (v2: string) => <span className="text-accent-blue">{v2}</span>) },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Relation) => renderCell(v, r, 'description') },
     {

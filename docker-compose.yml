@@ -3,6 +3,45 @@ networks:
     driver: bridge
 
 services:
+  # ─── MySQL 数据库 ────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: optonto_mysql
+    ports:
+      - "3307:3306"
+    env_file:
+      - ./config/.env
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - optonto-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Java 后端 (Spring Boot) ─────────────────────────────────
+  java-backend:
+    build:
+      context: ./java-backend
+      dockerfile: Dockerfile
+    container_name: optonto_java_backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - ./config/.env
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - optonto-net
+
   # ─── 前端 (Nginx + Next.js 合并) ───────────────────────────────
   frontend:
     build:
@@ -23,7 +62,7 @@ services:
       dockerfile: backend/Dockerfile
     container_name: optonto_backend
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./backend/.data:/app/backend/.data
       - ./config:/app/config
@@ -32,3 +71,6 @@ services:
       - TZ=Asia/Shanghai
     networks:
       - optonto-net
+
+volumes:
+  mysql_data:

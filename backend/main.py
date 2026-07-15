@@ -17,6 +17,7 @@ from routers import (
     files_router,
     threads_router,
     chat_router,
+    data_engines_router,
 )
 
 
@@ -49,6 +50,7 @@ app.include_router(test_api_router)
 app.include_router(files_router)
 app.include_router(threads_router)
 app.include_router(chat_router)
+app.include_router(data_engines_router)
 
 
 @app.get("/")

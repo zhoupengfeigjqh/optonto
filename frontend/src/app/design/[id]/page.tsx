@@ -11,6 +11,7 @@ import {
   ArrowLeftOutlined,
   CompassOutlined,
   BugOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
 import ConceptTable from '@/components/Design/ConceptTable';
@@ -25,14 +26,15 @@ import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import APITestTable from '@/components/Test/APITestTable';
+import DataEngineTable from '@/components/Design/DataEngineTable';
 
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
   { key: 'relations', label: '关系' },
   { key: 'behaviors', label: '行为' },
   { key: 'rules', label: '规则' },
-  { key: 'events', label: '事件' },
   { key: 'processes', label: '流程' },
+  { key: 'events', label: '事件' },
   { key: 'securities', label: '安全' },
 ];
 
@@ -43,7 +45,7 @@ export default function DesignPage() {
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'test'>('design');
+  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'test' | 'data-engine'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>('design');
@@ -100,8 +102,8 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'relations' ? '' : 'none' }}><RelationTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'processes' ? '' : 'none' }}><ProcessTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'requirements' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'test' && activeTab === 'api-test' ? '' : 'none' }}><APITestTable ontologyId={ontologyId} activeTab={activeTab} /></div>
@@ -114,6 +116,7 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'test' && activeTab === 'event-test' ? '' : 'none' }}>
         <div className="flex items-center justify-center h-48 text-text-muted"><p>事件测试 — 开发中</p></div>
       </div>
+      <div style={{ display: activeSection === 'data-engine' && activeTab === 'data-engines' ? '' : 'none' }}><DataEngineTable ontologyId={ontologyId} activeTab={activeTab} /></div>
     </div>
   );
 
@@ -136,7 +139,7 @@ export default function DesignPage() {
 
         {/* Main nav */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-          {/* 业务探索 */}
+          {/* 本体构建 */}
           <div>
             <button
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
@@ -147,10 +150,10 @@ export default function DesignPage() {
               onClick={() => {
                   setExpandedSection(expandedSection === 'requirements' ? null : 'requirements');
                 }}
-              title="业务探索"
+              title="本体构建"
             >
               <CompassOutlined />
-              {!sidebarCollapsed && <span>业务探索</span>}
+              {!sidebarCollapsed && <span>本体构建</span>}
             </button>
 
             {!sidebarCollapsed && expandedSection === 'requirements' && (
@@ -163,7 +166,7 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('requirements'); setActiveTab('requirements'); }}
                 >
-                  <span>对话管理</span>
+                  <span>需求对话</span>
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
@@ -173,7 +176,7 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('requirements'); setActiveTab('requirement-confirm'); }}
                 >
-                  <span>需求确认</span>
+                  <span>本体输出</span>
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
@@ -269,6 +272,39 @@ export default function DesignPage() {
             )}
           </div>
 
+          {/* 数据引擎 */}
+          <div>
+            <button
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
+                expandedSection === 'data-engine'
+                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
+                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
+              }`}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'data-engine' ? null : 'data-engine');
+                }}
+              title="数据引擎"
+            >
+              <ApiOutlined />
+              {!sidebarCollapsed && <span>数据引擎</span>}
+            </button>
+
+            {!sidebarCollapsed && expandedSection === 'data-engine' && (
+              <div className="ml-4 mt-1 space-y-0.5">
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'data-engines'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('data-engine'); setActiveTab('data-engines'); }}
+                >
+                  <span>数据映射</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* 本体测试 */}
           <div>
             <button
@@ -344,9 +380,11 @@ export default function DesignPage() {
             {activeSection === 'design'
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
-              ? activeTab === 'requirements' ? '对话管理' : activeTab === 'requirement-confirm' ? '需求确认' : '本体文件'
+              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
               : activeSection === 'test'
               ? activeTab === 'api-test' ? 'API单元测试' : activeTab === 'behavior-test' ? '行为测试' : activeTab === 'rule-test' ? '规则测试' : '事件测试'
+              : activeSection === 'data-engine'
+              ? '数据引擎'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
           <button
@@ -360,7 +398,7 @@ export default function DesignPage() {
         </header>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
+        <div className={`flex-1 overflow-auto ${activeSection === 'view' ? 'p-0' : 'p-6'}`}>
           {renderContent()}
         </div>
       </main>

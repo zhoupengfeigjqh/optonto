@@ -182,7 +182,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
               <Input value={attr.name} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], name: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="属性名" />
               <Input value={attr.display_name || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], display_name: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="展示名" />
               <select value={attr.type} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], type: e.target.value }; setAttributes(n); }} className="w-24 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
-                {['date', 'string', 'int', 'float', 'boolean'].map(t => <option key={t} value={t}>{t}</option>)}
+                {['string', 'number', 'date', 'boolean', 'enum', 'array', 'object'].map(t => <option key={t} value={t}>{t}</option>)}
               </select>
               <Input value={attr.constraint || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], constraint: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="约束" />
               <select value={attr.required !== undefined ? String(attr.required) : 'true'} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], required: e.target.value === 'true' }; setAttributes(n); }} className="w-20 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
@@ -196,7 +196,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
             <Input placeholder="属性名" value={newAttrName} onChange={e => setNewAttrName(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
             <Input placeholder="展示名" value={newAttrDisplayName} onChange={e => setNewAttrDisplayName(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
             <select value={newAttrType} onChange={e => setNewAttrType(e.target.value)} className="w-24 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
-              {['date', 'string', 'int', 'float', 'boolean'].map(t => <option key={t} value={t}>{t}</option>)}
+              {['string', 'number', 'date', 'boolean', 'enum', 'array', 'object'].map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <Input placeholder="约束" value={newAttrConstraint} onChange={e => setNewAttrConstraint(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
             <select value={String(newAttrRequired)} onChange={e => setNewAttrRequired(e.target.value === 'true')} className="w-20 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">

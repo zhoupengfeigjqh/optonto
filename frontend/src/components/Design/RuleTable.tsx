@@ -30,7 +30,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   useEffect(() => { if (activeTab === 'rules') load(); }, [ontologyId, activeTab]);
 
   const isEditing = (record: Rule) => record.name === editingKey;
-  const behaviorOptions = behaviors.map(b => ({ label: b.name, value: b.name }));
+  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
 
   const handleAdd = () => { setEditData({ name: '', display_name: '', description: '', rule_type: '', position: '', related_behaviors: [] }); setEditingKey('__new__'); };
   const handleEdit = (r: Rule) => { setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, rule_type: r.rule_type || '', position: r.position || '', related_behaviors: r.related_behaviors || [] }); setEditingKey(r.name); };
@@ -80,7 +80,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { title: '规则类型', dataIndex: 'rule_type', key: 'rule_type', width: 85, render: (v: any, r: Rule) => renderCell(v, r, 'rule_type', (v2: string) => v2 || '-') },
     { title: '介入位置', dataIndex: 'position', key: 'position', width: 85, render: (v: any, r: Rule) => renderCell(v, r, 'position', (v2: string) => v2 || '-') },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'description') },
-    { title: '关联行为', dataIndex: 'related_behaviors', key: 'related_behaviors', width: 200, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_behaviors', (list: string[]) => list?.join(', ') || '-') },
+    { title: '关联行为', dataIndex: 'related_behaviors', key: 'related_behaviors', width: 200, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_behaviors', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.display_name || name).join(', ') || '-') },
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, record: Rule) => {

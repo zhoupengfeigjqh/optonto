@@ -59,7 +59,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
     });
   };
 
-  const behaviorOptions = behaviors.map(b => ({ label: b.name, value: b.name }));
+  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
 
   const renderCell = (val: any, record: Security, dataIndex: string) => {
     const editing = isEditing(record);
@@ -75,7 +75,10 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
   if (editingKey === '__new__') dataSource.push({ action_name: '__new__', audit_node: '前置', audit_content: '' } as any);
 
   const columns = [
-    { title: '动作名称', dataIndex: 'action_name', key: 'action_name', width: 200, render: (v: any, r: Security) => renderCell(v, r, 'action_name') },
+    { title: '动作名称', dataIndex: 'action_name', key: 'action_name', width: 200, render: (v: any, r: Security) => {
+      if (isEditing(r) || (editingKey === '__new__' && r.action_name === '__new__')) return renderCell(v, r, 'action_name');
+      return behaviors.find(b => b.name === v)?.display_name || v || '-';
+    }},
     { title: '审核内容', dataIndex: 'audit_content', key: 'audit_content', width: 200, ellipsis: true, render: (v: any, r: Security) => renderCell(v, r, 'audit_content') },
     { title: '审核节点', dataIndex: 'audit_node', key: 'audit_node', width: 100, render: (v: any, r: Security) => renderCell(v, r, 'audit_node') },
     {

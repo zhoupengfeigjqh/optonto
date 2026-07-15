@@ -7,7 +7,7 @@ import json
 import urllib.request
 import urllib.error
 
-API = "http://localhost:8000/api"
+API = "http://localhost:8001/api"
 
 def req(method, path, data=None):
     url = f"{API}{path}"

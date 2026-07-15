@@ -9,8 +9,8 @@ import ResizableTable from '@/components/ResizableTable';
 interface Props { ontologyId: number; activeTab?: string; }
 
 const EVENT_TYPE_OPTIONS = [
-  { label: '输入事件', value: '输入事件' },
-  { label: '输出事件', value: '输出事件' },
+  { label: '动作执行', value: '动作执行' },
+  { label: '状态变化', value: '状态变化' },
 ];
 
 export default function EventTable({ ontologyId, activeTab }: Props) {
@@ -32,8 +32,8 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
   useEffect(() => { if (activeTab === 'events') load(); }, [ontologyId, activeTab]);
 
   const isEditing = (record: Event) => record.name === editingKey;
-  const behaviorOptions = behaviors.map(b => ({ label: b.name, value: b.name }));
-  const conceptOptions = concepts.map(c => ({ label: c.name, value: c.name }));
+  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => { setEditData({ name: '', display_name: '', event_type: undefined, trigger_condition: '', related_concepts: [], related_behavior: undefined, trigger_behaviors: [] }); setEditingKey('__new__'); };
   const handleEdit = (e: Event) => { setEditData({ name: e.name, display_name: e.display_name || '', event_type: e.event_type || undefined, trigger_condition: e.trigger_condition || '', related_concepts: e.related_concepts || [], related_behavior: e.related_behavior || undefined, trigger_behaviors: e.trigger_behaviors || [] }); setEditingKey(e.name); };
@@ -83,9 +83,9 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
     { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Event) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '事件类型', dataIndex: 'event_type', key: 'event_type', width: 90, render: (v: any, r: Event) => renderCell(v, r, 'event_type', (v2: string) => v2 ? <Tag color="purple">{v2}</Tag> : '-') },
     { title: '触发条件', dataIndex: 'trigger_condition', key: 'trigger_condition', width: 150, ellipsis: true, render: (v: any, r: Event) => renderCell(v, r, 'trigger_condition') },
-    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 150, ellipsis: true, render: (v: any, r: Event) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.join(', ') || '-') },
-    { title: '关联行为', dataIndex: 'related_behavior', key: 'related_behavior', width: 120, render: (v: any, r: Event) => renderCell(v, r, 'related_behavior', (v2: string|null) => v2 || '-') },
-    { title: '后续触发', dataIndex: 'trigger_behaviors', key: 'trigger_behaviors', width: 120, render: (v: any, r: Event) => renderCell(v, r, 'trigger_behaviors', (list: string[]) => list?.join(', ') || '-') },
+    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 150, ellipsis: true, render: (v: any, r: Event) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(', ') || '-') },
+    { title: '关联行为', dataIndex: 'related_behavior', key: 'related_behavior', width: 120, render: (v: any, r: Event) => renderCell(v, r, 'related_behavior', (v2: string|null) => v2 ? behaviors.find(b => b.name === v2)?.display_name || v2 : '-') },
+    { title: '后续触发', dataIndex: 'trigger_behaviors', key: 'trigger_behaviors', width: 120, render: (v: any, r: Event) => renderCell(v, r, 'trigger_behaviors', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.display_name || name).join(', ') || '-') },
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, record: Event) => {

@@ -55,6 +55,7 @@ export interface OntologyData {
   events: Event[];
   processes: Process[];
   securities: Security[];
+  data_engines: DataEngine[];
 }
 
 export const getOntologies = (scenarioId: number) =>
@@ -209,12 +210,9 @@ export const updateEvent = (ontologyId: number, name: string, data: Event) =>
 // ─── Business Process ──────────────────────────────────────────────────────
 
 export interface ProcessStep {
-  current_step: string;
-  previous_step: string;
-  name: string;
-  display_name?: string;
+  current_action: string;
+  previous_action: string;
   description?: string;
-  related_action?: string;
   connection_type?: string;
 }
 
@@ -257,6 +255,59 @@ export const deleteSecurity = (ontologyId: number, action_name: string) =>
 
 export const updateSecurity = (ontologyId: number, action_name: string, data: Security) =>
   request<Security>(`/api/ontologies/${ontologyId}/securities/${encodeURIComponent(action_name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── Data Engine ──────────────────────────────────────────────────────────────
+
+export interface TargetApiConfig {
+  data_source_name: string;
+  api_name: string;
+  url: string;
+  method: string;
+  params: Record<string, unknown>;
+  response: Record<string, unknown>;
+}
+
+export interface DataEngine {
+  name: string;
+  display_name?: string;
+  behavior_name: string;
+  target: TargetApiConfig;
+  input_mapping: Record<string, string>;
+  output_mapping: Record<string, string>;
+}
+
+export const getDataEngines = (ontologyId: number) =>
+  request<DataEngine[]>(`/api/ontologies/${ontologyId}/data-engines`);
+
+export const createDataEngine = (ontologyId: number, data: DataEngine) =>
+  request<DataEngine>(`/api/ontologies/${ontologyId}/data-engines`, { method: 'POST', body: JSON.stringify(data) });
+
+export const updateDataEngine = (ontologyId: number, name: string, data: DataEngine) =>
+  request<DataEngine>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteDataEngine = (ontologyId: number, name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+export const analyzeMapping = (ontologyId: number, name: string) =>
+  request<{ status: string; message: string; issues: string[] }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/analyze-mapping`, { method: 'POST' });
+
+export const connectionTest = (ontologyId: number, name: string, params: Record<string, any>) =>
+  request<{ status_code: number; headers: Record<string, string>; data: any }>(
+    `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/connection-test`,
+    { method: 'POST', body: JSON.stringify({ params }) }
+  );
+
+export const smartParseTarget = (ontologyId: number, name: string, paramsContent: string, responseContent: string) =>
+  request<{ params: Record<string, unknown>; response: Record<string, unknown> }>(
+    `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-parse`,
+    { method: 'POST', body: JSON.stringify({ params_content: paramsContent, response_content: responseContent }) }
+  );
+
+export const smartAlign = (ontologyId: number, name: string) =>
+  request<{ params: Record<string, unknown>; response: Record<string, unknown> }>(
+    `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-align`,
+    { method: 'POST' }
+  );
 
 // ─── Test ──────────────────────────────────────────────────────────────────
 

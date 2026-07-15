@@ -98,7 +98,7 @@ class BehaviorItem(BaseModel):
     name: str = Field(..., description="行为名称")
     description: str = Field("", description="行为描述")
     url: str = Field("", description="HTTP URL")
-    method: str = Field("POST", description="请求方式 (POST/GET)")
+    method: str = Field("POST", description="请求方式 (GET/POST/PATCH/DELETE)")
     params: dict = Field(default_factory=dict, description="接口参数 (JSON)")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念")
@@ -116,7 +116,7 @@ class RuleItem(BaseModel):
 
 class EventItem(BaseModel):
     name: str = Field(..., description="事件名")
-    event_type: str = Field("", description="事件类型（输入事件/输出事件）")
+    event_type: str = Field("", description="事件类型（动作执行/状态变化）")
     trigger_condition: str = Field("", description="触发条件")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念（可多选）")
     related_behavior: Optional[str] = Field(None, description="关联行为")
@@ -125,12 +125,9 @@ class EventItem(BaseModel):
 
 
 class ProcessStep(BaseModel):
-    current_step: str = Field("", description="当前步骤")
-    previous_step: str = Field("", description="上一步骤")
-    name: str = Field(..., description="步骤英文名称")
-    display_name: str = Field("", description="步骤展示名称")
+    current_action: str = Field("", description="当前动作")
+    previous_action: str = Field("", description="上一动作")
     description: str = Field("", description="步骤描述")
-    related_action: str = Field("", description="关联动作")
     connection_type: str = Field("串行", description="衔接类型（串行/并行）")
 
     @field_validator('connection_type', mode='before')
@@ -162,6 +159,26 @@ class SecurityItem(BaseModel):
         return s if s in valid else "前置"
 
 
+class TargetApiConfig(BaseModel):
+    """目标系统 API 配置"""
+    data_source_name: str = Field("", description="数据源名称")
+    api_name: str = Field("", description="接口名称")
+    url: str = Field("", description="API接口地址")
+    method: str = Field("POST", description="请求方式 (GET/POST/PATCH/DELETE)")
+    params: dict = Field(default_factory=dict, description="输入参数")
+    response: dict = Field(default_factory=dict, description="输出结构")
+
+
+class DataEngineItem(BaseModel):
+    """数据引擎 — 本体行为与目标API映射"""
+    name: str = Field(..., description="数据引擎名称")
+    display_name: str = Field("", description="展示名称")
+    behavior_name: str = Field(..., description="本体行为名称")
+    target: TargetApiConfig = Field(default_factory=TargetApiConfig)
+    input_mapping: dict = Field(default_factory=dict, description="输入映射 {ontology_param: target_param}")
+    output_mapping: dict = Field(default_factory=dict, description="输出映射 {ontology_field: target_field}")
+
+
 class OntologyData(BaseModel):
     """本体完整数据结构，对应 YAML 文件内容。"""
     metadata: dict = Field(default_factory=dict, description="元数据（名称、来源等）")
@@ -172,6 +189,7 @@ class OntologyData(BaseModel):
     events: list[EventItem] = Field(default_factory=list)
     processes: list[ProcessItem] = Field(default_factory=list)
     securities: list[SecurityItem] = Field(default_factory=list)
+    data_engines: list[DataEngineItem] = Field(default_factory=list)
 
 
 # ─── YAML file list ───────────────────────────────────────────────────────────

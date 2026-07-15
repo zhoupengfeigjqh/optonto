@@ -13,7 +13,7 @@ const CONNECTION_OPTIONS = [
   { label: '并行', value: '并行' },
 ];
 
-const EMPTY_STEP: ProcessStep = { current_step: '', previous_step: '', name: '', display_name: '', description: '', related_action: '', connection_type: '串行' };
+const EMPTY_STEP: ProcessStep = { current_action: '', previous_action: '', description: '', connection_type: '串行' };
 
 export default function ProcessTable({ ontologyId, activeTab }: Props) {
   const [processes, setProcesses] = useState<Process[]>([]);
@@ -37,7 +37,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
 
   useEffect(() => { if (activeTab === 'processes') load(); }, [ontologyId, activeTab]);
 
-  const behaviorOptions = behaviors.map(b => ({ label: b.name, value: b.name }));
+  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
 
   const openAdd = () => {
     setEditProcess({ name: '', display_name: '', goal: '', description: '', steps: [] });
@@ -70,7 +70,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
   };
 
   const handleAddStep = () => {
-    if (!steps.some(s => !s.name)) {
+    if (!steps.some(s => !s.current_action)) {
       setSteps([...steps, { ...EMPTY_STEP }]);
     }
   };
@@ -155,16 +155,23 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
             <span className="text-sm font-semibold text-text-primary">流程步骤</span>
             <Button size="small" icon={<PlusOutlined />} onClick={handleAddStep}>添加步骤</Button>
           </div>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          <div className="space-y-1 max-h-80 overflow-y-auto">
+            {/* Column headers */}
+            <div className="flex items-center gap-1.5 pb-1 border-b border-dark-border">
+              <span className="text-text-muted text-xs shrink-0" style={{ width: 40 }}>编号</span>
+              <span className="text-text-muted text-xs shrink-0" style={{ width: 150 }}>当前动作</span>
+              <span className="text-text-muted text-xs shrink-0" style={{ width: 150 }}>上一动作</span>
+              <span className="flex-1 text-text-muted text-xs">步骤描述</span>
+              <span className="w-20 text-text-muted text-xs shrink-0">衔接类型</span>
+              <span className="w-10 shrink-0" />
+            </div>
             {steps.map((step, idx) => (
               <div key={idx} className="flex items-center gap-1.5">
-                <Input size="small" value={step.current_step} onChange={e => handleStepChange(idx, 'current_step', e.target.value)} className="w-20 bg-dark-bg border-dark-border text-text-primary" placeholder="当前步骤" />
-                <Input size="small" value={step.previous_step} onChange={e => handleStepChange(idx, 'previous_step', e.target.value)} className="w-20 bg-dark-bg border-dark-border text-text-primary" placeholder="上一步骤" />
-                <Input size="small" value={step.name} onChange={e => handleStepChange(idx, 'name', e.target.value)} className="w-24 bg-dark-bg border-dark-border text-text-primary" placeholder="步骤名称" />
-                <Input size="small" value={step.display_name || ''} onChange={e => handleStepChange(idx, 'display_name', e.target.value)} className="w-24 bg-dark-bg border-dark-border text-text-primary" placeholder="展示名" />
-                <Input size="small" value={step.description || ''} onChange={e => handleStepChange(idx, 'description', e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="描述" />
-                <Select size="small" value={step.related_action || undefined} onChange={v => handleStepChange(idx, 'related_action', v || '')} options={behaviorOptions} className="w-28" placeholder="关联动作" popupClassName="!bg-dark-card" allowClear />
-                <Select size="small" value={step.connection_type || '串行'} onChange={v => handleStepChange(idx, 'connection_type', v)} options={CONNECTION_OPTIONS} className="w-20" popupClassName="!bg-dark-card" />
+                <span className="text-text-primary text-xs text-center shrink-0" style={{ width: 40 }}>{idx + 1}</span>
+                <Select size="small" value={step.current_action || undefined} onChange={v => handleStepChange(idx, 'current_action', v || '')} options={behaviorOptions} style={{ width: 150 }} placeholder="选择动作" popupClassName="!bg-dark-card" allowClear />
+                <Select size="small" value={step.previous_action || undefined} onChange={v => handleStepChange(idx, 'previous_action', v || '')} options={behaviorOptions} style={{ width: 150 }} placeholder="选择动作" popupClassName="!bg-dark-card" allowClear />
+                <Input size="small" value={step.description || ''} onChange={e => handleStepChange(idx, 'description', e.target.value)} className="flex-1 bg-dark-bg border-dark-border text-text-primary" placeholder="步骤描述" />
+                <Select size="small" value={step.connection_type || '串行'} onChange={v => handleStepChange(idx, 'connection_type', v)} options={CONNECTION_OPTIONS} style={{ width: 80 }} popupClassName="!bg-dark-card" />
                 <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteStep(idx)} />
               </div>
             ))}

@@ -1,0 +1,534 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Button, Input, Select, Modal, message, Tag } from 'antd';
+import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
+import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, connectionTest, smartParseTarget, smartAlign, getBehaviors, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import ResizableTable from '@/components/ResizableTable';
+
+interface Props { ontologyId: number; activeTab?: string; }
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function flattenFields(obj: Record<string, unknown>, prefix = ''): string[] {
+  const result: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (typeof v === 'string') {
+      result.push(path);
+    } else if (typeof v === 'object' && v !== null) {
+      const t = (v as any).type || 'string';
+      result.push(path);
+      if (t === 'object' && (v as any).properties) {
+        result.push(...flattenFields((v as any).properties, path));
+      } else if (t === 'array' && (v as any).items) {
+        if ((v as any).items.type === 'object' && (v as any).items.properties) {
+          result.push(...flattenFields((v as any).items.properties, path + '[*]'));
+        } else {
+          result.push(path + '[*]');
+        }
+      } else if (t === 'array[object]' && (v as any).items?.properties) {
+        result.push(...flattenFields((v as any).items.properties, path + '[*]'));
+      }
+    }
+  }
+  return result;
+}
+
+const emptyTarget: TargetApiConfig = {
+  data_source_name: '', api_name: '', url: '', method: 'POST',
+  params: {}, response: {},
+};
+
+function emptyEngine(behaviorName: string): DataEngine {
+  return {
+    name: behaviorName,
+    display_name: '',
+    behavior_name: behaviorName,
+    target: { ...emptyTarget },
+    input_mapping: {},
+    output_mapping: {},
+  };
+}
+
+// ─── component ───────────────────────────────────────────────────────────────
+
+export default function DataEngineTable({ ontologyId, activeTab }: Props) {
+  const [engines, setEngines] = useState<DataEngine[]>([]);
+  const [behaviors, setBehaviors] = useState<Behavior[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // target config modal
+  const [currentBehavior, setCurrentBehavior] = useState('');
+  const [targetOpen, setTargetOpen] = useState(false);
+  const [targetData, setTargetData] = useState<TargetApiConfig>({ ...emptyTarget });
+  const [targetParamsStr, setTargetParamsStr] = useState('{}');
+  const [targetResponseStr, setTargetResponseStr] = useState('{}');
+  const [targetParamsOpen, setTargetParamsOpen] = useState(false);
+  const [targetResponseOpen, setTargetResponseOpen] = useState(false);
+
+  // mapping modals
+  const [inputMappingOpen, setInputMappingOpen] = useState(false);
+  const [outputMappingOpen, setOutputMappingOpen] = useState(false);
+  const [inputMapping, setInputMapping] = useState<Record<string, string>>({});
+  const [outputMapping, setOutputMapping] = useState<Record<string, string>>({});
+  const [mappingOntoFields, setMappingOntoFields] = useState<string[]>([]);
+  const [mappingTargetFields, setMappingTargetFields] = useState<string[]>([]);
+
+  // analyze result
+  const [analyzeResult, setAnalyzeResult] = useState<any>(null);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [analyzeLoading, setAnalyzeLoading] = useState(false);
+
+  // connection test
+  const [testOpen, setTestOpen] = useState(false);
+  const [testEngine, setTestEngine] = useState<DataEngine | null>(null);
+  const [testParams, setTestParams] = useState<Record<string, any>>({});
+  const [testResult, setTestResult] = useState<any>(null);
+  const [testLoading, setTestLoading] = useState(false);
+
+  // smart parse modal
+  const [smartParseOpen, setSmartParseOpen] = useState(false);
+  const [smartParseParamsContent, setSmartParseParamsContent] = useState('');
+  const [smartParseResponseContent, setSmartParseResponseContent] = useState('');
+  const [smartParseLoading, setSmartParseLoading] = useState(false);
+
+  // smart align modal
+  const [smartAlignOpen, setSmartAlignOpen] = useState(false);
+  const [smartAlignBehaviorName, setSmartAlignBehaviorName] = useState('');
+  const [smartAlignLoading, setSmartAlignLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [eng, beh] = await Promise.all([getDataEngines(ontologyId), getBehaviors(ontologyId)]);
+      setEngines(eng); setBehaviors(beh);
+    } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { if (activeTab === 'data-engines') load(); }, [ontologyId, activeTab]);
+
+  const getEngine = (behaviorName: string): DataEngine =>
+    engines.find(e => e.behavior_name === behaviorName) || emptyEngine(behaviorName);
+
+  // Ensure saved engine exists before operating; create if not
+  const ensureEngine = async (behaviorName: string): Promise<DataEngine> => {
+    const existing = engines.find(e => e.behavior_name === behaviorName);
+    if (existing) return existing;
+    const de = emptyEngine(behaviorName);
+    await createDataEngine(ontologyId, de);
+    setEngines(prev => [...prev, de]);
+    return de;
+  };
+
+  // ─── target config ───────────────────────────────────────────────────────
+
+  const openTargetConfig = (behaviorName: string) => {
+    setCurrentBehavior(behaviorName);
+    const de = getEngine(behaviorName);
+    const t = de.target || { ...emptyTarget };
+    setTargetData({ ...t });
+    setTargetParamsStr(JSON.stringify(t.params || {}, null, 2));
+    setTargetResponseStr(JSON.stringify(t.response || {}, null, 2));
+    setTargetOpen(true);
+  };
+
+  const saveTargetConfig = async () => {
+    try {
+      const params = JSON.parse(targetParamsStr);
+      const response = JSON.parse(targetResponseStr);
+      let de = await ensureEngine(currentBehavior);
+      const updated = { ...de, target: { ...targetData, params, response } };
+      await updateDataEngine(ontologyId, de.name, updated);
+      setEngines(prev => prev.map(e => e.behavior_name === currentBehavior ? updated : e));
+      message.success('目标接口已保存');
+      setTargetOpen(false);
+    } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); }
+  };
+
+  const handleSmartParse = async () => {
+    if (!smartParseParamsContent.trim() && !smartParseResponseContent.trim()) {
+      message.warning('请至少粘贴输入参数或输出结构的内容');
+      return;
+    }
+    setSmartParseLoading(true);
+    try {
+      const de = await ensureEngine(currentBehavior);
+      const result = await smartParseTarget(ontologyId, de.name, smartParseParamsContent, smartParseResponseContent);
+      if (result.params && Object.keys(result.params).length > 0) {
+        setTargetParamsStr(JSON.stringify(result.params, null, 2));
+      }
+      if (result.response && Object.keys(result.response).length > 0) {
+        setTargetResponseStr(JSON.stringify(result.response, null, 2));
+      }
+      message.success('智能解析完成，请确认结果');
+      setSmartParseOpen(false);
+    } catch (e: any) { message.error('智能解析失败: ' + e.message); }
+    finally { setSmartParseLoading(false); }
+  };
+
+  const handleSmartAlign = async () => {
+    setSmartAlignLoading(true);
+    try {
+      const de = await ensureEngine(smartAlignBehaviorName);
+      const result = await smartAlign(ontologyId, de.name);
+      message.success('智能对齐完成，请检查结果');
+      setSmartAlignOpen(false);
+      await load();
+      return result;
+    } catch (e: any) { message.error('智能对齐失败: ' + e.message); }
+    finally { setSmartAlignLoading(false); }
+  };
+
+  // ─── mapping ─────────────────────────────────────────────────────────────
+
+  const openInputMapping = async (behaviorName: string) => {
+    setCurrentBehavior(behaviorName);
+    const beh = behaviors.find(b => b.name === behaviorName);
+    const de = await ensureEngine(behaviorName);
+    const ontoFields = flattenFields((beh?.params as Record<string, unknown>) || {});
+    const tgtFields = flattenFields(de.target?.params || {});
+    setMappingOntoFields(ontoFields);
+    setMappingTargetFields(tgtFields);
+    setInputMapping(de.input_mapping || {});
+    setInputMappingOpen(true);
+  };
+
+  const openOutputMapping = async (behaviorName: string) => {
+    setCurrentBehavior(behaviorName);
+    const beh = behaviors.find(b => b.name === behaviorName);
+    const de = await ensureEngine(behaviorName);
+    const ontoFields = flattenFields((beh?.response as Record<string, unknown>) || {});
+    const tgtFields = flattenFields(de.target?.response || {});
+    setMappingOntoFields(ontoFields);
+    setMappingTargetFields(tgtFields);
+    setOutputMapping(de.output_mapping || {});
+    setOutputMappingOpen(true);
+  };
+
+  const saveMapping = async (type: 'input' | 'output') => {
+    const de = engines.find(e => e.behavior_name === currentBehavior) || emptyEngine(currentBehavior);
+    const updated = { ...de };
+    if (type === 'input') { updated.input_mapping = { ...inputMapping }; setInputMappingOpen(false); }
+    else { updated.output_mapping = { ...outputMapping }; setOutputMappingOpen(false); }
+    // Ensure it exists in backend
+    const existing = engines.find(e => e.behavior_name === currentBehavior);
+    if (existing) {
+      await updateDataEngine(ontologyId, de.name, updated);
+    } else {
+      await createDataEngine(ontologyId, updated);
+    }
+    setEngines(prev => {
+      const idx = prev.findIndex(e => e.behavior_name === currentBehavior);
+      if (idx >= 0) return prev.map((e, i) => i === idx ? updated : e);
+      return [...prev, updated];
+    });
+    message.success('映射已保存');
+  };
+
+  // ─── analyze ─────────────────────────────────────────────────────────────
+
+  const handleAnalyze = async (behaviorName: string) => {
+    setAnalyzeLoading(true);
+    setAnalyzeResult(null);
+    setAnalyzeOpen(true);
+    try {
+      const de = await ensureEngine(behaviorName);
+      // Reload engines to get latest
+      const eng = await getDataEngines(ontologyId);
+      setEngines(eng);
+      const fresh = eng.find(e => e.behavior_name === behaviorName) || de;
+      const result = await analyzeMapping(ontologyId, fresh.name);
+      setAnalyzeResult(result);
+    } catch (e: any) { setAnalyzeResult({ status: 'error', message: e.message, issues: [] }); }
+    finally { setAnalyzeLoading(false); }
+  };
+
+  // ─── connection test ─────────────────────────────────────────────────────
+
+  const openTest = async (behaviorName: string) => {
+    const de = await ensureEngine(behaviorName);
+    setTestEngine(de);
+    setTestResult(null);
+    const beh = behaviors.find(b => b.name === behaviorName);
+    const raw = beh?.params || {};
+    const params: Record<string, any> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'string') params[k] = '';
+      else if (typeof v === 'object' && v !== null) {
+        const t = (v as any).type || 'string';
+        if (t === 'object') params[k] = '{}';
+        else if (t === 'array' || t === 'array[object]') params[k] = '[]';
+        else if (t === 'boolean') params[k] = false;
+        else params[k] = '';
+      }
+    }
+    setTestParams(params);
+    setTestOpen(true);
+  };
+
+  const executeTest = async () => {
+    if (!testEngine) return;
+    const parsed: Record<string, any> = {};
+    for (const [k, v] of Object.entries(testParams)) {
+      if (typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))) {
+        try { parsed[k] = JSON.parse(v); } catch { parsed[k] = v; }
+      } else { parsed[k] = v; }
+    }
+    setTestLoading(true);
+    try {
+      const result = await connectionTest(ontologyId, testEngine.name, parsed);
+      setTestResult(result);
+    } catch (e: any) { setTestResult({ error: e.message }); }
+    finally { setTestLoading(false); }
+  };
+
+  // ─── render ──────────────────────────────────────────────────────────────
+
+  const dataSource = behaviors.map(b => {
+    const de = getEngine(b.name);
+    return { ...de, _key: b.name, _behavior: b };
+  });
+
+  const columns = [
+    { title: '本体行为接口', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (_: any, r: any) => {
+      const b = r._behavior as Behavior;
+      return <span>{b.display_name || b.name}<span className="text-text-muted text-xs ml-1">({b.method})</span></span>;
+    }},
+    { title: '本体API地址', dataIndex: '_behavior', key: 'url', width: 200, ellipsis: true, render: (b: Behavior) => <code className="text-accent-green text-xs">{b.url || '-'}</code> },
+    { title: '目标接口设置', key: 'target', width: 100, render: (_: any, r: any) => {
+      const de = getEngine(r._behavior.name);
+      const hasConfig = de.target?.url || de.target?.api_name || de.target?.data_source_name;
+      return <Button size="small" icon={<EditOutlined />} onClick={() => openTargetConfig(r._behavior.name)}>{hasConfig ? '已设置' : '编辑'}</Button>;
+    }},
+    { title: '输入映射', key: 'input_mapping', width: 80, render: (_: any, r: any) => {
+      const de = getEngine(r._behavior.name);
+      const count = Object.keys(de.input_mapping || {}).length;
+      return <Button size="small" icon={<EditOutlined />} onClick={() => openInputMapping(r._behavior.name)}>{count > 0 ? `已映射${count}` : '编辑'}</Button>;
+    }},
+    { title: '输出映射', key: 'output_mapping', width: 80, render: (_: any, r: any) => {
+      const de = getEngine(r._behavior.name);
+      const count = Object.keys(de.output_mapping || {}).length;
+      return <Button size="small" icon={<EditOutlined />} onClick={() => openOutputMapping(r._behavior.name)}>{count > 0 ? `已映射${count}` : '编辑'}</Button>;
+    }},
+    {
+      title: '操作', key: 'actions', width: 220,
+      render: (_: any, r: any) => {
+        const de = getEngine(r._behavior.name);
+        const hasTarget = !!(de.target?.params && Object.keys(de.target.params).length > 0) || !!(de.target?.response && Object.keys(de.target.response).length > 0);
+        return (
+        <div className="flex gap-1 items-center">
+          <Button type="link" size="small" disabled={!hasTarget} style={{ color: hasTarget ? undefined : '#64748b' }} onClick={() => { setSmartAlignBehaviorName(r._behavior.name); setSmartAlignOpen(true); }}>智能对齐</Button>
+          <Button type="link" size="small" onClick={() => handleAnalyze(r._behavior.name)} loading={analyzeLoading}>映射分析</Button>
+          <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => openTest(r._behavior.name)}>连接测试</Button>
+        </div>
+        );
+      },
+    },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold text-text-primary">数据引擎</h3>
+        <Button onClick={load} loading={loading} size="small">刷新</Button>
+      </div>
+
+      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
+
+      {/* ─── Target Config Modal ──────────────────────────────────────────── */}
+      <Modal title="目标接口设置" open={targetOpen} onOk={saveTargetConfig} onCancel={() => setTargetOpen(false)} okText="保存" cancelText="取消" width={700}>
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <span className="text-text-muted text-xs">数据源名称</span>
+              <Input value={targetData.data_source_name} onChange={e => setTargetData(p => ({...p, data_source_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />
+            </div>
+            <div className="flex-1">
+              <span className="text-text-muted text-xs">接口名称</span>
+              <Input value={targetData.api_name} onChange={e => setTargetData(p => ({...p, api_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <span className="text-text-muted text-xs">API接口地址</span>
+              <Input value={targetData.url} onChange={e => setTargetData(p => ({...p, url: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />
+            </div>
+            <div style={{width:100}}>
+              <span className="text-text-muted text-xs">方法</span>
+              <Select value={targetData.method} onChange={v => setTargetData(p => ({...p, method: v}))} options={[{label:'GET',value:'GET'},{label:'POST',value:'POST'},{label:'PATCH',value:'PATCH'},{label:'DELETE',value:'DELETE'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-text-muted text-xs">输入参数 / 输出结构</span>
+            <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetParamsOpen(true)}>编辑输入</Button>
+            <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetResponseOpen(true)}>编辑输出</Button>
+            <Button size="small" style={{ color: '#eab308' }} onClick={() => { setSmartParseParamsContent(''); setSmartParseResponseContent(''); setSmartParseOpen(true); }}>智能解析</Button>
+          </div>
+        </div>
+
+        <Modal title="编辑输入参数" open={targetParamsOpen} onOk={() => setTargetParamsOpen(false)} onCancel={() => setTargetParamsOpen(false)} okText="确认" cancelText="取消" width={600}>
+          <Input.TextArea value={targetParamsStr} onChange={e => setTargetParamsStr(e.target.value)} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+        </Modal>
+        <Modal title="编辑输出结构" open={targetResponseOpen} onOk={() => setTargetResponseOpen(false)} onCancel={() => setTargetResponseOpen(false)} okText="确认" cancelText="取消" width={600}>
+          <Input.TextArea value={targetResponseStr} onChange={e => setTargetResponseStr(e.target.value)} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+        </Modal>
+
+        {/* ─── Smart Parse Modal ──────────────────────────────────────────── */}
+        <Modal title="智能解析" open={smartParseOpen} onOk={handleSmartParse} onCancel={() => setSmartParseOpen(false)} okText="开始解析" cancelText="取消" width={900} confirmLoading={smartParseLoading}>
+          <p className="text-text-muted text-xs mb-3">粘贴目标接口的输入参数和输出结构文档，AI 将自动解析为标准格式</p>
+          <div className="flex gap-3" style={{ minHeight: 320 }}>
+            <div className="flex-1">
+              <span className="text-text-muted text-xs mb-1 block">输入参数</span>
+              <Input.TextArea
+                value={smartParseParamsContent}
+                onChange={e => setSmartParseParamsContent(e.target.value)}
+                rows={14}
+                className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
+                placeholder={`可复制粘贴jira需求或接口文档里API请求参数，样例：
+
+字段名  类型  必填  说明  示例
+tradeId  String  是  交易ID  "TRD001"
+amount  Number  是  交易金额  10000.00
+status  String  否  状态  "active"`}
+              />
+            </div>
+            <div className="flex-1">
+              <span className="text-text-muted text-xs mb-1 block">输出结构</span>
+              <Input.TextArea
+                value={smartParseResponseContent}
+                onChange={e => setSmartParseResponseContent(e.target.value)}
+                rows={14}
+                className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
+                placeholder={`可复制粘贴jira需求或接口文档里返回结果，样例：
+
+字段名  类型  说明  示例
+code  Number  状态码  0
+data  Object  返回数据  {"orderId":"ORD001"}
+orderId  String  订单ID  "ORD001"
+total  Number  订单总价  15000.50`}
+              />
+            </div>
+          </div>
+        </Modal>
+      </Modal>
+
+      {/* ─── Input Mapping Modal ──────────────────────────────────────────── */}
+      <Modal title="输入映射" open={inputMappingOpen} onOk={() => saveMapping('input')} onCancel={() => setInputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义输入参数</p>}
+          {mappingOntoFields.map(field => (
+            <div key={field} className="flex items-center gap-3">
+              <span className="w-1/2 text-text-secondary text-xs bg-dark-bg rounded px-2 py-1 font-mono">{field}</span>
+              <Select size="small" allowClear placeholder="选择目标参数" value={inputMapping[field] || undefined} onChange={v => setInputMapping(p => ({...p, [field]: v || ''}))} options={mappingTargetFields.map(f => ({ label: f, value: f }))} style={{width:'50%'}} popupClassName="!bg-dark-card" />
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* ─── Output Mapping Modal ─────────────────────────────────────────── */}
+      <Modal title="输出映射" open={outputMappingOpen} onOk={() => saveMapping('output')} onCancel={() => setOutputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义返回结构</p>}
+          {mappingOntoFields.map(field => (
+            <div key={field} className="flex items-center gap-3">
+              <span className="w-1/2 text-text-secondary text-xs bg-dark-bg rounded px-2 py-1 font-mono">{field}</span>
+              <Select size="small" allowClear placeholder="选择目标字段" value={outputMapping[field] || undefined} onChange={v => setOutputMapping(p => ({...p, [field]: v || ''}))} options={mappingTargetFields.map(f => ({ label: f, value: f }))} style={{width:'50%'}} popupClassName="!bg-dark-card" />
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* ─── Analyze Result Modal ─────────────────────────────────────────── */}
+      <Modal title="映射分析" open={analyzeOpen} onCancel={() => { setAnalyzeOpen(false); setAnalyzeResult(null); }} footer={null} width={600}>
+        {analyzeLoading && <p className="text-text-muted">正在分析中...</p>}
+        {analyzeResult && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-text-muted text-sm">状态：</span>
+              <Tag color={analyzeResult.status === 'ok' ? 'green' : analyzeResult.status === 'warning' ? 'orange' : 'red'}>
+                {analyzeResult.status === 'ok' ? '可映射' : analyzeResult.status === 'warning' ? '需注意' : '不可映射'}
+              </Tag>
+            </div>
+            <div>
+              <span className="text-text-muted text-sm">分析结论：</span>
+              <p className="text-text-primary text-sm mt-1">{analyzeResult.message}</p>
+            </div>
+            {analyzeResult.issues?.length > 0 && (
+              <div>
+                <span className="text-text-muted text-sm">问题：</span>
+                <ul className="list-disc list-inside text-sm mt-1 space-y-0.5">
+                  {analyzeResult.issues.map((issue: string, i: number) => (
+                    <li key={i} className={analyzeResult.status === 'error' ? 'text-red-400' : 'text-yellow-400'}>{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ─── Connection Test Modal ────────────────────────────────────────── */}
+      <Modal
+        title={testEngine ? `连接测试 - ${testEngine.display_name || testEngine.name}` : '连接测试'}
+        open={testOpen} onCancel={() => { setTestOpen(false); setTestResult(null); }} width={700} footer={null}
+      >
+        {testEngine && (
+          <div className="space-y-4">
+            <div>
+              <span className="text-text-muted text-xs">目标接口：</span>
+              <code className="text-accent-green text-xs ml-1">{testEngine.target?.method || 'POST'} {testEngine.target?.url || '(未配置)'}</code>
+            </div>
+
+            {Object.keys(testParams).length > 0 && (
+              <div>
+                <span className="text-text-muted text-xs mb-2 block">请求参数</span>
+                <div className="space-y-1.5">
+                  {Object.entries(testParams).map(([k, v]) => (
+                    <div key={k} className="flex items-center gap-2">
+                      <span className="w-28 text-text-secondary text-xs shrink-0">{k}</span>
+                      {typeof v === 'boolean' ? null : typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')) ? (
+                        <Input.TextArea size="small" value={v} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+                      ) : (
+                        <Input size="small" value={v as string} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Button type="primary" icon={<SendOutlined />} onClick={executeTest} loading={testLoading} block>发送请求</Button>
+
+            {testResult && (
+              <div>
+                <span className="text-text-muted text-xs mb-1 block">响应结果</span>
+                <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap">
+                  {testResult.error ? (
+                    <span className="text-red-400">{testResult.error}</span>
+                  ) : (
+                    <span className="text-accent-green">{JSON.stringify(testResult, null, 2)}</span>
+                  )}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+      {/* ─── Smart Align Modal ──────────────────────────────────────────── */}
+      <Modal
+        title="智能对齐"
+        open={smartAlignOpen}
+        onOk={handleSmartAlign}
+        onCancel={() => setSmartAlignOpen(false)}
+        okText="确认对齐"
+        cancelText="取消"
+        width={500}
+        confirmLoading={smartAlignLoading}
+      >
+        <p className="text-text-primary text-sm">将本体已有的 API 输入参数和输出结构，与目标 API 对齐。</p>
+        <p className="text-text-muted text-xs mt-2">对齐仅修改字段名称以匹配目标接口风格，不会新增、删除字段或修改字段类型。</p>
+      </Modal>
+    </div>
+  );
+}

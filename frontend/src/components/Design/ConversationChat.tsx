@@ -19,7 +19,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
   const [title, setTitle] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [docTitle, setDocTitle] = useState('');
@@ -110,13 +110,9 @@ export default function ConversationChat({ threadId, onBack }: Props) {
     }
   };
 
-  const toggleSelect = (idx: number) => {
-    setSelectedIndices(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  const toggleSelect = (idx: number, isAssistant: boolean) => {
+    if (!isAssistant) return;
+    setSelectedIndex(prev => prev === idx ? null : idx);
   };
 
   const handleExport = () => {
@@ -129,10 +125,10 @@ export default function ConversationChat({ threadId, onBack }: Props) {
     setShowTitleModal(false);
     setExporting(true);
     try {
-      const selectedList = Array.from(selectedIndices);
+      const selectedList = selectedIndex !== null ? [selectedIndex] : [];
       const result = await exportThread(threadId, docTitle.trim(), selectedList);
       message.success(`文档已生成: ${result.filename}`);
-      setSelectedIndices(new Set());
+      setSelectedIndex(null);
     } catch (e: any) {
       message.error('导出失败: ' + e.message);
     } finally {
@@ -145,7 +141,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
     setValidateResult('');
     setShowValidateModal(true);
     try {
-      const selectedList = Array.from(selectedIndices);
+      const selectedList = selectedIndex !== null ? [selectedIndex] : [];
       const result = await validateAnalysis(threadId, selectedList);
       setValidateResult(result.result);
     } catch (e: any) {
@@ -164,14 +160,14 @@ export default function ConversationChat({ threadId, onBack }: Props) {
         try {
           await clearChat(threadId);
           setMessages([]);
-          setSelectedIndices(new Set());
+          setSelectedIndex(null);
           message.success('对话已清空');
         } catch (e: any) { message.error(e.message); }
       },
     });
   };
 
-  const hasSelected = selectedIndices.size > 0;
+  const hasSelected = selectedIndex !== null;
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Spin /></div>;
@@ -203,7 +199,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
         )}
         {messages.map((msg, idx) => {
           const isAssistant = msg.role === 'assistant';
-          const isSelected = selectedIndices.has(idx);
+          const isSelected = selectedIndex === idx;
           const hasContent = !!msg.content.trim();
 
           return (
@@ -237,7 +233,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
                 {isAssistant && hasContent && (
                   <div
                     className="absolute -bottom-2 -right-2 cursor-pointer transition-colors"
-                    onClick={(e) => { e.stopPropagation(); toggleSelect(idx); }}
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(idx, isAssistant); }}
                   >
                     {isSelected ? (
                       <CheckCircleFilled style={{ color: '#3b82f6', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
@@ -307,7 +303,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
             className="bg-dark-bg border-dark-border text-text-primary"
             autoFocus
           />
-          <p className="text-text-muted text-xs mt-2">已选中 {selectedIndices.size} 条助手回复</p>
+          <p className="text-text-muted text-xs mt-2">已选中 1 条助手回复</p>
         </div>
       </Modal>
 

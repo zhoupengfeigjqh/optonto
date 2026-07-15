@@ -31,13 +31,68 @@ behaviors:
   url: /api/path
   method: POST
   params:
-    paramName:
+    tradeId:
       type: string
+      description: 参数描述
       required: true
+      example: 示例值
+    status: 
+      type: "string",
+      enum: ["active", "inactive", "suspended"]
+      description: 参数描述
+      required: true
+      example: 示例值
+    user:
+      type: object
+      description: 参数描述
+      required: true
+      properties:
+        id:
+          type: string
+          description: 参数描述
+          example: 示例值
+        name:
+          type: string
+          description: 参数描述
+          example: 示例值
+    tags:
+      type: array
+      description: 参数描述
+      required: false
+      items:
+        type: string
+        description: 参数描述
+        example: 示例值
+    products:
+      type: array
+      description: 参数描述
+      required: true
+      items:
+        type: object
+        properties:
+          sku:
+            type: string
+            description: 参数描述
+            example: 示例值
+          quantity:
+            type: number
+            description: 参数描述
+            example: 示例值
   response:
-    fieldName:
-      type: string
-      required: true
+    code:
+      type: number
+      example: 0
+    data:
+      type: object
+      properties:
+        orderId:
+          type: string
+          description: 字段描述
+          example: 示例值
+        total:
+          type: number
+          description: 字段描述
+          example: 示例值
   related_concepts:
   - ConceptName
   display_name: 行为展示名称
@@ -53,7 +108,7 @@ rules:
 
 events:
 - name: eventName
-  event_type: 输入事件
+  event_type: 动作执行
   trigger_condition: 触发条件描述
   related_concepts:
   - ConceptName
@@ -67,15 +122,26 @@ processes:
   goal: 流程目标
   description: 流程描述
   steps:
-  - current_step: ''
-    previous_step: ''
-    name: stepName
-    display_name: 步骤展示名称
+  - current_action: behaviorName
+    previous_action: ''
     description: 步骤描述
-    related_action: behaviorName
     connection_type: 串行
 
 securities:
 - action_name: behaviorName
   audit_node: 前置
   audit_content: 审核内容描述
+
+data_engines:
+- name: dataEngineName
+  display_name: 数据引擎展示名称
+  behavior_name: behaviorName
+  target:
+    data_source_name: ''
+    api_name: ''
+    url: ''
+    method: POST
+    params: {}
+    response: {}
+  input_mapping: {}
+  output_mapping: {}
