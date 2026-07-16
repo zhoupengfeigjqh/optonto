@@ -11,6 +11,7 @@ import {
   ArrowLeftOutlined,
   CompassOutlined,
   ApiOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
 import ConceptTable from '@/components/Design/ConceptTable';
@@ -43,7 +44,7 @@ export default function DesignPage() {
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'data-engine'>('design');
+  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'data-engine' | 'agent'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>('design');
@@ -105,6 +106,15 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'requirements' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'data-engine' && activeTab === 'data-engines' ? '' : 'none' }}><DataEngineTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'data-engine' && activeTab === 'instance-collection' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
+      </div>
+      <div style={{ display: activeSection === 'agent' && activeTab === 'skill-management' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>技能管理 — 开发中</p></div>
+      </div>
+      <div style={{ display: activeSection === 'agent' && activeTab === 'agent-app' ? '' : 'none' }}>
+        <div className="flex items-center justify-center h-48 text-text-muted"><p>智能体应用 — 开发中</p></div>
+      </div>
     </div>
   );
 
@@ -289,6 +299,59 @@ export default function DesignPage() {
                 >
                   <span>数据映射</span>
                 </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'instance-collection'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('data-engine'); setActiveTab('instance-collection'); }}
+                >
+                  <span>实例集合</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 智能体 */}
+          <div>
+            <button
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
+                expandedSection === 'agent'
+                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
+                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
+              }`}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'agent' ? null : 'agent');
+                }}
+              title="智能体"
+            >
+              <RobotOutlined />
+              {!sidebarCollapsed && <span>智能体</span>}
+            </button>
+
+            {!sidebarCollapsed && expandedSection === 'agent' && (
+              <div className="ml-4 mt-1 space-y-0.5">
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'skill-management'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('agent'); setActiveTab('skill-management'); }}
+                >
+                  <span>技能管理</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'agent-app'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('agent'); setActiveTab('agent-app'); }}
+                >
+                  <span>智能体应用</span>
+                </button>
               </div>
             )}
           </div>
@@ -308,7 +371,9 @@ export default function DesignPage() {
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
               : activeSection === 'data-engine'
-              ? '数据引擎'
+              ? activeTab === 'instance-collection' ? '实例集合' : '数据引擎'
+              : activeSection === 'agent'
+              ? activeTab === 'skill-management' ? '技能管理' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
           <button

@@ -424,7 +424,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
             <span className="text-text-muted text-xs">输入参数 / 输出结构</span>
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetParamsOpen(true)}>编辑输入</Button>
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetResponseOpen(true)}>编辑输出</Button>
-            <Button size="small" style={{ color: '#eab308' }} onClick={() => { setSmartParseParamsContent(''); setSmartParseResponseContent(''); setSmartParseOpen(true); }}>智能解析</Button>
+            <Button size="small" onClick={() => { setSmartParseParamsContent(''); setSmartParseResponseContent(''); setSmartParseOpen(true); }}><span style={{ color: '#f59e0b' }}>智能解析</span></Button>
           </div>
         </div>
 
@@ -631,7 +631,7 @@ total  Number  订单总价  15000.50`}
         width={500}
       >
         <p className="text-text-primary text-sm">将本体行为的输入输出字段，与目标系统API接口的字段进行智能匹配。</p>
-        <p className="text-text-muted text-xs mt-2">匹配仅建立字段对应关系，不会修改任何字段名称、类型或内容。匹配完成后可在输入/输出映射弹窗中手动调整。</p>
+        <p className="text-text-muted text-xs mt-2">匹配仅建立字段对应关系，不会修改任何字段的名称、类型、描述以及是否必要等。匹配完成后可在输入/输出映射弹窗中手动调整。</p>
       </Modal>
 
       {/* ─── Smart Align Modal ──────────────────────────────────────────── */}
@@ -646,7 +646,7 @@ total  Number  订单总价  15000.50`}
         confirmLoading={smartAlignLoading}
       >
         <p className="text-text-primary text-sm">将本体行为输入和输出，与目标API接口对齐。</p>
-        <p className="text-text-muted text-xs mt-2">对齐仅修改字段名称以匹配目标接口风格，不会新增、删除字段或修改字段类型。</p>
+        <p className="text-text-muted text-xs mt-2">对齐操作修改修本体行为的数据结构，不会修改结构以外的任何内容。</p>
       </Modal>
     </div>
   );

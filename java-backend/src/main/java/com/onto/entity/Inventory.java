@@ -7,6 +7,9 @@ import java.time.LocalDateTime;
 @Table(name = "inventory")
 public class Inventory {
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @Column(name = "raw_material_id", length = 64)
     private String rawMaterialId;
 
@@ -48,6 +51,8 @@ public class Inventory {
         this.updatedAt = LocalDateTime.now();
     }
 
+    public Long getId() { return id; }
+    public void setId(Long v) { this.id = v; }
     public String getRawMaterialId() { return rawMaterialId; }
     public void setRawMaterialId(String v) { this.rawMaterialId = v; }
     public String getRawMaterialName() { return rawMaterialName; }

@@ -7,6 +7,9 @@ import java.time.LocalDateTime;
 @Table(name = "supplier")
 public class Supplier {
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @Column(name = "supplier_name", length = 128)
     private String supplierName;
 
@@ -48,6 +51,8 @@ public class Supplier {
         this.updatedAt = LocalDateTime.now();
     }
 
+    public Long getId() { return id; }
+    public void setId(Long v) { this.id = v; }
     public String getSupplierName() { return supplierName; }
     public void setSupplierName(String v) { this.supplierName = v; }
     public String getAddress() { return address; }

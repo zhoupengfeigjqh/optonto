@@ -66,7 +66,7 @@ public class PurchaseRecordService {
 
     @Transactional
     public Map<String, Object> cancel(String purchaseOrderId) {
-        PurchaseRecord record = repo.findById(purchaseOrderId).orElse(null);
+        PurchaseRecord record = repo.findByPurchaseOrderId(purchaseOrderId).orElse(null);
         if (record == null)
             return Map.of("code", 404, "message", "采购单 " + purchaseOrderId + " 不存在");
 
@@ -83,7 +83,7 @@ public class PurchaseRecordService {
 
     @Transactional
     public Map<String, Object> receive(String purchaseOrderId) {
-        PurchaseRecord record = repo.findById(purchaseOrderId).orElse(null);
+        PurchaseRecord record = repo.findByPurchaseOrderId(purchaseOrderId).orElse(null);
         if (record == null)
             return Map.of("code", 404, "message", "采购单 " + purchaseOrderId + " 不存在");
 

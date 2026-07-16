@@ -768,8 +768,7 @@ rules:
   rule_type: 验证规则
   position: 前置
 - name: V06_OrderExistence
-  description: 如果采购单关联了客户订单 (relatedOrderId 非空)，则该订单ID必须存在于 CustomerOrder 概念中，且其 status
-    为 有效。
+  description: 如果采购单关联了客户订单 (relatedOrderId 非空)，则该订单ID必须存在于 CustomerOrder 概念中。
   related_behaviors:
   - CreatePurchaseRecord
   display_name: 采购-订单存在性
@@ -1269,7 +1268,7 @@ data_engines:
   output_mapping:
     code: code
     data: data
-    data[*].purchaseRecordId: ''
+    data[*].purchaseRecordId: data[*].purchaseOrderId
     data[*].rawMaterialId: data[*].rawMaterialId
     data[*].rawMaterialName: data[*].rawMaterialName
     data[*].purchaseTime: data[*].purchaseTime

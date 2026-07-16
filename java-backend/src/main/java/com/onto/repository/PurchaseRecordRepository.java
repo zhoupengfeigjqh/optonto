@@ -7,7 +7,11 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
-public interface PurchaseRecordRepository extends JpaRepository<PurchaseRecord, String> {
+import java.util.Optional;
+
+public interface PurchaseRecordRepository extends JpaRepository<PurchaseRecord, Long> {
+
+    Optional<PurchaseRecord> findByPurchaseOrderId(String purchaseOrderId);
 
     @Query("SELECT p FROM PurchaseRecord p WHERE " +
            "(:purchaseOrderId IS NULL OR p.purchaseOrderId LIKE %:purchaseOrderId%) AND " +
