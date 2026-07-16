@@ -7,5 +7,6 @@ import java.util.List;
 
 public interface SupplierRepository extends JpaRepository<Supplier, String> {
     List<Supplier> findBySupplierNameContaining(String name);
-    List<Supplier> findByRawMaterialId(String rawMaterialId);
+    List<Supplier> findByRawMaterialNameContaining(String rawMaterialName);
+    List<Supplier> findBySupplierNameContainingAndRawMaterialNameContaining(String name, String rawMaterialName);
 }

@@ -63,7 +63,8 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
 
   const renderCell = (val: any, record: Relation, dataIndex: string, render?: (v: any) => any) => {
     const editing = isEditing(record);
-    if (!editing && editingKey !== '__new__') return render ? render(val) : (val || '-');
+    const isNew = editingKey === '__new__' && record.name === '__new__';
+    if (!editing && !isNew) return render ? render(val) : (val || '-');
 
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;

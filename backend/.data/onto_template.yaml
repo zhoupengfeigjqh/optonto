@@ -131,17 +131,3 @@ securities:
 - action_name: behaviorName
   audit_node: 前置
   audit_content: 审核内容描述
-
-data_engines:
-- name: dataEngineName
-  display_name: 数据引擎展示名称
-  behavior_name: behaviorName
-  target:
-    data_source_name: ''
-    api_name: ''
-    url: ''
-    method: POST
-    params: {}
-    response: {}
-  input_mapping: {}
-  output_mapping: {}

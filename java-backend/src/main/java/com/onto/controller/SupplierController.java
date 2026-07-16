@@ -17,7 +17,7 @@ public class SupplierController {
     @GetMapping
     public ApiResponse<List<Supplier>> query(
             @RequestParam(required = false) String supplierName,
-            @RequestParam(required = false) String rawMaterialId) {
-        return ApiResponse.ok(service.query(supplierName, rawMaterialId));
+            @RequestParam(required = false) String rawMaterialName) {
+        return ApiResponse.ok(service.query(supplierName, rawMaterialName));
     }
 }

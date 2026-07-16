@@ -64,7 +64,8 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
 
   const renderCell = (val: any, record: Event, dataIndex: string, render?: (v: any) => any) => {
     const editing = isEditing(record);
-    if (!editing && editingKey !== '__new__') return render ? render(val) : (val || '-');
+    const isNew = editingKey === '__new__' && record.name === '__new__';
+    if (!editing && !isNew) return render ? render(val) : (val || '-');
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behavior') return <Select size="small" allowClear placeholder="选择" value={editData.related_behavior} onChange={v => setEditData(p => ({...p, related_behavior: v}))} options={behaviorOptions} style={{width:"100%"}} popupClassName="!bg-dark-card" />;

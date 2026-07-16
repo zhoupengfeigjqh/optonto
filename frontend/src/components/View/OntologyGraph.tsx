@@ -6,7 +6,8 @@ import * as echarts from 'echarts/core';
 import { TooltipComponent, TitleComponent } from 'echarts/components';
 import { GraphChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
-import { message, Spin, Empty, Modal, Tag } from 'antd';
+import { message, Spin, Empty, Modal, Tag, Button } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { getOntologyData, OntologyData } from '@/api/client';
 
 echarts.use([TooltipComponent, TitleComponent, GraphChart, CanvasRenderer]);
@@ -287,6 +288,9 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="flex items-center justify-end px-4 py-1 shrink-0">
+        <Button size="small" icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>
+      </div>
       <div className="flex-1 bg-dark-card border border-dark-border rounded-xl overflow-hidden" style={{ minHeight: 0 }}>
         <ReactEChartsCore
           ref={chartRef}

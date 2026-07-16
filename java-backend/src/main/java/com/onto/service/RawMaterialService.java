@@ -14,8 +14,10 @@ public class RawMaterialService {
 
     public List<RawMaterial> query(String rawMaterialId, String rawMaterialName) {
         if (rawMaterialId == null && rawMaterialName == null) return repo.findAll();
-        String id = rawMaterialId != null ? rawMaterialId : "";
-        String name = rawMaterialName != null ? rawMaterialName : "";
-        return repo.findByRawMaterialIdContainingOrRawMaterialNameContaining(id, name);
+        if (rawMaterialId != null && rawMaterialName != null)
+            return repo.findByRawMaterialIdContainingAndRawMaterialNameContaining(rawMaterialId, rawMaterialName);
+        if (rawMaterialId != null)
+            return repo.findByRawMaterialIdContaining(rawMaterialId);
+        return repo.findByRawMaterialNameContaining(rawMaterialName);
     }
 }

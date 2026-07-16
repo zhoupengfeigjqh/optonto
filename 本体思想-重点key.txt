@@ -42,3 +42,11 @@ LLM Tool将action接口暴露给Agent，action包括读写/函数计算/模型�
 
 指标计算合并到API接口里，不单独写？是否增加一个函数，用来计算某些概念的某些属性值或统计值？如计算100个对象的均值等。
 
+下一步：增加function计算函数，作为skill的附属参考，用于agent调用
+
+【参考模板格式（严格遵循）】
+- 输入参数: {{"参数名": {{"type": "string", "description": "参数描述", "required": true, "example": "示例值"}}}}
+- 输出结构: {{"字段名": {{"type": "string", "description": "字段描述", "example": "示例值"}}}}
+- 嵌套对象用 properties: {{"data": {{"type": "object", "properties": {{"id": {{"type": "string", "description": "...", "example": "..."}}}}}}}}
+- 数组类型: {{"items": {{"type": "array", "items": {{"type": "object", "properties": {{...}}}}}}}}
+

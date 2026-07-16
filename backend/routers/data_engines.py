@@ -119,8 +119,15 @@ async def delete_data_engine(ontology_id: int, engine_name: str):
 
 # ─── Mapping Analysis ──────────────────────────────────────────────────────────
 
+class AnalyzeMappingRequest(BaseModel):
+    onto_input_fields: list[str] = []
+    target_input_fields: list[str] = []
+    onto_output_fields: list[str] = []
+    target_output_fields: list[str] = []
+
+
 @router.post("/{engine_name}/analyze-mapping")
-async def analyze_mapping(ontology_id: int, engine_name: str):
+async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappingRequest = AnalyzeMappingRequest()):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -134,15 +141,16 @@ async def analyze_mapping(ontology_id: int, engine_name: str):
 
     llm = _build_llm()
     if llm is None:
-        raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行映射分析")
+        raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能映射")
 
     from langchain_core.messages import HumanMessage, SystemMessage
+    from config import MAPPING_ANALYSIS_SYSTEM_PROMPT, MAPPING_ANALYSIS_PROMPT
 
     prompt = MAPPING_ANALYSIS_PROMPT.format(
-        ontology_params=json.dumps(beh.params, ensure_ascii=False),
-        ontology_response=json.dumps(beh.response, ensure_ascii=False),
-        target_params=json.dumps(de.target.params, ensure_ascii=False),
-        target_response=json.dumps(de.target.response, ensure_ascii=False),
+        onto_input_fields=json.dumps(body.onto_input_fields, ensure_ascii=False),
+        target_input_fields=json.dumps(body.target_input_fields, ensure_ascii=False),
+        onto_output_fields=json.dumps(body.onto_output_fields, ensure_ascii=False),
+        target_output_fields=json.dumps(body.target_output_fields, ensure_ascii=False),
     )
 
     try:
@@ -155,11 +163,18 @@ async def analyze_mapping(ontology_id: int, engine_name: str):
             text = text.strip("`").strip()
             if text.startswith("json"):
                 text = text[4:]
-        return json.loads(text)
+        result = json.loads(text)
+
+        # Save mapping results to data engine
+        de.input_mapping = result.get("input_mapping", {})
+        de.output_mapping = result.get("output_mapping", {})
+        save_ontology_data(sc_name, on_name, data)
+
+        return result
     except json.JSONDecodeError:
         return {"status": "error", "message": f"LLM 返回格式异常: {text[:200]}", "issues": []}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"映射分析失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"智能映射失败: {str(e)}")
 
 
 # ─── Smart Parse ────────────────────────────────────────────────────────────────
@@ -209,10 +224,19 @@ async def smart_parse(ontology_id: int, engine_name: str, body: SmartParseReques
             if text.startswith("json"):
                 text = text[4:]
         result = json.loads(text)
-        return {"params": result.get("params", {}), "response": result.get("response", {})}
+        return {
+            "api_name": result.get("api_name", ""),
+            "data_source_name": result.get("data_source_name", ""),
+            "url": result.get("url", ""),
+            "method": result.get("method", ""),
+            "params": result.get("params", {}),
+            "response": result.get("response", {}),
+        }
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {text[:200]}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"智能解析失败: {str(e)}")
 
 
@@ -275,47 +299,25 @@ async def smart_align(ontology_id: int, engine_name: str):
         raise HTTPException(status_code=500, detail=f"智能对齐失败: {str(e)}")
 
 
-# ─── Connection Test ───────────────────────────────────────────────────────────
+# ─── Data Engine Call ──────────────────────────────────────────────────────────
 
-@router.post("/{engine_name}/connection-test")
-async def connection_test(ontology_id: int, engine_name: str, body: dict):
-    """Send a test request to the target API with the given params."""
+
+@router.post("/{engine_name}/call")
+async def call_engine(ontology_id: int, engine_name: str, body: dict):
+    """Call target API via data engine (used by frontend and agents)."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    de = next((d for d in data.data_engines if d.name == engine_name), None)
-    if de is None:
-        raise HTTPException(status_code=404, detail="数据引擎不存在")
-
     params = body.get("params", {})
-    target = de.target
-
-    if not target.url:
-        raise HTTPException(status_code=400, detail="目标接口未配置 URL")
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            if target.method == "GET":
-                resp = await client.get(target.url, params=params)
-            elif target.method == "DELETE":
-                resp = await client.delete(target.url, params=params)
-            elif target.method == "PATCH":
-                resp = await client.patch(target.url, json=params)
-            else:
-                resp = await client.post(target.url, json=params)
-
-            return {
-                "status_code": resp.status_code,
-                "headers": dict(resp.headers),
-                "data": resp.json() if _is_json(resp.headers.get("content-type", "")) else resp.text,
-            }
+        from services.data_engine import call_data_engine
+        return await call_data_engine(data, engine_name, params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except httpx.ConnectError:
         raise HTTPException(status_code=400, detail="无法连接到目标接口，请检查 URL 是否正确")
     except httpx.TimeoutException:
         raise HTTPException(status_code=408, detail="目标接口请求超时")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"连接测试失败: {str(e)}")
-
-
-def _is_json(content_type: str) -> bool:
-    return "application/json" in content_type or "json" in content_type
+        raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")

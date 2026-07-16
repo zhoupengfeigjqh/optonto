@@ -7,7 +7,6 @@ from .rules import router as rules_router
 from .events import router as events_router
 from .processes import router as processes_router
 from .securities import router as securities_router
-from .test_api import router as test_api_router
 from .files import router as files_router
 from .threads import router as threads_router
 from .chat import router as chat_router

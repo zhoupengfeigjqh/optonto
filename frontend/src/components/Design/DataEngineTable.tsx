@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Tag } from 'antd';
 import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, connectionTest, smartParseTarget, smartAlign, getBehaviors, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -80,12 +80,12 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
 
-  // connection test
-  const [testOpen, setTestOpen] = useState(false);
-  const [testEngine, setTestEngine] = useState<DataEngine | null>(null);
-  const [testParams, setTestParams] = useState<Record<string, any>>({});
-  const [testResult, setTestResult] = useState<any>(null);
-  const [testLoading, setTestLoading] = useState(false);
+  // data engine call
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectEngine, setConnectEngine] = useState<DataEngine | null>(null);
+  const [connectParams, setConnectParams] = useState<Record<string, any>>({});
+  const [connectResult, setConnectResult] = useState<any>(null);
+  const [connectLoading, setConnectLoading] = useState(false);
 
   // smart parse modal
   const [smartParseOpen, setSmartParseOpen] = useState(false);
@@ -97,6 +97,17 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [smartAlignOpen, setSmartAlignOpen] = useState(false);
   const [smartAlignBehaviorName, setSmartAlignBehaviorName] = useState('');
   const [smartAlignLoading, setSmartAlignLoading] = useState(false);
+
+  // smart mapping confirm modal
+  const [smartMappingOpen, setSmartMappingOpen] = useState(false);
+  const [smartMappingBehaviorName, setSmartMappingBehaviorName] = useState('');
+
+  // behavior params/response edit modal
+  const [behaviorEditOpen, setBehaviorEditOpen] = useState(false);
+  const [behaviorEditName, setBehaviorEditName] = useState('');
+  const [behaviorParamsStr, setBehaviorParamsStr] = useState('{}');
+  const [behaviorResponseStr, setBehaviorResponseStr] = useState('{}');
+  const [behaviorEditLoading, setBehaviorEditLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -147,8 +158,8 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   };
 
   const handleSmartParse = async () => {
-    if (!smartParseParamsContent.trim() && !smartParseResponseContent.trim()) {
-      message.warning('请至少粘贴输入参数或输出结构的内容');
+    if (!smartParseParamsContent.trim() || !smartParseResponseContent.trim()) {
+      message.warning('输入参数和输出结构都必须填写，否则无法解析');
       return;
     }
     setSmartParseLoading(true);
@@ -161,10 +172,19 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       if (result.response && Object.keys(result.response).length > 0) {
         setTargetResponseStr(JSON.stringify(result.response, null, 2));
       }
+      if (result.api_name) setTargetData(p => ({ ...p, api_name: result.api_name }));
+      if (result.data_source_name) setTargetData(p => ({ ...p, data_source_name: result.data_source_name }));
+      if (result.method) setTargetData(p => ({ ...p, method: result.method }));
+      if (result.url) setTargetData(p => ({ ...p, url: result.url }));
       message.success('智能解析完成，请确认结果');
       setSmartParseOpen(false);
     } catch (e: any) { message.error('智能解析失败: ' + e.message); }
     finally { setSmartParseLoading(false); }
+  };
+
+  const handleSmartMappingConfirm = () => {
+    setSmartMappingOpen(false);
+    handleAnalyze(smartMappingBehaviorName);
   };
 
   const handleSmartAlign = async () => {
@@ -178,6 +198,34 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       return result;
     } catch (e: any) { message.error('智能对齐失败: ' + e.message); }
     finally { setSmartAlignLoading(false); }
+  };
+
+  // ─── behavior edit ──────────────────────────────────────────────────────
+
+  const openBehaviorEdit = (behaviorName: string) => {
+    const beh = behaviors.find(b => b.name === behaviorName);
+    if (!beh) return;
+    setBehaviorEditName(behaviorName);
+    setBehaviorParamsStr(JSON.stringify(beh.params || {}, null, 2));
+    setBehaviorResponseStr(JSON.stringify(beh.response || {}, null, 2));
+    setBehaviorEditOpen(true);
+  };
+
+  const saveBehaviorEdit = async () => {
+    let parsedParams: Record<string, unknown> = {};
+    let parsedResponse: Record<string, unknown> = {};
+    try { parsedParams = JSON.parse(behaviorParamsStr); } catch { message.warning('参数 JSON 格式错误'); return; }
+    try { parsedResponse = JSON.parse(behaviorResponseStr); } catch { message.warning('返回结构 JSON 格式错误'); return; }
+    setBehaviorEditLoading(true);
+    try {
+      const beh = behaviors.find(b => b.name === behaviorEditName);
+      if (!beh) { message.error('行为不存在'); return; }
+      await updateBehavior(ontologyId, behaviorEditName, { ...beh, params: parsedParams, response: parsedResponse });
+      message.success('行为接口已更新');
+      setBehaviorEditOpen(false);
+      await load();
+    } catch (e: any) { message.error('保存失败: ' + e.message); }
+    finally { setBehaviorEditLoading(false); }
   };
 
   // ─── mapping ─────────────────────────────────────────────────────────────
@@ -234,22 +282,26 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     setAnalyzeOpen(true);
     try {
       const de = await ensureEngine(behaviorName);
-      // Reload engines to get latest
-      const eng = await getDataEngines(ontologyId);
-      setEngines(eng);
-      const fresh = eng.find(e => e.behavior_name === behaviorName) || de;
-      const result = await analyzeMapping(ontologyId, fresh.name);
+      const beh = behaviors.find(b => b.name === behaviorName);
+      const body = {
+        onto_input_fields: flattenFields((beh?.params as Record<string, unknown>) || {}),
+        target_input_fields: flattenFields(de.target?.params || {}),
+        onto_output_fields: flattenFields((beh?.response as Record<string, unknown>) || {}),
+        target_output_fields: flattenFields(de.target?.response || {}),
+      };
+      const result = await analyzeMapping(ontologyId, de.name, body);
       setAnalyzeResult(result);
+      await load();
     } catch (e: any) { setAnalyzeResult({ status: 'error', message: e.message, issues: [] }); }
     finally { setAnalyzeLoading(false); }
   };
 
-  // ─── connection test ─────────────────────────────────────────────────────
+  // ─── data engine call ────────────────────────────────────────────────────
 
-  const openTest = async (behaviorName: string) => {
+  const openConnect = async (behaviorName: string) => {
     const de = await ensureEngine(behaviorName);
-    setTestEngine(de);
-    setTestResult(null);
+    setConnectEngine(de);
+    setConnectResult(null);
     const beh = behaviors.find(b => b.name === behaviorName);
     const raw = beh?.params || {};
     const params: Record<string, any> = {};
@@ -263,24 +315,24 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
         else params[k] = '';
       }
     }
-    setTestParams(params);
-    setTestOpen(true);
+    setConnectParams(params);
+    setConnectOpen(true);
   };
 
-  const executeTest = async () => {
-    if (!testEngine) return;
+  const executeConnect = async () => {
+    if (!connectEngine) return;
     const parsed: Record<string, any> = {};
-    for (const [k, v] of Object.entries(testParams)) {
+    for (const [k, v] of Object.entries(connectParams)) {
       if (typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))) {
         try { parsed[k] = JSON.parse(v); } catch { parsed[k] = v; }
       } else { parsed[k] = v; }
     }
-    setTestLoading(true);
+    setConnectLoading(true);
     try {
-      const result = await connectionTest(ontologyId, testEngine.name, parsed);
-      setTestResult(result);
-    } catch (e: any) { setTestResult({ error: e.message }); }
-    finally { setTestLoading(false); }
+      const result = await callBehavior(ontologyId, connectEngine.behavior_name, parsed);
+      setConnectResult(result);
+    } catch (e: any) { setConnectResult({ error: e.message }); }
+    finally { setConnectLoading(false); }
   };
 
   // ─── render ──────────────────────────────────────────────────────────────
@@ -293,9 +345,9 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const columns = [
     { title: '本体行为接口', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (_: any, r: any) => {
       const b = r._behavior as Behavior;
-      return <span>{b.display_name || b.name}<span className="text-text-muted text-xs ml-1">({b.method})</span></span>;
+      return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b.name)}>{b.display_name || b.name}<span className="text-text-muted text-xs ml-1">({b.method})</span></span>;
     }},
-    { title: '本体API地址', dataIndex: '_behavior', key: 'url', width: 200, ellipsis: true, render: (b: Behavior) => <code className="text-accent-green text-xs">{b.url || '-'}</code> },
+    { title: '本体API接口地址', dataIndex: '_behavior', key: 'url', width: 200, ellipsis: true, render: (b: Behavior) => <code className="text-accent-green text-xs">{b.url || '-'}</code> },
     { title: '目标接口设置', key: 'target', width: 100, render: (_: any, r: any) => {
       const de = getEngine(r._behavior.name);
       const hasConfig = de.target?.url || de.target?.api_name || de.target?.data_source_name;
@@ -303,12 +355,12 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     }},
     { title: '输入映射', key: 'input_mapping', width: 80, render: (_: any, r: any) => {
       const de = getEngine(r._behavior.name);
-      const count = Object.keys(de.input_mapping || {}).length;
+      const count = Object.values(de.input_mapping || {}).filter(v => v).length;
       return <Button size="small" icon={<EditOutlined />} onClick={() => openInputMapping(r._behavior.name)}>{count > 0 ? `已映射${count}` : '编辑'}</Button>;
     }},
     { title: '输出映射', key: 'output_mapping', width: 80, render: (_: any, r: any) => {
       const de = getEngine(r._behavior.name);
-      const count = Object.keys(de.output_mapping || {}).length;
+      const count = Object.values(de.output_mapping || {}).filter(v => v).length;
       return <Button size="small" icon={<EditOutlined />} onClick={() => openOutputMapping(r._behavior.name)}>{count > 0 ? `已映射${count}` : '编辑'}</Button>;
     }},
     {
@@ -319,8 +371,8 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
         return (
         <div className="flex gap-1 items-center">
           <Button type="link" size="small" disabled={!hasTarget} style={{ color: hasTarget ? undefined : '#64748b' }} onClick={() => { setSmartAlignBehaviorName(r._behavior.name); setSmartAlignOpen(true); }}>智能对齐</Button>
-          <Button type="link" size="small" onClick={() => handleAnalyze(r._behavior.name)} loading={analyzeLoading}>映射分析</Button>
-          <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => openTest(r._behavior.name)}>连接测试</Button>
+          <Button type="link" size="small" disabled={!hasTarget} style={{ color: hasTarget ? undefined : '#64748b' }} onClick={() => { setSmartMappingBehaviorName(r._behavior.name); setSmartMappingOpen(true); }}>智能映射</Button>
+          <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => openConnect(r._behavior.name)}>连接测试</Button>
         </div>
         );
       },
@@ -376,7 +428,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
 
         {/* ─── Smart Parse Modal ──────────────────────────────────────────── */}
         <Modal title="智能解析" open={smartParseOpen} onOk={handleSmartParse} onCancel={() => setSmartParseOpen(false)} okText="开始解析" cancelText="取消" width={900} confirmLoading={smartParseLoading}>
-          <p className="text-text-muted text-xs mb-3">粘贴目标接口的输入参数和输出结构文档，AI 将自动解析为标准格式</p>
+          <p className="text-text-muted text-xs mb-3">粘贴目标接口的输入参数和输出结构文档（两栏均需填写），AI 将自动解析为标准格式</p>
           <div className="flex gap-3" style={{ minHeight: 320 }}>
             <div className="flex-1">
               <span className="text-text-muted text-xs mb-1 block">输入参数</span>
@@ -417,6 +469,12 @@ total  Number  订单总价  15000.50`}
       <Modal title="输入映射" open={inputMappingOpen} onOk={() => saveMapping('input')} onCancel={() => setInputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义输入参数</p>}
+          {mappingOntoFields.length > 0 && (
+            <div className="flex items-center gap-3 pb-1 border-b border-dark-border mb-1">
+              <span className="w-1/2 text-text-muted text-xs font-semibold">本体字段</span>
+              <span className="w-1/2 text-text-muted text-xs font-semibold">目标字段</span>
+            </div>
+          )}
           {mappingOntoFields.map(field => (
             <div key={field} className="flex items-center gap-3">
               <span className="w-1/2 text-text-secondary text-xs bg-dark-bg rounded px-2 py-1 font-mono">{field}</span>
@@ -430,6 +488,12 @@ total  Number  订单总价  15000.50`}
       <Modal title="输出映射" open={outputMappingOpen} onOk={() => saveMapping('output')} onCancel={() => setOutputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义返回结构</p>}
+          {mappingOntoFields.length > 0 && (
+            <div className="flex items-center gap-3 pb-1 border-b border-dark-border mb-1">
+              <span className="w-1/2 text-text-muted text-xs font-semibold">本体字段</span>
+              <span className="w-1/2 text-text-muted text-xs font-semibold">目标字段</span>
+            </div>
+          )}
           {mappingOntoFields.map(field => (
             <div key={field} className="flex items-center gap-3">
               <span className="w-1/2 text-text-secondary text-xs bg-dark-bg rounded px-2 py-1 font-mono">{field}</span>
@@ -468,29 +532,33 @@ total  Number  订单总价  15000.50`}
         )}
       </Modal>
 
-      {/* ─── Connection Test Modal ────────────────────────────────────────── */}
+      {/* ─── Data Engine Call Modal ───────────────────────────────────────── */}
       <Modal
-        title={testEngine ? `连接测试 - ${testEngine.display_name || testEngine.name}` : '连接测试'}
-        open={testOpen} onCancel={() => { setTestOpen(false); setTestResult(null); }} width={700} footer={null}
+        title={connectEngine ? `连接测试 - ${connectEngine.display_name || connectEngine.name}` : '连接测试'}
+        open={connectOpen} onCancel={() => { setConnectOpen(false); setConnectResult(null); }} width={700} footer={null}
       >
-        {testEngine && (
+        {connectEngine && (
           <div className="space-y-4">
             <div>
               <span className="text-text-muted text-xs">目标接口：</span>
-              <code className="text-accent-green text-xs ml-1">{testEngine.target?.method || 'POST'} {testEngine.target?.url || '(未配置)'}</code>
+              <code className="text-accent-green text-xs ml-1">{connectEngine.target?.method || 'POST'} {connectEngine.target?.url || '(未配置)'}</code>
+            </div>
+            <div>
+              <span className="text-text-muted text-xs">本体接口：</span>
+              <code className="text-accent-blue text-xs ml-1">{(() => { const b = behaviors.find(b => b.name === connectEngine.behavior_name); return b ? `${b.method} ${b.url}` : '-'; })()}</code>
             </div>
 
-            {Object.keys(testParams).length > 0 && (
+            {Object.keys(connectParams).length > 0 && (
               <div>
                 <span className="text-text-muted text-xs mb-2 block">请求参数</span>
                 <div className="space-y-1.5">
-                  {Object.entries(testParams).map(([k, v]) => (
+                  {Object.entries(connectParams).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-2">
                       <span className="w-28 text-text-secondary text-xs shrink-0">{k}</span>
                       {typeof v === 'boolean' ? null : typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')) ? (
-                        <Input.TextArea size="small" value={v} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+                        <Input.TextArea size="small" value={v} onChange={e => setConnectParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
                       ) : (
-                        <Input size="small" value={v as string} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" />
+                        <Input size="small" value={v as string} onChange={e => setConnectParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" />
                       )}
                     </div>
                   ))}
@@ -498,16 +566,16 @@ total  Number  订单总价  15000.50`}
               </div>
             )}
 
-            <Button type="primary" icon={<SendOutlined />} onClick={executeTest} loading={testLoading} block>发送请求</Button>
+            <Button type="primary" icon={<SendOutlined />} onClick={executeConnect} loading={connectLoading} block>发送请求</Button>
 
-            {testResult && (
+            {connectResult && (
               <div>
                 <span className="text-text-muted text-xs mb-1 block">响应结果</span>
                 <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap">
-                  {testResult.error ? (
-                    <span className="text-red-400">{testResult.error}</span>
+                  {connectResult.error ? (
+                    <span className="text-red-400">{connectResult.error}</span>
                   ) : (
-                    <span className="text-accent-green">{JSON.stringify(testResult, null, 2)}</span>
+                    <span className="text-accent-green">{JSON.stringify(connectResult, null, 2)}</span>
                   )}
                 </pre>
               </div>
@@ -515,6 +583,53 @@ total  Number  订单总价  15000.50`}
           </div>
         )}
       </Modal>
+      {/* ─── Behavior Params/Response Edit Modal ────────────────────────── */}
+      <Modal
+        title={`编辑行为接口 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`}
+        open={behaviorEditOpen}
+        onOk={saveBehaviorEdit}
+        onCancel={() => setBehaviorEditOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        width={800}
+        confirmLoading={behaviorEditLoading}
+      >
+        <div className="flex gap-3" style={{ minHeight: 320 }}>
+          <div className="flex-1">
+            <span className="text-text-muted text-xs mb-1 block">输入参数 (JSON)</span>
+            <Input.TextArea
+              value={behaviorParamsStr}
+              onChange={e => setBehaviorParamsStr(e.target.value)}
+              rows={16}
+              className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
+            />
+          </div>
+          <div className="flex-1">
+            <span className="text-text-muted text-xs mb-1 block">返回结构 (JSON)</span>
+            <Input.TextArea
+              value={behaviorResponseStr}
+              onChange={e => setBehaviorResponseStr(e.target.value)}
+              rows={16}
+              className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── Smart Mapping Confirm Modal ───────────────────────────────── */}
+      <Modal
+        title="智能映射"
+        open={smartMappingOpen}
+        onOk={handleSmartMappingConfirm}
+        onCancel={() => setSmartMappingOpen(false)}
+        okText="确认映射"
+        cancelText="取消"
+        width={500}
+      >
+        <p className="text-text-primary text-sm">将本体行为接口的输入输出字段，与目标系统接口的字段进行智能匹配。</p>
+        <p className="text-text-muted text-xs mt-2">匹配仅建立字段对应关系，不会修改任何字段名称、类型或内容。匹配完成后可在输入/输出映射弹窗中手动调整。</p>
+      </Modal>
+
       {/* ─── Smart Align Modal ──────────────────────────────────────────── */}
       <Modal
         title="智能对齐"
@@ -526,7 +641,7 @@ total  Number  订单总价  15000.50`}
         width={500}
         confirmLoading={smartAlignLoading}
       >
-        <p className="text-text-primary text-sm">将本体已有的 API 输入参数和输出结构，与目标 API 对齐。</p>
+        <p className="text-text-primary text-sm">将本体行为接口 API 输入参数和输出结构，与目标 API 对齐。</p>
         <p className="text-text-muted text-xs mt-2">对齐仅修改字段名称以匹配目标接口风格，不会新增、删除字段或修改字段类型。</p>
       </Modal>
     </div>

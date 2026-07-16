@@ -12,11 +12,14 @@ public class SupplierService {
 
     public SupplierService(SupplierRepository repo) { this.repo = repo; }
 
-    public List<Supplier> query(String supplierName, String rawMaterialId) {
-        if (rawMaterialId != null && !rawMaterialId.isEmpty())
-            return repo.findByRawMaterialId(rawMaterialId);
-        if (supplierName != null && !supplierName.isEmpty())
+    public List<Supplier> query(String supplierName, String rawMaterialName) {
+        boolean hasName = supplierName != null && !supplierName.isEmpty();
+        boolean hasRaw = rawMaterialName != null && !rawMaterialName.isEmpty();
+        if (!hasName && !hasRaw) return repo.findAll();
+        if (hasName && hasRaw)
+            return repo.findBySupplierNameContainingAndRawMaterialNameContaining(supplierName, rawMaterialName);
+        if (hasName)
             return repo.findBySupplierNameContaining(supplierName);
-        return repo.findAll();
+        return repo.findByRawMaterialNameContaining(rawMaterialName);
     }
 }

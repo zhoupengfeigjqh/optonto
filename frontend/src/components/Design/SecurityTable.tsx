@@ -63,7 +63,8 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
 
   const renderCell = (val: any, record: Security, dataIndex: string) => {
     const editing = isEditing(record);
-    if (!editing && editingKey !== '__new__') return val || '-';
+    const isNew = editingKey === '__new__' && record.action_name === '__new__';
+    if (!editing && !isNew) return val || '-';
 
     if (dataIndex === 'action_name') return <Select size="small" placeholder="选择行为" options={behaviorOptions} value={editData.action_name} onChange={v => setEditData(p => ({...p, action_name: v}))} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'audit_content') return <Input size="small" value={editData.audit_content || ''} onChange={e => setEditData(p => ({...p, audit_content: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;

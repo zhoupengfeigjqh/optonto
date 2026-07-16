@@ -288,17 +288,25 @@ export const updateDataEngine = (ontologyId: number, name: string, data: DataEng
 export const deleteDataEngine = (ontologyId: number, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const analyzeMapping = (ontologyId: number, name: string) =>
-  request<{ status: string; message: string; issues: string[] }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/analyze-mapping`, { method: 'POST' });
+export const analyzeMapping = (ontologyId: number, name: string, body?: {
+  onto_input_fields: string[];
+  target_input_fields: string[];
+  onto_output_fields: string[];
+  target_output_fields: string[];
+}) =>
+  request<{ input_mapping: Record<string,string>; output_mapping: Record<string,string>; status: string; message: string; issues: string[] }>(
+    `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/analyze-mapping`,
+    { method: 'POST', body: body ? JSON.stringify(body) : undefined }
+  );
 
-export const connectionTest = (ontologyId: number, name: string, params: Record<string, any>) =>
+export const callBehavior = (ontologyId: number, name: string, params: Record<string, any>) =>
   request<{ status_code: number; headers: Record<string, string>; data: any }>(
-    `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/connection-test`,
+    `/api/ontologies/${ontologyId}/behaviors/${encodeURIComponent(name)}/call`,
     { method: 'POST', body: JSON.stringify({ params }) }
   );
 
 export const smartParseTarget = (ontologyId: number, name: string, paramsContent: string, responseContent: string) =>
-  request<{ params: Record<string, unknown>; response: Record<string, unknown> }>(
+  request<{ api_name: string; data_source_name: string; url: string; method: string; params: Record<string, unknown>; response: Record<string, unknown> }>(
     `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-parse`,
     { method: 'POST', body: JSON.stringify({ params_content: paramsContent, response_content: responseContent }) }
   );
@@ -307,14 +315,6 @@ export const smartAlign = (ontologyId: number, name: string) =>
   request<{ params: Record<string, unknown>; response: Record<string, unknown> }>(
     `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-align`,
     { method: 'POST' }
-  );
-
-// ─── Test ──────────────────────────────────────────────────────────────────
-
-export const testBehaviorAPI = (ontologyId: number, behaviorName: string, params: Record<string, any>) =>
-  request<{ status: string; method: string; url: string; sent_params: Record<string, any>; data: any }>(
-    `/api/ontologies/${ontologyId}/test/behavior`,
-    { method: 'POST', body: JSON.stringify({ behavior_name: behaviorName, params }) }
   );
 
 // ─── Thread / Chat ────────────────────────────────────────────────────────

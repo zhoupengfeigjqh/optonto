@@ -15,7 +15,9 @@ public class CustomerOrderController {
     public CustomerOrderController(CustomerOrderService service) { this.service = service; }
 
     @GetMapping
-    public ApiResponse<List<CustomerOrder>> list() {
-        return ApiResponse.ok(service.findAll());
+    public ApiResponse<List<CustomerOrder>> query(
+            @RequestParam(required = false) String orderId,
+            @RequestParam(required = false) String orderName) {
+        return ApiResponse.ok(service.query(orderId, orderName));
     }
 }

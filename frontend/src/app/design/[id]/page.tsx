@@ -10,7 +10,6 @@ import {
   MenuUnfoldOutlined,
   ArrowLeftOutlined,
   CompassOutlined,
-  BugOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
@@ -25,7 +24,6 @@ import FileViewer from '@/components/Design/FileViewer';
 import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
-import APITestTable from '@/components/Test/APITestTable';
 import DataEngineTable from '@/components/Design/DataEngineTable';
 
 const DESIGN_TABS = [
@@ -45,7 +43,7 @@ export default function DesignPage() {
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'test' | 'data-engine'>('design');
+  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'data-engine'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>('design');
@@ -106,16 +104,6 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'requirements' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'test' && activeTab === 'api-test' ? '' : 'none' }}><APITestTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'test' && activeTab === 'behavior-test' ? '' : 'none' }}>
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>行为测试 — 开发中</p></div>
-      </div>
-      <div style={{ display: activeSection === 'test' && activeTab === 'rule-test' ? '' : 'none' }}>
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>规则测试 — 开发中</p></div>
-      </div>
-      <div style={{ display: activeSection === 'test' && activeTab === 'event-test' ? '' : 'none' }}>
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>事件测试 — 开发中</p></div>
-      </div>
       <div style={{ display: activeSection === 'data-engine' && activeTab === 'data-engines' ? '' : 'none' }}><DataEngineTable ontologyId={ontologyId} activeTab={activeTab} /></div>
     </div>
   );
@@ -305,68 +293,6 @@ export default function DesignPage() {
             )}
           </div>
 
-          {/* 本体测试 */}
-          <div>
-            <button
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
-                expandedSection === 'test'
-                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
-                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
-              }`}
-              onClick={() => {
-                  setExpandedSection(expandedSection === 'test' ? null : 'test');
-                }}
-              title="本体测试"
-            >
-              <BugOutlined />
-              {!sidebarCollapsed && <span>本体测试</span>}
-            </button>
-
-            {!sidebarCollapsed && expandedSection === 'test' && (
-              <div className="ml-4 mt-1 space-y-0.5">
-                <button
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'api-test'
-                      ? 'text-accent-blue bg-accent-blue/5'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                  onClick={() => { setActiveSection('test'); setActiveTab('api-test'); }}
-                >
-                  <span>API单元测试</span>
-                </button>
-                <button
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'behavior-test'
-                      ? 'text-accent-blue bg-accent-blue/5'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                  onClick={() => { setActiveSection('test'); setActiveTab('behavior-test'); }}
-                >
-                  <span>行为测试</span>
-                </button>
-                <button
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'rule-test'
-                      ? 'text-accent-blue bg-accent-blue/5'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                  onClick={() => { setActiveSection('test'); setActiveTab('rule-test'); }}
-                >
-                  <span>规则测试</span>
-                </button>
-                <button
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'event-test'
-                      ? 'text-accent-blue bg-accent-blue/5'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                  onClick={() => { setActiveSection('test'); setActiveTab('event-test'); }}
-                >
-                  <span>事件测试</span>
-                </button>
-              </div>
-            )}
-          </div>
         </nav>
       </aside>
 
@@ -381,8 +307,6 @@ export default function DesignPage() {
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
-              : activeSection === 'test'
-              ? activeTab === 'api-test' ? 'API单元测试' : activeTab === 'behavior-test' ? '行为测试' : activeTab === 'rule-test' ? '规则测试' : '事件测试'
               : activeSection === 'data-engine'
               ? '数据引擎'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}

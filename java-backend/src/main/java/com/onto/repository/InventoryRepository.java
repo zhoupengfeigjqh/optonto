@@ -6,5 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface InventoryRepository extends JpaRepository<Inventory, String> {
-    List<Inventory> findByRawMaterialIdContainingOrRawMaterialNameContaining(String id, String name);
+    List<Inventory> findByRawMaterialIdContaining(String id);
+    List<Inventory> findByRawMaterialNameContaining(String name);
+    List<Inventory> findByRawMaterialIdContainingAndRawMaterialNameContaining(String id, String name);
 }

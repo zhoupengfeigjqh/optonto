@@ -12,5 +12,14 @@ public class CustomerOrderService {
 
     public CustomerOrderService(CustomerOrderRepository repo) { this.repo = repo; }
 
-    public List<CustomerOrder> findAll() { return repo.findAll(); }
+    public List<CustomerOrder> query(String orderId, String orderName) {
+        boolean hasId = orderId != null && !orderId.isEmpty();
+        boolean hasName = orderName != null && !orderName.isEmpty();
+        if (!hasId && !hasName) return repo.findAll();
+        if (hasId && hasName)
+            return repo.findByOrderIdAndOrderNameContaining(orderId, orderName);
+        if (hasId)
+            return repo.findByOrderId(orderId);
+        return repo.findByOrderNameContaining(orderName);
+    }
 }
