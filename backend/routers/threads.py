@@ -80,17 +80,6 @@ def _save_thread(data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def _get_thread_dir_from_data(thread_id: str, data: dict) -> Path:
-    """Get thread directory from loaded data."""
-    sc = data.get("scenario_name", "")
-    onto = data.get("ontology_name", "")
-    if sc and onto:
-        return _thread_dir(sc, onto, thread_id)
-    # fallback: find by scanning
-    tdir, _, _ = _find_thread(thread_id)
-    return tdir
-
-
 # ─── API Endpoints ─────────────────────────────────────────────────────────────
 
 

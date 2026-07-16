@@ -84,6 +84,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectEngine, setConnectEngine] = useState<DataEngine | null>(null);
   const [connectParams, setConnectParams] = useState<Record<string, any>>({});
+  const [connectRequired, setConnectRequired] = useState<Record<string, boolean>>({});
   const [connectResult, setConnectResult] = useState<any>(null);
   const [connectLoading, setConnectLoading] = useState(false);
 
@@ -221,7 +222,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       const beh = behaviors.find(b => b.name === behaviorEditName);
       if (!beh) { message.error('行为不存在'); return; }
       await updateBehavior(ontologyId, behaviorEditName, { ...beh, params: parsedParams, response: parsedResponse });
-      message.success('行为接口已更新');
+      message.success('行为数据已更新');
       setBehaviorEditOpen(false);
       await load();
     } catch (e: any) { message.error('保存失败: ' + e.message); }
@@ -303,9 +304,17 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     setConnectEngine(de);
     setConnectResult(null);
     const beh = behaviors.find(b => b.name === behaviorName);
-    const raw = beh?.params || {};
+    const ontoParams = beh?.params || {};
+    const targetParams = de.target?.params || {};
+    const mapping = de.input_mapping || {};
+    const required: Record<string, boolean> = {};
     const params: Record<string, any> = {};
-    for (const [k, v] of Object.entries(raw)) {
+    for (const [k, v] of Object.entries(ontoParams)) {
+      const targetKey = mapping[k] || k;
+      const targetSpec = targetParams[targetKey];
+      if (targetSpec && typeof targetSpec === 'object') {
+        required[k] = (targetSpec as any).required !== false;
+      }
       if (typeof v === 'string') params[k] = '';
       else if (typeof v === 'object' && v !== null) {
         const t = (v as any).type || 'string';
@@ -316,6 +325,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       }
     }
     setConnectParams(params);
+    setConnectRequired(required);
     setConnectOpen(true);
   };
 
@@ -343,11 +353,10 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   });
 
   const columns = [
-    { title: '本体行为接口', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (_: any, r: any) => {
+    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (_: any, r: any) => {
       const b = r._behavior as Behavior;
-      return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b.name)}>{b.display_name || b.name}<span className="text-text-muted text-xs ml-1">({b.method})</span></span>;
+      return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b.name)}>{b.display_name || b.name}</span>;
     }},
-    { title: '本体API接口地址', dataIndex: '_behavior', key: 'url', width: 200, ellipsis: true, render: (b: Behavior) => <code className="text-accent-green text-xs">{b.url || '-'}</code> },
     { title: '目标接口设置', key: 'target', width: 100, render: (_: any, r: any) => {
       const de = getEngine(r._behavior.name);
       const hasConfig = de.target?.url || de.target?.api_name || de.target?.data_source_name;
@@ -543,18 +552,13 @@ total  Number  订单总价  15000.50`}
               <span className="text-text-muted text-xs">目标接口：</span>
               <code className="text-accent-green text-xs ml-1">{connectEngine.target?.method || 'POST'} {connectEngine.target?.url || '(未配置)'}</code>
             </div>
-            <div>
-              <span className="text-text-muted text-xs">本体接口：</span>
-              <code className="text-accent-blue text-xs ml-1">{(() => { const b = behaviors.find(b => b.name === connectEngine.behavior_name); return b ? `${b.method} ${b.url}` : '-'; })()}</code>
-            </div>
-
             {Object.keys(connectParams).length > 0 && (
               <div>
                 <span className="text-text-muted text-xs mb-2 block">请求参数</span>
                 <div className="space-y-1.5">
                   {Object.entries(connectParams).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-2">
-                      <span className="w-28 text-text-secondary text-xs shrink-0">{k}</span>
+                      <span className="w-28 text-text-secondary text-xs shrink-0">{connectRequired[k] && <span className="text-red-400 mr-0.5">*</span>}{k}</span>
                       {typeof v === 'boolean' ? null : typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')) ? (
                         <Input.TextArea size="small" value={v} onChange={e => setConnectParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
                       ) : (
@@ -585,7 +589,7 @@ total  Number  订单总价  15000.50`}
       </Modal>
       {/* ─── Behavior Params/Response Edit Modal ────────────────────────── */}
       <Modal
-        title={`编辑行为接口 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`}
+        title={`编辑行为参数 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`}
         open={behaviorEditOpen}
         onOk={saveBehaviorEdit}
         onCancel={() => setBehaviorEditOpen(false)}
@@ -626,7 +630,7 @@ total  Number  订单总价  15000.50`}
         cancelText="取消"
         width={500}
       >
-        <p className="text-text-primary text-sm">将本体行为接口的输入输出字段，与目标系统接口的字段进行智能匹配。</p>
+        <p className="text-text-primary text-sm">将本体行为的输入输出字段，与目标系统API接口的字段进行智能匹配。</p>
         <p className="text-text-muted text-xs mt-2">匹配仅建立字段对应关系，不会修改任何字段名称、类型或内容。匹配完成后可在输入/输出映射弹窗中手动调整。</p>
       </Modal>
 
@@ -641,7 +645,7 @@ total  Number  订单总价  15000.50`}
         width={500}
         confirmLoading={smartAlignLoading}
       >
-        <p className="text-text-primary text-sm">将本体行为接口 API 输入参数和输出结构，与目标 API 对齐。</p>
+        <p className="text-text-primary text-sm">将本体行为输入和输出，与目标API接口对齐。</p>
         <p className="text-text-muted text-xs mt-2">对齐仅修改字段名称以匹配目标接口风格，不会新增、删除字段或修改字段类型。</p>
       </Modal>
     </div>

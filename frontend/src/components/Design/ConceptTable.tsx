@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, message, Tag, Space, Select } from 'antd';
+import { Button, Input, Modal, message, Tag, Space } from 'antd';
 import { PlusOutlined, DeleteOutlined, SettingOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { getConcepts, createConcept, updateConcept, deleteConcept, updateAttributes, Concept, Attribute } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';

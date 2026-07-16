@@ -34,7 +34,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', method: 'POST', url: '', params: '{}', response: '{}', related_concepts: [] });
+    setEditData({ name: '', display_name: '', description: '', params: '{}', response: '{}', related_concepts: [] });
     setEditingKey('__new__');
   };
 
@@ -47,7 +47,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       else if (typeof v === 'object' && v !== null) normParams[k] = { type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' };
       else normParams[k] = { type: String(v), required: true, description: '', example: '' };
     }
-    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, method: b.method, url: b.url, params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', related_concepts: b.related_concepts });
+    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', related_concepts: b.related_concepts });
     setEditingKey(b.name);
   };
 
@@ -67,7 +67,6 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     try {
       const data: Behavior = {
         name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '',
-        method: editData.method || 'POST', url: editData.url?.trim() || '',
         params: parsedParams, response: parsedResponse, related_concepts: editData.related_concepts || [],
       };
       const isNew = editingKey === '__new__';
@@ -100,9 +99,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={setF('name')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={setF('display_name')} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'method') return <Select size="small" value={editData.method || 'POST'} onChange={setF('method')} options={[{ label: 'GET', value: 'GET' }, { label: 'POST', value: 'POST' }, { label: 'PATCH', value: 'PATCH' }, { label: 'DELETE', value: 'DELETE' }]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'url') return <Input size="small" value={editData.url || ''} onChange={setF('url')} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />;
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={openResponseEditor}>编辑</Button>;
     if (dataIndex === 'related_concepts') return <Select size="small" mode="multiple" placeholder="选" value={editData.related_concepts || []} onChange={setF('related_concepts')} options={conceptOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
@@ -110,17 +107,12 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   };
 
   const dataSource = behaviors.map(b => ({ ...b, _key: b.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', method: 'POST', url: '', params: {}, response: {}, related_concepts: [] } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', params: {}, response: {}, related_concepts: [] } as any);
 
   const columns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
     { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
-    { title: '方法', dataIndex: 'method', key: 'method', width: 65, render: (v: any, r: Behavior) => renderCell(v, r, 'method', (v2: string) => v2 ? <Tag color={v2 === 'GET' ? 'green' : v2 === 'DELETE' ? 'red' : 'blue'}>{v2}</Tag> : '-') },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'description') },
-    { title: 'API接口', key: 'url', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
-      if (isEditing(r) || isNewRow(r)) return <Input size="small" value={editData.url || ''} onChange={e => setEditData((p: any) => ({...p, url: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />;
-      return r.url || '-';
-    } },
     { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;

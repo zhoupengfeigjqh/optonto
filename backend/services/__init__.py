@@ -70,22 +70,6 @@ def write_yaml_raw(scenario_name: str, ontology_name: str, content: str) -> None
         f.write(content)
 
 
-def delete_ontology_dir(scenario_name: str, ontology_name: str) -> None:
-    """Delete the ontology directory and all its contents."""
-    dir_path = _get_ontology_dir(scenario_name, ontology_name)
-    if dir_path.exists():
-        import shutil
-        shutil.rmtree(dir_path)
-
-
-def delete_scenario_dir(scenario_name: str) -> None:
-    """Delete the scenario directory and all its contents."""
-    dir_path = ONTO_MARKET_DIR / scenario_name
-    if dir_path.exists():
-        import shutil
-        shutil.rmtree(dir_path)
-
-
 def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dict]:
     """List all YAML files in the ontology directory."""
     dir_path = _get_ontology_dir(scenario_name, ontology_name)

@@ -3,6 +3,7 @@
 Callable by both HTTP endpoints and agents.
 """
 
+import re
 import httpx
 
 from schemas import OntologyData
@@ -19,19 +20,24 @@ def _translate_input(params: dict, input_mapping: dict) -> dict:
     return result
 
 
-def _translate_output(data, output_mapping: dict):
+def _translate_output(data, output_mapping: dict, _path: str = ""):
     """Recursively rename keys in target response back to ontology names via output_mapping."""
     if not output_mapping or not data:
         return data
     reverse_map = {v: k for k, v in output_mapping.items() if v}
+
     if isinstance(data, dict):
         result = {}
         for k, v in data.items():
-            new_key = reverse_map.get(k, k)
-            result[new_key] = _translate_output(v, output_mapping)
+            full_path = f"{_path}.{k}" if _path else k
+            onto_full = reverse_map.get(full_path, k)
+            new_key = onto_full.rsplit(".", 1)[-1] if "." in onto_full else onto_full
+            new_path = f"{_path}.{new_key}" if _path else new_key
+            result[new_key] = _translate_output(v, output_mapping, new_path)
         return result
     if isinstance(data, list):
-        return [_translate_output(item, output_mapping) for item in data]
+        new_path = f"{_path}[*]" if _path else "[*]"
+        return [_translate_output(item, output_mapping, new_path) for item in data]
     return data
 
 
@@ -39,8 +45,22 @@ def _is_json(content_type: str) -> bool:
     return "application/json" in content_type or "json" in content_type
 
 
+def _substitute_path_params(url: str, params: dict) -> tuple[str, dict]:
+    """Replace {paramName} placeholders in URL with values from params. Returns (url, remaining_params)."""
+    remaining = dict(params)
+
+    def replace(m: re.Match) -> str:
+        key = m.group(1)
+        val = str(remaining.pop(key, m.group(0)))
+        return val
+
+    url = re.sub(r"\{(\w+)\}", replace, url)
+    return url, remaining
+
+
 async def _http_call(url: str, method: str, params: dict, timeout: int = 30) -> dict:
-    """Make an HTTP request. GET/DELETE uses query string, POST/PATCH/PUT uses JSON body."""
+    """Make an HTTP request. Path params ({xxx}) are replaced in URL, remaining go to query/body."""
+    url, params = _substitute_path_params(url, params)
     async with httpx.AsyncClient(timeout=timeout) as client:
         if method == "GET":
             resp = await client.get(url, params=params)

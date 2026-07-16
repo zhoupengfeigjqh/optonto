@@ -239,8 +239,6 @@ relations:
 behaviors:
 - name: QueryProduct
   description: 用户或智能体查询货品基本信息
-  url: ''
-  method: GET
   params:
     productId:
       type: string
@@ -253,8 +251,6 @@ behaviors:
   display_name: 查询货品信息
 - name: QueryProductInv
   description: 用户或智能体查询货品库存
-  url: /api/products/inventory
-  method: GET
   params:
     productId: string
     productName: string
@@ -263,8 +259,6 @@ behaviors:
   display_name: 查询货品库存
 - name: QueryBOMInfo
   description: 用户或智能体查询BOM基本信息
-  url: /api/bom
-  method: GET
   params:
     bomId: string
     productId: string
@@ -273,8 +267,6 @@ behaviors:
   display_name: 查询BOM信息
 - name: QueryBOMMaterialReq
   description: 用户或智能体查询BOM的原料汇总需求
-  url: /api/bom/materials
-  method: GET
   params:
     bomId: string
   related_concepts:
@@ -282,8 +274,6 @@ behaviors:
   display_name: 查询BOM原料需求
 - name: QueryBOMEquipReq
   description: 用户或智能体查询BOM的设备组汇总需求
-  url: /api/bom/equipment
-  method: GET
   params:
     bomId: string
   related_concepts:
@@ -291,8 +281,6 @@ behaviors:
   display_name: 查询BOM设备需求
 - name: QueryBOMPersonReq
   description: 用户或智能体查询BOM的人员组汇总需求
-  url: /api/bom/personnel
-  method: GET
   params:
     bomId: string
   related_concepts:
@@ -300,8 +288,6 @@ behaviors:
   display_name: 查询BOM人员需求
 - name: QueryBOMDetail
   description: 用户或智能体查询BOM及其明细和工艺路径
-  url: /api/bom/details
-  method: GET
   params:
     bomId: string
   related_concepts:
@@ -309,8 +295,6 @@ behaviors:
   display_name: 查询BOM明细
 - name: QueryProcessRoute
   description: 用户或智能体查询工艺路径及其关联资源需求
-  url: /api/routes
-  method: GET
   params:
     routeId: string
     routeName: string
@@ -319,8 +303,6 @@ behaviors:
   display_name: 查询工艺路径
 - name: QueryRouteMatReq
   description: 用户或智能体查询工艺路径关联的原料需求
-  url: /api/routes/materials
-  method: GET
   params:
     routeId: string
   related_concepts:
@@ -328,8 +310,6 @@ behaviors:
   display_name: 查询工艺原料需求
 - name: QueryRouteEquipReq
   description: 用户或智能体查询工艺路径关联的设备组需求
-  url: /api/routes/equipment
-  method: GET
   params:
     routeId: string
   related_concepts:
@@ -337,8 +317,6 @@ behaviors:
   display_name: 查询工艺设备需求
 - name: QueryRoutePersonReq
   description: 用户或智能体查询工艺路径关联的人员组需求
-  url: /api/routes/personnel
-  method: GET
   params:
     routeId: string
   related_concepts:

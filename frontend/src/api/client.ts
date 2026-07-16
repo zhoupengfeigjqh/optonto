@@ -76,9 +76,6 @@ export const updateOntology = (id: number, data: { name?: string; description?: 
 export const getOntologyData = (id: number) =>
   request<OntologyData>(`/api/ontologies/${id}/data`);
 
-export const updateOntologyData = (id: number, data: OntologyData) =>
-  request<OntologyData>(`/api/ontologies/${id}/data`, { method: 'PUT', body: JSON.stringify(data) });
-
 // ─── Concept ───────────────────────────────────────────────────────────────
 
 export interface Attribute {
@@ -140,8 +137,6 @@ export const updateRelation = (ontologyId: number, name: string, data: Relation)
 export interface Behavior {
   name: string;
   description: string;
-  url: string;
-  method: string;
   params: Record<string, unknown>;
   response?: Record<string, unknown>;
   related_concepts: string[];
@@ -284,9 +279,6 @@ export const createDataEngine = (ontologyId: number, data: DataEngine) =>
 
 export const updateDataEngine = (ontologyId: number, name: string, data: DataEngine) =>
   request<DataEngine>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
-
-export const deleteDataEngine = (ontologyId: number, name: string) =>
-  request<{ message: string }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 export const analyzeMapping = (ontologyId: number, name: string, body?: {
   onto_input_fields: string[];

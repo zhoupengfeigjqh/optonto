@@ -43,8 +43,8 @@ public class PurchaseRecordService {
             ? (Integer) params.get("arrivalQuantity")
             : Integer.valueOf(params.get("arrivalQuantity").toString()));
         record.setSupplierName((String) params.get("supplierName"));
-        record.setRelatedOrderId((String) params.get("relatedOrderId"));
-        record.setRelatedOrderName((String) params.get("relatedOrderName"));
+        record.setRelatedOrderId(toNull((String) params.get("relatedOrderId")));
+        record.setRelatedOrderName(toNull((String) params.get("relatedOrderName")));
         record.setStatus("待入库");
         repo.save(record);
 
@@ -98,5 +98,9 @@ public class PurchaseRecordService {
             "arrivalQuantity", record.getArrivalQuantity(),
             "status", "已入库"
         ));
+    }
+
+    private static String toNull(String s) {
+        return s != null && !s.isEmpty() ? s : null;
     }
 }

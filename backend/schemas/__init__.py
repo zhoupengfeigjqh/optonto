@@ -1,58 +1,8 @@
-"""Pydantic schemas for request/response validation."""
+"""Pydantic schemas for ontology YAML data structures."""
 
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
-
-
-# ─── Scenario ─────────────────────────────────────────────────────────────────
-
-class ScenarioCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255, description="场景名称")
-    description: str = Field("", description="场景描述")
-
-
-class ScenarioUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
-
-
-class ScenarioOut(BaseModel):
-    id: int
-    name: str
-    description: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-# ─── Ontology ─────────────────────────────────────────────────────────────────
-
-class OntologyCreate(BaseModel):
-    scenario_id: int
-    name: str = Field(..., min_length=1, max_length=255, description="本体名称")
-    description: str = Field("", description="本体描述")
-    creator: str = Field("", description="创建人")
-
-
-class OntologyUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
-    creator: Optional[str] = None
-
-
-class OntologyOut(BaseModel):
-    id: int
-    scenario_id: int
-    name: str
-    description: str
-    creator: str
-    scenario_name: str = Field("", description="所属场景名称")
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 # ─── Ontology Components (YAML-based) ─────────────────────────────────────────
@@ -97,9 +47,8 @@ class RelationItem(BaseModel):
 class BehaviorItem(BaseModel):
     name: str = Field(..., description="行为名称")
     description: str = Field("", description="行为描述")
-    url: str = Field("", description="HTTP URL")
-    method: str = Field("POST", description="请求方式 (GET/POST/PATCH/DELETE)")
-    params: dict = Field(default_factory=dict, description="接口参数 (JSON)")
+    params: dict = Field(default_factory=dict, description="输入参数")
+    response: dict = Field(default_factory=dict, description="返回结构")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念")
     display_name: str = Field("", description="展示名称")

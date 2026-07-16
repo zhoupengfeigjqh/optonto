@@ -308,8 +308,6 @@ relations:
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
-  url: /api/purchaseRecords
-  method: POST
   params:
     rawMaterialId:
       type: string
@@ -346,6 +344,11 @@ behaviors:
       required: false
       description: 关联订单名称
       example: 客户A-项目X订单
+    unit:
+      type: string
+      required: true
+      description: 单位
+      example: 吨
   response:
     code:
       type: number
@@ -397,6 +400,10 @@ behaviors:
           type: number
           description: 等待周期
           example: 14
+        status:
+          type: string
+          description: 状态
+          example: 待入库
   related_concepts:
   - PurchaseRecord
   - RawMaterial
@@ -405,8 +412,6 @@ behaviors:
   display_name: 创建原材料采购单
 - name: CancelPurchaseRecord
   description: 取消一笔已创建但尚未入库的采购记录。
-  url: /api/purchaseRecords/{purchaseRecordId}
-  method: DELETE
   params:
     purchaseRecordId:
       type: string
@@ -437,8 +442,6 @@ behaviors:
   display_name: 取消原材料采购单
 - name: ReceiveRawMaterial
   description: 将原材料采购入库。
-  url: /api/purchaseRecords/{purchaseRecordId}/receive
-  method: POST
   params:
     purchaseRecordId:
       type: string
@@ -469,8 +472,6 @@ behaviors:
   display_name: 入库原材料
 - name: QueryInventory
   description: 根据原材料ID或名称查询其最新的库存快照。
-  url: /api/inventories
-  method: GET
   params:
     rawMaterialId:
       type: string
@@ -528,8 +529,6 @@ behaviors:
   display_name: 查询原材料库存信息
 - name: QueryPurchaseRecords
   description: 根据采购单/原材料/关联客单来查询采购记录列表。
-  url: /api/purchaseRecords
-  method: GET
   params:
     purchaseRecordId:
       type: string
@@ -614,8 +613,6 @@ behaviors:
   display_name: 查询原材料采购单信息
 - name: QueryRawMaterials
   description: 根据原材料ID或名称查询原材料的基础信息。
-  url: /api/rawMaterials
-  method: GET
   params:
     rawMaterialId:
       type: string
@@ -657,8 +654,6 @@ behaviors:
   display_name: 查询原材料基本信息
 - name: QuerySuppliers
   description: 根据供应商名或原材料名查询供应商
-  url: /api/suppliers
-  method: GET
   params:
     supplierName:
       type: string
@@ -704,8 +699,6 @@ behaviors:
   display_name: 查询供应商信息
 - name: QuerySupplierCapability
   description: 根据供应商名或原材料名，查询供应商供货能力
-  url: /api/supplierCapability
-  method: GET
   params:
     supplierName:
       type: string
@@ -985,10 +978,11 @@ data_engines:
     arrivalTime: arrivalTime
     relatedOrderId: relatedOrderId
     relatedOrderName: relatedOrderName
+    unit: unit
   output_mapping:
     code: code
     data: data
-    data.purchaseRecordId: ''
+    data.purchaseRecordId: data.purchaseOrderId
     data.rawMaterialId: data.rawMaterialId
     data.rawMaterialName: data.rawMaterialName
     data.purchaseTime: data.purchaseTime
@@ -999,6 +993,7 @@ data_engines:
     data.relatedOrderId: data.relatedOrderId
     data.relatedOrderName: data.relatedOrderName
     data.leadTime: ''
+    data.status: data.status
 - name: CancelPurchaseRecord
   display_name: ''
   behavior_name: CancelPurchaseRecord
@@ -1006,7 +1001,7 @@ data_engines:
     data_source_name: aps
     api_name: 取消原材料采购单
     url: http://java-backend:8080/api/purchase-records/{purchaseOrderId}/cancel
-    method: DELETE
+    method: POST
     params:
       purchaseOrderId:
         type: string
@@ -1274,7 +1269,7 @@ data_engines:
   output_mapping:
     code: code
     data: data
-    data[*].purchaseRecordId: data[*].purchaseOrderId
+    data[*].purchaseRecordId: ''
     data[*].rawMaterialId: data[*].rawMaterialId
     data[*].rawMaterialName: data[*].rawMaterialName
     data[*].purchaseTime: data[*].purchaseTime
@@ -1433,8 +1428,14 @@ data_engines:
     params:
       supplierName:
         type: string
+        required: false
+        description: 供应商名称，模糊匹配
+        example: 宝钢钢铁集团
       rawMaterialName:
         type: string
+        required: false
+        description: 原材料名称
+        example: 钢板008
     response:
       code:
         type: number

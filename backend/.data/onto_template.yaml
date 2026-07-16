@@ -28,8 +28,6 @@ relations:
 behaviors:
 - name: behaviorName
   description: 行为描述
-  url: /api/path
-  method: POST
   params:
     tradeId:
       type: string

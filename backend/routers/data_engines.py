@@ -29,13 +29,13 @@ except ImportError:
 
 try:
     from langchain_openai import ChatOpenAI
-
-    _HAS_LANGCHAIN = True
 except ImportError:
-    _HAS_LANGCHAIN = False
+    ChatOpenAI = None
 
 
 def _build_llm():
+    if ChatOpenAI is None:
+        return None
     api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
     api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
     model = os.environ.get("LLM_MODEL", "deepseek-chat")
@@ -48,27 +48,6 @@ def _build_llm():
         temperature=0.3,
         streaming=False,
     )
-
-
-MAPPING_ANALYSIS_SYSTEM_PROMPT = "你是一个API接口映射分析专家。只输出JSON，不输出其他内容。"
-
-MAPPING_ANALYSIS_PROMPT = """分析本体API接口和目标系统API接口的参数和返回结构是否可以正常映射。
-
-【本体行为接口】
-- 参数: {ontology_params}
-- 返回结构: {ontology_response}
-
-【目标系统接口】
-- 参数: {target_params}
-- 返回结构: {target_response}
-
-检查规则：
-1. 参数名称和类型是否一致
-2. 必填参数是否可以满足
-3. 返回结构字段是否可以对应
-
-严格按以下JSON格式输出，不要任何解释：
-{{"status": "ok"或"warning"或"error", "message": "分析结论", "issues": ["具体问题描述"]}}"""
 
 
 # ─── CRUD ──────────────────────────────────────────────────────────────────────

@@ -38,17 +38,14 @@ except ImportError:
 # Try to import LangChain; if unavailable, use mock fallback.
 try:
     from langchain_openai import ChatOpenAI
-
-    _HAS_LANGCHAIN = True
 except ImportError:
-    _HAS_LANGCHAIN = False
+    ChatOpenAI = None
 
 
 def _build_llm():
-    """Build a LangChain chat model from environment variables.
-
-    Priority: LLM_API_KEY > DEEPSEEK_API_KEY > mock fallback
-    """
+    """Build a LangChain chat model from environment variables."""
+    if ChatOpenAI is None:
+        return None
     api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
     api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
     model = os.environ.get("LLM_MODEL", "deepseek-chat")
