@@ -293,26 +293,22 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'description') },
     { title: '关联行为', dataIndex: 'related_behaviors', key: 'related_behaviors', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_behaviors', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.display_name || name).join(', ') || '-') },
     { title: '关联函数', dataIndex: 'related_functions', key: 'related_functions', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_functions', (list: string[]) => list?.map(name => funcs.find(f => f.name === name)?.display_name || name).join(', ') || '-') },
+    { title: '规则设计', dataIndex: 'rule_design', key: 'rule_design', width: 75, render: (_: any, r: Rule) => {
+      const editing = isEditing(r);
+      const isNew = editingKey === '__new__' && r.name === '__new__';
+      if (!editing && !isNew) {
+        const hasConfig = r.rule_config && Object.keys(r.rule_config).length > 0;
+        return <span className={`text-xs ${hasConfig ? 'text-green-500' : 'text-text-muted'}`}>{hasConfig ? '已设计' : '未设计'}</span>;
+      }
+      return <Button type="link" size="small" icon={<FileTextOutlined />} disabled={!editData.rule_type} onClick={openRuleDesign}>设计</Button>;
+    }},
     {
-      title: '操作', key: 'actions', width: 130,
+      title: '操作', key: 'actions', width: 80,
       render: (_: any, record: Rule) => {
         if (editingKey === record.name || (editingKey === '__new__' && record.name === '__new__')) {
-          return (
-            <Space>
-              <Button type="link" size="small" icon={<FileTextOutlined />} disabled={!editData.rule_type} onClick={() => openRuleDesign()}>设计</Button>
-              <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} />
-              <Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} />
-            </Space>
-          );
+          return <Space><Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} /><Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} /></Space>;
         }
-        const hasConfig = record.rule_config && Object.keys(record.rule_config).length > 0;
-        return (
-          <Space>
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.name)} />
-            <span className={`text-xs ${hasConfig ? 'text-green-500' : 'text-text-muted'}`}>{hasConfig ? '已设计' : '未设计'}</span>
-          </Space>
-        );
+        return <Space><Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} /><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.name)} /></Space>;
       },
     },
   ];
