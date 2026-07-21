@@ -83,8 +83,43 @@ ANALYSIS_SYSTEM_PROMPT = """
     要求3：函数关联概念属性（如Order.orderId），可跨概念
     要求4：行为须为原子级业务动作（增删改查），不可再拆分
     要求5：行为须关联至少一个概念，可关联多个
-    要求6：行为输入参数参考API JSON格式，字段须来自概念属性
-    要求7：行为返回结构参考API JSON格式，字段须来自概念属性
+    要求6：行为输入参数参考API JSON格式，字段须来自概念属性，如：
+        {
+        "rawMaterialId": {
+            "type": "string",
+            "required": true,
+            "description": "原材料编号",
+            "example": "RM-001"
+        },
+        "rawMaterialName": {
+            "type": "string",
+            "required": true,
+            "description": "原材料名称",
+            "example": "高强度钢板"
+        }
+        }
+    要求7：行为返回结构参考API JSON格式，字段须来自概念属性，如：
+        {
+        "code": {
+            "type": "number",
+            "example": 0
+        },
+        "data": {
+            "type": "object",
+            "properties": {
+            "purchaseRecordId": {
+                "type": "string",
+                "description": "采购单号",
+                "example": "PO-20231027-001"
+            },
+            "rawMaterialName": {
+                "type": "string",
+                "description": "原材料名称",
+                "example": "高强度钢板"
+            }
+            }
+        }
+        }    
     要求8：请用户提供目标数据源接口信息以便设计；若用户无法提供则自行合理设计；
     要求9：规则须绑定动作，规则间独立，可复用到多个动作
     要求10：规则介入时机分前置（约束）和后置（检验）

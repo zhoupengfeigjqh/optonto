@@ -174,6 +174,9 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [behaviorResponseStr, setBehaviorResponseStr] = useState('{}');
   const [behaviorEditLoading, setBehaviorEditLoading] = useState(false);
 
+  // copy behavior params to target confirm modal
+  const [copyConfirmOpen, setCopyConfirmOpen] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -539,6 +542,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetParamsOpen(true)}>编辑输入</Button>
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetResponseOpen(true)}>编辑输出</Button>
             <Button size="small" onClick={() => { setSmartParseParamsContent(''); setSmartParseResponseContent(''); setSmartParseOpen(true); }}><span style={{ color: '#f59e0b' }}>智能解析</span></Button>
+            <Button size="small" danger onClick={() => setCopyConfirmOpen(true)}>复制本体行为参数</Button>
           </div>
         </div>
 
@@ -585,6 +589,31 @@ total  Number  订单总价  15000.50`}
               />
             </div>
           </div>
+        </Modal>
+
+        {/* ─── Copy Behavior Params Confirm Modal ─────────────────────────── */}
+        <Modal
+          title="复制本体行为参数"
+          open={copyConfirmOpen}
+          onOk={() => {
+            const beh = behaviors.find(b => b.name === currentBehavior);
+            if (beh) {
+              setTargetParamsStr(JSON.stringify(beh.params || {}, null, 2));
+              setTargetResponseStr(JSON.stringify(beh.response || {}, null, 2));
+              message.success('已将本体行为参数复制到目标接口');
+            }
+            setCopyConfirmOpen(false);
+          }}
+          onCancel={() => setCopyConfirmOpen(false)}
+          okText="确认复制"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          width={500}
+        >
+          <p className="text-text-primary text-sm">
+            ⚠ <span className="text-red-400">注意：</span>将本体行为参数拷贝为目标接口参数，此时需要用户按照本体参数设计外部接口。
+          </p>
+          <p className="text-text-muted text-xs mt-3">请问是否复制？</p>
         </Modal>
       </Modal>
 
