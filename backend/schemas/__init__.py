@@ -114,6 +114,7 @@ class FunctionItem(BaseModel):
     related_attributes: list[str] = Field(default_factory=list, description="关联属性列表 (concept.attribute)")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构")
+    code: str = Field("", description="函数代码（Python）")
 
 
 class TargetApiConfig(BaseModel):

@@ -141,6 +141,7 @@ export interface Function {
   related_attributes: string[];
   params?: Record<string, unknown>;
   response?: Record<string, unknown>;
+  code?: string;
 }
 
 export const getFunctions = (ontologyId: number) =>
@@ -151,6 +152,12 @@ export const createFunction = (ontologyId: number, data: Function) =>
 
 export const deleteFunction = (ontologyId: number, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+export const generateFunctionCode = (ontologyId: number, name: string) =>
+  request<{ code: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/generate-code`, { method: 'POST' });
+
+export const executeFunction = (ontologyId: number, name: string, params: any) =>
+  request<{ result: any }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/execute`, { method: 'POST', body: JSON.stringify({ params }) });
 
 export const updateFunction = (ontologyId: number, name: string, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });

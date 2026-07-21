@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, message, Space, Tag, Tooltip, Tree } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined } from '@ant-design/icons';
-import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, Function, Concept, Attribute } from '@/api/client';
+import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined, RobotOutlined } from '@ant-design/icons';
+import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, generateFunctionCode, executeFunction, Function, Concept, Attribute } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import type { DataNode } from 'antd/es/tree';
 
@@ -23,6 +23,17 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   // params editor
   const [paramsEditorOpen, setParamsEditorOpen] = useState(false);
   const [responseEditorOpen, setResponseEditorOpen] = useState(false);
+
+  // code editor modal
+  const [codeEditorOpen, setCodeEditorOpen] = useState(false);
+  const [codeStr, setCodeStr] = useState('');
+  const [generating, setGenerating] = useState(false);
+
+  // test modal
+  const [testOpen, setTestOpen] = useState(false);
+  const [testParams, setTestParams] = useState<Record<string, any>>({});
+  const [testResult, setTestResult] = useState<any>(null);
+  const [testLoading, setTestLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -64,13 +75,60 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   };
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', related_attributes: [], params: '{}', response: '{}' });
+    setEditData({ name: '', display_name: '', description: '', related_attributes: [], params: '{}', response: '{}', code: '' });
     setEditingKey('__new__');
   };
 
   const handleEdit = (g: Function) => {
-    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_attributes: g.related_attributes || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2) });
+    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_attributes: g.related_attributes || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code: g.code || '' });
     setEditingKey(g.name);
+  };
+
+  const openCodeEditor = () => {
+    setCodeStr(editData.code || '');
+    setCodeEditorOpen(true);
+  };
+
+  const handleGenerateCode = async () => {
+    setGenerating(true);
+    try {
+      const result = await generateFunctionCode(ontologyId, editData.name);
+      setCodeStr(result.code);
+      setEditData((p: any) => ({ ...p, code: result.code }));
+      message.success('代码已生成');
+    } catch (e: any) { message.error('生成失败: ' + e.message); }
+    finally { setGenerating(false); }
+  };
+
+  const saveCodeEditor = () => {
+    setEditData((p: any) => ({ ...p, code: codeStr }));
+    setCodeEditorOpen(false);
+  };
+
+  const openTestModal = () => {
+    const params: Record<string, any> = {};
+    const raw = JSON.parse(editData.params || '{}');
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'string') params[k] = '';
+      else if (typeof v === 'object' && v !== null) {
+        const t = (v as any).type || 'string';
+        if (t === 'object') params[k] = '{}';
+        else if (t === 'array') params[k] = '[]';
+        else params[k] = '';
+      }
+    }
+    setTestParams(params);
+    setTestResult(null);
+    setTestOpen(true);
+  };
+
+  const handleTestExecute = async () => {
+    setTestLoading(true);
+    try {
+      const result = await executeFunction(ontologyId, editData.name, testParams);
+      setTestResult(result.result);
+    } catch (e: any) { setTestResult({ error: e.message }); }
+    finally { setTestLoading(false); }
   };
 
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
@@ -91,6 +149,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         related_attributes: editData.related_attributes || [],
         params: parsedParams,
         response: parsedResponse,
+        code: editData.code || '',
       };
       const isNew = editingKey === '__new__';
       if (isNew) {
@@ -134,6 +193,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     }
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
+    if (dataIndex === 'code') return <Button size="small" icon={<CodeOutlined />} onClick={openCodeEditor}>编辑</Button>;
     return render ? render(val) : (val || '-');
   };
 
@@ -191,6 +251,11 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         const tag = <Tag key={i} color="blue" className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>;
         return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
       }) : '-';
+    }},
+    { title: '函数代码', dataIndex: 'code', key: 'code', width: 85, render: (v: any, r: Function) => {
+      if (isEditing(r) || isNewRow(r)) return renderCell(v, r, 'code');
+      const hasCode = r.code && r.code.trim().length > 0;
+      return <span className={`text-xs ${hasCode ? 'text-green-500' : 'text-text-muted'}`}>{hasCode ? '已编写' : '未编写'}</span>;
     }},
     { title: '返回结构', key: 'response', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
@@ -274,6 +339,69 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       {/* ─── Response Editor Modal ─────────────────────────────────── */}
       <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { JSON.parse(editData.response || '{}'); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
         <Input.TextArea value={editData.response || '{}'} onChange={e => setEditData((p: any) => ({ ...p, response: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+      </Modal>
+
+      {/* ─── Code Editor Modal ─────────────────────────────────────── */}
+      <Modal
+        title={`函数代码编辑 - ${editData.display_name || editData.name || ''}`}
+        open={codeEditorOpen}
+        onOk={saveCodeEditor}
+        onCancel={() => setCodeEditorOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        width={800}
+      >
+        <div className="flex justify-end mb-2 gap-2">
+          <Button size="small" icon={<RobotOutlined />} loading={generating} onClick={handleGenerateCode}>智能生成</Button>
+          <Button size="small" icon={<PlayCircleOutlined />} onClick={openTestModal} disabled={!codeStr.trim()}>测试运行</Button>
+        </div>
+        <Input.TextArea value={codeStr} onChange={e => setCodeStr(e.target.value)} rows={20} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" placeholder="在此编写 Python 函数代码..." />
+      </Modal>
+
+      {/* ─── Test Modal ────────────────────────────────────────────── */}
+      <Modal
+        title={`函数测试 - ${editData.display_name || editData.name || ''}`}
+        open={testOpen}
+        onCancel={() => setTestOpen(false)}
+        footer={null}
+        width={700}
+      >
+        <div className="space-y-4">
+          <div>
+            <span className="text-text-muted text-xs mb-2 block">输入参数</span>
+            {Object.keys(testParams).length === 0 ? (
+              <p className="text-text-muted text-sm">该函数无需输入参数</p>
+            ) : (
+              <div className="space-y-1.5">
+                {Object.entries(testParams).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <span className="w-28 text-text-secondary text-xs shrink-0">{k}</span>
+                    {typeof v === 'boolean' ? null : typeof v === 'string' && (v === '{}' || v === '[]') ? (
+                      <Input.TextArea size="small" value={v as string} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+                    ) : (
+                      <Input size="small" value={v as string} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Button type="primary" icon={<SendOutlined />} onClick={handleTestExecute} loading={testLoading} block>执行</Button>
+
+          {testResult && (
+            <div>
+              <span className="text-text-muted text-xs mb-1 block">执行结果</span>
+              <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap">
+                {testResult.error ? (
+                  <span className="text-red-400">{testResult.error}</span>
+                ) : (
+                  <span className="text-accent-green">{JSON.stringify(testResult, null, 2)}</span>
+                )}
+              </pre>
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );
