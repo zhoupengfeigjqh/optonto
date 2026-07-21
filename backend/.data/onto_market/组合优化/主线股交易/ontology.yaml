@@ -201,20 +201,20 @@ relations:
 - name: hasState
   source: Market
   target: MarketState
-  cardinality: 1:N
+  cardinality: '1:1'
   description: 市场在某一时刻只有一个状态。
   display_name: 具有状态
 - name: belongsTo
   source: Stock
   target: HotSector
   cardinality: N:1
-  description: 一只股票属于一个热点板块。关联：Stock.sectorId -> HotSector.hotSectorId。
+  description: 一只股票属于一个热点板块。
   display_name: 属于
 - name: isLeadOf
   source: Stock
   target: HotSector
   cardinality: 1:N
-  description: 一个龙头股引领一个板块。关联：HotSector.leadStockId -> Stock.stockId。
+  description: 一个龙头股引领一个板块。
   display_name: 是...的龙头
 - name: isBasisFor
   source: MarketState
@@ -225,8 +225,8 @@ relations:
 - name: targets
   source: TradingDecision
   target: Stock
-  cardinality: N:1
-  description: 一个交易决策针对一只股票。关联：TradingDecision.stockId -> Stock.stockId。
+  cardinality: N:M
+  description: 一个交易决策可针对多只股票。一只票可以有多个交易决策
   display_name: 针对
 - name: triggers
   source: MarketEvent

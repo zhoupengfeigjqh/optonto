@@ -180,7 +180,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('requirements'); setActiveTab('requirements'); }}
+                  onClick={() => { setActiveSection('requirements'); setActiveTab('requirements'); setThreadParam(null); }}
                 >
                   <span>需求对话</span>
                 </button>
