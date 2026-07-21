@@ -171,6 +171,30 @@ async def handle_list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="list_functions",
+            description="列出指定本体下的所有函数及其输入参数和返回结构",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ontology_id": {"type": "integer", "description": "本体 ID"},
+                },
+                "required": ["ontology_id"],
+            },
+        ),
+        Tool(
+            name="execute_function",
+            description="执行本体中函数的 Python 代码，传入参数并返回计算结果",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ontology_id": {"type": "integer", "description": "本体 ID"},
+                    "function_name": {"type": "string", "description": "函数名称"},
+                    "params": {"type": "object", "description": "函数输入参数，按展开的关键字传入"},
+                },
+                "required": ["ontology_id", "function_name", "params"],
+            },
+        ),
+        Tool(
             name="search_functions",
             description="模糊搜索指定本体下的函数，返回匹配的函数名称、描述、输入输出结构等",
             inputSchema={
@@ -311,6 +335,27 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的函数", "results": []}
         else:
             result = functions
+
+    elif name == "list_functions":
+        result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/functions")
+
+    elif name == "execute_function":
+        oid = arguments["ontology_id"]
+        fname = arguments["function_name"]
+        params = arguments.get("params", {})
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{API_BASE}/api/ontologies/{oid}/functions/{fname}/execute",
+                json={"params": params},
+            )
+            if resp.status_code >= 400:
+                try:
+                    err = resp.json()
+                except Exception:
+                    err = {"detail": resp.text}
+                result = {"error": True, "status_code": resp.status_code, "detail": err}
+            else:
+                result = resp.json()
 
     elif name == "execute_behavior":
         oid = arguments["ontology_id"]
