@@ -170,7 +170,7 @@ async def chat(thread_id: str, body: dict):
         thread["messages"][assistant_idx]["content"] = collected
 
         # Auto-set title: summarize first user question via LLM
-        if thread.get("title") in ("新对话", "新对话", "") and llm is not None:
+        if thread.get("title") in ("新对话", "") and llm is not None:
             for msg in thread["messages"]:
                 if msg["role"] == "user" and msg["content"].strip():
                     try:

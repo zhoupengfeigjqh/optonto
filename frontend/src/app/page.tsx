@@ -7,7 +7,7 @@ import {
   getScenarios, createScenario, updateScenario, deleteScenario,
   getOntologies, createOntology, updateOntology, deleteOntology,
   getOntologyData,
-  Scenario, Ontology, OntologyData,
+  Scenario, Ontology,
 } from '@/api/client';
 
 export default function HomePage() {

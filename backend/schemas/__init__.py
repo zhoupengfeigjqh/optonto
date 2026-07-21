@@ -1,6 +1,5 @@
 """Pydantic schemas for ontology YAML data structures."""
 
-from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -47,7 +46,6 @@ class BehaviorItem(BaseModel):
     name: str = Field(..., description="行为名称")
     description: str = Field("", description="行为描述")
     params: dict = Field(default_factory=dict, description="输入参数")
-    response: dict = Field(default_factory=dict, description="返回结构")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念")
     display_name: str = Field("", description="展示名称")

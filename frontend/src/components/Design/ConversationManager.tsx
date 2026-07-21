@@ -6,9 +6,9 @@ import { PlusOutlined, DeleteOutlined, MessageOutlined, EditOutlined } from '@an
 import { getThreads, createThread, deleteThread, updateThread, ThreadSummary } from '@/api/client';
 import ConversationChat from './ConversationChat';
 
-interface Props { ontologyId: number; activeTab?: string; initialThreadId?: string | null; scenarioName?: string; ontologyName?: string; }
+interface Props { activeTab?: string; initialThreadId?: string | null; scenarioName?: string; ontologyName?: string; }
 
-export default function ConversationManager({ ontologyId: _ontologyId, activeTab, initialThreadId, scenarioName, ontologyName }: Props) {
+export default function ConversationManager({ activeTab, initialThreadId, scenarioName, ontologyName }: Props) {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);

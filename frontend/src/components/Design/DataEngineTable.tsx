@@ -105,7 +105,6 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   // analyze result
   const [analyzeResult, setAnalyzeResult] = useState<any>(null);
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
-  const [analyzeLoading, setAnalyzeLoading] = useState(false);
 
   // data engine call
   const [connectOpen, setConnectOpen] = useState(false);
@@ -280,11 +279,10 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     setSmartAlignLoading(true);
     try {
       const de = await ensureEngine(smartAlignBehaviorName);
-      const result = await smartAlign(ontologyId, de.name);
+      await smartAlign(ontologyId, de.name);
       message.success('智能对齐完成，请检查结果');
       setSmartAlignOpen(false);
       await load();
-      return result;
     } catch (e: any) { message.error('智能对齐失败: ' + e.message); }
     finally { setSmartAlignLoading(false); }
   };
@@ -380,26 +378,6 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       return paramDef.display_name;
     }
     return paramKey;
-  };
-
-  const handleAnalyze = async (behaviorName: string) => {
-    setAnalyzeLoading(true);
-    setAnalyzeResult(null);
-    setAnalyzeOpen(true);
-    try {
-      const de = await ensureEngine(behaviorName);
-      const beh = behaviors.find(b => b.name === behaviorName);
-      const body = {
-        onto_input_fields: flattenFields((beh?.params as Record<string, unknown>) || {}),
-        target_input_fields: flattenFields(de.target?.params || {}),
-        onto_output_fields: flattenFields((beh?.response as Record<string, unknown>) || {}),
-        target_output_fields: flattenFields(de.target?.response || {}),
-      };
-      const result = await analyzeMapping(ontologyId, de.name, body);
-      setAnalyzeResult(result);
-      await load();
-    } catch (e: any) { setAnalyzeResult({ status: 'error', message: e.message, issues: [] }); }
-    finally { setAnalyzeLoading(false); }
   };
 
   // ─── data engine call ────────────────────────────────────────────────────
@@ -693,7 +671,6 @@ total  Number  订单总价  15000.50`}
 
       {/* ─── Analyze Result Modal ─────────────────────────────────────────── */}
       <Modal title={`智能映射-${getBehaviorDisplay(smartMappingBehaviorName)}`} open={analyzeOpen} onCancel={() => { setAnalyzeOpen(false); setAnalyzeResult(null); }} footer={null} width={600}>
-        {analyzeLoading && <p className="text-text-muted">正在分析中...</p>}
         {analyzeResult && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">

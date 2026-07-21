@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from dependencies import get_ontology_names
 from metadata import (
     list_ontologies_by_scenario, list_all_ontologies, get_ontology_by_id, get_scenario_by_id,
-    get_scenario_by_name, create_ontology, update_ontology, delete_ontology,
+    create_ontology, update_ontology, delete_ontology,
 )
 from services import ensure_ontology_dir, save_ontology_data, load_ontology_data, OntologyData
 
@@ -78,10 +78,8 @@ async def update_ontology_api(ontology_id: int, data: dict):
 
     name = data.get("name")
     if name:
-        existing_result = get_ontology_by_id(ontology_id)
-        if existing_result:
-            # Check for duplicate name in same scenario
-            for o in list_ontologies_by_scenario(existing_result[1]):
+        # Check for duplicate name in same scenario (result[1] = scenario_name)
+        for o in list_ontologies_by_scenario(result[1]):
                 if o["name"] == name and o["id"] != ontology_id:
                     raise HTTPException(status_code=400, detail="该场景下本体名称已存在")
 

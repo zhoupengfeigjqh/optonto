@@ -15,9 +15,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
   const [paramsEditorOpen, setParamsEditorOpen] = useState(false);
-  const [paramsError, setParamsError] = useState('');
   const [responseEditorOpen, setResponseEditorOpen] = useState(false);
-  const [responseError, setResponseError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -51,7 +49,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     setEditingKey(b.name);
   };
 
-  const handleCancel = () => { setEditingKey(''); setEditData({}); setParamsError(''); setResponseError(''); };
+  const handleCancel = () => { setEditingKey(''); setEditData({}); };
   const openParamsEditor = () => setParamsEditorOpen(true);
   const openResponseEditor = () => setResponseEditorOpen(true);
 
@@ -59,9 +57,9 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     if (!editData.name?.trim()) { message.warning('请输入行为名称'); return; }
     let parsedParams: Record<string, unknown> = {};
     let parsedResponse: Record<string, unknown> = {};
-    try { parsedParams = JSON.parse(editData.params || '{}'); setParamsError(''); }
+    try { parsedParams = JSON.parse(editData.params || '{}'); }
     catch { message.warning('接口参数 JSON 格式错误'); return; }
-    try { parsedResponse = JSON.parse(editData.response || '{}'); setResponseError(''); }
+    try { parsedResponse = JSON.parse(editData.response || '{}'); }
     catch { message.warning('返回结构 JSON 格式错误'); return; }
 
     try {
@@ -76,7 +74,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       } else {
         await updateBehavior(ontologyId, record.name, data); message.success('行为已更新');
       }
-      setEditingKey(''); setEditData({}); setParamsError(''); setResponseError(''); await load();
+      setEditingKey(''); setEditData({}); await load();
     } catch (e: any) { message.error(e.message); }
   };
 
@@ -174,16 +172,14 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
       <Modal title="编辑接口参数" open={paramsEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.params || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }
-        setParamsError(''); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
+        setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
         <Input.TextArea value={editData.params || '{}'} onChange={e => setEditData((p: any) => ({ ...p, params: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
-        {paramsError && <p className="text-red-400 text-xs mt-1">{paramsError}</p>}
       </Modal>
 
       <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.response || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }
-        setResponseError(''); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
+        setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
         <Input.TextArea value={editData.response || '{}'} onChange={e => setEditData((p: any) => ({ ...p, response: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
-        {responseError && <p className="text-red-400 text-xs mt-1">{responseError}</p>}
       </Modal>
     </div>
   );

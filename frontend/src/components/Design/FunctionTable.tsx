@@ -22,11 +22,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
 
   // params editor
   const [paramsEditorOpen, setParamsEditorOpen] = useState(false);
-  const [paramsError, setParamsError] = useState('');
-
-  // response editor
   const [responseEditorOpen, setResponseEditorOpen] = useState(false);
-  const [responseError, setResponseError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -77,15 +73,15 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     setEditingKey(g.name);
   };
 
-  const handleCancel = () => { setEditingKey(''); setEditData({}); setParamsError(''); setResponseError(''); };
+  const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Function) => {
     if (!editData.name?.trim()) { message.warning('请输入函数名称'); return; }
     let parsedParams: Record<string, unknown> = {};
     let parsedResponse: Record<string, unknown> = {};
-    try { parsedParams = JSON.parse(editData.params || '{}'); setParamsError(''); }
+    try { parsedParams = JSON.parse(editData.params || '{}'); }
     catch { message.warning('输入参数 JSON 格式错误'); return; }
-    try { parsedResponse = JSON.parse(editData.response || '{}'); setResponseError(''); }
+    try { parsedResponse = JSON.parse(editData.response || '{}'); }
     catch { message.warning('返回结构 JSON 格式错误'); return; }
     try {
       const data: Function = {
@@ -103,7 +99,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       } else {
         await updateFunction(ontologyId, record.name, data); message.success('函数已更新');
       }
-      setEditingKey(''); setEditData({}); setParamsError(''); setResponseError(''); await load();
+      setEditingKey(''); setEditData({}); await load();
     } catch (e: any) { message.error(e.message); }
   };
 
@@ -271,15 +267,13 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       </Modal>
 
       {/* ─── Params Editor Modal ───────────────────────────────────── */}
-      <Modal title="编辑输入参数" open={paramsEditorOpen} onOk={() => { try { JSON.parse(editData.params || '{}'); setParamsError(''); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
+      <Modal title="编辑输入参数" open={paramsEditorOpen} onOk={() => { try { JSON.parse(editData.params || '{}'); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
         <Input.TextArea value={editData.params || '{}'} onChange={e => setEditData((p: any) => ({ ...p, params: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
-        {paramsError && <p className="text-red-400 text-xs mt-1">{paramsError}</p>}
       </Modal>
 
       {/* ─── Response Editor Modal ─────────────────────────────────── */}
-      <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { JSON.parse(editData.response || '{}'); setResponseError(''); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
+      <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { JSON.parse(editData.response || '{}'); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
         <Input.TextArea value={editData.response || '{}'} onChange={e => setEditData((p: any) => ({ ...p, response: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
-        {responseError && <p className="text-red-400 text-xs mt-1">{responseError}</p>}
       </Modal>
     </div>
   );

@@ -101,7 +101,7 @@ export default function DesignPage() {
 
       {/* ── 本体构建（需求）：条件渲染，避免常驻内存 ── */}
       {activeSection === 'requirements' && activeTab === 'requirements' && (
-        <ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} />
+        <ConversationManager activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} />
       )}
       {activeSection === 'requirements' && activeTab === 'requirement-confirm' && (
         <RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} ontologyName={ontology?.name || ''} />
