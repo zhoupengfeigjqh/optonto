@@ -104,7 +104,7 @@ export default function DesignPage() {
         <ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} />
       )}
       {activeSection === 'requirements' && activeTab === 'requirement-confirm' && (
-        <RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} />
+        <RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} ontologyName={ontology?.name || ''} />
       )}
       {activeSection === 'requirements' && activeTab === 'files' && (
         <FileViewer ontologyId={ontologyId} activeTab={activeTab} />

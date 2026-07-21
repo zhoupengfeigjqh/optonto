@@ -6,9 +6,9 @@ import { EyeOutlined, DeleteOutlined, MessageOutlined } from '@ant-design/icons'
 import { listRequirements, deleteRequirementFile, RequirementItem } from '@/api/client';
 import RequirementViewer from './RequirementViewer';
 
-interface Props { ontologyId: number; activeTab?: string; scenarioName?: string; }
+interface Props { ontologyId: number; activeTab?: string; scenarioName?: string; ontologyName?: string; }
 
-export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenarioName }: Props) {
+export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenarioName, ontologyName }: Props) {
   const [items, setItems] = useState<RequirementItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewing, setViewing] = useState<{ threadId: string; filename: string } | null>(null);
@@ -17,11 +17,11 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
     setLoading(true);
     try {
       const list = await listRequirements();
-      setItems(scenarioName ? list.filter(i => i.scenario_name === scenarioName) : list);
+      setItems(list.filter(i => i.scenario_name === scenarioName && i.ontology_name === ontologyName));
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (activeTab === 'requirement-confirm') load(); }, [activeTab, scenarioName]);
+  useEffect(() => { if (activeTab === 'requirement-confirm') load(); }, [activeTab, scenarioName, ontologyName]);
 
   const handleDelete = (threadId: string, filename: string) => {
     Modal.confirm({
