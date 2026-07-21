@@ -40,7 +40,7 @@ functions:
         type: object
         properties:
           arrivalTime:
-            type: date
+            type: string
             description: 到位时间
             example: '2026-09-01'
           rawMaterialName:

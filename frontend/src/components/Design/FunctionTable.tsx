@@ -265,8 +265,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     { title: '返回结构', key: 'response', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
       const raw = r.response || {};
-      if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
-      const raw = r.response || {};
       const items: { name: string; type: string; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
         if (typeof v === 'string') items.push({ name: k, type: v, description: '', example: '' });

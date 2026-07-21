@@ -76,12 +76,12 @@ concepts:
     example: 高强度钢板
     constraint: ''
   - name: purchaseTime
-    type: date
+    type: string
     display_name: 采购时间
     example: '2023-10-27'
     constraint: yyyy-mm-dd
   - name: arrivalTime
-    type: date
+    type: string
     display_name: 到位时间
     example: '2023-11-10'
     constraint: yyyy-mm-dd
@@ -187,12 +187,12 @@ concepts:
     type: enum
     display_name: 订单类型
     example: 销售
-    constraint: ''
+    constraint: 销售/询单
   - name: status
     type: enum
     display_name: 订单状态
     example: 有效
-    constraint: ''
+    constraint: 有效/无效
   display_name: 客户订单
 - name: DeliveryCapability
   description: 供应商的交货能力，包括交货周期、最低交货数量等
@@ -218,12 +218,12 @@ concepts:
     example: ''
     constraint: ''
   - name: leadTime
-    type: string
+    type: number
     display_name: 交货周期
     example: ''
     constraint: ''
   - name: minCount
-    type: string
+    type: number
     display_name: 最小交货数
     example: ''
     constraint: ''
@@ -280,7 +280,7 @@ functions:
         type: object
         properties:
           arrivalTime:
-            type: date
+            type: string
             description: 到位时间
             example: '2026-09-01'
           rawMaterialName:
@@ -343,7 +343,7 @@ behaviors:
       description: 供应商名称
       example: XX钢铁集团
     arrivalTime:
-      type: date
+      type: string
       required: true
       description: 到位时间
       example: '2023-11-10'
@@ -382,11 +382,11 @@ behaviors:
           description: 原材料名称
           example: 高强度钢板
         purchaseTime:
-          type: date
+          type: string
           description: 采购时间
           example: '2023-10-27'
         arrivalTime:
-          type: date
+          type: string
           description: 到位时间
           example: '2023-11-10'
         arrivalQuantity:
@@ -580,11 +580,11 @@ behaviors:
             description: 原材料名称
             example: 高强度钢板
           purchaseTime:
-            type: date
+            type: string
             description: 采购时间
             example: '2023-10-27'
           arrivalTime:
-            type: date
+            type: string
             description: 到位时间
             example: '2023-11-10'
           arrivalQuantity:
@@ -1011,7 +1011,7 @@ data_engines:
         required: true
         example: 宝钢钢铁集团
       arrivalTime:
-        type: date
+        type: string
         description: 到货日期 (yyyy-MM-dd)
         required: true
         example: '2026-08-01'
@@ -1054,11 +1054,11 @@ data_engines:
             description: 单位
             example: 吨
           purchaseTime:
-            type: date
+            type: string
             description: 采购时间
             example: '2026-07-16'
           arrivalTime:
-            type: date
+            type: string
             description: 到货日期
             example: '2026-08-01'
           arrivalQuantity:
@@ -1336,11 +1336,11 @@ data_engines:
               description: 单位
               example: 吨
             purchaseTime:
-              type: date
+              type: string
               description: 采购时间
               example: '2026-07-16'
             arrivalTime:
-              type: date
+              type: string
               description: 到位时间
               example: '2026-08-01'
             arrivalQuantity:
@@ -1364,11 +1364,11 @@ data_engines:
               description: 状态
               example: 已入库
             createdAt:
-              type: date
+              type: string
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
-              type: date
+              type: string
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1434,11 +1434,11 @@ data_engines:
               description: 安全库存
               example: 100
             createdAt:
-              type: date
+              type: string
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
-              type: date
+              type: string
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1508,11 +1508,11 @@ data_engines:
               description: 交货周期
               example: 100
             createdAt:
-              type: date
+              type: string
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
-              type: date
+              type: string
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1583,11 +1583,11 @@ data_engines:
               description: 交货周期
               example: 100
             createdAt:
-              type: date
+              type: string
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
-              type: date
+              type: string
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
