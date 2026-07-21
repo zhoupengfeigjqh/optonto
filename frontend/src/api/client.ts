@@ -368,6 +368,11 @@ export interface McpActionResult {
 export const getMcpStatus = () =>
   request<McpStatus>('/api/mcp/status');
 
+export const getMcpTools = async (host: string) => {
+  const resp = await fetch(`http://${host}:8002/tools`);
+  return resp.json() as Promise<{ name: string; description: string }[]>;
+};
+
 export const startMcp = () =>
   request<McpActionResult>('/api/mcp/start', { method: 'POST' });
 

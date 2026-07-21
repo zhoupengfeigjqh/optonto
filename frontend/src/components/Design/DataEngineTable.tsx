@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Tag } from 'antd';
 import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, getMcpStatus, startMcp, stopMcp, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, getMcpStatus, startMcp, stopMcp, getMcpTools, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import JsonEditor from '@/components/JsonEditor';
 
@@ -131,6 +131,8 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [mcpChecking, setMcpChecking] = useState(true);
   const [mcpToggling, setMcpToggling] = useState(false);
   const [mcpModalOpen, setMcpModalOpen] = useState(false);
+  const [mcpTools, setMcpTools] = useState<{ name: string; description: string }[]>([]);
+  const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   const mcpConfigJson = JSON.stringify({
     mcpServers: {
@@ -477,7 +479,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">数据引擎</h3>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 text-xs bg-dark-card border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover" onClick={() => setMcpModalOpen(true)} title="点击查看 MCP 配置">
+          <div className="flex items-center gap-2 text-xs bg-dark-card border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover" onClick={async () => { setMcpModalOpen(true); try { const tools = await getMcpTools(host); setMcpTools(tools); } catch { setMcpTools([]); } }} title="点击查看 MCP 配置">
             <span className={`w-2 h-2 rounded-full ${mcpChecking ? 'bg-gray-500' : mcpRunning ? 'bg-green-500' : 'bg-red-500'}`} />
             <span className="text-text-muted">MCP</span>
             <span className={mcpRunning ? 'text-green-400' : 'text-text-muted'}>
@@ -833,12 +835,23 @@ total  Number  订单总价  15000.50`}
             复制
           </Button>
         </div>
-        <p className="text-text-muted text-xs mt-3">
-          SSE 端点：<code className="text-yellow-400">http://{host}:8002/sse</code>
-        </p>
-        <p className="text-text-muted text-xs mt-1">
-          健康检查：<code className="text-yellow-400">http://{host}:8002/health</code>
-        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-text-muted text-xs">可用工具：</span>
+          <span className="text-accent-green text-sm font-semibold">{mcpTools.length}</span>
+          <Button size="small" type="link" onClick={() => setMcpToolsOpen(!mcpToolsOpen)}>
+            {mcpToolsOpen ? '收起' : '查看详情'}
+          </Button>
+        </div>
+        {mcpToolsOpen && (
+          <div className="mt-2 border border-dark-border rounded max-h-60 overflow-y-auto">
+            {mcpTools.map(t => (
+              <div key={t.name} className="px-3 py-2 border-b border-dark-border last:border-b-0 hover:bg-dark-hover">
+                <div className="text-text-primary text-xs font-medium">{t.name}</div>
+                <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   );

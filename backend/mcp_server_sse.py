@@ -407,6 +407,15 @@ async def handle_health(request):
     return JSONResponse({"status": "ok", "server": "optonto-api"})
 
 
+async def handle_tools(request):
+    """Return the list of available MCP tools with names and descriptions."""
+    tools = await handle_list_tools()
+    return JSONResponse([
+        {"name": t.name, "description": t.description, "inputSchema": t.inputSchema}
+        for t in tools
+    ])
+
+
 # ─── OAuth & Well-Known (MCP client auth discovery) ──────────────
 # Newer MCP clients (Claude Code) probe these before connecting via SSE.
 # Return "no auth needed" so the client proceeds without authentication.
@@ -471,6 +480,7 @@ sse_routes = [
     Route("/sse", endpoint=SSEHandler()),
     Route("/messages/", endpoint=MessagesHandler(), methods=["POST"]),
     Route("/health", endpoint=handle_health),
+    Route("/tools", endpoint=handle_tools),
 ]
 
 starlette_app = Starlette(
