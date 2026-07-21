@@ -441,8 +441,14 @@ export interface RequirementItem {
 export const listRequirements = () =>
   request<RequirementItem[]>('/api/threads/requirements/list');
 
-export const getRequirementFile = (threadId: string, filename: string) =>
-  request<{ content: string; filename: string; thread_id: string }>(`/api/threads/${threadId}/requirements/${filename}`);
+export const getRequirementFile = (threadId: string, filename: string, scenario?: string, ontology?: string) => {
+  let url = `/api/threads/${threadId}/requirements/${filename}`;
+  const params: string[] = [];
+  if (scenario) params.push(`scenario=${encodeURIComponent(scenario)}`);
+  if (ontology) params.push(`ontology=${encodeURIComponent(ontology)}`);
+  if (params.length) url += '?' + params.join('&');
+  return request<{ content: string; filename: string; thread_id: string }>(url);
+};
 
 export const saveRequirementFile = (threadId: string, filename: string, content: string) =>
   request<{ message: string }>(`/api/threads/${threadId}/requirements/${filename}`, { method: 'PUT', body: JSON.stringify({ content }) });

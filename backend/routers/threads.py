@@ -214,9 +214,12 @@ async def list_requirements():
 
 
 @router.get("/{thread_id}/requirements/{filename}")
-async def get_requirement_file(thread_id: str, filename: str):
+async def get_requirement_file(thread_id: str, filename: str, scenario: str = "", ontology: str = ""):
     """Read a requirement markdown file content."""
-    tdir, _, _ = _find_thread(thread_id)
+    if scenario and ontology:
+        tdir = ONTO_MARKET_DIR / scenario / ontology / "threads" / thread_id
+    else:
+        tdir, _, _ = _find_thread(thread_id)
     file_path = tdir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")

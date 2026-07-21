@@ -11,7 +11,7 @@ interface Props { ontologyId: number; activeTab?: string; scenarioName?: string;
 export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenarioName, ontologyName }: Props) {
   const [items, setItems] = useState<RequirementItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [viewing, setViewing] = useState<{ threadId: string; filename: string } | null>(null);
+  const [viewing, setViewing] = useState<{ threadId: string; filename: string; scenarioName?: string; ontologyName?: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -36,7 +36,7 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
   };
 
   if (viewing) {
-    return <RequirementViewer threadId={viewing.threadId} filename={viewing.filename} onBack={() => { setViewing(null); load(); }} />;
+    return <RequirementViewer threadId={viewing.threadId} filename={viewing.filename} onBack={() => { setViewing(null); load(); }} scenarioName={viewing.scenarioName} ontologyName={viewing.ontologyName} />;
   }
 
   const columns = [
@@ -58,7 +58,7 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
       title: '操作', key: 'actions', width: 140,
       render: (_: any, r: RequirementItem) => (
         <Space>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setViewing({ threadId: r.thread_id, filename: r.filename })}>查看</Button>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setViewing({ threadId: r.thread_id, filename: r.filename, scenarioName: r.scenario_name, ontologyName: r.ontology_name })}>查看</Button>
           <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r.thread_id, r.filename)} />
         </Space>
       ),

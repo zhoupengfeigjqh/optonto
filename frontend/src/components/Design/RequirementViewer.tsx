@@ -11,9 +11,11 @@ interface Props {
   threadId: string;
   filename: string;
   onBack: () => void;
+  scenarioName?: string;
+  ontologyName?: string;
 }
 
-export default function RequirementViewer({ threadId, filename, onBack }: Props) {
+export default function RequirementViewer({ threadId, filename, onBack, scenarioName, ontologyName }: Props) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -25,7 +27,7 @@ export default function RequirementViewer({ threadId, filename, onBack }: Props)
   const load = async () => {
     setLoading(true);
     try {
-      const result = await getRequirementFile(threadId, filename);
+      const result = await getRequirementFile(threadId, filename, scenarioName, ontologyName);
       setContent(result.content);
       setDirty(false);
     } catch (e: any) {
