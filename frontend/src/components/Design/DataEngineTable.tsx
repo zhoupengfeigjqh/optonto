@@ -131,8 +131,9 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [mcpChecking, setMcpChecking] = useState(true);
   const [mcpToggling, setMcpToggling] = useState(false);
   const [mcpModalOpen, setMcpModalOpen] = useState(false);
-  const [mcpTools, setMcpTools] = useState<{ name: string; description: string }[]>([]);
+  const [mcpTools, setMcpTools] = useState<{ name: string; description: string; inputSchema?: any }[]>([]);
   const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
+  const [mcpSelectedTool, setMcpSelectedTool] = useState<string | null>(null);
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   const mcpConfigJson = JSON.stringify({
     mcpServers: {
@@ -844,12 +845,36 @@ total  Number  订单总价  15000.50`}
         </div>
         {mcpToolsOpen && (
           <div className="mt-2 border border-dark-border rounded max-h-60 overflow-y-auto">
-            {mcpTools.map(t => (
-              <div key={t.name} className="px-3 py-2 border-b border-dark-border last:border-b-0 hover:bg-dark-hover">
-                <div className="text-text-primary text-xs font-medium">{t.name}</div>
-                <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
+            {mcpTools.map(t => {
+              const selected = mcpSelectedTool === t.name;
+              const props = t.inputSchema?.properties || {};
+              const required = t.inputSchema?.required || [];
+              return (
+              <div key={t.name}>
+                <div className="px-3 py-2 border-b border-dark-border last:border-b-0 hover:bg-dark-hover cursor-pointer" onClick={() => setMcpSelectedTool(selected ? null : t.name)}>
+                  <div className="text-text-primary text-xs font-medium">{t.name}</div>
+                  <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
+                  {Object.keys(props).length > 0 && (
+                    <div className="text-accent-blue text-xs mt-1">
+                      {Object.keys(props).length} 个参数 {selected ? '▲' : '▼'}
+                    </div>
+                  )}
+                </div>
+                {selected && Object.keys(props).length > 0 && (
+                  <div className="px-6 py-2 bg-dark-bg border-b border-dark-border space-y-1">
+                    {Object.entries(props).map(([k, v]: any) => (
+                      <div key={k} className="flex items-center gap-2 text-xs">
+                        <span className="text-yellow-400 font-mono">{k}</span>
+                        <span className="text-text-muted">({v.type || 'any'})</span>
+                        {required.includes(k) && <span className="text-red-400">*必填</span>}
+                        {v.description && <span className="text-text-secondary">— {v.description}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Modal>

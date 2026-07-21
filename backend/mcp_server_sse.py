@@ -103,17 +103,6 @@ async def handle_list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="list_functions",
-            description="列出指定本体下的所有函数及其输入参数和返回结构",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                },
-                "required": ["ontology_id"],
-            },
-        ),
-        Tool(
             name="list_securities",
             description="列出指定本体下的所有安全审核信息",
             inputSchema={
