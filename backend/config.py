@@ -354,13 +354,14 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 
 函数名称：{name}
 函数描述：{description}
-输入参数结构：{params}
+输入参数：{params}
 返回结构：{response}
 
 【要求】
 1. 生成一个可执行的 Python 函数，需要加载本函数必要的库
 2. def {name}(params[key1],params[key2],...) -> dict:
-3. key取第一层的，嵌套的不取
+3. 输入的参数，key取第一层的，嵌套的不取
+4. 输入输出的参数名，与输入参数中的key名一致，可以用驼峰，不要修改
 4. 涉及日期时，如最新日期，请用函数工具包，不要自己生成
 5. 函数注释args: 参数名，类型：参数描述
 6. 返回值为字典，按返回结构组装
@@ -369,21 +370,21 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 
 【示例】
 import datetime
-def sumRawNotArrivalQty(filter_raw_material_name:str, current_date:str, purchase_record_set:list):
+def sumRawNotArrivalQty(filterRawMaterialName:str, currentDate:str, purchaseRecordSet:list):
     \"""
     计算指定原材料在指定日期之后未到货的总数量
 
     Args:
-        filter_raw_material_name: str，要筛选的原材料名称
-        current_date: str，当前日期，用于比较到货时间
-        purchase_record_set: list，采购记录列表，每条记录为字典，包含 rawMaterialName, arrivalTime, arrivalQuantity
+        filterRawMaterialName: str，要筛选的原材料名称
+        currentDate: str，当前日期，用于比较到货时间
+        purchaseRecordSet: list，采购记录列表，每条记录为字典，包含 rawMaterialName, arrivalTime, arrivalQuantity
 
     Returns:
         dict: 返回包含原材料名称和未到货总数量的字典
     \"""
     total_not_arrival = 0
-    for record in purchase_record_set:
-        if record["rawMaterialName"] == filter_raw_material_name and
-            datetime.strptime(current_date, "%Y-%m-%d") < datetime.strptime(record["arrivalTime"], "%Y-%m-%d"):
+    for record in purchaseRecordSet:
+        if record["rawMaterialName"] == filterRawMaterialName and
+            datetime.strptime(currentDate, "%Y-%m-%d") < datetime.strptime(record["arrivalTime"], "%Y-%m-%d"):
             total_not_arrival += record["arrivalQuantity"]
     return {{"result": {{"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}}}"""
