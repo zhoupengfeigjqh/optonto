@@ -188,6 +188,7 @@ export interface Rule {
   display_name?: string;
   rule_type?: string;
   position?: string;
+  rule_config?: any;
 }
 
 export const getRules = (ontologyId: number) =>
@@ -196,6 +197,8 @@ export const getRules = (ontologyId: number) =>
 export const getRuleTemplateTypes = () =>
   request<string[]>("/api/rule-templates/types");
 
+export const getRuleTemplate = (ruleName: string) =>
+  request<any>(`/api/rule-templates/${encodeURIComponent(ruleName)}`);
 export const createRule = (ontologyId: number, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules`, { method: 'POST', body: JSON.stringify(data) });
 
