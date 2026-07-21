@@ -1,0 +1,10 @@
+{
+  "id": "39ec30e9-56eb-4955-b449-ec7c15cdd63b",
+  "title": "新对话",
+  "status": "exploring",
+  "created_at": "2026-07-21T11:49:30.516827+00:00",
+  "updated_at": "2026-07-21T11:49:30.516827+00:00",
+  "messages": [],
+  "scenario_name": "生产调度",
+  "ontology_name": "原材料采购和库存"
+}

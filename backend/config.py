@@ -78,47 +78,85 @@ ANALYSIS_SYSTEM_PROMPT = """
         - **规则**：需提供英文名、中文名、规则类型、描述、介入位置、关联行为和关联函数。
         - **函数**：需提供英文名、中文名、描述、关联概念属性、输入参数和返回结构。
     - **输出**：分别用三个表格展示行为、规则和函数。
-    要求1：函数针对实例化对象集的属性进行计算，描述须给出具体计算过程
-    要求2：函数的输入参数（即待计算的数据包）采用数组array[object]形式，返回结构（即聚合计算后的结果）采用object
-    要求3：函数关联概念属性（如Order.orderId），可跨概念
-    要求4：行为须为原子级业务动作（增删改查），不可再拆分
-    要求5：行为须关联至少一个概念，可关联多个
-    要求6：行为输入参数参考API JSON格式，字段须来自概念属性，如：
-        {
-            "rawMaterialId": {
-                "type": "string",
-                "required": true,
-                "description": "原材料编号",
-                "example": "RM-001"
-            }
-        }
-    要求7：行为返回结构参考API JSON格式，字段须来自概念属性，如：
-        {
-        "code": {
-            "type": "number",
-            "example": 200
-        },
-        "data": {
+    要求1：函数针对实例化对象集的属性进行计算（而不是抽象的概念属性），描述须给出具体计算过程
+    要求2：函数的输入参数（即待计算的对象数据包）采用数组array[object]形式（可以留空），其参考格式如下：
+    {
+        "purchaseRecordSet": {
+            "type": "array",
+            "items": {
             "type": "object",
             "properties": {
-                "purchaseRecordId": {
-                    "type": "string",
-                    "description": "采购单号",
-                    "example": "PO-20231027-001"
+                "rawMaterialName": {
+                "type": "string",
+                "description": "原材料名称",
+                "example": "高强度钢板"
                 },
+                "arrivalQuantity": {
+                "type": "number",
+                "description": "计划的到位数量",
+                "example": 100
+                }
+            }
+            }
+        }
+    }
+    要求3：函数的返回结构（即聚合计算后的结果）采用object，其参考格式如下：
+    {
+        "result": {
+            "type": "object",
+            "properties": {
                 "rawMaterialName": {
                     "type": "string",
                     "description": "原材料名称",
                     "example": "高强度钢板"
+                },
+                "sumNotArrivalQty": {
+                    "type": "number",
+                    "description": "还未到位的采购量",
+                    "example": 100
                 }
             }
         }
-        }    
-    要求8：请用户提供目标数据源接口信息以便设计；若用户无法提供则自行合理设计；
-    要求9：规则须绑定动作，规则间独立，可复用到多个动作
-    要求10：规则介入时机分前置（约束）和后置（检验）
-    要求11：规则类型二选一：验证规则（True or False判断）和推理规则（IF THEN ELSE推理）
-    要求12：规则的关联函数从阶段3的函数中选择，服务于规则计算和判断
+    }
+    要求4：函数关联概念属性（如Order.orderId），可跨概念
+    要求5：行为须为原子级业务动作（增删改查），不可再拆分
+    要求6：行为须关联至少一个概念，可关联多个
+    要求7：行为输入参数参考API JSON格式，字段须来自概念属性，其参考格式如下：
+    {
+        "rawMaterialId": {
+            "type": "string",
+            "required": true,
+            "description": "原材料编号",
+            "example": "RM-001"
+        }
+    }
+    要求8：行为返回结构参考API JSON格式，字段须来自概念属性，其参考格式如下：
+    {
+    "code": {
+        "type": "number",
+        "example": 200
+    },
+    "data": {
+        "type": "object",
+        "properties": {
+            "purchaseRecordId": {
+                "type": "string",
+                "description": "采购单号",
+                "example": "PO-20231027-001"
+            },
+            "rawMaterialName": {
+                "type": "string",
+                "description": "原材料名称",
+                "example": "高强度钢板"
+            }
+        }
+    }
+    }    
+    要求9：请用户提供目标数据源接口信息以便设计；若用户无法提供则自行合理设计；
+    要求10：规则须绑定动作，规则间独立，可复用到多个动作
+    要求11：规则介入时机分前置（约束）和后置（检验）
+    要求12：规则类型二选一：验证规则（True or False判断）和推理规则（IF THEN ELSE推理）
+    要求13：规则的关联函数从阶段3的函数中选择，服务于规则计算和判断
     
     ## 阶段4：业务流程确认
     - **任务目标**：请基于阶段1、2和3的输出，利用预定义的【行为】，挖掘领域内的关键事件。

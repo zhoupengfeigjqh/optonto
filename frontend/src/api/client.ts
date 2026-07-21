@@ -434,6 +434,8 @@ export interface RequirementItem {
   created_at: string;
   updated_at: string;
   has_ontology: boolean;
+  scenario_name?: string;
+  ontology_name?: string;
 }
 
 export const listRequirements = () =>
