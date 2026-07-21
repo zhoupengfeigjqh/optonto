@@ -20,6 +20,7 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
 
   return (
     <div className="space-y-4">
+      <p className="text-text-muted text-xs mb-2">配置条件表达式，所有字段均为必填</p>
       <div className="flex items-start gap-3">
         <span className="text-text-primary text-sm w-16 mt-1">左侧</span>
         <div className="flex-1 space-y-2">
@@ -128,6 +129,7 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
 
   return (
     <div className="space-y-4">
+      <p className="text-text-muted text-xs mb-2">配置推理条件，所有字段均为必填</p>
       <div>
         <div className="text-text-primary text-sm font-semibold mb-2">IF</div>
         <div className="pl-4 border-l-2 border-accent-blue/30 space-y-3">
@@ -263,6 +265,55 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   };
 
   const saveRuleDesign = () => {
+    // 验证规则配置完整性
+    const cfg = ruleConfig || {};
+    if (!editData.rule_type) { message.warning('请先选择规则类型'); return; }
+
+    if (editData.rule_type === '验证规则') {
+      const left = cfg.left || {};
+      if (left.type === 'concept' && (!left.concept || !left.attribute)) {
+        message.warning('请完善左侧条件：选择概念和属性'); return;
+      }
+      if (left.type === 'function' && (!left.function || !left.returnField)) {
+        message.warning('请完善左侧条件：选择函数并填写返回字段'); return;
+      }
+      if (!cfg.operator) { message.warning('请选择操作符'); return; }
+      const right = cfg.right || {};
+      if (right.type === 'value' && (right.value === undefined || right.value === '')) {
+        message.warning('请填写右侧字面值'); return;
+      }
+      if (right.type === 'concept' && (!right.concept || !right.attribute)) {
+        message.warning('请完善右侧条件：选择概念和属性'); return;
+      }
+    }
+
+    if (editData.rule_type === '推理规则') {
+      const ifBlock = cfg.if || {};
+      const conditions = ifBlock.conditions || [];
+      if (conditions.length === 0) { message.warning('请至少添加一个条件'); return; }
+      for (let i = 0; i < conditions.length; i++) {
+        const c = conditions[i];
+        const left = c.left || {};
+        if (left.type === 'concept' && (!left.concept || !left.attribute)) {
+          message.warning(`条件 ${i+1} 左侧不完整，请选择概念和属性`); return;
+        }
+        if (left.type === 'function' && (!left.function || !left.returnField)) {
+          message.warning(`条件 ${i+1} 左侧不完整，请选择函数并填写返回字段`); return;
+        }
+        if (!c.operator) { message.warning(`条件 ${i+1} 未选择操作符`); return; }
+        const right = c.right || {};
+        if (right.type === 'value' && (right.value === undefined || right.value === '')) {
+          message.warning(`条件 ${i+1} 右侧字面值为空`); return;
+        }
+        if (right.type === 'concept' && (!right.concept || !right.attribute)) {
+          message.warning(`条件 ${i+1} 右侧不完整，请选择概念和属性`); return;
+        }
+        if (right.type === 'function' && (!right.function || !right.returnField)) {
+          message.warning(`条件 ${i+1} 右侧不完整，请选择函数并填写返回字段`); return;
+        }
+      }
+    }
+
     setEditData(p => ({ ...p, rule_config: ruleConfig }));
     message.success('规则设计已保存到编辑缓存');
     setRuleDesignModalOpen(false);
