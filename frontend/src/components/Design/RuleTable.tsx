@@ -187,7 +187,6 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
 
   // rule design modal state
   const [ruleDesignModalOpen, setRuleDesignModalOpen] = useState(false);
-  const [designRule, setDesignRule] = useState<Rule | null>(null);
   const [ruleTemplate, setRuleTemplate] = useState<any>(null);
   const [ruleConfig, setRuleConfig] = useState<any>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -221,14 +220,14 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { label: '大于等于 (ge)', value: 'ge' },
   ];
 
-  const handleAdd = () => { setEditData({ name: '', display_name: '', description: '', rule_type: '', position: '', related_behaviors: [], related_functions: [] }); setEditingKey('__new__'); };
-  const handleEdit = (r: Rule) => { setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, rule_type: r.rule_type || '', position: r.position || '', related_behaviors: r.related_behaviors || [], related_functions: r.related_functions || [] }); setEditingKey(r.name); };
+  const handleAdd = () => { setEditData({ name: '', display_name: '', description: '', rule_type: '', position: '', related_behaviors: [], related_functions: [], rule_config: null }); setEditingKey('__new__'); };
+  const handleEdit = (r: Rule) => { setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, rule_type: r.rule_type || '', position: r.position || '', related_behaviors: r.related_behaviors || [], related_functions: r.related_functions || [], rule_config: r.rule_config }); setEditingKey(r.name); };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Rule) => {
     if (!editData.name?.trim()) { message.warning('请输入规则名称'); return; }
     try {
-      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [] };
+      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], rule_config: editData.rule_config || null };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (rules.some(r => r.name === data.name)) { message.warning('规则名称已存在'); return; }
@@ -248,14 +247,13 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     });
   };
 
-  const openRuleDesign = async (record: Rule) => {
-    setDesignRule(record);
-    setRuleConfig(record.rule_config ? JSON.parse(JSON.stringify(record.rule_config)) : null);
+  const openRuleDesign = async () => {
+    setRuleConfig(editData.rule_config ? JSON.parse(JSON.stringify(editData.rule_config)) : null);
     setRuleDesignModalOpen(true);
-    if (!record.rule_type) return;
+    if (!editData.rule_type) return;
     setTemplateLoading(true);
     try {
-      const template = await getRuleTemplate(record.rule_type);
+      const template = await getRuleTemplate(editData.rule_type);
       setRuleTemplate(template);
     } catch (e: any) {
       message.error('加载规则模板失败: ' + e.message);
@@ -264,18 +262,10 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     }
   };
 
-  const saveRuleDesign = async () => {
-    if (!designRule) return;
-    try {
-      const updated = rules.find(r => r.name === designRule.name);
-      if (!updated) return;
-      await updateRule(ontologyId, designRule.name, { ...updated, rule_config: ruleConfig });
-      message.success('规则设计已保存');
-      setRuleDesignModalOpen(false);
-      await load();
-    } catch (e: any) {
-      message.error('保存失败: ' + e.message);
-    }
+  const saveRuleDesign = () => {
+    setEditData(p => ({ ...p, rule_config: ruleConfig }));
+    message.success('规则设计已保存到编辑缓存');
+    setRuleDesignModalOpen(false);
   };
 
   const renderCell = (val: any, record: Rule, dataIndex: string, render?: (v: any) => any) => {
@@ -304,25 +294,25 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { title: '关联行为', dataIndex: 'related_behaviors', key: 'related_behaviors', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_behaviors', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.display_name || name).join(', ') || '-') },
     { title: '关联函数', dataIndex: 'related_functions', key: 'related_functions', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_functions', (list: string[]) => list?.map(name => funcs.find(f => f.name === name)?.display_name || name).join(', ') || '-') },
     {
-      title: '规则设计', key: 'rule_design', width: 85,
-      render: (_: any, record: Rule) => {
-        if (editingKey === record.name || (editingKey === '__new__' && record.name === '__new__')) return <span className="text-text-muted">-</span>;
-        const hasConfig = record.rule_config && Object.keys(record.rule_config).length > 0;
-        const noType = !record.rule_type;
-        return (
-          <Button type="link" size="small" icon={<FileTextOutlined />} disabled={noType} onClick={() => openRuleDesign(record)}>
-            <span style={{ color: noType ? '#64748b' : hasConfig ? '#22c55e' : undefined }}>{hasConfig ? '已设计' : '设计'}</span>
-          </Button>
-        );
-      },
-    },
-    {
-      title: '操作', key: 'actions', width: 80,
+      title: '操作', key: 'actions', width: 130,
       render: (_: any, record: Rule) => {
         if (editingKey === record.name || (editingKey === '__new__' && record.name === '__new__')) {
-          return <Space><Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} /><Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} /></Space>;
+          return (
+            <Space>
+              <Button type="link" size="small" icon={<FileTextOutlined />} disabled={!editData.rule_type} onClick={() => openRuleDesign()}>设计</Button>
+              <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} />
+              <Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} />
+            </Space>
+          );
         }
-        return <Space><Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} /><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.name)} /></Space>;
+        const hasConfig = record.rule_config && Object.keys(record.rule_config).length > 0;
+        return (
+          <Space>
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.name)} />
+            <span className={`text-xs ${hasConfig ? 'text-green-500' : 'text-text-muted'}`}>{hasConfig ? '已设计' : '未设计'}</span>
+          </Space>
+        );
       },
     },
   ];
@@ -338,15 +328,15 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
 
       {/* ─── Rule Design Modal ──────────────────────────────────────────── */}
       <Modal
-        title={`规则设计 - ${designRule?.display_name || designRule?.name || ''}`}
+        title={`规则设计 - ${editData.display_name || editData.name || ''}`}
         open={ruleDesignModalOpen}
         onOk={saveRuleDesign}
         onCancel={() => setRuleDesignModalOpen(false)}
-        okText="保存"
+        okText="保存到编辑缓存"
         cancelText="取消"
         width={800}
       >
-        {!designRule?.rule_type ? (
+        {!editData.rule_type ? (
           <p className="text-text-muted">请先选择规则类型后再进行规则设计</p>
         ) : templateLoading ? (
           <div className="flex items-center justify-center h-40"><span className="text-text-muted">加载模板中...</span></div>

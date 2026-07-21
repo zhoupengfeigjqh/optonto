@@ -732,6 +732,15 @@ rules:
   display_name: 采购-原料单位一致性
   rule_type: 验证规则
   position: 前置
+  rule_config:
+    left:
+      type: concept
+      concept: RawMaterialInventory
+      attribute: pendingReceiptQuantity
+    operator: gt
+    right:
+      type: value
+      value: '100'
 - name: V03_ArrivalTimeValidity
   description: 创建采购单时，输入的 arrivalTime 必须晚于 purchaseTime。
   related_behaviors:
