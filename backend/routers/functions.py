@@ -6,6 +6,11 @@ import json
 import os
 from pathlib import Path
 
+import datetime as _datetime
+import json as _json
+import math as _math
+import re as _re
+
 from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
@@ -220,6 +225,7 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
     params = body.get("params", {})
 
     restricted_globals = {
+        "datetime": _datetime, "json": _json, "math": _math, "re": _re,
         "__builtins__": {
             "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
             "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
