@@ -444,8 +444,14 @@ export interface RequirementItem {
   ontology_name?: string;
 }
 
-export const listRequirements = () =>
-  request<RequirementItem[]>('/api/threads/requirements/list');
+export const listRequirements = (scenario?: string, ontology?: string) => {
+  let url = '/api/threads/requirements/list';
+  const params: string[] = [];
+  if (scenario) params.push(`scenario=${encodeURIComponent(scenario)}`);
+  if (ontology) params.push(`ontology=${encodeURIComponent(ontology)}`);
+  if (params.length) url += '?' + params.join('&');
+  return request<RequirementItem[]>(url);
+};
 
 export const getRequirementFile = (threadId: string, filename: string, scenario?: string, ontology?: string) => {
   let url = `/api/threads/${threadId}/requirements/${filename}`;

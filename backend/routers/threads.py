@@ -183,10 +183,14 @@ async def update_thread(thread_id: str, body: dict = {}):
 # ─── Requirement files ─────────────────────────────────────────────────────────
 
 @router.get("/requirements/list")
-async def list_requirements():
-    """Scan all thread directories for .md files and return their metadata."""
+async def list_requirements(scenario: str = "", ontology: str = ""):
+    """Scan thread directories for .md files. Optionally filter by scenario/ontology."""
     items = []
     for tdir, sc_name, onto_name in _all_thread_dirs():
+        if scenario and sc_name != scenario:
+            continue
+        if ontology and onto_name != ontology:
+            continue
         thread_id = tdir.name
         thread_data = None
         data_path = tdir / ".data.json"

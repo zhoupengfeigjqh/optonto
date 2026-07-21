@@ -16,8 +16,8 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
   const load = async () => {
     setLoading(true);
     try {
-      const list = await listRequirements();
-      setItems(list.filter(i => i.scenario_name === scenarioName && i.ontology_name === ontologyName));
+      const list = await listRequirements(scenarioName, ontologyName);
+      setItems(list);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
