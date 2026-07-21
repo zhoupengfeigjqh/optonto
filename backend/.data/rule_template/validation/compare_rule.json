@@ -48,8 +48,8 @@
     },
     "operator": {
       "type": "string",
-      "enum": ["eq", "ne", "lt", "gt", "le", "ge"],
-      "description": "eq=equals, ne=not equals, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
+      "enum": ["eq", "ne", "contain", "in", "lt", "gt", "le", "ge"],
+      "description": "eq=equals, ne=not equals, contain=contains, in=belongs to, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
     },
     "right": {
       "type": "object",

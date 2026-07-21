@@ -884,7 +884,7 @@ rules:
     then: 提醒用户改单为补货单
     else: 提醒用户该采购单时用于客户订单的
 - name: I04_RelatedOrderValidation
-  description: IF 采购单relatedOrderId 不在 CustomerOrder 表中 (或状态为 已取消) THEN 提示用户该客户订单可能已失效，请确认是否取消该采购单。
+  description: IF 采购单relatedOrderId不为空且不在 CustomerOrder 表中 (或状态为 已取消) THEN 提示用户该客户订单可能已失效，请确认是否取消该采购单。
   related_behaviors:
   - QueryPurchaseRecords
   - CreatePurchaseRecord
