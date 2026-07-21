@@ -14,11 +14,20 @@ from services import load_ontology_data
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
 
 
-def _all_thread_dirs() -> list[Path]:
-    """Scan all onto_market/*/*/threads/ directories and return (thread_dir, scenario, ontology) tuples."""
+def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path, str, str]]:
+    """Scan onto_market/*/*/threads/ directories. If scenario+ontology given, scan only that path."""
     results: list[tuple[Path, str, str]] = []
     if not ONTO_MARKET_DIR.exists():
         return results
+
+    if scenario and ontology:
+        threads_dir = ONTO_MARKET_DIR / scenario / ontology / "threads"
+        if threads_dir.exists():
+            for thread_dir in sorted(threads_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                if thread_dir.is_dir():
+                    results.append((thread_dir, scenario, ontology))
+        return results
+
     for scenario_dir in sorted(ONTO_MARKET_DIR.iterdir()):
         if not scenario_dir.is_dir():
             continue
@@ -87,11 +96,7 @@ def _save_thread(data: dict) -> None:
 async def list_threads(scenario: str = "", ontology: str = ""):
     """List all threads, optionally filtered by scenario/ontology."""
     threads = []
-    for tdir, sc_name, onto_name in _all_thread_dirs():
-        if scenario and sc_name != scenario:
-            continue
-        if ontology and onto_name != ontology:
-            continue
+    for tdir, sc_name, onto_name in _all_thread_dirs(scenario, ontology):
         data_path = tdir / ".data.json"
         if not data_path.exists():
             continue
@@ -186,11 +191,7 @@ async def update_thread(thread_id: str, body: dict = {}):
 async def list_requirements(scenario: str = "", ontology: str = ""):
     """Scan thread directories for .md files. Optionally filter by scenario/ontology."""
     items = []
-    for tdir, sc_name, onto_name in _all_thread_dirs():
-        if scenario and sc_name != scenario:
-            continue
-        if ontology and onto_name != ontology:
-            continue
+    for tdir, sc_name, onto_name in _all_thread_dirs(scenario, ontology):
         thread_id = tdir.name
         thread_data = None
         data_path = tdir / ".data.json"
