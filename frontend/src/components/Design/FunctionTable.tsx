@@ -262,12 +262,9 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
       }) : '-';
     }},
-    { title: '函数代码', dataIndex: 'code_file', key: 'code_file', width: 85, render: (v: any, r: Function) => {
-      if (isEditing(r) || isNewRow(r)) return renderCell(v, r, 'code');
-      const hasCode = r.code_file && r.code_file.length > 0;
-      return <span className={`text-xs ${hasCode ? 'text-green-500' : 'text-text-muted'}`}>{hasCode ? '已编写' : '未编写'}</span>;
-    }},
     { title: '返回结构', key: 'response', width: 200, render: (_: any, r: Function) => {
+      if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
+      const raw = r.response || {};
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
       const raw = r.response || {};
       const items: { name: string; type: string; description: string; example: string }[] = [];
@@ -283,6 +280,11 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         const tag = <Tag key={i} color="green" className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>;
         return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
       }) : '-';
+    }},
+    { title: '函数代码', dataIndex: 'code_file', key: 'code_file', width: 85, render: (v: any, r: Function) => {
+      if (isEditing(r) || isNewRow(r)) return renderCell(v, r, 'code');
+      const hasCode = r.code_file && r.code_file.length > 0;
+      return <span className={`text-xs ${hasCode ? 'text-green-500' : 'text-text-muted'}`}>{hasCode ? '已编写' : '未编写'}</span>;
     }},
     {
       title: '操作', key: 'actions', width: 80,
