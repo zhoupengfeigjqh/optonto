@@ -227,6 +227,7 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
             "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
             "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
             "True": True, "False": False, "None": None,
+            "__import__": __import__, "print": print,
         },
     }
     local_vars = {}

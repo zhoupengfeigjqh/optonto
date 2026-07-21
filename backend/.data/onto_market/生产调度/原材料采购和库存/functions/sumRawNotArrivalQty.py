@@ -1,21 +1,22 @@
-def sumRawNotArrivalQty(filter_raw_material_name:str, current_date:str, purchase_record_set:list):
+import datetime
+
+def sumRawNotArrivalQty(filterRawMaterialName: str, currentDate: str, purchaseRecordSet: list) -> dict:
     """
-    计算指定原材料在指定日期之后未到货的总数量
+    根据传入的数据包指定的原材料，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和
 
     Args:
-        filter_raw_material_name: str，要筛选的原材料名称
-        current_date: str，当前日期，用于比较到货时间
-        purchase_record_set: list，采购记录列表，每条记录为字典，包含 rawMaterialName, arrivalTime, arrivalQuantity
+        filterRawMaterialName: str，原材料名称
+        currentDate: str，日期，格式为YYYY-MM-DD
+        purchaseRecordSet: list，采购记录列表，每条记录包含rawMaterialName, arrivalTime, arrivalQuantity
 
     Returns:
         dict: 返回包含原材料名称和未到货总数量的字典
     """
-    from datetime import datetime
     total_not_arrival = 0
-    current_date_obj = datetime.strptime(current_date, "%Y-%m-%d")
-    for record in purchase_record_set:
-        if record["rawMaterialName"] == filter_raw_material_name:
-            arrival_time_obj = datetime.strptime(record["arrivalTime"], "%Y-%m-%d")
-            if arrival_time_obj > current_date_obj:
+    current_date = datetime.datetime.strptime(currentDate, "%Y-%m-%d")
+    for record in purchaseRecordSet:
+        if record["rawMaterialName"] == filterRawMaterialName:
+            arrival_time = datetime.datetime.strptime(record["arrivalTime"], "%Y-%m-%d")
+            if arrival_time >= current_date:
                 total_not_arrival += record["arrivalQuantity"]
-    return {"result": {"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}
+    return {"result": {"rawMaterialName": filterRawMaterialName, "sumNotArrivalQty": total_not_arrival}}
