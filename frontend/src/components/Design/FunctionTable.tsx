@@ -125,7 +125,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       for (const [k, v] of Object.entries(spec.properties)) {
         obj[k] = extractExample(v);
       }
-      return JSON.stringify(obj);
+      return obj;
     }
     if (t === 'array') {
       if (spec.items?.type === 'object' && spec.items?.properties) {
@@ -133,9 +133,9 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         for (const [k, v] of Object.entries(spec.items.properties)) {
           item[k] = extractExample(v);
         }
-        return JSON.stringify([item]);
+        return [item];
       }
-      return '[]';
+      return [];
     }
     if (t === 'number' || t === 'boolean') return '';
     return '';
@@ -155,7 +155,16 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const handleTestExecute = async () => {
     setTestLoading(true);
     try {
-      const result = await executeFunction(ontologyId, editData.name, testParams);
+      // Parse JSON strings back to actual objects/arrays
+      const parsed: Record<string, any> = {};
+      for (const [k, v] of Object.entries(testParams)) {
+        if (typeof v === 'string' && (v.startsWith('{') || v.startsWith('['))) {
+          try { parsed[k] = JSON.parse(v); } catch { parsed[k] = v; }
+        } else {
+          parsed[k] = v;
+        }
+      }
+      const result = await executeFunction(ontologyId, editData.name, parsed);
       setTestResult(result.result);
     } catch (e: any) { setTestResult({ error: e.message }); }
     finally { setTestLoading(false); }
@@ -403,16 +412,20 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
               <p className="text-text-muted text-sm">该函数无需输入参数</p>
             ) : (
               <div className="space-y-1.5">
-                {Object.entries(testParams).map(([k, v]) => (
-                  <div key={k} className="flex items-center gap-2">
-                    <span className="w-28 text-text-secondary text-xs shrink-0">{k}</span>
-                    {typeof v === 'boolean' ? null : typeof v === 'string' && (v === '{}' || v === '[]') ? (
-                      <Input.TextArea size="small" value={v as string} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
-                    ) : (
-                      <Input size="small" value={v as string} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" />
-                    )}
-                  </div>
-                ))}
+                {Object.entries(testParams).map(([k, v]) => {
+                  const isComplex = typeof v === 'object' || (typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')));
+                  const displayVal = typeof v === 'object' ? JSON.stringify(v, null, 2) : v as string;
+                  return (
+                    <div key={k} className="flex items-center gap-2">
+                      <span className="w-28 text-text-secondary text-xs shrink-0">{k}</span>
+                      {isComplex ? (
+                        <Input.TextArea size="small" value={displayVal} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} rows={4} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+                      ) : (
+                        <Input size="small" value={displayVal} onChange={e => setTestParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
