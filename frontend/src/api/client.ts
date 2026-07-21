@@ -394,8 +394,14 @@ export const getThreads = (query: string = '') =>
 export const createThread = (title: string = '新对话', scenario_name: string = '', ontology_name: string = '') =>
   request<Thread>('/api/threads', { method: 'POST', body: JSON.stringify({ title, scenario_name, ontology_name }) });
 
-export const getThread = (id: string) =>
-  request<Thread>(`/api/threads/${id}`);
+export const getThread = (id: string, scenario?: string, ontology?: string) => {
+  let url = `/api/threads/${id}`;
+  const params: string[] = [];
+  if (scenario) params.push(`scenario=${encodeURIComponent(scenario)}`);
+  if (ontology) params.push(`ontology=${encodeURIComponent(ontology)}`);
+  if (params.length) url += '?' + params.join('&');
+  return request<Thread>(url);
+};
 
 export const deleteThread = (id: string) =>
   request<{ message: string }>(`/api/threads/${id}`, { method: 'DELETE' });

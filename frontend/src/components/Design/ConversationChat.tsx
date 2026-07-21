@@ -9,9 +9,11 @@ import { renderMarkdown } from '@/lib/markdown';
 interface Props {
   threadId: string;
   onBack: () => void;
+  scenarioName?: string;
+  ontologyName?: string;
 }
 
-export default function ConversationChat({ threadId, onBack }: Props) {
+export default function ConversationChat({ threadId, onBack, scenarioName, ontologyName }: Props) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -30,7 +32,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const thread = await getThread(threadId);
+      const thread = await getThread(threadId, scenarioName, ontologyName);
       setTitle(thread.title);
       setMessages(thread.messages || []);
     } catch (e: any) {

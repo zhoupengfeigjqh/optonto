@@ -62,7 +62,7 @@ export default function ConversationManager({ ontologyId: _ontologyId, activeTab
   };
 
   if (activeThreadId) {
-    return <ConversationChat threadId={activeThreadId} onBack={() => { setActiveThreadId(null); load(); }} />;
+    return <ConversationChat threadId={activeThreadId} onBack={() => { setActiveThreadId(null); load(); }} scenarioName={scenarioName} ontologyName={ontologyName} />;
   }
 
   const columns = [

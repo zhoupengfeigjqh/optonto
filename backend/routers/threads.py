@@ -139,8 +139,20 @@ async def create_thread(body: dict):
 
 
 @router.get("/{thread_id}")
-async def get_thread(thread_id: str):
+async def get_thread(thread_id: str, scenario: str = "", ontology: str = ""):
     """Get a thread with all its messages."""
+    if scenario and ontology:
+        tdir = ONTO_MARKET_DIR / scenario / ontology / "threads" / thread_id
+        if not tdir.exists():
+            raise HTTPException(status_code=404, detail="对话不存在")
+        path = tdir / ".data.json"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="对话不存在")
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["scenario_name"] = scenario
+        data["ontology_name"] = ontology
+        return data
     data, sc, onto = _load_thread(thread_id)
     data["scenario_name"] = sc
     data["ontology_name"] = onto
