@@ -167,34 +167,18 @@ async def generate_function_code(ontology_id: int, function_name: str):
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法智能生成代码")
 
     from langchain_core.messages import HumanMessage, SystemMessage
+    from config import FUNCTION_CODE_SYSTEM_PROMPT, FUNCTION_CODE_PROMPT
 
-    prompt = f"""根据以下函数定义生成 Python 计算代码。
-
-函数名称：{fn.name}
-函数描述：{fn.description or '（无描述）'}
-输入参数结构：{json.dumps(fn.params, ensure_ascii=False, indent=2)}
-返回结构：{json.dumps(fn.response, ensure_ascii=False, indent=2)}
-
-【要求】
-1. 生成一个 Python 函数，函数名与参数名保持一致
-2. 函数签名：def {fn.name}(params: dict) -> dict:
-3. 输入参数的 key 作为函数参数输入项，按输入参数结构从 params 中取数据
-4. 涉及日期比较时，必须从 params 中获取日期参数，不得在代码中硬编码日期
-5. 返回值为字典，按返回结构组装
-6. 代码必须是可直接运行的 Python 3 代码
-7. 只输出代码本身，不要任何解释或 markdown 标记
-
-【示例】
-def sumNotArrivalQty(params: dict) -> dict:
-    total = 0
-    for item in params.get("purchaseRecordSet", []):
-        if item.get("arrivalTime", "") > params.get("currentDate", ""):
-            total += item.get("arrivalQuantity", 0)
-    return {{"total": total}}"""
+    prompt = FUNCTION_CODE_PROMPT.format(
+        name=fn.name,
+        description=fn.description or "（无描述）",
+        params=json.dumps(fn.params, ensure_ascii=False, indent=2),
+        response=json.dumps(fn.response, ensure_ascii=False, indent=2),
+    )
 
     try:
         response = await llm.ainvoke([
-            SystemMessage(content="你是一个Python计算代码生成专家，只输出代码，不输出其他内容。"),
+            SystemMessage(content=FUNCTION_CODE_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])
         code = response.content.strip()

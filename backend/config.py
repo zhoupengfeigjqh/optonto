@@ -344,3 +344,32 @@ TARGET_PARSE_PROMPT = """根据用户提供的目标系统API接口文档片段�
 
 严格按以下JSON格式输出：
 {{"api_name": "接口名称或空字符串", "data_source_name": "数据源名称或空字符串", "url": "接口地址或空字符串", "method": "GET/POST/PATCH/DELETE或空字符串", "params": {{...}}, "response": {{...}}}}"""
+
+
+# ─── 函数代码 — 智能生成提示词 ──────────────────────────────────────────────────
+
+FUNCTION_CODE_SYSTEM_PROMPT = "你是一个Python计算代码生成专家，只输出代码，不输出其他内容。"
+
+FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
+
+函数名称：{name}
+函数描述：{description}
+输入参数结构：{params}
+返回结构：{response}
+
+【要求】
+1. 生成一个 Python 函数，函数名与参数名保持一致
+2. 函数签名：def {name}(params: dict) -> dict:
+3. 输入参数的 key 作为函数参数输入项，按输入参数结构从 params 中取数据
+4. 涉及日期比较时，必须从 params 中获取日期参数，不得在代码中硬编码日期
+5. 返回值为字典，按返回结构组装
+6. 代码必须是可直接运行的 Python 3 代码
+7. 只输出代码本身，不要任何解释或 markdown 标记
+
+【示例】
+def sumNotArrivalQty(params: dict) -> dict:
+    total = 0
+    for item in params.get("purchaseRecordSet", []):
+        if item.get("arrivalTime", "") > params.get("currentDate", ""):
+            total += item.get("arrivalQuantity", 0)
+    return {{"total": total}}"""
