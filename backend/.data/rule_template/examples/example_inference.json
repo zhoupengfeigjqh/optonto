@@ -1,0 +1,48 @@
+{
+  "ruleName": "推理规则",
+  "label": "库存低于安全库存触发补货建议",
+  "description": "当原材料的当前库存低于安全库存时，建议触发采购提醒。",
+  "schema": {
+    "if": {
+      "logic": "and",
+      "conditions": [
+        {
+          "left": {
+            "type": "concept",
+            "concept": "RawMaterialInventory",
+            "attribute": "currentStock"
+          },
+          "operator": "lt",
+          "right": {
+            "type": "concept",
+            "concept": "RawMaterial",
+            "attribute": "safetyStock"
+          }
+        }
+      ]
+    },
+    "then": "当前原材料库存低于安全库存，建议立即创建采购单 CreatePurchaseRecord，采购数量 = safetyStock - currentStock",
+    "else": "当前原材料库存充足，无需补货"
+  },
+  "realOntologyData": {
+    "RawMaterial": {
+      "attributes": {
+        "rawMaterialId": "RM-001",
+        "rawMaterialName": "高强度钢板",
+        "safetyStock": 100
+      }
+    },
+    "RawMaterialInventory": {
+      "attributes": {
+        "rawMaterialId": "RM-001",
+        "currentStock": 30
+      }
+    }
+  },
+  "conditionEval": {
+    "leftValue": "RawMaterialInventory.currentStock = 30",
+    "operator": "lt (less than)",
+    "rightValue": "RawMaterial.safetyStock = 100",
+    "result": "30 < 100 = true → 执行 then"
+  }
+}
