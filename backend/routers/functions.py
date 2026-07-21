@@ -1,4 +1,6 @@
-"""CRUD API for functions within an ontology."""
+"""CRUD API for functions within an ontology.
+Function code is stored as .py files in onto_market/{scenario}/{ontology}/functions/.
+"""
 
 import json
 import os
@@ -8,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
 from schemas import FunctionItem
-from services import load_ontology_data, save_ontology_data
+from services import load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/functions", tags=["函数"])
 
@@ -45,6 +47,12 @@ def _build_llm():
         streaming=False,
     )
 
+
+def _code_path(sc_name: str, on_name: str, func_name: str) -> Path:
+    return _get_functions_dir(sc_name, on_name) / f"{func_name}.py"
+
+
+# ─── CRUD ─────────────────────────────────────────────────────────────────
 
 @router.get("")
 async def list_functions(ontology_id: int):
@@ -92,16 +100,61 @@ async def delete_function(ontology_id: int, function_name: str):
     if idx == -1:
         raise HTTPException(status_code=404, detail="函数不存在")
 
+    # Remove code file if exists
+    code_path = _code_path(sc_name, on_name, function_name)
+    if code_path.exists():
+        code_path.unlink()
+
     data.functions.pop(idx)
     save_ontology_data(sc_name, on_name, data)
     return {"message": "函数已删除"}
+
+
+# ─── Code Read/Write ──────────────────────────────────────────────────────
+
+@router.get("/{function_name}/code")
+async def get_function_code(ontology_id: int, function_name: str):
+    """Read function code from file. Returns content and whether file exists."""
+    sc_name, on_name = await get_ontology_names(ontology_id)
+    data = load_ontology_data(sc_name, on_name)
+
+    fn = next((g for g in data.functions if g.name == function_name), None)
+    if fn is None:
+        raise HTTPException(status_code=404, detail="函数不存在")
+
+    code_path = _code_path(sc_name, on_name, function_name)
+    content = ""
+    if code_path.exists():
+        content = code_path.read_text(encoding="utf-8")
+    return {"content": content, "exists": code_path.exists(), "code_file": fn.code_file}
+
+
+@router.put("/{function_name}/code")
+async def save_function_code(ontology_id: int, function_name: str, body: dict):
+    """Write function code to file and update code_file in YAML."""
+    sc_name, on_name = await get_ontology_names(ontology_id)
+    data = load_ontology_data(sc_name, on_name)
+
+    idx = next((i for i, g in enumerate(data.functions) if g.name == function_name), -1)
+    if idx == -1:
+        raise HTTPException(status_code=404, detail="函数不存在")
+
+    ensure_functions_dir(sc_name, on_name)
+    code_path = _code_path(sc_name, on_name, function_name)
+    code_path.write_text(body.get("code", ""), encoding="utf-8")
+
+    # Update code_file reference in YAML
+    data.functions[idx].code_file = f"functions/{function_name}.py"
+    save_ontology_data(sc_name, on_name, data)
+
+    return {"message": "代码已保存", "code_file": data.functions[idx].code_file}
 
 
 # ─── Generate Code ─────────────────────────────────────────────────────────
 
 @router.post("/{function_name}/generate-code")
 async def generate_function_code(ontology_id: int, function_name: str):
-    """Use LLM to generate Python code for a function based on its metadata."""
+    """Use LLM to generate Python code and save to file."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -147,7 +200,17 @@ def sumNotArrivalQty(params: dict) -> dict:
         if code.startswith("```"):
             code = code.split("\n", 1)[1] if "\n" in code else code[3:]
             code = code.rsplit("```", 1)[0].strip()
-        return {"code": code}
+
+        # Save to file
+        ensure_functions_dir(sc_name, on_name)
+        code_path = _code_path(sc_name, on_name, function_name)
+        code_path.write_text(code, encoding="utf-8")
+
+        # Update code_file reference in YAML
+        data.functions[data.functions.index(fn)].code_file = f"functions/{function_name}.py"
+        save_ontology_data(sc_name, on_name, data)
+
+        return {"code": code, "code_file": f"functions/{function_name}.py"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"代码生成失败: {str(e)}")
 
@@ -163,12 +226,14 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
     fn = next((g for g in data.functions if g.name == function_name), None)
     if fn is None:
         raise HTTPException(status_code=404, detail="函数不存在")
-    if not fn.code:
-        raise HTTPException(status_code=400, detail="函数代码为空，请先编写或生成代码")
 
+    code_path = _code_path(sc_name, on_name, function_name)
+    if not code_path.exists():
+        raise HTTPException(status_code=400, detail="函数代码文件不存在，请先编写或生成代码")
+
+    code = code_path.read_text(encoding="utf-8")
     params = body.get("params", {})
 
-    # Prepare restricted execution context
     restricted_globals = {
         "__builtins__": {
             "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
@@ -182,7 +247,7 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
     local_vars = {}
 
     try:
-        exec(fn.code, restricted_globals, local_vars)
+        exec(code, restricted_globals, local_vars)
         func = local_vars.get(fn.name)
         if func is None:
             raise HTTPException(status_code=500, detail=f"未找到函数 {fn.name}，请确认函数名与定义一致")

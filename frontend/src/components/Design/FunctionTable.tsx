@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, message, Space, Tag, Tooltip, Tree } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined, RobotOutlined } from '@ant-design/icons';
-import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, generateFunctionCode, executeFunction, Function, Concept, Attribute } from '@/api/client';
+import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, Function, Concept, Attribute } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import type { DataNode } from 'antd/es/tree';
 
@@ -75,18 +75,24 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   };
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', related_attributes: [], params: '{}', response: '{}', code: '' });
+    setEditData({ name: '', display_name: '', description: '', related_attributes: [], params: '{}', response: '{}', code_file: '' });
     setEditingKey('__new__');
   };
 
   const handleEdit = (g: Function) => {
-    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_attributes: g.related_attributes || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code: g.code || '' });
+    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_attributes: g.related_attributes || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '' });
     setEditingKey(g.name);
   };
 
-  const openCodeEditor = () => {
-    setCodeStr(editData.code || '');
+  const openCodeEditor = async () => {
+    setCodeStr('');
     setCodeEditorOpen(true);
+    if (editData.code_file) {
+      try {
+        const result = await getFunctionCode(ontologyId, editData.name);
+        setCodeStr(result.content);
+      } catch (e: any) { /* file may not exist yet */ }
+    }
   };
 
   const handleGenerateCode = async () => {
@@ -94,15 +100,19 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     try {
       const result = await generateFunctionCode(ontologyId, editData.name);
       setCodeStr(result.code);
-      setEditData((p: any) => ({ ...p, code: result.code }));
-      message.success('代码已生成');
+      setEditData((p: any) => ({ ...p, code_file: result.code_file }));
+      message.success('代码已生成并保存到文件');
     } catch (e: any) { message.error('生成失败: ' + e.message); }
     finally { setGenerating(false); }
   };
 
-  const saveCodeEditor = () => {
-    setEditData((p: any) => ({ ...p, code: codeStr }));
-    setCodeEditorOpen(false);
+  const saveCodeEditor = async () => {
+    try {
+      const result = await saveFunctionCode(ontologyId, editData.name, codeStr);
+      setEditData((p: any) => ({ ...p, code_file: result.code_file }));
+      setCodeEditorOpen(false);
+      message.success('代码已保存');
+    } catch (e: any) { message.error('保存失败: ' + e.message); }
   };
 
   const openTestModal = () => {
@@ -149,7 +159,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         related_attributes: editData.related_attributes || [],
         params: parsedParams,
         response: parsedResponse,
-        code: editData.code || '',
+        code_file: editData.code_file || '',
       };
       const isNew = editingKey === '__new__';
       if (isNew) {
@@ -252,9 +262,9 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
       }) : '-';
     }},
-    { title: '函数代码', dataIndex: 'code', key: 'code', width: 85, render: (v: any, r: Function) => {
+    { title: '函数代码', dataIndex: 'code_file', key: 'code_file', width: 85, render: (v: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return renderCell(v, r, 'code');
-      const hasCode = r.code && r.code.trim().length > 0;
+      const hasCode = r.code_file && r.code_file.length > 0;
       return <span className={`text-xs ${hasCode ? 'text-green-500' : 'text-text-muted'}`}>{hasCode ? '已编写' : '未编写'}</span>;
     }},
     { title: '返回结构', key: 'response', width: 200, render: (_: any, r: Function) => {

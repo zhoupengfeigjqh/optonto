@@ -19,6 +19,18 @@ def _get_yaml_path(scenario_name: str, ontology_name: str) -> Path:
     return _get_ontology_dir(scenario_name, ontology_name) / "ontology.yaml"
 
 
+def _get_functions_dir(scenario_name: str, ontology_name: str) -> Path:
+    """Get the directory for function code files."""
+    return _get_ontology_dir(scenario_name, ontology_name) / "functions"
+
+
+def ensure_functions_dir(scenario_name: str, ontology_name: str) -> Path:
+    """Ensure the functions directory exists and return its path."""
+    dir_path = _get_functions_dir(scenario_name, ontology_name)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path
+
+
 def ensure_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
     """Ensure the ontology directory exists and return its path."""
     dir_path = _get_ontology_dir(scenario_name, ontology_name)
