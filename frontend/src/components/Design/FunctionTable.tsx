@@ -115,17 +115,37 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     } catch (e: any) { message.error('保存失败: ' + e.message); }
   };
 
+  // Extract example values from params schema for auto-fill
+  const extractExample = (spec: any): any => {
+    if (!spec || typeof spec !== 'object') return '';
+    if (spec.example !== undefined) return spec.example;
+    const t = spec.type || 'string';
+    if (t === 'object' && spec.properties) {
+      const obj: Record<string, any> = {};
+      for (const [k, v] of Object.entries(spec.properties)) {
+        obj[k] = extractExample(v);
+      }
+      return JSON.stringify(obj);
+    }
+    if (t === 'array') {
+      if (spec.items?.type === 'object' && spec.items?.properties) {
+        const item: Record<string, any> = {};
+        for (const [k, v] of Object.entries(spec.items.properties)) {
+          item[k] = extractExample(v);
+        }
+        return JSON.stringify([item]);
+      }
+      return '[]';
+    }
+    if (t === 'number' || t === 'boolean') return '';
+    return '';
+  };
+
   const openTestModal = () => {
     const params: Record<string, any> = {};
     const raw = JSON.parse(editData.params || '{}');
     for (const [k, v] of Object.entries(raw)) {
-      if (typeof v === 'string') params[k] = '';
-      else if (typeof v === 'object' && v !== null) {
-        const t = (v as any).type || 'string';
-        if (t === 'object') params[k] = '{}';
-        else if (t === 'array') params[k] = '[]';
-        else params[k] = '';
-      }
+      params[k] = extractExample(v);
     }
     setTestParams(params);
     setTestResult(null);

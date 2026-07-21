@@ -358,8 +358,8 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 返回结构：{response}
 
 【要求】
-1. 生成一个可执行的 Python 函数
-2. def {name}(params[key1],params[key1],...) -> dict:
+1. 生成一个可执行的 Python 函数，需要加载本函数必要的库
+2. def {name}(params[key1],params[key2],...) -> dict:
 3. key取第一层的，嵌套的不取
 4. 涉及日期时，如最新日期，请用函数工具包，不要自己生成
 5. 函数注释args: 参数名，类型：参数描述
@@ -368,6 +368,7 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 8. 只输出代码本身，不要任何解释或 markdown 标记
 
 【示例】
+import datetime
 def sumRawNotArrivalQty(filter_raw_material_name:str, current_date:str, purchase_record_set:list):
     \"""
     计算指定原材料在指定日期之后未到货的总数量

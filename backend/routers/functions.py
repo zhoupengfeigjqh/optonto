@@ -236,7 +236,7 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
         func = local_vars.get(fn.name)
         if func is None:
             raise HTTPException(status_code=500, detail=f"未找到函数 {fn.name}，请确认函数名与定义一致")
-        result = func(params)
+        result = func(**params)
         return {"result": result}
     except HTTPException:
         raise
