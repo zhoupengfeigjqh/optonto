@@ -293,18 +293,16 @@ functions:
             example: 100
   response:
     result:
-      type: array
-      items:
-        type: object
-        properties:
-          rawMaterialName:
-            type: string
-            description: 原材料名称
-            example: 高强度钢板
-          sumNotArrivalQty:
-            type: number
-            description: 还未到位的采购量
-            example: 100
+      type: object
+      properties:
+        rawMaterialName:
+          type: string
+          description: 原材料名称
+          example: 高强度钢板
+        sumNotArrivalQty:
+          type: number
+          description: 还未到位的采购量
+          example: 100
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
@@ -875,34 +873,42 @@ data_engines:
       rawMaterialId:
         type: string
         description: 原材料ID
+        required: true
         example: RM-001
       rawMaterialName:
         type: string
         description: 原材料名称
+        required: true
         example: 高强度钢板
       unit:
         type: string
         description: 单位 (吨/千件/桶/千米)
+        required: true
         example: 吨
       supplierName:
         type: string
         description: 供应商名称
+        required: true
         example: 宝钢钢铁集团
       arrivalTime:
         type: date
         description: 到货日期 (yyyy-MM-dd)
+        required: true
         example: '2026-08-01'
       arrivalQuantity:
         type: number
         description: 到货数量
+        required: true
         example: 100
       relatedOrderId:
         type: string
         description: 关联客户订单ID
+        required: false
         example: SO-20231001-001
       relatedOrderName:
         type: string
         description: 关联客户订单名称
+        required: false
         example: 2023年10月-A客户-建筑钢结构
     response:
       code:
@@ -991,6 +997,7 @@ data_engines:
       purchaseOrderId:
         type: string
         description: 采购单号
+        required: true
         example: PO-20260716-026
     response:
       code:
@@ -1035,6 +1042,7 @@ data_engines:
       purchaseOrderId:
         type: string
         description: 采购单号
+        required: true
         example: PO-20260716-026
     response:
       code:
@@ -1087,10 +1095,12 @@ data_engines:
       rawMaterialId:
         type: string
         description: 原材料ID
+        required: false
         example: RM-001
       rawMaterialName:
         type: string
         description: 原材料名称，模糊匹配
+        required: false
         example: 高强度钢板
     response:
       code:
@@ -1163,18 +1173,22 @@ data_engines:
       purchaseOrderId:
         type: string
         description: 采购单号
+        required: false
         example: PO-20260716-026
       rawMaterialId:
         type: string
         description: 原材料ID
+        required: false
         example: RM-001
       rawMaterialName:
         type: string
         description: 原材料名称，模糊匹配
+        required: false
         example: 高强度钢板
       relatedOrderId:
         type: string
         description: 关联订单ID
+        required: false
         example: SO-20231001-001
     response:
       code:
@@ -1267,10 +1281,12 @@ data_engines:
       rawMaterialId:
         type: string
         description: 原材料ID
+        required: false
         example: RM-001
       rawMaterialName:
         type: string
         description: 原材料名称，模糊匹配
+        required: false
         example: 高强度钢板
     response:
       code:
@@ -1327,10 +1343,12 @@ data_engines:
       supplierName:
         type: string
         description: 供应商名称，模糊匹配
+        required: false
         example: 宝钢钢铁集团
       rawMaterialName:
         type: string
         description: 原材料名称
+        required: false
         example: 钢板008
     response:
       code:
@@ -1400,10 +1418,12 @@ data_engines:
       supplierName:
         type: string
         description: 供应商名称，模糊匹配
+        required: false
         example: 宝钢钢铁集团
       rawMaterialName:
         type: string
         description: 原材料名称
+        required: false
         example: 钢板008
     response:
       code:

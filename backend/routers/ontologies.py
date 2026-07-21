@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
 from metadata import (
-    list_ontologies, list_all_ontologies, get_ontology_by_id, get_scenario_by_id,
+    list_ontologies_by_scenario, list_all_ontologies, get_ontology_by_id, get_scenario_by_id,
     get_scenario_by_name, create_ontology, update_ontology, delete_ontology,
 )
 from services import ensure_ontology_dir, save_ontology_data, load_ontology_data, OntologyData
@@ -23,7 +23,7 @@ async def list_ontologies_api(scenario_id: int):
     scenario = get_scenario_by_id(scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="场景不存在")
-    return list_ontologies(scenario["name"])
+    return list_ontologies_by_scenario(scenario["name"])
 
 
 @router.post("", status_code=201)
@@ -40,7 +40,7 @@ async def create_ontology_api(data: dict):
         raise HTTPException(status_code=404, detail="场景不存在")
 
     # Check uniqueness within scenario
-    for o in list_ontologies(scenario["name"]):
+    for o in list_ontologies_by_scenario(scenario["name"]):
         if o["name"] == name:
             raise HTTPException(status_code=400, detail="该场景下本体名称已存在")
 
@@ -81,7 +81,7 @@ async def update_ontology_api(ontology_id: int, data: dict):
         existing_result = get_ontology_by_id(ontology_id)
         if existing_result:
             # Check for duplicate name in same scenario
-            for o in list_ontologies(existing_result[1]):
+            for o in list_ontologies_by_scenario(existing_result[1]):
                 if o["name"] == name and o["id"] != ontology_id:
                     raise HTTPException(status_code=400, detail="该场景下本体名称已存在")
 

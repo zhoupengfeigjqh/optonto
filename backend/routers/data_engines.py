@@ -173,21 +173,28 @@ async def smart_parse(ontology_id: int, engine_name: str, body: SmartParseReques
     if de is None:
         raise HTTPException(status_code=404, detail="数据引擎不存在")
 
-    beh = next((b for b in data.behaviors if b.name == de.behavior_name), None)
-
     llm = _build_llm()
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能解析")
 
     from langchain_core.messages import HumanMessage, SystemMessage
-    from config import TARGET_PARSE_SYSTEM_PROMPT, TARGET_PARSE_PROMPT
+    from config import TARGET_PARSE_SYSTEM_PROMPT, TARGET_PARSE_PROMPT, DATA_DIR
+    import yaml
 
-    ontology_params = json.dumps(beh.params, ensure_ascii=False) if beh else "{}"
-    ontology_response = json.dumps(beh.response, ensure_ascii=False) if beh else "{}"
+    # 从 onto_template.yaml 读取标准参考模板
+    template_path = DATA_DIR / "onto_template.yaml"
+    template_params = "{}"
+    template_response = "{}"
+    if template_path.exists():
+        with open(template_path, encoding="utf-8") as f:
+            template_data = yaml.safe_load(f) or {}
+        if template_data.get("behaviors"):
+            template_params = json.dumps(template_data["behaviors"][0].get("params", {}), ensure_ascii=False)
+            template_response = json.dumps(template_data["behaviors"][0].get("response", {}), ensure_ascii=False)
 
     prompt = TARGET_PARSE_PROMPT.format(
-        ontology_params=ontology_params,
-        ontology_response=ontology_response,
+        template_params=template_params,
+        template_response=template_response,
         params_content=body.params_content or "（未提供）",
         response_content=body.response_content or "（未提供）",
     )

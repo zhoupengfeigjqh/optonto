@@ -149,7 +149,7 @@ def delete_scenario(scenario_id: int) -> bool:
 
 # ─── Ontology CRUD ─────────────────────────────────────────────────────────────
 
-def list_ontologies(scenario_name: str) -> list[dict]:
+def list_ontologies_by_scenario(scenario_name: str) -> list[dict]:
     """List ontologies for a given scenario (delegates to list_all_ontologies)."""
     return [o for o in list_all_ontologies() if o.get("scenario_name") == scenario_name]
 

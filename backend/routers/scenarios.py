@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 
-from metadata import list_scenarios, get_scenario_by_id, get_scenario_by_name, create_scenario, update_scenario, delete_scenario, list_ontologies
+from metadata import list_scenarios, get_scenario_by_id, get_scenario_by_name, create_scenario, update_scenario, delete_scenario, list_ontologies_by_scenario
 
 router = APIRouter(prefix="/api/scenarios", tags=["场景"])
 
@@ -49,7 +49,7 @@ async def delete_scenario_api(scenario_id: int):
     if not scenario:
         raise HTTPException(status_code=404, detail="场景不存在")
     # Check if any ontologies exist
-    if list_ontologies(scenario["name"]):
+    if list_ontologies_by_scenario(scenario["name"]):
         raise HTTPException(status_code=400, detail="该场景下存在本体，请先删除所有本体后再删除场景")
     delete_scenario(scenario_id)
     return {"message": "场景已删除"}

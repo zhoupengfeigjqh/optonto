@@ -79,7 +79,7 @@ ANALYSIS_SYSTEM_PROMPT = """
         - **函数**：需提供英文名、中文名、描述、关联概念属性、输入参数和返回结构。
     - **输出**：分别用三个表格展示行为、规则和函数。
     要求1：函数针对实例化对象集的属性进行计算，描述须给出具体计算过程
-    要求2：函数的输入参数（即待计算的数据包）和返回结构（即计算结果）均采用数组形式
+    要求2：函数的输入参数（即待计算的数据包）采用数组array[object]形式，返回结构（即计算结果）采用object
     要求3：函数关联概念属性（如Order.orderId），可跨概念
     要求4：行为须为原子级业务动作（增删改查），不可再拆分
     要求5：行为须关联至少一个概念，可关联多个
@@ -246,17 +246,18 @@ TARGET_PARSE_SYSTEM_PROMPT = "你是一个API接口文档解析专家。只输�
 
 TARGET_PARSE_PROMPT = """根据用户提供的目标系统API接口文档片段，解析接口名称、地址、请求方法、数据源名称、输入和输出等内容。
 
-【标准参考模板】
-输入参数: {ontology_params}
-返回结构: {ontology_response}
+【标准参考模板】（参考模板的参数和返回结构，按此结构解析目标接口）
+输入参数: {template_params}
+返回结构: {template_response}
 
 【解析规则（严格遵守）】
 1. 请参考标准模板中的例子进行解析，要学会举一反三，灵活运用
 2. 参数中的type 只能是: string / number / date / boolean / enum / array / object
 3. 如果文档没有明确类型，根据示例值推断（数字→number，true/false→boolean，对象→object，列表→array）
 4. 如果文档没有示例值，根据描述和类型生成一个合理的中文示例值
-5. 从文档中提取接口名称（api_name）、数据源名称（data_source_name）、接口地址（url）和请求方法（method，GET/POST/PATCH/DELETE四选一），找不到则为空字符串
-6. 不要做任何额外的增减操作
+5. 对于required字段，如果文档中没有明确标注，则默认选填（false）
+6. 从文档中提取接口名称（api_name）、数据源名称（data_source_name）、接口地址（url）和请求方法（method，GET/POST/PATCH/DELETE四选一），找不到则为空字符串
+7. 不要做任何额外的增减操作，也不要输出任何解释或注释。
 
 【用户提供的参数文档】
 {params_content}
