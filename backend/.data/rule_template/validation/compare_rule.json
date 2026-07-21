@@ -1,5 +1,5 @@
 {
-  "ruleName": "compareRule",
+  "ruleName": "验证规则",
   "type": "object",
   "properties": {
     "left": {
@@ -48,8 +48,8 @@
     },
     "operator": {
       "type": "string",
-      "enum": ["eq", "lt", "gt", "le", "ge"],
-      "description": "eq=equals, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
+      "enum": ["eq", "ne", "lt", "gt", "le", "ge"],
+      "description": "eq=equals, ne=not equals, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
     },
     "right": {
       "type": "object",

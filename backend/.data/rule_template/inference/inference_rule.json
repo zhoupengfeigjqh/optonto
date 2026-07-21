@@ -1,123 +1,144 @@
 {
-  "ruleName": "inferenceRule",
+  "ruleName": "推理规则",
   "type": "object",
-  "description": "If-then-else inference rule. When condition matches, execute action; optionally execute elseAction when condition fails.",
   "properties": {
-    "name": {
-      "type": "string",
-      "description": "Unique rule name"
-    },
-    "displayName": {
-      "type": "string",
-      "description": "Human-readable rule name in Chinese"
-    },
-    "description": {
-      "type": "string",
-      "description": "Rule description and business intent"
-    },
-    "condition": {
+    "if": {
       "type": "object",
-      "description": "Comparison condition — references compare_rule.json schema",
       "properties": {
-        "left": {
-          "type": "object",
-          "properties": {
-            "type": { "type": "string", "enum": ["concept", "function"] },
-            "concept": { "type": "string", "description": "Source concept name" },
-            "attribute": { "type": "string", "description": "Source attribute name" },
-            "function": { "type": "string", "description": "Aggregate function name" },
-            "returnField": { "type": "string", "description": "Function result field" }
-          },
-          "required": ["type"],
-          "allOf": [
-            { "if": { "properties": { "type": { "const": "concept" } } }, "then": { "required": ["concept", "attribute"] } },
-            { "if": { "properties": { "type": { "const": "function" } } }, "then": { "required": ["function", "returnField"] } }
-          ]
-        },
-        "operator": {
+        "logic": {
           "type": "string",
-          "enum": ["eq", "lt", "gt", "le", "ge"],
-          "description": "eq=equals, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
+          "enum": ["and", "or"],
+          "description": "多个条件之间的逻辑关系，默认为 and",
+          "default": "and"
         },
-        "right": {
-          "type": "object",
-          "properties": {
-            "type": { "type": "string", "enum": ["value", "concept"] },
-            "value": { "description": "Literal value when type=value" },
-            "concept": { "type": "string", "description": "Target concept name when type=concept" },
-            "attribute": { "type": "string", "description": "Target attribute name when type=concept" }
-          },
-          "required": ["type"],
-          "allOf": [
-            { "if": { "properties": { "type": { "const": "value" } } }, "then": { "required": ["value"] } },
-            { "if": { "properties": { "type": { "const": "concept" } } }, "then": { "required": ["concept", "attribute"] } }
-          ]
+        "conditions": {
+          "type": "array",
+          "description": "条件列表，至少包含一个条件",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["concept", "function"],
+                    "description": "左侧数据来源类型"
+                  },
+                  "concept": {
+                    "type": "string",
+                    "description": "概念名称，如 Person、Order"
+                  },
+                  "attribute": {
+                    "type": "string",
+                    "description": "属性名称，如 age、amount"
+                  },
+                  "function": {
+                    "type": "string",
+                    "description": "函数名称，如 sum、avg、count、max、min"
+                  },
+                  "returnField": {
+                    "type": "string",
+                    "description": "函数返回字段名称，如 total、average"
+                  }
+                },
+                "required": ["type"],
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": { "type": { "const": "concept" } }
+                    },
+                    "then": {
+                      "required": ["concept", "attribute"]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": { "type": { "const": "function" } }
+                    },
+                    "then": {
+                      "required": ["function", "returnField"]
+                    }
+                  }
+                ]
+              },
+              "operator": {
+                "type": "string",
+                "enum": ["eq", "ne", "lt", "gt", "le", "ge"],
+                "description": "比较操作符"
+              },
+              "right": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["value", "concept", "function"],
+                    "description": "右侧数据来源类型"
+                  },
+                  "value": {
+                    "description": "字面值，当 type=value 时使用，支持 string/number/boolean"
+                  },
+                  "concept": {
+                    "type": "string",
+                    "description": "概念名称，当 type=concept 时使用"
+                  },
+                  "attribute": {
+                    "type": "string",
+                    "description": "属性名称，当 type=concept 时使用"
+                  },
+                  "function": {
+                    "type": "string",
+                    "description": "函数名称，当 type=function 时使用"
+                  },
+                  "returnField": {
+                    "type": "string",
+                    "description": "函数返回字段名称，当 type=function 时使用"
+                  }
+                },
+                "required": ["type"],
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": { "type": { "const": "value" } }
+                    },
+                    "then": {
+                      "required": ["value"]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": { "type": { "const": "concept" } }
+                    },
+                    "then": {
+                      "required": ["concept", "attribute"]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": { "type": { "const": "function" } }
+                    },
+                    "then": {
+                      "required": ["function", "returnField"]
+                    }
+                  }
+                ]
+              }
+            },
+            "required": ["left", "operator", "right"]
+          }
         }
       },
-      "required": ["left", "operator", "right"]
+      "required": ["conditions"]
     },
-    "action": {
-      "type": "object",
-      "description": "Action to execute when condition is true",
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["updateAttribute", "triggerBehavior", "setStatus", "notify"],
-          "description": "Action type"
-        },
-        "targetConcept": {
-          "type": "string",
-          "description": "Target concept to act upon"
-        },
-        "targetAttribute": {
-          "type": "string",
-          "description": "Target attribute to modify (for updateAttribute)"
-        },
-        "targetValue": {
-          "description": "Value to set (for updateAttribute / setStatus)"
-        },
-        "behaviorName": {
-          "type": "string",
-          "description": "Behavior to trigger (for triggerBehavior)"
-        },
-        "behaviorParams": {
-          "type": "object",
-          "description": "Parameters passed to the triggered behavior",
-          "additionalProperties": true
-        },
-        "message": {
-          "type": "string",
-          "description": "Notification message (for notify)"
-        }
-      },
-      "required": ["type"]
-    },
-    "elseAction": {
-      "type": "object",
-      "description": "Action to execute when condition is false (optional)",
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["updateAttribute", "triggerBehavior", "setStatus", "notify", "none"]
-        }
-      },
-      "required": ["type"]
-    },
-    "relatedBehaviors": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Behaviors this rule applies to"
-    },
-    "relatedConcepts": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Concepts this rule references"
-    },
-    "position": {
+    "then": {
       "type": "string",
-      "enum": ["before", "after"],
-      "description": "before=pre-condition (constraint), after=post-condition (verification)"
+      "description": "条件为真时的文字描述，填写一段话说明应执行的行为或提示"
+    },
+    "else": {
+      "type": "string",
+      "description": "条件为假时的文字描述，填写一段话说明应执行的行为或提示"
     }
   },
-  "required": ["name", "condition", "action", "position"]
+  "required": ["if", "then", "else"]
 }

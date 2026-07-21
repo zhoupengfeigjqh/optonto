@@ -730,7 +730,7 @@ rules:
   - CreatePurchaseRecord
   related_functions: []
   display_name: 采购-原料单位一致性
-  rule_type: validation
+  rule_type: 验证规则
   position: 前置
 - name: V03_ArrivalTimeValidity
   description: 创建采购单时，输入的 arrivalTime 必须晚于 purchaseTime。
@@ -738,7 +738,7 @@ rules:
   - CreatePurchaseRecord
   related_functions: []
   display_name: 到位时间合理性
-  rule_type: validation
+  rule_type: 验证规则
   position: 前置
 - name: V04_RawMaterialExistence
   description: 创建采购单时，提供的 rawMaterialName 必须存在于 RawMaterial 概念中。
@@ -746,7 +746,7 @@ rules:
   - CreatePurchaseRecord
   related_functions: []
   display_name: 采购-原料存在性
-  rule_type: validation
+  rule_type: 验证规则
   position: 前置
 - name: V05_SupplierExistence
   description: 创建采购单时，提供的 supplierName 必须存在于 Supplier 概念中。
@@ -754,7 +754,7 @@ rules:
   - CreatePurchaseRecord
   related_functions: []
   display_name: 采购-供应商存在性
-  rule_type: validation
+  rule_type: 验证规则
   position: 前置
 - name: V06_OrderExistence
   description: 如果采购单关联了客户订单 (relatedOrderId 非空)，则该订单ID必须存在于 CustomerOrder 概念中。
@@ -762,7 +762,7 @@ rules:
   - CreatePurchaseRecord
   related_functions: []
   display_name: 采购-订单存在性
-  rule_type: validation
+  rule_type: 验证规则
   position: 前置
 - name: I01_SafetyStockAlert
   description: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
@@ -770,7 +770,7 @@ rules:
   - QueryInventory
   related_functions: []
   display_name: 安全库存预警
-  rule_type: validation
+  rule_type: 验证规则
   position: 后置
 - name: I02_ArrivalOverdueAlert
   description: IF 当前日期 >= 采购单arrivalTime  THEN 提示用户是否启动入库操作。
@@ -778,7 +778,7 @@ rules:
   - QueryPurchaseRecords
   related_functions: []
   display_name: 采购到位超期预警
-  rule_type: validation
+  rule_type: 验证规则
   position: 后置
 - name: I03_PurchasePurposeInference
   description: IF 采购单relatedOrderId 为空 THEN 该采购目的可视为“补充库存”。
@@ -787,7 +787,7 @@ rules:
   - QueryPurchaseRecords
   related_functions: []
   display_name: 采购目的推理
-  rule_type: validation
+  rule_type: 验证规则
   position: 后置
 - name: I04_RelatedOrderValidation
   description: IF 采购单relatedOrderId 不在 CustomerOrder 表中 (或状态为 已取消) THEN 提示用户该客户订单可能已失效，请确认是否取消该采购单。
@@ -795,7 +795,7 @@ rules:
   - QueryPurchaseRecords
   related_functions: []
   display_name: 采购关联订单校验
-  rule_type: validation
+  rule_type: 验证规则
   position: 后置
 events:
 - name: PurchaseRecordCreated
