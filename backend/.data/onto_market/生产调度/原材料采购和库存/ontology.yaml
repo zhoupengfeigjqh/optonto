@@ -268,12 +268,20 @@ relations:
 functions:
 - name: sumRawNotArrivalQty
   display_name: 采购原材料未到位总数
-  description: 根据获得的原材料采购单明细，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和
+  description: 根据传入的数据包指定的原材料，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和。
   related_attributes:
   - PurchaseRecord.arrivalQuantity
   - PurchaseRecord.arrivalTime
   - PurchaseRecord.rawMaterialName
   params:
+    filterRawMaterialName:
+      type: string
+      description: 原材料名称
+      example: 高强度钢板
+    currentDate:
+      type: string
+      description: 日期
+      example: '2026-01-01'
     purchaseRecordSet:
       type: array
       items:

@@ -79,14 +79,25 @@ ANALYSIS_SYSTEM_PROMPT = """
         - **子任务3-规则**：需提供英文名、中文名、规则类型、描述、介入位置、关联行为和关联函数。
     - **输出**：分别用三个表格展示行为、规则和函数。
     要求1：函数针对实例化对象集的属性进行计算（而不是抽象的概念属性），描述须给出具体计算过程
-    要求2：函数的输入参数（即待计算的对象数据包）采用数组array[object]形式（可以留空），其参考格式如下：
+    要求2：函数的输入参数（通常为待计算的对象数据包，也可以留空），其参考格式如下：
     {
+        "filterRawMaterialName": 
+        {
+            "type": "string",
+            "description": "原材料名称",
+            "example": "高强度钢板"
+        },
         "purchaseRecordSet": {
             "type": "array",
             "items": {
             "type": "object",
             "properties": {
-                "rawMaterialName": {
+                "arriveTime": {
+                "type": "string",
+                "description": "到货时间",
+                "example": "2026-01-01"
+                },
+                "rawMaterialName":{
                 "type": "string",
                 "description": "原材料名称",
                 "example": "高强度钢板"
@@ -231,7 +242,7 @@ ONTOLOGY_GENERATE_PROMPT_TEMPLATE = """你是一个本体建模专家。请根�
 要求：
 1. 严格遵循模板的YAML结构和字段顺序
 2. 概念名name使用英文（首字母大写），display_name使用中文
-3. 属性类型只能为：string / number / date / boolean / enum / array / object
+3. 属性类型只能为：string / number / boolean / enum / array / object
 4. 基数只能为：1:N / N:1 / N:M / '1:1'
 5. 行为方法只能为：GET/POST/PATCH/DELETE，4选1
 6. 规则类型只能为：计算规则 / 验证规则 / 推理规则
@@ -318,7 +329,7 @@ TARGET_PARSE_PROMPT = """根据用户提供的目标系统API接口文档片段�
 
 【解析规则（严格遵守）】
 1. 请参考标准模板中的例子进行解析，要学会举一反三，灵活运用
-2. 参数中的type 只能是: string / number / date / boolean / enum / array / object
+2. 参数中的type 只能是: string / number / boolean / enum / array / object
 3. 如果文档没有明确类型，根据示例值推断（数字→number，true/false→boolean，对象→object，列表→array）
 4. 如果文档没有示例值，根据描述和类型生成一个合理的中文示例值
 5. 对于required字段，如果文档中没有明确标注，则默认选填（false）

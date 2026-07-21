@@ -178,16 +178,17 @@ async def generate_function_code(ontology_id: int, function_name: str):
 【要求】
 1. 生成一个 Python 函数，函数名与参数名保持一致
 2. 函数签名：def {fn.name}(params: dict) -> dict:
-3. 入参 params 为字典，按输入参数结构取数据
-4. 返回值为字典，按返回结构组装
-5. 代码必须是可直接运行的 Python 3 代码
-6. 只输出代码本身，不要任何解释或 markdown 标记
+3. 输入参数的 key 作为函数参数输入项，按输入参数结构从 params 中取数据
+4. 涉及日期比较时，必须从 params 中获取日期参数，不得在代码中硬编码日期
+5. 返回值为字典，按返回结构组装
+6. 代码必须是可直接运行的 Python 3 代码
+7. 只输出代码本身，不要任何解释或 markdown 标记
 
 【示例】
 def sumNotArrivalQty(params: dict) -> dict:
     total = 0
     for item in params.get("purchaseRecordSet", []):
-        if item.get("arrivalTime", "") > "2026-01-01":
+        if item.get("arrivalTime", "") > params.get("currentDate", ""):
             total += item.get("arrivalQuantity", 0)
     return {{"total": total}}"""
 

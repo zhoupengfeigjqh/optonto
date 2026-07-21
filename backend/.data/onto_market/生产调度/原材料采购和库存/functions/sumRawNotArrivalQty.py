@@ -1,13 +1,16 @@
 def sumRawNotArrivalQty(params: dict) -> dict:
-    from datetime import datetime, date
-    now = datetime.now().date()
-    total = 0
-    raw_material_name = ""
-    for item in params.get("purchaseRecordSet", []):
-        arrival_time_str = item.get("arrivalTime", "")
-        if arrival_time_str:
-            arrival_time = datetime.strptime(arrival_time_str, "%Y-%m-%d").date()
-            if arrival_time >= now:
-                total += item.get("arrivalQuantity", 0)
-                raw_material_name = item.get("rawMaterialName", "")
-    return {"rawMaterialName": raw_material_name, "sumNotArrivalQty": total}
+    filter_raw_material_name = params.get("filterRawMaterialName")
+    current_date = params.get("currentDate")
+    purchase_record_set = params.get("purchaseRecordSet", [])
+    
+    total_not_arrival = 0
+    for record in purchase_record_set:
+        if record.get("rawMaterialName") == filter_raw_material_name and record.get("arrivalTime", "") > current_date:
+            total_not_arrival += record.get("arrivalQuantity", 0)
+    
+    return {
+        "result": {
+            "rawMaterialName": filter_raw_material_name,
+            "sumNotArrivalQty": total_not_arrival
+        }
+    }
