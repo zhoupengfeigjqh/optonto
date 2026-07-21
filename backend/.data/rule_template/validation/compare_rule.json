@@ -1,0 +1,95 @@
+{
+  "ruleName": "compareRule",
+  "type": "object",
+  "properties": {
+    "left": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["concept", "function"]
+        },
+        "concept": {
+          "type": "string",
+          "description": "Concept name, e.g. A, B"
+        },
+        "attribute": {
+          "type": "string",
+          "description": "Attribute name, e.g. age, score"
+        },
+        "function": {
+          "type": "string",
+          "description": "Function name, e.g. sum, avg"
+        },
+        "returnField": {
+          "type": "string",
+          "description": "Function return field, e.g. total, average"
+        }
+      },
+      "required": ["type"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "concept" } }
+          },
+          "then": {
+            "required": ["concept", "attribute"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "function" } }
+          },
+          "then": {
+            "required": ["function", "returnField"]
+          }
+        }
+      ]
+    },
+    "operator": {
+      "type": "string",
+      "enum": ["eq", "lt", "gt", "le", "ge"],
+      "description": "eq=equals, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
+    },
+    "right": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["value", "concept"]
+        },
+        "value": {
+          "description": "Literal comparison value when type=value (supports string/number/boolean)"
+        },
+        "concept": {
+          "type": "string",
+          "description": "Concept name when type=concept"
+        },
+        "attribute": {
+          "type": "string",
+          "description": "Attribute name when type=concept"
+        }
+      },
+      "required": ["type"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "value" } }
+          },
+          "then": {
+            "required": ["value"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "concept" } }
+          },
+          "then": {
+            "required": ["concept", "attribute"]
+          }
+        }
+      ]
+    }
+  },
+  "required": ["left", "operator", "right"]
+}

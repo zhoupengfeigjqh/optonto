@@ -1,5 +1,7 @@
 """CRUD API for rules within an ontology."""
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
@@ -7,6 +9,17 @@ from schemas import RuleItem
 from services import load_ontology_data, save_ontology_data
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/rules", tags=["规则"])
+
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "backend" / ".data"
+RULE_TEMPLATE_DIR = DATA_DIR / "rule_template"
+
+
+@router.get("/types")
+async def list_rule_types():
+    """List rule type names from rule_template/ subdirectories."""
+    if not RULE_TEMPLATE_DIR.exists():
+        return []
+    return sorted(d.name for d in RULE_TEMPLATE_DIR.iterdir() if d.is_dir())
 
 
 @router.get("")

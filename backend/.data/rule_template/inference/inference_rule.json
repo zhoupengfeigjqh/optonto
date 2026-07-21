@@ -1,0 +1,123 @@
+{
+  "ruleName": "inferenceRule",
+  "type": "object",
+  "description": "If-then-else inference rule. When condition matches, execute action; optionally execute elseAction when condition fails.",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Unique rule name"
+    },
+    "displayName": {
+      "type": "string",
+      "description": "Human-readable rule name in Chinese"
+    },
+    "description": {
+      "type": "string",
+      "description": "Rule description and business intent"
+    },
+    "condition": {
+      "type": "object",
+      "description": "Comparison condition — references compare_rule.json schema",
+      "properties": {
+        "left": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["concept", "function"] },
+            "concept": { "type": "string", "description": "Source concept name" },
+            "attribute": { "type": "string", "description": "Source attribute name" },
+            "function": { "type": "string", "description": "Aggregate function name" },
+            "returnField": { "type": "string", "description": "Function result field" }
+          },
+          "required": ["type"],
+          "allOf": [
+            { "if": { "properties": { "type": { "const": "concept" } } }, "then": { "required": ["concept", "attribute"] } },
+            { "if": { "properties": { "type": { "const": "function" } } }, "then": { "required": ["function", "returnField"] } }
+          ]
+        },
+        "operator": {
+          "type": "string",
+          "enum": ["eq", "lt", "gt", "le", "ge"],
+          "description": "eq=equals, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
+        },
+        "right": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["value", "concept"] },
+            "value": { "description": "Literal value when type=value" },
+            "concept": { "type": "string", "description": "Target concept name when type=concept" },
+            "attribute": { "type": "string", "description": "Target attribute name when type=concept" }
+          },
+          "required": ["type"],
+          "allOf": [
+            { "if": { "properties": { "type": { "const": "value" } } }, "then": { "required": ["value"] } },
+            { "if": { "properties": { "type": { "const": "concept" } } }, "then": { "required": ["concept", "attribute"] } }
+          ]
+        }
+      },
+      "required": ["left", "operator", "right"]
+    },
+    "action": {
+      "type": "object",
+      "description": "Action to execute when condition is true",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["updateAttribute", "triggerBehavior", "setStatus", "notify"],
+          "description": "Action type"
+        },
+        "targetConcept": {
+          "type": "string",
+          "description": "Target concept to act upon"
+        },
+        "targetAttribute": {
+          "type": "string",
+          "description": "Target attribute to modify (for updateAttribute)"
+        },
+        "targetValue": {
+          "description": "Value to set (for updateAttribute / setStatus)"
+        },
+        "behaviorName": {
+          "type": "string",
+          "description": "Behavior to trigger (for triggerBehavior)"
+        },
+        "behaviorParams": {
+          "type": "object",
+          "description": "Parameters passed to the triggered behavior",
+          "additionalProperties": true
+        },
+        "message": {
+          "type": "string",
+          "description": "Notification message (for notify)"
+        }
+      },
+      "required": ["type"]
+    },
+    "elseAction": {
+      "type": "object",
+      "description": "Action to execute when condition is false (optional)",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["updateAttribute", "triggerBehavior", "setStatus", "notify", "none"]
+        }
+      },
+      "required": ["type"]
+    },
+    "relatedBehaviors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Behaviors this rule applies to"
+    },
+    "relatedConcepts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Concepts this rule references"
+    },
+    "position": {
+      "type": "string",
+      "enum": ["before", "after"],
+      "description": "before=pre-condition (constraint), after=post-condition (verification)"
+    }
+  },
+  "required": ["name", "condition", "action", "position"]
+}

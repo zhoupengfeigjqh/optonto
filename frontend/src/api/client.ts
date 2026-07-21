@@ -193,6 +193,9 @@ export interface Rule {
 export const getRules = (ontologyId: number) =>
   request<Rule[]>(`/api/ontologies/${ontologyId}/rules`);
 
+export const getRuleTypes = (ontologyId: number) =>
+  request<string[]>(`/api/ontologies/${ontologyId}/rules/types`);
+
 export const createRule = (ontologyId: number, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules`, { method: 'POST', body: JSON.stringify(data) });
 

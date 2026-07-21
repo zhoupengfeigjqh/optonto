@@ -3,19 +3,16 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Space } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, Rule, Behavior, Function } from '@/api/client';
+import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getRuleTypes, Rule, Behavior, Function } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
-
-const RULE_TYPE_OPTIONS = [
-  { label: '验证规则', value: '验证规则' }, { label: '推理规则', value: '推理规则' },
-];
 
 export default function RuleTable({ ontologyId, activeTab }: Props) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
   const [funcs, setFuncs] = useState<Function[]>([]);
+  const [ruleTypes, setRuleTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
@@ -23,8 +20,8 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [ruleList, behList, fnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId)]);
-      setRules(ruleList); setBehaviors(behList); setFuncs(fnList);
+      const [ruleList, behList, fnList, types] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTypes(ontologyId)]);
+      setRules(ruleList); setBehaviors(behList); setFuncs(fnList); setRuleTypes(types);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
@@ -67,7 +64,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (!editing && !isNew) return render ? render(val) : (val || '-');
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'rule_type') return <Select size="small" allowClear placeholder="选择" value={editData.rule_type || undefined} onChange={v => setEditData(p => ({...p, rule_type: v || ''}))} options={RULE_TYPE_OPTIONS} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'rule_type') return <Select size="small" allowClear placeholder="选择" value={editData.rule_type || undefined} onChange={v => setEditData(p => ({...p, rule_type: v || ''}))} options={ruleTypes.map(t => ({ label: t, value: t }))} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'position') return <Select size="small" allowClear placeholder="选择" value={editData.position || undefined} onChange={v => setEditData(p => ({...p, position: v || ''}))} options={[{label:'前置',value:'前置'},{label:'后置',value:'后置'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behaviors') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_behaviors || []} onChange={v => setEditData(p => ({...p, related_behaviors: v}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
