@@ -85,18 +85,12 @@ ANALYSIS_SYSTEM_PROMPT = """
     要求5：行为须关联至少一个概念，可关联多个
     要求6：行为输入参数参考API JSON格式，字段须来自概念属性，如：
         {
-        "rawMaterialId": {
-            "type": "string",
-            "required": true,
-            "description": "原材料编号",
-            "example": "RM-001"
-        },
-        "rawMaterialName": {
-            "type": "string",
-            "required": true,
-            "description": "原材料名称",
-            "example": "高强度钢板"
-        }
+            "rawMaterialId": {
+                "type": "string",
+                "required": true,
+                "description": "原材料编号",
+                "example": "RM-001"
+            }
         }
     要求7：行为返回结构参考API JSON格式，字段须来自概念属性，如：
         {
@@ -107,23 +101,23 @@ ANALYSIS_SYSTEM_PROMPT = """
         "data": {
             "type": "object",
             "properties": {
-            "purchaseRecordId": {
-                "type": "string",
-                "description": "采购单号",
-                "example": "PO-20231027-001"
-            },
-            "rawMaterialName": {
-                "type": "string",
-                "description": "原材料名称",
-                "example": "高强度钢板"
-            }
+                "purchaseRecordId": {
+                    "type": "string",
+                    "description": "采购单号",
+                    "example": "PO-20231027-001"
+                },
+                "rawMaterialName": {
+                    "type": "string",
+                    "description": "原材料名称",
+                    "example": "高强度钢板"
+                }
             }
         }
         }    
     要求8：请用户提供目标数据源接口信息以便设计；若用户无法提供则自行合理设计；
     要求9：规则须绑定动作，规则间独立，可复用到多个动作
     要求10：规则介入时机分前置（约束）和后置（检验）
-    要求11：规则类型二选一：验证规则（True or False判断）和推理规则（IF THEN ELSE推理）
+    要求11：规则类型二选一：validation（True or False判断）和inference（IF THEN ELSE推理）
     要求12：规则的关联函数从阶段3的函数中选择，服务于规则计算和判断
     
     ## 阶段4：业务流程确认
