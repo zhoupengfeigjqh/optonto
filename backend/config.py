@@ -353,7 +353,7 @@ FUNCTION_CODE_SYSTEM_PROMPT = "你是一个Python计算代码生成专家，只�
 FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 
 函数名称：{name}
-函数描述：{description}
+计算逻辑：{description}
 输入参数：{params}
 返回结构：{response}
 
@@ -363,10 +363,10 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 3. 输入的参数，key取第一层的，嵌套的不取
 4. 输入输出的参数名，与输入参数中的key名一致，可以用驼峰，不要修改
 4. 涉及日期时，如最新日期，请用函数工具包，不要自己生成
-5. 函数注释args: 参数名，类型：参数描述
+5. 函数注释args: 参数名，类型：参数描述；并且重点描述一下函数功能和应用场景
 6. 返回值为字典，按返回结构组装
 7. 代码必须是可直接运行的 Python 3 代码
-8. 只输出代码本身，不要任何解释或 markdown 标记
+9. 只输出代码本身，不要任何解释或 markdown 标记
 
 【示例】
 import datetime
