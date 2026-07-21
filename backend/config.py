@@ -368,9 +368,21 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 8. 只输出代码本身，不要任何解释或 markdown 标记
 
 【示例】
-def sumRawNotArrivalQty(filter_raw_material_name, current_date, purchase_record_set):
+def sumRawNotArrivalQty(filter_raw_material_name:str, current_date:str, purchase_record_set:list):
+    \"""
+    计算指定原材料在指定日期之后未到货的总数量
+
+    Args:
+        filter_raw_material_name: str，要筛选的原材料名称
+        current_date: str，当前日期，用于比较到货时间
+        purchase_record_set: list，采购记录列表，每条记录为字典，包含 rawMaterialName, arrivalTime, arrivalQuantity
+
+    Returns:
+        dict: 返回包含原材料名称和未到货总数量的字典
+    \"""
     total_not_arrival = 0
     for record in purchase_record_set:
-        if record.get("rawMaterialName") == filter_raw_material_name and record.get("arrivalTime", "") > current_date:
-            total_not_arrival += record.get("arrivalQuantity", 0)
+        if record["rawMaterialName"] == filter_raw_material_name and
+            datetime.strptime(current_date, "%Y-%m-%d") < datetime.strptime(record["arrivalTime"], "%Y-%m-%d"):
+            total_not_arrival += record["arrivalQuantity"]
     return {{"result": {{"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}}}"""
