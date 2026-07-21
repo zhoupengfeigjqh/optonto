@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
+    "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.1",
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/state": "^6.7.1",

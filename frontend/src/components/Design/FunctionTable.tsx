@@ -6,6 +6,7 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutline
 import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, Function, Concept, Attribute } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import PythonEditor from '@/components/PythonEditor';
+import JsonEditor from '@/components/JsonEditor';
 import type { DataNode } from 'antd/es/tree';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -372,13 +373,17 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       </Modal>
 
       {/* ─── Params Editor Modal ───────────────────────────────────── */}
-      <Modal title="编辑输入参数" open={paramsEditorOpen} onOk={() => { try { JSON.parse(editData.params || '{}'); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
-        <Input.TextArea value={editData.params || '{}'} onChange={e => setEditData((p: any) => ({ ...p, params: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+      <Modal title="编辑输入参数" open={paramsEditorOpen} onOk={() => { try { JSON.parse(editData.params || '{}'); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={700}>
+        <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 350 }}>
+          <JsonEditor value={editData.params || '{}'} onChange={v => setEditData((p: any) => ({ ...p, params: v }))} />
+        </div>
       </Modal>
 
       {/* ─── Response Editor Modal ─────────────────────────────────── */}
-      <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { JSON.parse(editData.response || '{}'); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
-        <Input.TextArea value={editData.response || '{}'} onChange={e => setEditData((p: any) => ({ ...p, response: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+      <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { JSON.parse(editData.response || '{}'); setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={700}>
+        <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 350 }}>
+          <JsonEditor value={editData.response || '{}'} onChange={v => setEditData((p: any) => ({ ...p, response: v }))} />
+        </div>
       </Modal>
 
       {/* ─── Code Editor Modal ─────────────────────────────────────── */}

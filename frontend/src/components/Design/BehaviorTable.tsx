@@ -5,6 +5,7 @@ import { Button, Input, Select, Modal, message, Space, Tag, Tooltip } from 'antd
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined } from '@ant-design/icons';
 import { getBehaviors, createBehavior, updateBehavior, deleteBehavior, getConcepts, Behavior, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import JsonEditor from '@/components/JsonEditor';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -172,14 +173,18 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
       <Modal title="编辑接口参数" open={paramsEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.params || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }
-        setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
-        <Input.TextArea value={editData.params || '{}'} onChange={e => setEditData((p: any) => ({ ...p, params: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+        setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={700}>
+        <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 350 }}>
+          <JsonEditor value={editData.params || '{}'} onChange={v => setEditData((p: any) => ({ ...p, params: v }))} />
+        </div>
       </Modal>
 
       <Modal title="编辑返回结构" open={responseEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.response || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }
-        setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={600}>
-        <Input.TextArea value={editData.response || '{}'} onChange={e => setEditData((p: any) => ({ ...p, response: e.target.value }))} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+        setResponseEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setResponseEditorOpen(false)} okText="确认" cancelText="取消" width={700}>
+        <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 350 }}>
+          <JsonEditor value={editData.response || '{}'} onChange={v => setEditData((p: any) => ({ ...p, response: v }))} />
+        </div>
       </Modal>
     </div>
   );

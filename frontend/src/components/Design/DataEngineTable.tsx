@@ -5,6 +5,7 @@ import { Button, Input, Select, Modal, message, Tag } from 'antd';
 import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
 import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, getMcpStatus, startMcp, stopMcp, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import JsonEditor from '@/components/JsonEditor';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -524,11 +525,15 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
           </div>
         </div>
 
-        <Modal title="编辑输入参数" open={targetParamsOpen} onOk={() => setTargetParamsOpen(false)} onCancel={() => setTargetParamsOpen(false)} okText="确认" cancelText="取消" width={600}>
-          <Input.TextArea value={targetParamsStr} onChange={e => setTargetParamsStr(e.target.value)} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+        <Modal title="编辑输入参数" open={targetParamsOpen} onOk={() => setTargetParamsOpen(false)} onCancel={() => setTargetParamsOpen(false)} okText="确认" cancelText="取消" width={700}>
+          <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 350 }}>
+            <JsonEditor value={targetParamsStr} onChange={setTargetParamsStr} />
+          </div>
         </Modal>
-        <Modal title="编辑输出结构" open={targetResponseOpen} onOk={() => setTargetResponseOpen(false)} onCancel={() => setTargetResponseOpen(false)} okText="确认" cancelText="取消" width={600}>
-          <Input.TextArea value={targetResponseStr} onChange={e => setTargetResponseStr(e.target.value)} rows={12} className="bg-dark-bg border-dark-border text-text-primary font-mono" />
+        <Modal title="编辑输出结构" open={targetResponseOpen} onOk={() => setTargetResponseOpen(false)} onCancel={() => setTargetResponseOpen(false)} okText="确认" cancelText="取消" width={700}>
+          <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 350 }}>
+            <JsonEditor value={targetResponseStr} onChange={setTargetResponseStr} />
+          </div>
         </Modal>
 
         {/* ─── Smart Parse Modal ──────────────────────────────────────────── */}
