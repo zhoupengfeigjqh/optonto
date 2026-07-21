@@ -529,7 +529,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
           </div>
           <div className="flex gap-2">
             <div className="flex-1">
-              <span className="text-text-muted text-xs">API接口地址</span>
+              <span className="text-text-muted text-xs">目标API接口地址</span>
               <Input value={targetData.url} onChange={e => setTargetData(p => ({...p, url: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />
             </div>
             <div style={{width:100}}>
@@ -542,7 +542,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetParamsOpen(true)}>编辑输入</Button>
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetResponseOpen(true)}>编辑输出</Button>
             <Button size="small" onClick={() => { setSmartParseParamsContent(''); setSmartParseResponseContent(''); setSmartParseOpen(true); }}><span style={{ color: '#f59e0b' }}>智能解析</span></Button>
-            <Button size="small" danger onClick={() => setCopyConfirmOpen(true)}>复制本体行为参数</Button>
+            <Button size="small" onClick={() => setCopyConfirmOpen(true)}><span style={{ color: '#ef4444' }}>复制本体行为参数</span></Button>
           </div>
         </div>
 
@@ -611,7 +611,7 @@ total  Number  订单总价  15000.50`}
           width={500}
         >
           <p className="text-text-primary text-sm">
-            ⚠ <span className="text-red-400">注意：</span>将本体行为参数拷贝为目标接口参数，此时需要用户按照本体参数设计外部接口。
+            ⚠ <span className="text-red-400">注意：</span>将本体行为参数拷贝为目标接API口参数，此时需要用户按照本体参数设计目标API接口（即外部业务系统接口）。
           </p>
           <p className="text-text-muted text-xs mt-3">请问是否复制？</p>
         </Modal>
