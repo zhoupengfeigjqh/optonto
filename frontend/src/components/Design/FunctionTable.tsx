@@ -5,6 +5,7 @@ import { Button, Input, Modal, message, Space, Tag, Tooltip, Tree } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined, RobotOutlined } from '@ant-design/icons';
 import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, Function, Concept, Attribute } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import PythonEditor from '@/components/PythonEditor';
 import type { DataNode } from 'antd/es/tree';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -394,7 +395,9 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
           <Button size="small" icon={<RobotOutlined />} loading={generating} onClick={handleGenerateCode}>智能生成</Button>
           <Button size="small" icon={<PlayCircleOutlined />} onClick={openTestModal} disabled={!codeStr.trim()}>测试运行</Button>
         </div>
-        <Input.TextArea value={codeStr} onChange={e => setCodeStr(e.target.value)} rows={20} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" placeholder="在此编写 Python 函数代码..." />
+        <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 400 }}>
+          <PythonEditor value={codeStr} onChange={setCodeStr} />
+        </div>
       </Modal>
 
       {/* ─── Test Modal ────────────────────────────────────────────── */}
