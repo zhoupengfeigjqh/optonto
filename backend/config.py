@@ -368,15 +368,9 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 8. 只输出代码本身，不要任何解释或 markdown 标记
 
 【示例】
-def sumRawNotArrivalQty(filter_raw_material_name: string, current_date:string, purchase_record_set: list) -> dict:
+def sumRawNotArrivalQty(filter_raw_material_name, current_date, purchase_record_set):
     total_not_arrival = 0
     for record in purchase_record_set:
         if record.get("rawMaterialName") == filter_raw_material_name and record.get("arrivalTime", "") > current_date:
             total_not_arrival += record.get("arrivalQuantity", 0)
-    
-    return {
-        "result": {
-            "rawMaterialName": filter_raw_material_name,
-            "sumNotArrivalQty": total_not_arrival
-        }
-    }"""
+    return {{"result": {{"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}}}"""
