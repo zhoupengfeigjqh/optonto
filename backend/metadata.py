@@ -150,25 +150,8 @@ def delete_scenario(scenario_id: int) -> bool:
 # ─── Ontology CRUD ─────────────────────────────────────────────────────────────
 
 def list_ontologies(scenario_name: str) -> list[dict]:
-    ontologies = []
-    scenario_dir = ONTO_MARKET_DIR / scenario_name
-    if not scenario_dir.exists():
-        return ontologies
-    for d in sorted(scenario_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not d.is_dir():
-            continue
-        meta_path = d / "meta.json"
-        if not meta_path.exists():
-            continue
-        try:
-            with open(meta_path, encoding="utf-8") as f:
-                data = json.load(f)
-            if "scenario_id" in data:  # is ontology meta, not scenario meta
-                ontologies.append(data)
-        except (json.JSONDecodeError, KeyError):
-            continue
-    ontologies.sort(key=lambda o: o.get("updated_at", ""), reverse=True)
-    return ontologies
+    """List ontologies for a given scenario (delegates to list_all_ontologies)."""
+    return [o for o in list_all_ontologies() if o.get("scenario_name") == scenario_name]
 
 
 def list_all_ontologies() -> list[dict]:
