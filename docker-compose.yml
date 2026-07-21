@@ -66,9 +66,30 @@ services:
     volumes:
       - ./backend/.data:/app/backend/.data
       - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
+    networks:
+      - optonto-net
+
+  # ─── MCP 服务 (常驻 SSE) ───────────────────────────────────────
+  mcp:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.mcp
+    container_name: optonto_mcp
+    ports:
+      - "8002:8002"
+    depends_on:
+      - backend
+    volumes:
+      - ./backend/.data:/app/backend/.data
+    environment:
+      - API_BASE_URL=http://optonto_backend:8001
+      - TZ=Asia/Shanghai
+    command: >
+      sh -c "python -m uvicorn mcp_server_sse:starlette_app --host 0.0.0.0 --port 8002"
     networks:
       - optonto-net
 

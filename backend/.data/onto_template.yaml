@@ -25,6 +25,47 @@ relations:
   description: 关系描述
   display_name: 关系展示名称
 
+functions:
+- name: sumRawNotArrivalQty
+  display_name: 采购原材料未到位总数
+  description: 根据原材料的采购单信息，将到位时间大于当前时间的原材料，对其到位数求和
+  related_attributes:
+  - PurchaseRecord.arrivalQuantity
+  - PurchaseRecord.arrivalTime
+  - PurchaseRecord.rawMaterialName
+  params:
+    purchaseRecordSet:
+      type: array
+      items:
+        type: object
+        properties:
+          arrivalTime:
+            type: date
+            description: 到位时间
+            example: '2026-09-01'
+          rawMaterialName:
+            type: string
+            description: 原材料名称
+            example: 高强度钢板
+          arrivalQuantity:
+            type: number
+            description: 计划的到位数量
+            example: 100
+  response:
+    result:
+      type: array
+      items:
+        type: object
+        properties:
+          rawMaterialName:
+            type: string
+            description: 原材料名称
+            example: 高强度钢板
+          sumNotArrivalQty:
+            type: number
+            description: 还未到位的采购量
+            example: 100
+
 behaviors:
 - name: behaviorName
   description: 行为描述

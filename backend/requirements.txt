@@ -6,4 +6,5 @@ python-multipart==0.0.17
 langchain==0.3.21
 langchain-openai==0.3.8
 httpx==0.28.1
+docker>=7.0.0
 python-dotenv==1.0.1

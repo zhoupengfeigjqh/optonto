@@ -294,7 +294,7 @@ export default function ConversationChat({ threadId, onBack }: Props) {
         cancelText="取消"
       >
         <div className="py-3">
-          <label className="text-text-secondary text-sm block mb-2">请输入文档标题</label>
+          <label className="text-text-secondary text-sm block mb-2">请输入文档标题（导出后请到本体输出查看）</label>
           <Input
             placeholder="例如：原材料采购需求分析"
             value={docTitle}

@@ -169,7 +169,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">行为管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增行为</Button>
       </div>
-
+      <p className="text-text-muted text-xs mb-3">定义业务原子操作及其接口参数</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       <Modal title="编辑接口参数" open={paramsEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.params || '{}');

@@ -102,6 +102,7 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">关系管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增关系</Button>
       </div>
+      <p className="text-text-muted text-xs mb-3">建立概念之间的关联与基数约束</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
     </div>
   );

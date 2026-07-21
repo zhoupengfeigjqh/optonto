@@ -1,14 +1,39 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Tag } from 'antd';
 import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, getMcpStatus, startMcp, stopMcp, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+function flattenFieldTypes(obj: Record<string, unknown>, prefix = ''): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (typeof v === 'string') {
+      result[path] = v;
+    } else if (typeof v === 'object' && v !== null) {
+      const t = (v as any).type || 'string';
+      result[path] = t;
+      if (t === 'object' && (v as any).properties) {
+        Object.assign(result, flattenFieldTypes((v as any).properties, path));
+      } else if (t === 'array' && (v as any).items) {
+        if ((v as any).items.type === 'object' && (v as any).items.properties) {
+          Object.assign(result, flattenFieldTypes((v as any).items.properties, path + '[*]'));
+        } else {
+          result[path + '[*]'] = (v as any).items.type || 'string';
+        }
+      } else if (t === 'array[object]' && (v as any).items?.properties) {
+        Object.assign(result, flattenFieldTypes((v as any).items.properties, path + '[*]'));
+      }
+    }
+  }
+  return result;
+}
 
 function flattenFields(obj: Record<string, unknown>, prefix = ''): string[] {
   const result: string[] = [];
@@ -74,6 +99,8 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [outputMapping, setOutputMapping] = useState<Record<string, string>>({});
   const [mappingOntoFields, setMappingOntoFields] = useState<string[]>([]);
   const [mappingTargetFields, setMappingTargetFields] = useState<string[]>([]);
+  const [ontoFieldTypes, setOntoFieldTypes] = useState<Record<string, string>>({});
+  const [targetFieldTypes, setTargetFieldTypes] = useState<Record<string, string>>({});
 
   // analyze result
   const [analyzeResult, setAnalyzeResult] = useState<any>(null);
@@ -99,9 +126,46 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [smartAlignBehaviorName, setSmartAlignBehaviorName] = useState('');
   const [smartAlignLoading, setSmartAlignLoading] = useState(false);
 
+  // mcp status & control
+  const [mcpRunning, setMcpRunning] = useState(false);
+  const [mcpChecking, setMcpChecking] = useState(true);
+  const [mcpToggling, setMcpToggling] = useState(false);
+  const [mcpModalOpen, setMcpModalOpen] = useState(false);
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  const mcpConfigJson = JSON.stringify({
+    mcpServers: {
+      'optonto-api': {
+        type: 'url',
+        url: `http://${host}:8002/sse`,
+      },
+    },
+  }, null, 2);
+
+  const checkMcpStatus = useCallback(async () => {
+    setMcpChecking(true);
+    try {
+      const s = await getMcpStatus();
+      setMcpRunning(s.running);
+    } catch { setMcpRunning(false); }
+    finally { setMcpChecking(false); }
+  }, []);
+
+  useEffect(() => { checkMcpStatus(); }, [checkMcpStatus]);
+
+  const handleMcpToggle = async () => {
+    setMcpToggling(true);
+    try {
+      const r = mcpRunning ? await stopMcp() : await startMcp();
+      message.success(r.message);
+      setMcpRunning(r.running);
+    } catch (e: any) { message.error(e.message); }
+    finally { setMcpToggling(false); }
+  };
+
   // smart mapping confirm modal
   const [smartMappingOpen, setSmartMappingOpen] = useState(false);
   const [smartMappingBehaviorName, setSmartMappingBehaviorName] = useState('');
+  const [smartMappingLoading, setSmartMappingLoading] = useState(false);
 
   // behavior params/response edit modal
   const [behaviorEditOpen, setBehaviorEditOpen] = useState(false);
@@ -183,9 +247,30 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     finally { setSmartParseLoading(false); }
   };
 
-  const handleSmartMappingConfirm = () => {
-    setSmartMappingOpen(false);
-    handleAnalyze(smartMappingBehaviorName);
+  const handleSmartMappingConfirm = async () => {
+    const behaviorName = smartMappingBehaviorName;
+    setSmartMappingLoading(true);
+    try {
+      const de = await ensureEngine(behaviorName);
+      const beh = behaviors.find(b => b.name === behaviorName);
+      const body = {
+        onto_input_fields: flattenFields((beh?.params as Record<string, unknown>) || {}),
+        target_input_fields: flattenFields(de.target?.params || {}),
+        onto_output_fields: flattenFields((beh?.response as Record<string, unknown>) || {}),
+        target_output_fields: flattenFields(de.target?.response || {}),
+      };
+      const result = await analyzeMapping(ontologyId, de.name, body);
+      setAnalyzeResult(result);
+      setSmartMappingOpen(false);
+      setAnalyzeOpen(true);
+      await load();
+    } catch (e: any) {
+      setAnalyzeResult({ status: 'error', message: e.message, issues: [] });
+      setSmartMappingOpen(false);
+      setAnalyzeOpen(true);
+    } finally {
+      setSmartMappingLoading(false);
+    }
   };
 
   const handleSmartAlign = async () => {
@@ -235,10 +320,12 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     setCurrentBehavior(behaviorName);
     const beh = behaviors.find(b => b.name === behaviorName);
     const de = await ensureEngine(behaviorName);
-    const ontoFields = flattenFields((beh?.params as Record<string, unknown>) || {});
-    const tgtFields = flattenFields(de.target?.params || {});
-    setMappingOntoFields(ontoFields);
-    setMappingTargetFields(tgtFields);
+    const ontoParams = (beh?.params as Record<string, unknown>) || {};
+    const tgtParams = de.target?.params || {};
+    setMappingOntoFields(flattenFields(ontoParams));
+    setMappingTargetFields(flattenFields(tgtParams));
+    setOntoFieldTypes(flattenFieldTypes(ontoParams));
+    setTargetFieldTypes(flattenFieldTypes(tgtParams));
     setInputMapping(de.input_mapping || {});
     setInputMappingOpen(true);
   };
@@ -247,10 +334,12 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     setCurrentBehavior(behaviorName);
     const beh = behaviors.find(b => b.name === behaviorName);
     const de = await ensureEngine(behaviorName);
-    const ontoFields = flattenFields((beh?.response as Record<string, unknown>) || {});
-    const tgtFields = flattenFields(de.target?.response || {});
-    setMappingOntoFields(ontoFields);
-    setMappingTargetFields(tgtFields);
+    const ontoResp = (beh?.response as Record<string, unknown>) || {};
+    const tgtResp = de.target?.response || {};
+    setMappingOntoFields(flattenFields(ontoResp));
+    setMappingTargetFields(flattenFields(tgtResp));
+    setOntoFieldTypes(flattenFieldTypes(ontoResp));
+    setTargetFieldTypes(flattenFieldTypes(tgtResp));
     setOutputMapping(de.output_mapping || {});
     setOutputMappingOpen(true);
   };
@@ -275,7 +364,20 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     message.success('映射已保存');
   };
 
-  // ─── analyze ─────────────────────────────────────────────────────────────
+  const getBehaviorDisplay = (behaviorName: string) => {
+    const b = behaviors.find(be => be.name === behaviorName);
+    return b ? (b.display_name || b.name) : behaviorName;
+  };
+
+  const getParamDisplay = (behaviorName: string, paramKey: string) => {
+    const b = behaviors.find(be => be.name === behaviorName);
+    if (!b) return paramKey;
+    const paramDef = (b.params as Record<string, any>)?.[paramKey];
+    if (paramDef && typeof paramDef === 'object' && paramDef.display_name) {
+      return paramDef.display_name;
+    }
+    return paramKey;
+  };
 
   const handleAnalyze = async (behaviorName: string) => {
     setAnalyzeLoading(true);
@@ -392,13 +494,25 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">数据引擎</h3>
-        <Button onClick={load} loading={loading} size="small">刷新</Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs bg-dark-card border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover" onClick={() => setMcpModalOpen(true)} title="点击查看 MCP 配置">
+            <span className={`w-2 h-2 rounded-full ${mcpChecking ? 'bg-gray-500' : mcpRunning ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-text-muted">MCP</span>
+            <span className={mcpRunning ? 'text-green-400' : 'text-text-muted'}>
+              {mcpChecking ? '...' : mcpRunning ? '运行中' : '已停止'}
+            </span>
+          </div>
+          <Button size="small" loading={mcpToggling} onClick={handleMcpToggle}>
+            {mcpRunning ? '停止' : '启动'}
+          </Button>
+          <Button onClick={load} loading={loading} size="small">刷新</Button>
+        </div>
       </div>
 
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       {/* ─── Target Config Modal ──────────────────────────────────────────── */}
-      <Modal title="目标接口设置" open={targetOpen} onOk={saveTargetConfig} onCancel={() => setTargetOpen(false)} okText="保存" cancelText="取消" width={700}>
+      <Modal title={`目标接口设置 - ${getBehaviorDisplay(currentBehavior)}`} open={targetOpen} onOk={saveTargetConfig} onCancel={() => setTargetOpen(false)} okText="保存" cancelText="取消" width={700}>
         <div className="space-y-3">
           <div className="flex gap-2">
             <div className="flex-1">
@@ -446,7 +560,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
                 onChange={e => setSmartParseParamsContent(e.target.value)}
                 rows={14}
                 className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
-                placeholder={`可复制粘贴jira需求或接口文档里API请求参数，样例：
+                placeholder={`可复制粘贴需求或接口文档里API请求参数，样例：
 
 字段名  类型  必填  说明  示例
 tradeId  String  是  交易ID  "TRD001"
@@ -461,7 +575,7 @@ status  String  否  状态  "active"`}
                 onChange={e => setSmartParseResponseContent(e.target.value)}
                 rows={14}
                 className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
-                placeholder={`可复制粘贴jira需求或接口文档里返回结果，样例：
+                placeholder={`可复制粘贴需求或接口文档里返回结果，样例：
 
 字段名  类型  说明  示例
 code  Number  状态码  0
@@ -475,45 +589,81 @@ total  Number  订单总价  15000.50`}
       </Modal>
 
       {/* ─── Input Mapping Modal ──────────────────────────────────────────── */}
-      <Modal title="输入映射" open={inputMappingOpen} onOk={() => saveMapping('input')} onCancel={() => setInputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
-        <div className="space-y-2 max-h-96 overflow-y-auto">
-          {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义输入参数</p>}
-          {mappingOntoFields.length > 0 && (
-            <div className="flex items-center gap-3 pb-1 border-b border-dark-border mb-1">
-              <span className="w-1/2 text-text-muted text-xs font-semibold">本体字段</span>
-              <span className="w-1/2 text-text-muted text-xs font-semibold">目标字段</span>
-            </div>
-          )}
-          {mappingOntoFields.map(field => (
-            <div key={field} className="flex items-center gap-3">
-              <span className="w-1/2 text-text-secondary text-xs bg-dark-bg rounded px-2 py-1 font-mono">{field}</span>
-              <Select size="small" allowClear placeholder="选择目标参数" value={inputMapping[field] || undefined} onChange={v => setInputMapping(p => ({...p, [field]: v || ''}))} options={mappingTargetFields.map(f => ({ label: f, value: f }))} style={{width:'50%'}} popupClassName="!bg-dark-card" />
-            </div>
-          ))}
+      <Modal title={`输入映射 - ${getBehaviorDisplay(currentBehavior)}`} open={inputMappingOpen} onOk={() => saveMapping('input')} onCancel={() => setInputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
+        {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义输入参数</p>}
+        {mappingOntoFields.length > 0 && (
+          <div className="flex items-center gap-3 pb-1 border-b border-dark-border mb-1">
+            <span className="w-1/2 text-text-muted text-xs font-semibold">本体字段</span>
+            <span className="w-1/2 text-text-muted text-xs font-semibold">目标字段</span>
+          </div>
+        )}
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {mappingOntoFields.map(field => {
+            const ontoType = ontoFieldTypes[field] || '';
+            const targetVal = inputMapping[field] || '';
+            const targetType = targetVal ? targetFieldTypes[targetVal] || '' : '';
+            const typeMismatch = !!(targetVal && ontoType && targetType && ontoType !== targetType);
+            return (
+              <div key={field} className="flex items-center gap-3">
+                <span className={`w-1/2 text-xs bg-dark-bg rounded px-2 py-1 font-mono ${typeMismatch ? 'text-yellow-400' : 'text-text-secondary'}`}>
+                  {field}<span className="text-text-muted ml-1">({ontoType})</span>
+                </span>
+                <Select size="small" allowClear placeholder="选择目标参数" value={inputMapping[field] || undefined} onChange={v => setInputMapping(p => ({...p, [field]: v || ''}))} options={mappingTargetFields.map(f => ({ label: `${f}(${targetFieldTypes[f] || '?'})`, value: f }))} style={{width:'50%'}} popupClassName="!bg-dark-card" />
+              </div>
+            );
+          })}
         </div>
+        {mappingTargetFields.filter(f => !Object.values(inputMapping).includes(f)).length > 0 && (
+          <div className="mt-3 pt-2 border-t border-dark-border">
+            <span className="text-yellow-400 text-xs font-semibold">⚠ 以下目标字段在本体中没有对应的输入映射：</span>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {mappingTargetFields.filter(f => !Object.values(inputMapping).includes(f)).map(f => (
+                <Tag key={f} color="orange">{f}<span className="text-text-muted ml-1 text-xs">({targetFieldTypes[f] || '?'})</span></Tag>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ─── Output Mapping Modal ─────────────────────────────────────────── */}
-      <Modal title="输出映射" open={outputMappingOpen} onOk={() => saveMapping('output')} onCancel={() => setOutputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
-        <div className="space-y-2 max-h-96 overflow-y-auto">
-          {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义返回结构</p>}
-          {mappingOntoFields.length > 0 && (
-            <div className="flex items-center gap-3 pb-1 border-b border-dark-border mb-1">
-              <span className="w-1/2 text-text-muted text-xs font-semibold">本体字段</span>
-              <span className="w-1/2 text-text-muted text-xs font-semibold">目标字段</span>
-            </div>
-          )}
-          {mappingOntoFields.map(field => (
-            <div key={field} className="flex items-center gap-3">
-              <span className="w-1/2 text-text-secondary text-xs bg-dark-bg rounded px-2 py-1 font-mono">{field}</span>
-              <Select size="small" allowClear placeholder="选择目标字段" value={outputMapping[field] || undefined} onChange={v => setOutputMapping(p => ({...p, [field]: v || ''}))} options={mappingTargetFields.map(f => ({ label: f, value: f }))} style={{width:'50%'}} popupClassName="!bg-dark-card" />
-            </div>
-          ))}
+      <Modal title={`输出映射 - ${getBehaviorDisplay(currentBehavior)}`} open={outputMappingOpen} onOk={() => saveMapping('output')} onCancel={() => setOutputMappingOpen(false)} okText="保存" cancelText="取消" width={700}>
+        {mappingOntoFields.length === 0 && <p className="text-text-muted text-sm">本体行为未定义返回结构</p>}
+        {mappingOntoFields.length > 0 && (
+          <div className="flex items-center gap-3 pb-1 border-b border-dark-border mb-1">
+            <span className="w-1/2 text-text-muted text-xs font-semibold">本体字段</span>
+            <span className="w-1/2 text-text-muted text-xs font-semibold">目标字段</span>
+          </div>
+        )}
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {mappingOntoFields.map(field => {
+            const ontoType = ontoFieldTypes[field] || '';
+            const targetVal = outputMapping[field] || '';
+            const targetType = targetVal ? targetFieldTypes[targetVal] || '' : '';
+            const typeMismatch = !!(targetVal && ontoType && targetType && ontoType !== targetType);
+            return (
+              <div key={field} className="flex items-center gap-3">
+                <span className={`w-1/2 text-xs bg-dark-bg rounded px-2 py-1 font-mono ${typeMismatch ? 'text-yellow-400' : 'text-text-secondary'}`}>
+                  {field}<span className="text-text-muted ml-1">({ontoType})</span>
+                </span>
+                <Select size="small" allowClear placeholder="选择目标字段" value={outputMapping[field] || undefined} onChange={v => setOutputMapping(p => ({...p, [field]: v || ''}))} options={mappingTargetFields.map(f => ({ label: `${f}(${targetFieldTypes[f] || '?'})`, value: f }))} style={{width:'50%'}} popupClassName="!bg-dark-card" />
+              </div>
+            );
+          })}
         </div>
+        {mappingTargetFields.filter(f => !Object.values(outputMapping).includes(f)).length > 0 && (
+          <div className="mt-3 pt-2 border-t border-dark-border">
+            <span className="text-yellow-400 text-xs font-semibold">⚠ 以下目标字段在本体中没有对应的输出映射：</span>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {mappingTargetFields.filter(f => !Object.values(outputMapping).includes(f)).map(f => (
+                <Tag key={f} color="orange">{f}<span className="text-text-muted ml-1 text-xs">({targetFieldTypes[f] || '?'})</span></Tag>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ─── Analyze Result Modal ─────────────────────────────────────────── */}
-      <Modal title="映射分析" open={analyzeOpen} onCancel={() => { setAnalyzeOpen(false); setAnalyzeResult(null); }} footer={null} width={600}>
+      <Modal title={`智能映射-${getBehaviorDisplay(smartMappingBehaviorName)}`} open={analyzeOpen} onCancel={() => { setAnalyzeOpen(false); setAnalyzeResult(null); }} footer={null} width={600}>
         {analyzeLoading && <p className="text-text-muted">正在分析中...</p>}
         {analyzeResult && (
           <div className="space-y-3">
@@ -543,7 +693,7 @@ total  Number  订单总价  15000.50`}
 
       {/* ─── Data Engine Call Modal ───────────────────────────────────────── */}
       <Modal
-        title={connectEngine ? `连接测试 - ${connectEngine.display_name || connectEngine.name}` : '连接测试'}
+        title={connectEngine ? `连接测试 - ${getBehaviorDisplay(connectEngine.behavior_name)}` : '连接测试'}
         open={connectOpen} onCancel={() => { setConnectOpen(false); setConnectResult(null); }} width={700} footer={null}
       >
         {connectEngine && (
@@ -558,7 +708,7 @@ total  Number  订单总价  15000.50`}
                 <div className="space-y-1.5">
                   {Object.entries(connectParams).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-2">
-                      <span className="w-28 text-text-secondary text-xs shrink-0">{connectRequired[k] && <span className="text-red-400 mr-0.5">*</span>}{k}</span>
+                      <span className="w-28 text-text-secondary text-xs shrink-0">{connectRequired[k] && <span className="text-red-400 mr-0.5">*</span>}{getParamDisplay(connectEngine?.behavior_name || '', k)}</span>
                       {typeof v === 'boolean' ? null : typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')) ? (
                         <Input.TextArea size="small" value={v} onChange={e => setConnectParams(p => ({...p, [k]: e.target.value}))} rows={3} className="flex-1 bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
                       ) : (
@@ -622,13 +772,14 @@ total  Number  订单总价  15000.50`}
 
       {/* ─── Smart Mapping Confirm Modal ───────────────────────────────── */}
       <Modal
-        title="智能映射"
+        title={`智能映射 - ${getBehaviorDisplay(smartMappingBehaviorName)}`}
         open={smartMappingOpen}
         onOk={handleSmartMappingConfirm}
         onCancel={() => setSmartMappingOpen(false)}
         okText="确认映射"
         cancelText="取消"
         width={500}
+        confirmLoading={smartMappingLoading}
       >
         <p className="text-text-primary text-sm">将本体行为的输入输出字段，与目标系统API接口的字段进行智能匹配。</p>
         <p className="text-text-muted text-xs mt-2">匹配仅建立字段对应关系，不会修改任何字段的名称、类型、描述以及是否必要等。匹配完成后可在输入/输出映射弹窗中手动调整。</p>
@@ -636,7 +787,7 @@ total  Number  订单总价  15000.50`}
 
       {/* ─── Smart Align Modal ──────────────────────────────────────────── */}
       <Modal
-        title="智能对齐"
+        title={`智能对齐 - ${getBehaviorDisplay(smartAlignBehaviorName)}`}
         open={smartAlignOpen}
         onOk={handleSmartAlign}
         onCancel={() => setSmartAlignOpen(false)}
@@ -647,6 +798,36 @@ total  Number  订单总价  15000.50`}
       >
         <p className="text-text-primary text-sm">将本体行为输入和输出，与目标API接口对齐。</p>
         <p className="text-text-muted text-xs mt-2">对齐操作修改修本体行为的数据结构，不会修改结构以外的任何内容。</p>
+      </Modal>
+
+      {/* ─── MCP Config Modal ──────────────────────────────────────────── */}
+      <Modal
+        title="MCP 服务配置"
+        open={mcpModalOpen}
+        onCancel={() => setMcpModalOpen(false)}
+        footer={null}
+        width={600}
+      >
+        <p className="text-text-muted text-xs mb-3">将以下配置添加到你的 agent 的 MCP 配置中，即可连接本体服务。</p>
+        <div className="relative">
+          <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono text-yellow-400 whitespace-pre-wrap overflow-x-auto">{mcpConfigJson}</pre>
+          <Button
+            size="small"
+            className="absolute top-2 right-2"
+            onClick={() => {
+              navigator.clipboard.writeText(mcpConfigJson);
+              message.success('MCP 配置已复制到剪贴板');
+            }}
+          >
+            复制
+          </Button>
+        </div>
+        <p className="text-text-muted text-xs mt-3">
+          SSE 端点：<code className="text-yellow-400">http://{host}:8002/sse</code>
+        </p>
+        <p className="text-text-muted text-xs mt-1">
+          健康检查：<code className="text-yellow-400">http://{host}:8002/health</code>
+        </p>
       </Modal>
     </div>
   );

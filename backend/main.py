@@ -13,10 +13,12 @@ from routers import (
     events_router,
     processes_router,
     securities_router,
+    functions_router,
     files_router,
     threads_router,
     chat_router,
     data_engines_router,
+    mcp_ctl_router,
 )
 
 
@@ -45,6 +47,8 @@ app.include_router(rules_router)
 app.include_router(events_router)
 app.include_router(processes_router)
 app.include_router(securities_router)
+app.include_router(functions_router)
+app.include_router(mcp_ctl_router)
 app.include_router(files_router)
 app.include_router(threads_router)
 app.include_router(chat_router)

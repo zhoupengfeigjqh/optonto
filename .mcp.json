@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "optonto-api": {
+      "type": "sse",
+      "url": "http://localhost:8002/sse"
+    }
+  }
+}

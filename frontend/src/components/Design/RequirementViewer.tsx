@@ -5,6 +5,7 @@ import { Button, Modal, message, Spin } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, RobotOutlined } from '@ant-design/icons';
 import { getRequirementFile, saveRequirementFile, generateOntology } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
+import MarkdownEditor from '@/components/MarkdownEditor';
 
 interface Props {
   threadId: string;
@@ -19,6 +20,7 @@ export default function RequirementViewer({ threadId, filename, onBack }: Props)
   const [dirty, setDirty] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -77,32 +79,42 @@ export default function RequirementViewer({ threadId, filename, onBack }: Props)
           <span className="text-text-muted text-xs">会话: {threadId.slice(0, 8)}...</span>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            type={previewMode ? 'default' : 'primary'}
+            size="small"
+            onClick={() => setPreviewMode(!previewMode)}
+          >
+            {previewMode ? '编辑模式' : '预览模式'}
+          </Button>
           <Button icon={<RobotOutlined />} onClick={() => setShowConfirm(true)} loading={generating} size="small">本体智能生成</Button>
-          <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving} disabled={!dirty} size="small">保存</Button>
+          {!previewMode && (
+            <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving} disabled={!dirty} size="small">保存</Button>
+          )}
         </div>
       </div>
 
-      {/* Split view */}
-      <div className="flex-1 flex gap-4 overflow-hidden">
-        {/* Left: editable markdown source */}
-        <div className="flex-1 flex flex-col">
-          <div className="text-xs text-text-muted mb-1 font-semibold uppercase tracking-wider">Markdown 原文（可编辑）</div>
-          <textarea
-            value={content}
-            onChange={e => { setContent(e.target.value); setDirty(true); }}
-            className="flex-1 bg-dark-bg border border-dark-border rounded-lg p-4 text-text-primary font-mono text-sm resize-none outline-none"
-            spellCheck={false}
-          />
-        </div>
-
-        {/* Right: rendered preview */}
-        <div className="flex-1 flex flex-col">
-          <div className="text-xs text-text-muted mb-1 font-semibold uppercase tracking-wider">预览（只读）</div>
-          <div
-            className="flex-1 bg-dark-card border border-dark-border rounded-lg p-4 overflow-y-auto"
-            dangerouslySetInnerHTML={{ __html: renderedHtml }}
-          />
-        </div>
+      {/* Single view with toggle */}
+      <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+        {previewMode ? (
+          <div className="h-full flex flex-col">
+            <div className="text-xs text-text-muted mb-1 font-semibold uppercase tracking-wider">预览（只读）</div>
+            <div
+              className="flex-1 bg-dark-card border border-dark-border rounded-lg p-4 overflow-y-auto"
+              dangerouslySetInnerHTML={{ __html: renderedHtml }}
+            />
+          </div>
+        ) : (
+          <div className="h-full flex flex-col" style={{ minHeight: 0 }}>
+            <div className="text-xs text-text-muted mb-1 font-semibold uppercase tracking-wider">编辑</div>
+            <div className="flex-1 bg-dark-bg border border-dark-border rounded-lg overflow-hidden" style={{ minHeight: 0 }}>
+              <MarkdownEditor
+                value={content}
+                onChange={v => { setContent(v); setDirty(true); }}
+                className="w-full h-full"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Confirm generate ontology */}

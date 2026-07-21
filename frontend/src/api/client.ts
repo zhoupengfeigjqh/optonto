@@ -56,6 +56,7 @@ export interface OntologyData {
   processes: Process[];
   securities: Security[];
   data_engines: DataEngine[];
+  functions?: Function[];
 }
 
 export const getOntologies = (scenarioId: number) =>
@@ -81,7 +82,6 @@ export const getOntologyData = (id: number) =>
 export interface Attribute {
   name: string;
   type: string;
-  required?: boolean;
   display_name?: string;
   example?: string;
   constraint?: string;
@@ -132,6 +132,29 @@ export const deleteRelation = (ontologyId: number, name: string) =>
 export const updateRelation = (ontologyId: number, name: string, data: Relation) =>
   request<Relation>(`/api/ontologies/${ontologyId}/relations/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
+// ─── Function ────────────────────────────────────────────────────────
+
+export interface Function {
+  name: string;
+  display_name?: string;
+  description?: string;
+  related_attributes: string[];
+  params?: Record<string, unknown>;
+  response?: Record<string, unknown>;
+}
+
+export const getFunctions = (ontologyId: number) =>
+  request<Function[]>(`/api/ontologies/${ontologyId}/functions`);
+
+export const createFunction = (ontologyId: number, data: Function) =>
+  request<Function>(`/api/ontologies/${ontologyId}/functions`, { method: 'POST', body: JSON.stringify(data) });
+
+export const deleteFunction = (ontologyId: number, name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+export const updateFunction = (ontologyId: number, name: string, data: Function) =>
+  request<Function>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
 // ─── Behavior ──────────────────────────────────────────────────────────────
 
 export interface Behavior {
@@ -161,6 +184,7 @@ export interface Rule {
   name: string;
   description: string;
   related_behaviors: string[];
+  related_functions: string[];
   display_name?: string;
   rule_type?: string;
   position?: string;
@@ -308,6 +332,28 @@ export const smartAlign = (ontologyId: number, name: string) =>
     `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-align`,
     { method: 'POST' }
   );
+
+// ─── MCP Control ───────────────────────────────────────────────────────
+
+export interface McpStatus {
+  status: string;
+  running: boolean;
+  container: string;
+}
+
+export interface McpActionResult {
+  message: string;
+  running: boolean;
+}
+
+export const getMcpStatus = () =>
+  request<McpStatus>('/api/mcp/status');
+
+export const startMcp = () =>
+  request<McpActionResult>('/api/mcp/start', { method: 'POST' });
+
+export const stopMcp = () =>
+  request<McpActionResult>('/api/mcp/stop', { method: 'POST' });
 
 // ─── Thread / Chat ────────────────────────────────────────────────────────
 

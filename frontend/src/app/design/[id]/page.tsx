@@ -16,6 +16,7 @@ import {
 import { getOntology, Ontology } from '@/api/client';
 import ConceptTable from '@/components/Design/ConceptTable';
 import RelationTable from '@/components/Design/RelationTable';
+import FunctionTable from '@/components/Design/FunctionTable';
 import BehaviorTable from '@/components/Design/BehaviorTable';
 import RuleTable from '@/components/Design/RuleTable';
 import EventTable from '@/components/Design/EventTable';
@@ -30,6 +31,7 @@ import DataEngineTable from '@/components/Design/DataEngineTable';
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
   { key: 'relations', label: '关系' },
+  { key: 'functions', label: '函数' },
   { key: 'behaviors', label: '行为' },
   { key: 'rules', label: '规则' },
   { key: 'processes', label: '流程' },
@@ -90,31 +92,47 @@ export default function DesignPage() {
   }
 
   const renderContent = () => (
-    <div className={activeSection === 'view' ? 'h-full' : ''}>
+    <div className="h-full">
+      {/* ── 本体展示：轻量，保留 display:none ── */}
       <div style={{ display: activeSection === 'view' && activeTab === 'view' ? '' : 'none' }} className="h-full"><OntologyGraph ontologyId={ontologyId} /></div>
       <div style={{ display: activeSection === 'view' && activeTab === 'instance' ? '' : 'none' }}>
         <div className="flex items-center justify-center h-48 text-text-muted"><p>实例视图 — 开发中</p></div>
       </div>
-      <div style={{ display: activeSection === 'requirements' && activeTab === 'requirements' ? '' : 'none' }}><ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} /></div>
-      <div style={{ display: activeSection === 'requirements' && activeTab === 'requirement-confirm' ? '' : 'none' }}><RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} /></div>
+
+      {/* ── 本体构建（需求）：条件渲染，避免常驻内存 ── */}
+      {activeSection === 'requirements' && activeTab === 'requirements' && (
+        <ConversationManager ontologyId={ontologyId} activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} />
+      )}
+      {activeSection === 'requirements' && activeTab === 'requirement-confirm' && (
+        <RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} />
+      )}
+      {activeSection === 'requirements' && activeTab === 'files' && (
+        <FileViewer ontologyId={ontologyId} activeTab={activeTab} />
+      )}
+
+      {/* ── 本体明细（设计）：display:none，保留编辑状态 ── */}
       <div style={{ display: activeSection === 'design' && activeTab === 'concepts' ? '' : 'none' }}><ConceptTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'relations' ? '' : 'none' }}><RelationTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+      <div style={{ display: activeSection === 'design' && activeTab === 'functions' ? '' : 'none' }}><FunctionTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'processes' ? '' : 'none' }}><ProcessTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'requirements' && activeTab === 'files' ? '' : 'none' }}><FileViewer ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'data-engine' && activeTab === 'data-engines' ? '' : 'none' }}><DataEngineTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'data-engine' && activeTab === 'instance-collection' ? '' : 'none' }}>
+
+      {/* ── 数据引擎 & 智能体：条件渲染 ── */}
+      {activeSection === 'data-engine' && activeTab === 'data-engines' && (
+        <DataEngineTable ontologyId={ontologyId} activeTab={activeTab} />
+      )}
+      {activeSection === 'data-engine' && activeTab === 'instance-collection' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
-      </div>
-      <div style={{ display: activeSection === 'agent' && activeTab === 'skill-management' ? '' : 'none' }}>
+      )}
+      {activeSection === 'agent' && activeTab === 'skill-management' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>技能管理 — 开发中</p></div>
-      </div>
-      <div style={{ display: activeSection === 'agent' && activeTab === 'agent-app' ? '' : 'none' }}>
+      )}
+      {activeSection === 'agent' && activeTab === 'agent-app' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>智能体应用 — 开发中</p></div>
-      </div>
+      )}
     </div>
   );
 

@@ -74,6 +74,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       { name: '概念', itemStyle: { color: '#3b82f6' } },
       { name: '行为', itemStyle: { color: '#10b981' } },
       { name: '规则', itemStyle: { color: '#f59e0b' } },
+      { name: '函数', itemStyle: { color: '#a855f7' } },
       { name: '关系', itemStyle: { color: '#8b5cf6' } },
     ];
 
@@ -146,6 +147,36 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
 
     });
 
+    // Function nodes
+    data.functions?.forEach(f => {
+      nodes.push({
+        id: `function:${f.name}`,
+        name: f.name,
+        displayName: getDisplayName(f),
+        category: 3,
+        symbolSize: 40,
+        description: f.description,
+      });
+      nodeIds.add(`function:${f.name}`);
+
+      // Extract unique concept names from related_attributes ("concept.attribute")
+      const conceptSet = new Set<string>();
+      (f.related_attributes || []).forEach(ra => {
+        const dot = ra.lastIndexOf('.');
+        if (dot > 0) conceptSet.add(ra.substring(0, dot));
+      });
+      conceptSet.forEach(conceptName => {
+        const targetId = `concept:${conceptName}`;
+        if (nodeIds.has(targetId)) {
+          edges.push({
+            source: `function:${f.name}`,
+            target: targetId,
+            lineStyle: { color: '#8b5cf6', width: 1.5, type: 'dashed' as const },
+          });
+        }
+      });
+    });
+
     // Relation edges (between concepts) — with display_name
     data.relations.forEach(r => {
       const sourceId = `concept:${r.source}`;
@@ -189,7 +220,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
         formatter: (params: any) => {
           if (params.dataType === 'node') {
             const node = params.data as GraphNode;
-            const typeLabels = ['概念', '行为', '规则', '关系'];
+            const typeLabels = ['概念', '行为', '规则', '函数', '关系'];
             let html = `<div style="font-size:13px;color:#e2e8f0">`;
             html += `<strong style="font-size:14px">${node.displayName}</strong>`;
             if (node.displayName !== node.name) {

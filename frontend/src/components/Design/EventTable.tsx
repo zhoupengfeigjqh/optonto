@@ -104,6 +104,7 @@ export default function EventTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">事件管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增事件</Button>
       </div>
+      <p className="text-text-muted text-xs mb-3">定义行为或状态变化导致的触发事件</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
     </div>
   );

@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, field_validator
 class AttributeItem(BaseModel):
     name: str = Field(..., description="属性名")
     type: str = Field(..., description="属性类型")
-    required: bool = Field(True, description="是否必填")
     display_name: str = Field("", description="展示名称")
     example: str = Field("", description="示例")
     constraint: str = Field("", description="约束")
@@ -58,8 +57,9 @@ class RuleItem(BaseModel):
     name: str = Field(..., description="规则名")
     description: str = Field("", description="规则描述")
     related_behaviors: list[str] = Field(default_factory=list, description="关联行为（可多选）")
+    related_functions: list[str] = Field(default_factory=list, description="关联函数（可多选）")
     display_name: str = Field("", description="展示名称")
-    rule_type: str = Field("", description="规则类型（计算规则/验证规则/推理规则）")
+    rule_type: str = Field("", description="规则类型（验证规则/推理规则）")
     position: str = Field("", description="介入位置（前置/后置）")
 
 
@@ -108,6 +108,15 @@ class SecurityItem(BaseModel):
         return s if s in valid else "前置"
 
 
+class FunctionItem(BaseModel):
+    name: str = Field(..., description="函数名称")
+    display_name: str = Field("", description="展示名称")
+    description: str = Field("", description="描述/计算逻辑")
+    related_attributes: list[str] = Field(default_factory=list, description="关联属性列表 (concept.attribute)")
+    params: dict = Field(default_factory=dict, description="输入参数")
+    response: dict = Field(default_factory=dict, description="返回结构")
+
+
 class TargetApiConfig(BaseModel):
     """目标系统 API 配置"""
     data_source_name: str = Field("", description="数据源名称")
@@ -133,6 +142,7 @@ class OntologyData(BaseModel):
     metadata: dict = Field(default_factory=dict, description="元数据（名称、来源等）")
     concepts: list[ConceptItem] = Field(default_factory=list)
     relations: list[RelationItem] = Field(default_factory=list)
+    functions: list[FunctionItem] = Field(default_factory=list, description="函数列表")
     behaviors: list[BehaviorItem] = Field(default_factory=list)
     rules: list[RuleItem] = Field(default_factory=list)
     events: list[EventItem] = Field(default_factory=list)

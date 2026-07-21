@@ -4,12 +4,18 @@ from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
 from metadata import (
-    list_ontologies, get_ontology_by_id, get_scenario_by_id,
+    list_ontologies, list_all_ontologies, get_ontology_by_id, get_scenario_by_id,
     get_scenario_by_name, create_ontology, update_ontology, delete_ontology,
 )
 from services import ensure_ontology_dir, save_ontology_data, load_ontology_data, OntologyData
 
 router = APIRouter(prefix="/api/ontologies", tags=["本体"])
+
+
+@router.get("")
+async def list_all_ontologies_api():
+    """列出所有本体（跨场景全量列表）。"""
+    return list_all_ontologies()
 
 
 @router.get("/by-scenario/{scenario_id}")

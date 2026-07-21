@@ -20,7 +20,6 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const [attrDialogOpen, setAttrDialogOpen] = useState(false);
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrType, setNewAttrType] = useState('string');
-  const [newAttrRequired, setNewAttrRequired] = useState(true);
   const [newAttrDisplayName, setNewAttrDisplayName] = useState('');
   const [newAttrExample, setNewAttrExample] = useState('');
   const [newAttrConstraint, setNewAttrConstraint] = useState('');
@@ -92,8 +91,8 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
 
   const handleAddAttribute = () => {
     if (!newAttrName.trim()) { message.warning('请输入属性名称'); return; }
-    setAttributes([...attributes, { name: newAttrName.trim(), type: newAttrType, required: newAttrRequired, display_name: newAttrDisplayName.trim(), example: newAttrExample.trim(), constraint: newAttrConstraint.trim() }]);
-    setNewAttrName(''); setNewAttrType('string'); setNewAttrRequired(true); setNewAttrDisplayName(''); setNewAttrExample(''); setNewAttrConstraint('');
+    setAttributes([...attributes, { name: newAttrName.trim(), type: newAttrType, display_name: newAttrDisplayName.trim(), example: newAttrExample.trim(), constraint: newAttrConstraint.trim() }]);
+    setNewAttrName(''); setNewAttrType('string'); setNewAttrDisplayName(''); setNewAttrExample(''); setNewAttrConstraint('');
   };
 
   const handleDeleteAttribute = (idx: number) => setAttributes(attributes.filter((_, i) => i !== idx));
@@ -165,7 +164,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">概念管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增概念</Button>
       </div>
-
+      <p className="text-text-muted text-xs mb-3">定义业务中的核心对象及其属性结构</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       <Modal title={`管理属性 - ${attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={850}
@@ -179,30 +178,24 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
         <div className="space-y-3">
           {attributes.map((attr, idx) => (
             <div key={idx} className="flex items-center gap-2">
-              <Input value={attr.name} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], name: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="属性名" />
-              <Input value={attr.display_name || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], display_name: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="展示名" />
-              <select value={attr.type} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], type: e.target.value }; setAttributes(n); }} className="w-24 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
+              <Input value={attr.name} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], name: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="属性名" />
+              <Input value={attr.display_name || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], display_name: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="展示名" />
+              <select value={attr.type} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], type: e.target.value }; setAttributes(n); }} className="w-[140px] px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
                 {['string', 'number', 'date', 'boolean', 'enum', 'array', 'object'].map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <Input value={attr.constraint || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], constraint: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="约束" />
-              <select value={attr.required !== undefined ? String(attr.required) : 'true'} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], required: e.target.value === 'true' }; setAttributes(n); }} className="w-20 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
-                <option value="true">必填</option><option value="false">可选</option>
-              </select>
-              <Input value={attr.example || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], example: e.target.value }; setAttributes(n); }} className="w-28 bg-dark-bg border-dark-border text-text-primary" placeholder="示例" />
+              <Input value={attr.constraint || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], constraint: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="约束" />
+              <Input value={attr.example || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], example: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="示例" />
               <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteAttribute(idx)} />
             </div>
           ))}
           <div className="flex items-center gap-2 pt-2 border-t border-dark-border">
-            <Input placeholder="属性名" value={newAttrName} onChange={e => setNewAttrName(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
-            <Input placeholder="展示名" value={newAttrDisplayName} onChange={e => setNewAttrDisplayName(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
-            <select value={newAttrType} onChange={e => setNewAttrType(e.target.value)} className="w-24 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
+            <Input placeholder="属性名" value={newAttrName} onChange={e => setNewAttrName(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
+            <Input placeholder="展示名" value={newAttrDisplayName} onChange={e => setNewAttrDisplayName(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
+            <select value={newAttrType} onChange={e => setNewAttrType(e.target.value)} className="w-[140px] px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
               {['string', 'number', 'date', 'boolean', 'enum', 'array', 'object'].map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <Input placeholder="约束" value={newAttrConstraint} onChange={e => setNewAttrConstraint(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
-            <select value={String(newAttrRequired)} onChange={e => setNewAttrRequired(e.target.value === 'true')} className="w-20 px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
-              <option value="true">必填</option><option value="false">可选</option>
-            </select>
-            <Input placeholder="示例" value={newAttrExample} onChange={e => setNewAttrExample(e.target.value)} className="w-28 bg-dark-bg border-dark-border text-text-primary" />
+            <Input placeholder="约束" value={newAttrConstraint} onChange={e => setNewAttrConstraint(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
+            <Input placeholder="示例" value={newAttrExample} onChange={e => setNewAttrExample(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
             <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleAddAttribute}>添加</Button>
           </div>
         </div>

@@ -171,6 +171,33 @@ def list_ontologies(scenario_name: str) -> list[dict]:
     return ontologies
 
 
+def list_all_ontologies() -> list[dict]:
+    """List all ontologies across all scenarios, enriched with scenario_name."""
+    results = []
+    if not ONTO_MARKET_DIR.exists():
+        return results
+    for scenario_dir in sorted(ONTO_MARKET_DIR.iterdir()):
+        if not scenario_dir.is_dir():
+            continue
+        for ontology_dir in sorted(scenario_dir.iterdir()):
+            if not ontology_dir.is_dir():
+                continue
+            meta_path = ontology_dir / "meta.json"
+            if not meta_path.exists():
+                continue
+            try:
+                with open(meta_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                if "scenario_id" in data:
+                    data["scenario_name"] = scenario_dir.name
+                    data["ontology_name"] = ontology_dir.name
+                    results.append(data)
+            except (json.JSONDecodeError, KeyError):
+                continue
+    results.sort(key=lambda o: o.get("updated_at", ""), reverse=True)
+    return results
+
+
 def get_ontology_by_id(ontology_id: int) -> Optional[tuple[dict, str, str]]:
     """Returns (ontology_data, scenario_name, ontology_name) or None."""
     if not ONTO_MARKET_DIR.exists():

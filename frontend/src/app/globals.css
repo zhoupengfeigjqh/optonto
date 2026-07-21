@@ -151,3 +151,33 @@ html, body {
 .ant-tag {
   border-radius: 4px;
 }
+
+/* Ant Design Tree dark theme overrides */
+.ant-tree .ant-tree-node-content-wrapper {
+  color: var(--text-secondary) !important;
+}
+.ant-tree .ant-tree-node-content-wrapper:hover {
+  background-color: transparent !important;
+  color: var(--accent-green) !important;
+}
+.ant-tree .ant-tree-node-content-wrapper:hover .ant-tree-title {
+  color: var(--accent-green) !important;
+}
+.ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background-color: transparent !important;
+  color: var(--accent-green) !important;
+}
+.ant-tree .ant-tree-checkbox {
+  margin-top: 2px;
+}
+.ant-tree .ant-tree-checkbox-inner {
+  border-color: var(--border-color) !important;
+  background-color: #fff !important;
+}
+.ant-tree .ant-tree-checkbox-checked .ant-tree-checkbox-inner {
+  background-color: var(--accent-blue) !important;
+  border-color: var(--accent-blue) !important;
+}
+.ant-tree .ant-tree-checkbox-checked::after {
+  border-color: var(--accent-blue) !important;
+}
