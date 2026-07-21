@@ -38,7 +38,7 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
               <Select size="small" allowClear placeholder="选择函数" value={left.function} onChange={v => setLeft({ function: v })}
                 options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
               <Input size="small" placeholder="返回字段" value={left.returnField || ''} onChange={e => setLeft({ returnField: e.target.value })}
-                className="bg-dark-bg border-dark-border text-text-primary" style={{ width: 150 }} />
+                className="bg-dark-bg border-dark-border" style={{ width: 150 }} />
             </div>
           )}
         </div>
@@ -57,7 +57,7 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
             options={[{ label: '字面值', value: 'value' }, { label: '概念属性', value: 'concept' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
           {right.type === 'value' ? (
             <Input size="small" placeholder="输入字面值" value={right.value || ''} onChange={e => setRight({ value: e.target.value })}
-              className="bg-dark-bg border-dark-border text-text-primary" style={{ width: 200 }} />
+              className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
           ) : (
             <div className="flex gap-2">
               <Select size="small" allowClear placeholder="选择概念" value={right.concept} onChange={v => setRight({ concept: v, attribute: undefined })}
@@ -116,11 +116,11 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
               <Select size="small" allowClear placeholder="函数" value={obj.function} onChange={v => updateCondition(idx, { [side]: { ...obj, function: v } })}
                 options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
               <Input size="small" placeholder="返回字段" value={obj.returnField || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, returnField: e.target.value } })}
-                className="bg-dark-bg border-dark-border text-text-primary" style={{ width: 150 }} />
+                className="bg-dark-bg border-dark-border" style={{ width: 150 }} />
             </div>
           ) : (
             <Input size="small" placeholder="字面值" value={obj.value || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, value: e.target.value } })}
-              className="bg-dark-bg border-dark-border text-text-primary" style={{ width: 200 }} />
+              className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
           )}
         </div>
       </div>
@@ -164,12 +164,12 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
       <div>
         <div className="text-text-primary text-sm font-semibold mb-2">THEN</div>
         <Input.TextArea size="small" rows={2} value={cfg.then || ''} onChange={e => onChange({ ...cfg, then: e.target.value })}
-          placeholder="条件为真时的文字描述" className="bg-dark-bg border-dark-border text-text-primary" />
+          placeholder="条件为真时的文字描述" className="bg-dark-bg border-dark-border" />
       </div>
       <div>
         <div className="text-text-primary text-sm font-semibold mb-2">ELSE</div>
         <Input.TextArea size="small" rows={2} value={cfg.else || ''} onChange={e => onChange({ ...cfg, else: e.target.value })}
-          placeholder="条件为假时的文字描述" className="bg-dark-bg border-dark-border text-text-primary" />
+          placeholder="条件为假时的文字描述" className="bg-dark-bg border-dark-border" />
       </div>
     </div>
   );

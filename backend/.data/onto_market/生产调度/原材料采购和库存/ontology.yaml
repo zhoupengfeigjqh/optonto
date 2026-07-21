@@ -303,6 +303,19 @@ functions:
           type: number
           description: 还未到位的采购量
           example: 100
+- name: getCurrentDate
+  display_name: 当前日期
+  description: 获取当前日期信息
+  related_attributes: []
+  params: {}
+  response:
+    result:
+      type: object
+      properties:
+        date:
+          type: string
+          description: 当前日期
+          example: '2026-01-01'
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
@@ -825,6 +838,21 @@ rules:
   display_name: 采购到位超期预警
   rule_type: 推理规则
   position: 后置
+  rule_config:
+    if:
+      logic: and
+      conditions:
+      - left:
+          type: function
+          function: getCurrentDate
+          returnField: currentDate
+        operator: gt
+        right:
+          type: concept
+          concept: PurchaseRecord
+          attribute: arrivalTime
+    then: 提示用户该采购单需要马上进行入库审核
+    else: 无
 - name: I03_PurchasePurposeInference
   description: IF 采购单relatedOrderId 为空 THEN 该采购目的可视为“补充库存”。
   related_behaviors:
@@ -874,10 +902,18 @@ rules:
           attribute: relatedOrderId
         operator: ne
         right:
+          type: value
+          value: '""'
+      - left:
+          type: concept
+          concept: PurchaseRecord
+          attribute: relatedOrderId
+        operator: ne
+        right:
           type: concept
           concept: CustomerOrder
           attribute: customerOrderId
-    then: 该订单可能缺失，提醒该订单被取消了
+    then: 该采购单的关联订单不正确，可能是订单取消或者填写错误，请提示用户确认
     else: 无
 events:
 - name: PurchaseRecordCreated
