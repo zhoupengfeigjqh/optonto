@@ -358,18 +358,25 @@ FUNCTION_CODE_PROMPT = """根据以下函数定义生成 Python 计算代码。
 返回结构：{response}
 
 【要求】
-1. 生成一个 Python 函数，函数名与参数名保持一致
-2. 函数签名：def {name}(params: dict) -> dict:
-3. 输入参数的 key 作为函数参数输入项，按输入参数结构从 params 中取数据
-4. 涉及日期比较时，必须从 params 中获取日期参数，不得在代码中硬编码日期
-5. 返回值为字典，按返回结构组装
-6. 代码必须是可直接运行的 Python 3 代码
-7. 只输出代码本身，不要任何解释或 markdown 标记
+1. 生成一个可执行的 Python 函数
+2. def {name}(params[key1],params[key1],...) -> dict:
+3. key取第一层的，嵌套的不取
+4. 涉及日期时，如最新日期，请用函数工具包，不要自己生成
+5. 函数注释args: 参数名，类型：参数描述
+6. 返回值为字典，按返回结构组装
+7. 代码必须是可直接运行的 Python 3 代码
+8. 只输出代码本身，不要任何解释或 markdown 标记
 
 【示例】
-def sumNotArrivalQty(params: dict) -> dict:
-    total = 0
-    for item in params.get("purchaseRecordSet", []):
-        if item.get("arrivalTime", "") > params.get("currentDate", ""):
-            total += item.get("arrivalQuantity", 0)
-    return {{"total": total}}"""
+def sumRawNotArrivalQty(filter_raw_material_name: string, current_date:string, purchase_record_set: list) -> dict:
+    total_not_arrival = 0
+    for record in purchase_record_set:
+        if record.get("rawMaterialName") == filter_raw_material_name and record.get("arrivalTime", "") > current_date:
+            total_not_arrival += record.get("arrivalQuantity", 0)
+    
+    return {
+        "result": {
+            "rawMaterialName": filter_raw_material_name,
+            "sumNotArrivalQty": total_not_arrival
+        }
+    }"""
