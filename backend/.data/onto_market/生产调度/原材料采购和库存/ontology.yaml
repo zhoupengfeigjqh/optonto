@@ -862,7 +862,7 @@ rules:
       attribute: rawMaterialId
     operator: in
     right:
-      type: concept
+      type: set
       concept: RawMaterial
       attribute: rawMaterialId
 - name: V05_SupplierExistence
@@ -878,11 +878,14 @@ rules:
       type: concept
       concept: PurchaseRecord
       attribute: supplierName
-    operator: eq
+    operator: in
     right:
-      type: concept
+      type: set
       concept: Supplier
       attribute: supplierName
+      value: ''
+      function: ''
+      returnField: ''
 - name: I01_SafetyStockAlert
   description: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
   related_behaviors:
@@ -904,8 +907,8 @@ rules:
           type: concept
           concept: RawMaterial
           attribute: safetyStock
-    then: 可用库存低于安全库存，建议创建采购单或关注库存。
-    else: 库存正常，无需操作。
+    then: 可用库存低于安全库存，建议创建采购单或关注库存
+    else: 库存正常，无需操作
 - name: I02_ArrivalOverdueAlert
   description: IF 当前日期 >= 采购单arrivalTime  THEN 提示用户是否启动入库操作。
   related_behaviors:
@@ -928,7 +931,7 @@ rules:
           type: concept
           concept: PurchaseRecord
           attribute: arrivalTime
-    then: 当前日期已到达或超过采购单到位时间，建议启动入库操作
+    then: 采购单已到位，建议启动入库操作
     else: 采购单尚未到位，无需操作
 - name: I03_PurchasePurposeInference
   description: IF 采购单relatedOrderId 为空 THEN 该采购目的可视为“补充库存”。
@@ -951,8 +954,8 @@ rules:
         right:
           type: value
           value: '""'
-    then: 该采购目的可视为“补充库存”
-    else: 该采购目的与关联订单相关
+    then: 该采购单的采购目的可视为“补充库存”
+    else: 该采购单有关联订单，采购目的可能为生产订单备料
 - name: I04_RelatedOrderValidation
   description: IF 采购单relatedOrderId不为空且不在 CustomerOrder 表中 (或状态为 已取消) THEN 提示用户该客户订单可能已失效，请确认是否取消该采购单。
   related_behaviors:
@@ -978,13 +981,13 @@ rules:
           type: concept
           concept: PurchaseRecord
           attribute: relatedOrderId
-        operator: ne
+        operator: not in
         right:
-          type: concept
+          type: set
           concept: CustomerOrder
           attribute: customerOrderId
     then: 该采购单关联的客户订单可能已失效，请确认是否取消该采购单。
-    else: 关联订单正常，无需操作。
+    else: 采购单关联的客户订单有效，无需操作。
 events:
 - name: PurchaseRecordCreated
   event_type: 动作执行

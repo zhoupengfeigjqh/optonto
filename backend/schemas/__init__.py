@@ -95,8 +95,8 @@ class ProcessItem(BaseModel):
 
 
 class SecurityItem(BaseModel):
-    action_name: str = Field(..., description="动作名称（选自行为列表）")
-    audit_node: str = Field("前置", description="审核节点（前置/后置）")
+    action_name: str = Field(..., description="行为名称（选自行为列表）")
+    audit_node: str = Field("前置", description="介入位置（前置/后置）")
     audit_content: str = Field("", description="审核内容")
 
     @field_validator('audit_node', mode='before')
