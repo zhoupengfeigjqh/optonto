@@ -54,10 +54,17 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
         <span className="text-text-primary text-sm w-16 mt-1">右侧</span>
         <div className="flex-1 space-y-2">
           <Select size="small" value={right.type} onChange={v => setRight({ type: v, value: undefined, concept: undefined, attribute: undefined })}
-            options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
+            options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
           {right.type === 'value' ? (
             <Input size="small" placeholder="输入字面值" value={right.value || ''} onChange={e => setRight({ value: e.target.value })}
               className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
+          ) : right.type === 'function' ? (
+            <div className="flex gap-2">
+              <Select size="small" allowClear placeholder="选择函数" value={right.function} onChange={v => setRight({ function: v })}
+                options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
+              <Input size="small" placeholder="返回字段" value={right.returnField || ''} onChange={e => setRight({ returnField: e.target.value })}
+                className="bg-dark-bg border-dark-border" style={{ width: 150 }} />
+            </div>
           ) : (
             <div className="flex gap-2">
               <Select size="small" allowClear placeholder="选择概念" value={right.concept} onChange={v => setRight({ concept: v, attribute: undefined })}
@@ -286,6 +293,9 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       }
       if (right.type === 'concept' && (!right.concept || !right.attribute)) {
         message.warning('请完善右侧条件：选择概念和属性'); return;
+      }
+      if (right.type === 'function' && (!right.function || !right.returnField)) {
+        message.warning('请完善右侧条件：选择函数并填写返回字段'); return;
       }
     }
 
