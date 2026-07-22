@@ -10,13 +10,17 @@ interface Props { ontologyId: number; activeTab?: string; }
 
 // ─── Validation Rule Editor ───────────────────────────────────────────────
 
+function _label(v: any, k: string): string {
+  return v?.display_name || v?.description || k;
+}
+
 function getReturnFields(funcs: any[], funcName: string | undefined): { label: string; value: string }[] {
   if (!funcName) return [];
   const fn = funcs.find(f => f.name === funcName);
   if (!fn?.response) return [];
   const props = fn.response?.result?.properties || fn.response?.properties || {};
   return Object.entries(props).map(([k, v]: [string, any]) => ({
-    label: `${v?.description || k}（${v?.type || 'any'}）`,
+    label: `${_label(v, k)}（${v?.type || 'any'}）`,
     value: k,
   }));
 }
