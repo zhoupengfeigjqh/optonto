@@ -25,7 +25,7 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
         <span className="text-text-primary text-sm w-16 mt-1">左侧</span>
         <div className="flex-1 space-y-2">
           <Select size="small" value={left.type} onChange={v => setLeft({ type: v, concept: undefined, attribute: undefined, function: undefined, returnField: undefined })}
-            options={[{ label: '概念属性', value: 'concept' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
+            options={[{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
           {left.type === 'concept' ? (
             <div className="flex gap-2">
               <Select size="small" allowClear placeholder="选择概念" value={left.concept} onChange={v => setLeft({ concept: v, attribute: undefined })}
@@ -54,7 +54,7 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
         <span className="text-text-primary text-sm w-16 mt-1">右侧</span>
         <div className="flex-1 space-y-2">
           <Select size="small" value={right.type} onChange={v => setRight({ type: v, value: undefined, concept: undefined, attribute: undefined })}
-            options={[{ label: '字面值', value: 'value' }, { label: '概念属性', value: 'concept' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
+            options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
           {right.type === 'value' ? (
             <Input size="small" placeholder="输入字面值" value={right.value || ''} onChange={e => setRight({ value: e.target.value })}
               className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
@@ -96,8 +96,8 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
 
   const leftRightEditor = (cond: any, idx: number, side: 'left' | 'right', sideLabel: string) => {
     const obj = cond[side] || { type: side === 'left' ? 'concept' : 'value' };
-    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '概念属性', value: 'concept' }, { label: '函数', value: 'function' }];
-    const types = side === 'left' ? [{ label: '概念属性', value: 'concept' }, { label: '函数', value: 'function' }] : rightTypes;
+    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '函数', value: 'function' }];
+    const types = side === 'left' ? [{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }] : rightTypes;
     return (
       <div className="flex items-start gap-2">
         <span className="text-text-muted text-xs w-12 mt-1">{sideLabel}</span>

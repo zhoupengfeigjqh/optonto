@@ -108,7 +108,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoConcepts",
-            description="列出指定本体的概念。返回概念的 name、display_name、description、attributes（属性列表）。传入 concept_name 则直接返回该概念的属性列表。支持可选 keyword 模糊搜索。",
+            description="列出指定本体的概念。返回概念的 name、display_name、description、attributes（属性列表）。传入 concept_name 则直接返回该概念的属性列表。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -133,7 +133,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoFunctions",
-            description="列出指定本体的函数以及对应的输入输出结构。返回函数的 name、display_name、description、params（输入参数）、response（返回的数据） 以及公共函数。支持可选 keyword 模糊搜索。",
+            description="列出指定本体的函数以及对应的输入输出结构。返回函数的 name、display_name、description、params（输入）、response（返回的） 以及公共函数。",
             inputSchema={
                 "type": "object",
                 "properties": {
