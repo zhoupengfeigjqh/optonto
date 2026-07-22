@@ -162,7 +162,7 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
         <div className="space-y-3">
           <div>
             <span className="text-text-muted text-xs">技能名称</span>
-            <Input size="small" value={genName} disabled className="bg-dark-bg border-dark-border text-text-primary" />
+            <Input size="small" value={genName} onChange={e => setGenName(e.target.value)} disabled={genLoading} className="bg-dark-bg border-dark-border text-text-primary" placeholder="如 raw_material_skill" />
           </div>
         </div>
       </Modal>
