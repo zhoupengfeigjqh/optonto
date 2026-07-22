@@ -147,6 +147,9 @@ export interface Function {
 export const getFunctions = (ontologyId: number) =>
   request<Function[]>(`/api/ontologies/${ontologyId}/functions`);
 
+export const getCommonFunctions = () =>
+  request<any[]>('/api/common-functions');
+
 export const createFunction = (ontologyId: number, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions`, { method: 'POST', body: JSON.stringify(data) });
 

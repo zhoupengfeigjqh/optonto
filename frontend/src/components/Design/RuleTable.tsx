@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Button, Input, Select, Modal, message, Space } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, FileTextOutlined } from '@ant-design/icons';
-import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, Rule, Behavior, Function, Concept } from '@/api/client';
+import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, Rule, Behavior, Function, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -211,8 +211,9 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [ruleList, behList, fnList, types, conList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId)]);
-      setRules(ruleList); setBehaviors(behList); setFuncs(fnList);
+      const [ruleList, behList, fnList, types, conList, commonFnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId), getCommonFunctions()]);
+      const allFuncs = [...fnList, ...commonFnList.map((f: any) => ({ ...f, related_attributes: [] as string[] }))];
+      setRules(ruleList); setBehaviors(behList); setFuncs(allFuncs);
       setRuleTypeOptions(types.map(t => ({ label: t, value: t })));
       setConcepts(conList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
