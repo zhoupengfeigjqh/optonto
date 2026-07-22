@@ -201,7 +201,7 @@ export interface Rule {
   display_name?: string;
   rule_type?: string;
   position?: string;
-  rule_config?: any;
+  rule_detail?: any;
 }
 
 export const getRules = (ontologyId: number) =>

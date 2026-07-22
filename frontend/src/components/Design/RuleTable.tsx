@@ -224,14 +224,14 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { label: '大于等于 (ge)', value: 'ge' },
   ];
 
-  const handleAdd = () => { setEditData({ name: '', display_name: '', description: '', rule_type: '', position: '', related_behaviors: [], related_functions: [], rule_config: null }); setEditingKey('__new__'); };
-  const handleEdit = (r: Rule) => { setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, rule_type: r.rule_type || '', position: r.position || '', related_behaviors: r.related_behaviors || [], related_functions: r.related_functions || [], rule_config: r.rule_config }); setEditingKey(r.name); };
+  const handleAdd = () => { setEditData({ name: '', display_name: '', description: '', rule_type: '', position: '', related_behaviors: [], related_functions: [], rule_detail: null }); setEditingKey('__new__'); };
+  const handleEdit = (r: Rule) => { setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, rule_type: r.rule_type || '', position: r.position || '', related_behaviors: r.related_behaviors || [], related_functions: r.related_functions || [], rule_detail: r.rule_detail }); setEditingKey(r.name); };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Rule) => {
     if (!editData.name?.trim()) { message.warning('请输入规则名称'); return; }
     try {
-      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], rule_config: editData.rule_config || null };
+      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], rule_detail: editData.rule_detail || null };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (rules.some(r => r.name === data.name)) { message.warning('规则名称已存在'); return; }
@@ -252,7 +252,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   };
 
   const openRuleDesign = async () => {
-    setRuleConfig(editData.rule_config ? JSON.parse(JSON.stringify(editData.rule_config)) : null);
+    setRuleConfig(editData.rule_detail ? JSON.parse(JSON.stringify(editData.rule_detail)) : null);
     setRuleDesignModalOpen(true);
     if (!editData.rule_type) return;
     setTemplateLoading(true);
@@ -316,7 +316,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       }
     }
 
-    setEditData(p => ({ ...p, rule_config: ruleConfig }));
+    setEditData(p => ({ ...p, rule_detail: ruleConfig }));
     message.success('规则设计已保存到编辑缓存');
     setRuleDesignModalOpen(false);
   };
@@ -350,7 +350,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       const editing = isEditing(r);
       const isNew = editingKey === '__new__' && r.name === '__new__';
       if (!editing && !isNew) {
-        const hasConfig = r.rule_config && Object.keys(r.rule_config).length > 0;
+        const hasConfig = r.rule_detail && Object.keys(r.rule_detail).length > 0;
         return <span className={`text-xs ${hasConfig ? 'text-green-500' : 'text-text-muted'}`}>{hasConfig ? '已设计' : '未设计'}</span>;
       }
       return <Button type="link" size="small" icon={<FileTextOutlined />} disabled={!editData.rule_type} onClick={openRuleDesign}>设计</Button>;

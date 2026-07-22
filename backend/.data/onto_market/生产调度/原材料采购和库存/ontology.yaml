@@ -741,7 +741,7 @@ rules:
   display_name: 采购-原料单位一致性
   rule_type: 验证规则
   position: 前置
-  rule_config:
+  rule_detail:
     left:
       type: concept
       concept: PurchaseRecord
@@ -759,7 +759,7 @@ rules:
   display_name: 到位时间合理性
   rule_type: 验证规则
   position: 前置
-  rule_config:
+  rule_detail:
     left:
       type: concept
       concept: PurchaseRecord
@@ -777,7 +777,7 @@ rules:
   display_name: 采购-原料存在性
   rule_type: 验证规则
   position: 前置
-  rule_config:
+  rule_detail:
     left:
       type: concept
       concept: PurchaseRecord
@@ -794,7 +794,7 @@ rules:
   display_name: 采购-供应商存在性
   rule_type: 验证规则
   position: 前置
-  rule_config:
+  rule_detail:
     right:
       type: concept
       concept: Supplier
@@ -811,7 +811,7 @@ rules:
   display_name: 安全库存预警
   rule_type: 推理规则
   position: 后置
-  rule_config:
+  rule_detail:
     if:
       logic: and
       conditions:
@@ -834,7 +834,7 @@ rules:
   display_name: 采购到位超期预警
   rule_type: 推理规则
   position: 后置
-  rule_config:
+  rule_detail:
     if:
       logic: and
       conditions:
@@ -858,7 +858,7 @@ rules:
   display_name: 采购目的推理
   rule_type: 推理规则
   position: 后置
-  rule_config:
+  rule_detail:
     left:
       type: concept
       concept: PurchaseRecord
@@ -888,7 +888,7 @@ rules:
   display_name: 采购关联订单校验
   rule_type: 推理规则
   position: 后置
-  rule_config:
+  rule_detail:
     if:
       logic: and
       conditions:
