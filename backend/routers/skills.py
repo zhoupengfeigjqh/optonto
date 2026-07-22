@@ -164,6 +164,8 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
     ontology_yaml_lines.append(f"\n规则（{len(data.rules)}个）:")
     for r in data.rules:
         ontology_yaml_lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.description or ''} type={r.rule_type} pos={r.position}")
+        if r.rule_detail:
+            ontology_yaml_lines.append(f"    rule_detail: {json.dumps(r.rule_detail, ensure_ascii=False, default=str)}")
 
     ontology_yaml_lines.append(f"\n安全管控（{len(data.securities)}个）:")
     for s in data.securities:
