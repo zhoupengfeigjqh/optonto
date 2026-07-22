@@ -90,6 +90,8 @@
                 "enum": [
                   "eq",
                   "ne",
+                  "in",
+                  "not in",
                   "like",
                   "lt",
                   "gt",
@@ -106,6 +108,7 @@
                     "enum": [
                       "value",
                       "concept",
+                      "set",
                       "function"
                     ],
                     "description": "右侧数据来源类型"
@@ -175,6 +178,21 @@
                       "required": [
                         "function",
                         "returnField"
+                      ]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "type": {
+                          "const": "set"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "concept",
+                        "attribute"
                       ]
                     }
                   }
