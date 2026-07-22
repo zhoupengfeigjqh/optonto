@@ -15,7 +15,10 @@ function getReturnFields(funcs: any[], funcName: string | undefined): { label: s
   const fn = funcs.find(f => f.name === funcName);
   if (!fn?.response) return [];
   const props = fn.response?.result?.properties || fn.response?.properties || {};
-  return Object.entries(props).map(([k, v]: [string, any]) => ({ label: `${k} (${v?.type || 'any'})`, value: k }));
+  return Object.entries(props).map(([k, v]: [string, any]) => ({
+    label: `${v?.description || k}（${v?.type || 'any'}）`,
+    value: k,
+  }));
 }
 
 function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {

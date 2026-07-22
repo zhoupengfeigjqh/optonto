@@ -309,7 +309,7 @@ functions:
           example: 高强度钢板
         sumNotArrivalQty:
           type: number
-          description: 还未到位的采购量
+          description: 未到位总量
           example: 100
   code_file: functions/sumRawNotArrivalQty.py
 behaviors:
