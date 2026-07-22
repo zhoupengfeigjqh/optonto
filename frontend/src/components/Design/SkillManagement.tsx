@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, message, Space, Tag, Table } from 'antd';
-import { PlusOutlined, DeleteOutlined, RobotOutlined, EyeOutlined, EditOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
-import { getSkills, getSkillContent, saveSkillContent, deleteSkill, generateSkill, SkillSummary } from '@/api/client';
+import { PlusOutlined, DeleteOutlined, RobotOutlined, EyeOutlined, EditOutlined, ArrowLeftOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
+import { getSkills, getSkillContent, saveSkillContent, deleteSkill, generateSkill, updateSkillMeta, SkillSummary } from '@/api/client';
 import MarkdownEditor from '@/components/MarkdownEditor';
 import { renderMarkdown } from '@/lib/markdown';
 
@@ -17,6 +17,11 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
   const [genName, setGenName] = useState('');
   const [genDesc, setGenDesc] = useState('');
   const [genDialogOpen, setGenDialogOpen] = useState(false);
+
+  // edit dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editSkill, setEditSkill] = useState<{ name: string; description: string }>({ name: '', description: '' });
+  const [editLoading, setEditLoading] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
 
   const load = async () => {
@@ -62,6 +67,18 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e: any) { message.error('下载失败: ' + e.message); }
+  };
+
+  const handleEdit = async () => {
+    if (!editSkill.name.trim()) { message.warning('技能名称不能为空'); return; }
+    setEditLoading(true);
+    try {
+      await updateSkillMeta(ontologyId, editSkill.name, { description: editSkill.description });
+      await load();
+      setEditDialogOpen(false);
+      message.success('技能已更新');
+    } catch (e: any) { message.error('更新失败: ' + e.message); }
+    finally { setEditLoading(false); }
   };
 
   const handleDelete = (name: string) => {
@@ -129,9 +146,10 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       return <Tag color="green">已输出</Tag>;
     }},
       {
-      title: '操作', key: 'actions', width: 140,
+      title: '操作', key: 'actions', width: 180,
       render: (_: any, r: SkillSummary) => (
         <Space>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditSkill({ name: r.name, description: r.description || '' }); setEditDialogOpen(true); }}>编辑</Button>
           {r.has_skill && <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(r.name)} />}
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleView(r.name)}>查看</Button>
           <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r.name)} />
@@ -159,6 +177,20 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
         pagination={false}
         className="bg-transparent"
       />
+
+      {/* ─── Edit Dialog ──────────────────────────────────────────────── */}
+      <Modal title="编辑技能" open={editDialogOpen} onOk={handleEdit} onCancel={() => setEditDialogOpen(false)} okText="保存" cancelText="取消" confirmLoading={editLoading} width={500}>
+        <div className="space-y-3">
+          <div>
+            <span className="text-text-muted text-xs">技能名称</span>
+            <Input size="small" value={editSkill.name} onChange={e => setEditSkill(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />
+          </div>
+          <div>
+            <span className="text-text-muted text-xs">技能简介</span>
+            <Input size="small" value={editSkill.description} onChange={e => setEditSkill(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />
+          </div>
+        </div>
+      </Modal>
 
       {/* ─── Generate Dialog ──────────────────────────────────────────── */}
       <Modal

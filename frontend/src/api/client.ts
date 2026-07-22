@@ -531,5 +531,8 @@ export const saveSkillContent = (ontologyId: number, name: string, content: stri
 export const deleteSkill = (ontologyId: number, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
+export const updateSkillMeta = (ontologyId: number, name: string, data: { name?: string; description?: string }) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/meta`, { method: 'PUT', body: JSON.stringify(data) });
+
 export const generateSkill = (ontologyId: number, name: string, description?: string) =>
   request<{ message: string; skill_name: string; content: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST', body: JSON.stringify({ description: description || '' }) });
