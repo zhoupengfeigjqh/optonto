@@ -28,13 +28,23 @@ relations:
 
 functions:
 - name: sumRawNotArrivalQty
-  display_name: 采购原材料未到位总数
-  description: 根据原材料的采购单信息，将到位时间大于当前时间的原材料，对其到位数求和
+  display_name: 原材料未到位数
+  description: 根据传入的数据包指定的原材料，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和。
   related_attributes:
   - PurchaseRecord.arrivalQuantity
   - PurchaseRecord.arrivalTime
   - PurchaseRecord.rawMaterialName
   params:
+    filterRawMaterialName:
+      type: string
+      display_name: 原材料名称
+      description: 原材料名称
+      example: 高强度钢板
+    currentDate:
+      type: string
+      display_name: 日期
+      description: 日期
+      example: '2026-01-01'
     purchaseRecordSet:
       type: array
       items:
@@ -43,34 +53,33 @@ functions:
           arrivalTime:
             type: string
             display_name: 到位时间
-            description: 计划的原材料到位时间
+            description: 到位时间
             example: '2026-09-01'
-          rawMaterialName:
-            type: string
-            display_name: 原材料名称
-            description: 采购的原材料的名称
-            example: 高强度钢板
-          arrivalQuantity:
-            type: number
-            display_name: 到位数量
-            description: 计划的到位数量
-            example: 100
-  response:
-    result:
-      type: array
-      items:
-        type: object
-        properties:
           rawMaterialName:
             type: string
             display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
-          sumNotArrivalQty:
+          arrivalQuantity:
             type: number
-            display_name: 未到位总数
-            description: 还未到位的采购总量
+            display_name: 计划的到位数量
+            description: 计划的到位数量
             example: 100
+  response:
+    result:
+      type: object
+      properties:
+        rawMaterialName:
+          type: string
+          display_name: 原材料名称
+          description: 原材料名称
+          example: 高强度钢板
+        sumNotArrivalQty:
+          type: number
+          display_name: 未到位总量
+          description: 未到位总量
+          example: 100
+  code_file: functions/sumRawNotArrivalQty.py
 
 behaviors:
 - name: behaviorName
