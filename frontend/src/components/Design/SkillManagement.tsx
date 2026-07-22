@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, message, Space, Tag, Table } from 'antd';
-import { PlusOutlined, DeleteOutlined, RobotOutlined, EyeOutlined, EditOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, RobotOutlined, EyeOutlined, EditOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getSkills, getSkillContent, saveSkillContent, deleteSkill, generateSkill, SkillSummary } from '@/api/client';
 import MarkdownEditor from '@/components/MarkdownEditor';
 import { renderMarkdown } from '@/lib/markdown';
@@ -46,6 +46,19 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       setViewing(p => p ? { ...p, saving: false } : null);
     } catch (e: any) { message.error('保存失败: ' + e.message); }
     finally { setViewing(p => p ? { ...p, saving: false } : null); }
+  };
+
+  const handleDownload = async (name: string) => {
+    try {
+      const result = await getSkillContent(ontologyId, name);
+      const blob = new Blob([result.content], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { message.error('下载失败: ' + e.message); }
   };
 
   const handleDelete = (name: string) => {
@@ -112,6 +125,7 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       title: '操作', key: 'actions', width: 140,
       render: (_: any, r: SkillSummary) => (
         <Space>
+          {r.has_skill && <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(r.name)} />}
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleView(r.name)}>查看</Button>
           <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r.name)} />
         </Space>
