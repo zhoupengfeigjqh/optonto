@@ -76,7 +76,7 @@ async def _list_tools() -> list[Tool]:
     return COMMON_TOOLS + [
         Tool(
             name="listScenarios",
-            description="列出所有场景。返回每个场景的 id、name、description、created_at、updated_at。支持可选 keyword 按名称模糊搜索。",
+            description="列出所有场景。返回每个场景的 id、name和description等。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -86,7 +86,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntologies",
-            description="列出所有本体。返回每个本体的 id、name、description、scenario_name、ontology_name、creator、created_at、updated_at。支持可选 keyword 模糊搜索。",
+            description="列出所有本体。返回每个本体的 id（ontology_id）、name、description、scenario_name和ontology_name等",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -96,7 +96,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoBehaviors",
-            description="列出指定本体的行为。返回行为的 name、display_name、description、params（输入参数结构）、response（返回结构）。支持可选 keyword 模糊搜索。",
+            description="列出指定本体的行为。返回行为的 name、display_name、description、params（输入参数结构）、response（返回结构）。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -133,7 +133,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoFunctions",
-            description="列出指定本体的函数。返回函数的 name、display_name、description、params、response 以及公共函数。支持可选 keyword 模糊搜索。",
+            description="列出指定本体的函数以及对应的输入输出结构。返回函数的 name、display_name、description、params（输入参数）、response（返回的数据） 以及公共函数。支持可选 keyword 模糊搜索。",
             inputSchema={
                 "type": "object",
                 "properties": {
