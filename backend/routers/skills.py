@@ -75,9 +75,14 @@ async def list_skills(ontology_id: int):
         if not d.is_dir():
             continue
         md_path = d / "SKILL.md"
+        format_ok = False
+        if md_path.exists():
+            head = md_path.read_text(encoding="utf-8")[:200]
+            format_ok = head.startswith("---\nname:") and "\ndescription:" in head
         items.append({
             "name": d.name,
             "has_skill": md_path.exists(),
+            "format_ok": format_ok,
             "updated_at": md_path.stat().st_mtime if md_path.exists() else d.stat().st_mtime,
         })
     return items

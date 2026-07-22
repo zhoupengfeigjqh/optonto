@@ -120,9 +120,11 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
 
   const columns = [
     { title: '技能名称', dataIndex: 'name', key: 'name', width: 160, render: (v: string) => <span className="text-text-primary">{v}</span> },
-    { title: '状态', key: 'status', width: 80, render: (_: any, r: SkillSummary) => (
-      <Tag color={r.has_skill ? 'green' : 'default'}>{r.has_skill ? '已生成' : '未生成'}</Tag>
-    )},
+    { title: '状态', key: 'status', width: 80, render: (_: any, r: SkillSummary) => {
+      if (!r.has_skill) return <Tag color="default">未生成</Tag>;
+      if (!r.format_ok) return <Tag color="red">格式错误</Tag>;
+      return <Tag color="green">已输出</Tag>;
+    }},
       {
       title: '操作', key: 'actions', width: 140,
       render: (_: any, r: SkillSummary) => (

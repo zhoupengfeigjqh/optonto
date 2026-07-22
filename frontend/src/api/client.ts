@@ -509,6 +509,7 @@ export const saveFileContent = (ontologyId: number, data: YamlFile) =>
 export interface SkillSummary {
   name: string;
   has_skill: boolean;
+  format_ok: boolean;
   updated_at: number;
   has_reference?: boolean;
 }
