@@ -75,11 +75,9 @@ async def list_skills(ontology_id: int):
         if not d.is_dir():
             continue
         md_path = d / "SKILL.md"
-        ref_dir = d / "reference"
         items.append({
             "name": d.name,
             "has_skill": md_path.exists(),
-            "has_reference": ref_dir.exists() and any(ref_dir.iterdir()),
             "updated_at": md_path.stat().st_mtime if md_path.exists() else d.stat().st_mtime,
         })
     return items
@@ -95,14 +93,7 @@ async def get_skill_content(ontology_id: int, skill_name: str):
     if not md_path.exists():
         raise HTTPException(status_code=404, detail="技能文件不存在")
     content = md_path.read_text(encoding="utf-8")
-    # Check for reference files
-    ref_dir = _reference_dir(sc_name, on_name, skill_name)
-    reference_files = []
-    if ref_dir.exists():
-        for f in sorted(ref_dir.iterdir()):
-            if f.is_file():
-                reference_files.append({"name": f.name, "updated_at": f.stat().st_mtime})
-    return {"content": content, "skill_name": skill_name, "reference_files": reference_files}
+    return {"content": content, "skill_name": skill_name}
 
 
 # ─── Save Skill Content ────────────────────────────────────────────────────
