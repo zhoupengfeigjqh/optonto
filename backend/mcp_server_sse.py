@@ -95,7 +95,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="listBehaviors",
+            name="listOntoBehaviors",
             description="列出指定本体下的行为，支持可选 keyword 模糊搜索",
             inputSchema={
                 "type": "object",
@@ -107,7 +107,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="listConcepts",
+            name="listOntoConcepts",
             description="列出指定本体下的概念和属性，支持可选 keyword 模糊搜索或 concept_name 精确查找",
             inputSchema={
                 "type": "object",
@@ -120,7 +120,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="listRelations",
+            name="listOntoRelations",
             description="列出指定本体下的关系，支持可选 concept_name 过滤出该概念直接关联的关系",
             inputSchema={
                 "type": "object",
@@ -132,7 +132,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="listFunctions",
+            name="listOntoFunctions",
             description="列出指定本体下的函数，支持可选 keyword 模糊搜索",
             inputSchema={
                 "type": "object",
@@ -144,7 +144,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="listSecurities",
+            name="listOntoSecurities",
             description="列出指定本体下的所有安全审核信息",
             inputSchema={
                 "type": "object",
@@ -155,7 +155,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="executeBehavior",
+            name="executeOntoBehavior",
             description="调用本体行为对应的目标API，会经过完整的 input/output mapping 处理",
             inputSchema={
                 "type": "object",
@@ -168,7 +168,7 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="executeFunction",
+            name="executeOntoFunction",
             description="执行本体中函数的 Python 代码，传入参数并返回计算结果",
             inputSchema={
                 "type": "object",
@@ -209,12 +209,12 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         data = await _api_get("/api/ontologies")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "scenario_name"])
 
-    elif name == "listBehaviors":
+    elif name == "listOntoBehaviors":
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/behaviors")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
-    elif name == "listConcepts":
+    elif name == "listOntoConcepts":
         oid = arguments["ontology_id"]
         cname = arguments.get("concept_name")
         data = await _api_get(f"/api/ontologies/{oid}/concepts")
@@ -227,7 +227,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         else:
             result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
-    elif name == "listRelations":
+    elif name == "listOntoRelations":
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/relations")
         cname = arguments.get("concept_name")
@@ -236,7 +236,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         else:
             result = data
 
-    elif name == "listFunctions":
+    elif name == "listOntoFunctions":
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/functions")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
@@ -255,10 +255,10 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                 common_list = [c for c in common_list if kw in c["name"].lower() or kw in c.get("description","").lower() or kw in c.get("display_name","").lower()]
             result.extend(common_list)
 
-    elif name == "listSecurities":
+    elif name == "listOntoSecurities":
         result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/securities")
 
-    elif name == "executeFunction":
+    elif name == "executeOntoFunction":
         oid = arguments["ontology_id"]
         fname = arguments["function_name"]
         params = arguments.get("params", {})
@@ -276,7 +276,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             else:
                 result = resp.json()
 
-    elif name == "executeBehavior":
+    elif name == "executeOntoBehavior":
         oid = arguments["ontology_id"]
         bname = arguments["behavior_name"]
         params = arguments.get("params", {})
