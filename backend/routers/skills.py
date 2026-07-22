@@ -126,7 +126,7 @@ async def delete_skill(ontology_id: int, skill_name: str):
 # ─── Generate Skill ─────────────────────────────────────────────────────────
 
 @router.post("/{skill_name}/generate")
-async def generate_skill(ontology_id: int, skill_name: str, body: dict):
+async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
     """Use LLM to generate SKILL.md from ontology data + template."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
