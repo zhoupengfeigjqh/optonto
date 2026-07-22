@@ -91,7 +91,6 @@
                   "eq",
                   "ne",
                   "like",
-                  "match",
                   "lt",
                   "gt",
                   "le",
