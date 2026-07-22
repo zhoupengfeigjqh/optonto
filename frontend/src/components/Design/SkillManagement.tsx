@@ -15,6 +15,7 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
   const [viewing, setViewing] = useState<{ name: string; content: string; saving: boolean } | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [genName, setGenName] = useState('');
+  const [genDesc, setGenDesc] = useState('');
   const [genDialogOpen, setGenDialogOpen] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
 
@@ -76,9 +77,10 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
     if (!genName.trim()) { message.warning('请输入技能名称'); return; }
     setGenLoading(true);
     try {
-      const result = await generateSkill(ontologyId, genName.trim());
+      const result = await generateSkill(ontologyId, genName.trim(), genDesc.trim());
       setGenDialogOpen(false);
       setGenName('');
+      setGenDesc('');
       // Auto-view the generated skill
       setViewing({ name: result.skill_name, content: result.content, saving: false });
       setPreviewMode(true);
@@ -119,7 +121,8 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
   }
 
   const columns = [
-    { title: '技能名称', dataIndex: 'name', key: 'name', width: 160, render: (v: string) => <span className="text-text-primary">{v}</span> },
+    { title: '技能名称', dataIndex: 'name', key: 'name', width: 140, render: (v: string) => <span className="text-text-primary">{v}</span> },
+    { title: '技能简介', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: string) => <span className="text-text-secondary text-xs">{v || '-'}</span> },
     { title: '状态', key: 'status', width: 80, render: (_: any, r: SkillSummary) => {
       if (!r.has_skill) return <Tag color="default">未生成</Tag>;
       if (!r.format_ok) return <Tag color="red">格式错误</Tag>;
@@ -142,7 +145,7 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">技能管理</h3>
         <Space>
-          <Button icon={<PlusOutlined />} size="small" onClick={() => { setGenName(''); setGenDialogOpen(true); }}>新增技能</Button>
+          <Button icon={<PlusOutlined />} size="small" onClick={() => { setGenName(''); setGenDesc(''); setGenDialogOpen(true); }}>新增技能</Button>
         </Space>
       </div>
       <p className="text-text-muted text-xs mb-3">管理和生成智能体技能文件（SKILL.md），用于指导智能体理解和使用本体。</p>
@@ -172,6 +175,10 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
           <div>
             <span className="text-text-muted text-xs">技能名称</span>
             <Input size="small" value={genName} onChange={e => setGenName(e.target.value)} disabled={genLoading} className="bg-dark-bg border-dark-border text-text-primary" placeholder="如 raw_material_skill" />
+          </div>
+          <div>
+            <span className="text-text-muted text-xs">技能简介</span>
+            <Input size="small" value={genDesc} onChange={e => setGenDesc(e.target.value)} className="bg-dark-bg border-dark-border text-text-primary" placeholder="简要描述该技能的用途" />
           </div>
         </div>
       </Modal>

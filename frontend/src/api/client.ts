@@ -510,8 +510,8 @@ export interface SkillSummary {
   name: string;
   has_skill: boolean;
   format_ok: boolean;
+  description?: string;
   updated_at: number;
-  has_reference?: boolean;
 }
 
 export interface SkillContent {
@@ -531,5 +531,5 @@ export const saveSkillContent = (ontologyId: number, name: string, content: stri
 export const deleteSkill = (ontologyId: number, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const generateSkill = (ontologyId: number, name: string) =>
-  request<{ message: string; skill_name: string; content: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST' });
+export const generateSkill = (ontologyId: number, name: string, description?: string) =>
+  request<{ message: string; skill_name: string; content: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST', body: JSON.stringify({ description: description || '' }) });
