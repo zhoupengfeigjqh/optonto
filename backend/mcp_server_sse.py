@@ -6,6 +6,7 @@ Agents connect via MCP protocol over SSE.
 
 import json
 import os
+from pathlib import Path
 
 import httpx
 from mcp.server import Server
@@ -20,6 +21,33 @@ from starlette.routing import Route
 # FastAPI backend URL (configurable via env)
 API_BASE = os.getenv("API_BASE_URL", "http://optonto_backend:8001")
 
+# Common functions directory (inside container)
+COMMON_DIR = Path("/app/backend/.data/common_functions")
+MANIFEST_PATH = COMMON_DIR / "manifest.json"
+
+
+def _load_common_tools() -> list[Tool]:
+    """Load common function tools from manifest.json."""
+    if not MANIFEST_PATH.exists():
+        return []
+    try:
+        with open(MANIFEST_PATH, encoding="utf-8") as f:
+            entries = json.load(f)
+        return [
+            Tool(
+                name=entry["name"],
+                description=entry.get("description", ""),
+                inputSchema=entry.get("inputSchema", {"type": "object", "properties": {}}),
+            )
+            for entry in entries
+        ]
+    except (json.JSONDecodeError, KeyError, OSError):
+        return []
+
+
+COMMON_TOOLS = _load_common_tools()
+COMMON_TOOL_NAMES = {t.name for t in COMMON_TOOLS}
+
 server = Server("optonto-api")
 
 
@@ -33,7 +61,7 @@ async def _api_get(path: str, timeout: int = 15) -> dict | list:
 
 
 async def _list_tools() -> list[Tool]:
-    return [
+    return COMMON_TOOLS + [
         Tool(
             name="list_scenarios",
             description="列出所有场景列表，支持可选 keyword 模糊搜索",
@@ -200,6 +228,15 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/functions")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
+        if isinstance(result, list) and COMMON_TOOLS:
+            common_list = [
+                {"name": t.name, "description": t.description, "source": "common"}
+                for t in COMMON_TOOLS
+            ]
+            kw = (arguments.get("keyword") or "").lower()
+            if kw:
+                common_list = [c for c in common_list if kw in c["name"].lower() or kw in c["description"].lower()]
+            result.extend(common_list)
 
     elif name == "list_securities":
         result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/securities")
@@ -239,6 +276,31 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                 result = {"error": True, "status_code": resp.status_code, "detail": err}
             else:
                 result = resp.json()
+
+    # ─── Common function execution ─────────────────────────────────────
+    if result is None and name in COMMON_TOOL_NAMES:
+        code_path = COMMON_DIR / f"{name}.py"
+        if code_path.exists():
+            code = code_path.read_text(encoding="utf-8")
+            restricted_globals = {
+                "__builtins__": {
+                    "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+                    "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
+                    "len": len, "list": list, "max": max, "min": min, "range": range,
+                    "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
+                    "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
+                    "True": True, "False": False, "None": None,
+                    "__import__": __import__, "print": print,
+                },
+            }
+            local_vars = {}
+            try:
+                exec(code, restricted_globals, local_vars)
+                func = local_vars.get("run")
+                if func:
+                    result = func(arguments)
+            except Exception as e:
+                result = {"error": True, "message": str(e)}
 
     if result is None:
         raise ValueError(f"未知工具: {name}")

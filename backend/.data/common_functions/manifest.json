@@ -1,0 +1,10 @@
+[
+  {
+    "name": "getCurrentDate",
+    "description": "获取当前日期，返回 yyyy-MM-dd 格式的日期字符串",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]

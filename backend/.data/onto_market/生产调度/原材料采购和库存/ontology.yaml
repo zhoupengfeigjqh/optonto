@@ -312,20 +312,6 @@ functions:
           description: 还未到位的采购量
           example: 100
   code_file: functions/sumRawNotArrivalQty.py
-- name: getCurrentDate
-  display_name: 当前日期
-  description: 获取当前日期信息
-  related_attributes: []
-  params: {}
-  response:
-    result:
-      type: object
-      properties:
-        date:
-          type: string
-          description: 当前日期
-          example: '2026-01-01'
-  code_file: functions/getCurrentDate.py
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
