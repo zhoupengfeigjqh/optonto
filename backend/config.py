@@ -429,7 +429,7 @@ RULE_GENERATE_PROMPT = """根据以下信息生成规则配置。
 
 # ─── 技能 — 智能生成提示词 ──────────────────────────────────────────────────
 
-SKILL_GENERATE_SYSTEM_PROMPT = "你是一个专业的智能体技能（SKILL）生成专家。根据本体 YAML 和技能模板，生成完整的技能文件。"
+SKILL_GENERATE_SYSTEM_PROMPT = "你是一个专业的智能体技能（SKILL）生成专家。根据本体 YAML 和技能模板，生成完整的技能文件。只输出 Markdown 内容，不要任何解释或对话性文字。"
 
 SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智能体技能文件（SKILL.md）。
 
@@ -448,4 +448,5 @@ SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智�
 3. 所有内容必须严格基于本体 YAML 生成，不要随意增加字段或注释。
 4. 行为和函数需明确提供输入参数，能够为智能体的行为执行提供清晰的参数组装指引；其中executeOntoBehavior调用行为执行，executeOntoFunction调用函数
 5. skill_template模板里，【重点: xxxx】圈起来的内容，请输出到到生成的技能文件中的合适位置，不要改内容，不要做额外补充或解释。
-6. 输出格式为完整 Markdown 文件内容"""
+6. 直接从 Markdown 内容开始输出，不要添加任何对话性开头（如"好的"、"作为一名"等）
+7. 输出格式为完整 Markdown 文件内容"""
