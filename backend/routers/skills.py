@@ -125,53 +125,60 @@ async def delete_skill(ontology_id: int, skill_name: str):
 
 # ─── Generate Skill ─────────────────────────────────────────────────────────
 
+def _build_ontology_summary(data) -> str:
+    """Build a readable summary of ontology data for LLM."""
+    lines = []
+    lines.append(f"概念（{len(data.concepts)}个）:")
+    for c in data.concepts:
+        attr_str = ", ".join(f"{a.name} ({a.type})" for a in (c.attributes or []))
+        lines.append(f"  - {c.name}（{c.display_name or ''}）: {attr_str}")
+
+    lines.append(f"\n关系（{len(data.relations)}个）:")
+    for r in data.relations:
+        lines.append(f"  - {r.name}: {r.source} -> {r.target} ({r.cardinality})")
+
+    lines.append(f"\n行为（{len(data.behaviors)}个）:")
+    for b in data.behaviors:
+        lines.append(f"  - {b.name}（{b.display_name or ''}）: {b.description or ''}")
+        lines.append(f"    params: {json.dumps(b.params, ensure_ascii=False, default=str)}")
+        lines.append(f"    response: {json.dumps(b.response, ensure_ascii=False, default=str)}")
+
+    lines.append(f"\n函数（{len(data.functions)}个）:")
+    for f in data.functions:
+        lines.append(f"  - {f.name}（{f.display_name or ''}）: {f.description or ''}")
+        lines.append(f"    params: {json.dumps(f.params, ensure_ascii=False, default=str)}")
+        lines.append(f"    response: {json.dumps(f.response, ensure_ascii=False, default=str)}")
+
+    lines.append(f"\n规则（{len(data.rules)}个）:")
+    for r in data.rules:
+        lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.description or ''} type={r.rule_type} pos={r.position}")
+        if r.rule_detail:
+            lines.append(f"    rule_detail: {json.dumps(r.rule_detail, ensure_ascii=False, default=str)}")
+
+    lines.append(f"\n流程（{len(data.processes)}个）:")
+    for p in data.processes:
+        lines.append(f"  - {p.name}（{p.display_name or ''}）: {p.goal or ''}")
+        for step in (p.steps or []):
+            lines.append(f"    step: {step.current_action}（{step.description or ''}）衔接={step.connection_type}")
+
+    lines.append(f"\n安全管控（{len(data.securities)}个）:")
+    for s in data.securities:
+        lines.append(f"  - {s.action_name}: {s.audit_node} - {s.audit_content}")
+
+    return "\n".join(lines)
+
+
 @router.post("/{skill_name}/generate")
 async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
     """Use LLM to generate SKILL.md from ontology data + template."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    # Read template
     if not SKILL_TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="技能模板文件不存在")
     skill_template = SKILL_TEMPLATE_PATH.read_text(encoding="utf-8")
 
-    # Serialize ontology YAML data
-    from schemas import OntologyData
-    ontology_yaml_lines = []
-    # Build a readable summary of the ontology
-    ontology_yaml_lines.append(f"概念（{len(data.concepts)}个）:")
-    for c in data.concepts:
-        attr_str = ", ".join(f"{a.name} ({a.type})" for a in (c.attributes or []))
-        ontology_yaml_lines.append(f"  - {c.name}（{c.display_name or ''}）: {attr_str}")
-
-    ontology_yaml_lines.append(f"\n关系（{len(data.relations)}个）:")
-    for r in data.relations:
-        ontology_yaml_lines.append(f"  - {r.name}: {r.source} → {r.target} ({r.cardinality})")
-
-    ontology_yaml_lines.append(f"\n行为（{len(data.behaviors)}个）:")
-    for b in data.behaviors:
-        ontology_yaml_lines.append(f"  - {b.name}（{b.display_name or ''}）: {b.description or ''}")
-        ontology_yaml_lines.append(f"    params: {json.dumps(b.params, ensure_ascii=False, default=str)}")
-        ontology_yaml_lines.append(f"    response: {json.dumps(b.response, ensure_ascii=False, default=str)}")
-
-    ontology_yaml_lines.append(f"\n函数（{len(data.functions)}个）:")
-    for f in data.functions:
-        ontology_yaml_lines.append(f"  - {f.name}（{f.display_name or ''}）: {f.description or ''}")
-        ontology_yaml_lines.append(f"    params: {json.dumps(f.params, ensure_ascii=False, default=str)}")
-        ontology_yaml_lines.append(f"    response: {json.dumps(f.response, ensure_ascii=False, default=str)}")
-
-    ontology_yaml_lines.append(f"\n规则（{len(data.rules)}个）:")
-    for r in data.rules:
-        ontology_yaml_lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.description or ''} type={r.rule_type} pos={r.position}")
-        if r.rule_detail:
-            ontology_yaml_lines.append(f"    rule_detail: {json.dumps(r.rule_detail, ensure_ascii=False, default=str)}")
-
-    ontology_yaml_lines.append(f"\n安全管控（{len(data.securities)}个）:")
-    for s in data.securities:
-        ontology_yaml_lines.append(f"  - {s.action_name}: {s.audit_node} - {s.audit_content}")
-
-    ontology_yaml = "\n".join(ontology_yaml_lines)
+    ontology_summary = _build_ontology_summary(data)
 
     llm = _build_llm()
     if llm is None:
@@ -180,12 +187,9 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
     from langchain_core.messages import HumanMessage, SystemMessage
     from config import SKILL_GENERATE_SYSTEM_PROMPT, SKILL_GENERATE_PROMPT
 
-    sdir = _skill_dir(sc_name, on_name, skill_name)
-    sdir.mkdir(parents=True, exist_ok=True)
-
     prompt = SKILL_GENERATE_PROMPT.format(
         ontology_name=f"{sc_name}/{on_name}",
-        ontology_yaml=ontology_yaml,
+        ontology_yaml=ontology_summary,
         skill_template=skill_template,
     )
 
@@ -201,14 +205,11 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
                 content = content[8:].strip()
             content = content.rsplit("```", 1)[0].strip()
 
-        # Save SKILL.md
+        sdir = _skill_dir(sc_name, on_name, skill_name)
+        sdir.mkdir(parents=True, exist_ok=True)
         md_path = sdir / "SKILL.md"
         md_path.write_text(content, encoding="utf-8")
 
-        return {
-            "message": "技能已生成",
-            "skill_name": skill_name,
-            "content": content,
-        }
+        return {"message": "技能已生成", "skill_name": skill_name, "content": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"技能生成失败: {str(e)}")
