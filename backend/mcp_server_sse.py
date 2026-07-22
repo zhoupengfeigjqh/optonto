@@ -48,6 +48,18 @@ def _load_common_tools() -> list[Tool]:
 COMMON_TOOLS = _load_common_tools()
 COMMON_TOOL_NAMES = {t.name for t in COMMON_TOOLS}
 
+# Load raw manifest entries for metadata not in Tool object (e.g. display_name)
+def _load_manifest_entries() -> list[dict]:
+    if not MANIFEST_PATH.exists():
+        return []
+    try:
+        with open(MANIFEST_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+COMMON_MANIFEST = _load_manifest_entries()
+
 server = Server("optonto-api")
 
 
@@ -228,14 +240,19 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/functions")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
-        if isinstance(result, list) and COMMON_TOOLS:
+        if isinstance(result, list) and COMMON_MANIFEST:
             common_list = [
-                {"name": t.name, "description": t.description, "source": "common"}
-                for t in COMMON_TOOLS
+                {
+                    "name": entry["name"],
+                    "display_name": entry.get("display_name", ""),
+                    "description": entry.get("description", ""),
+                    "source": "common",
+                }
+                for entry in COMMON_MANIFEST
             ]
             kw = (arguments.get("keyword") or "").lower()
             if kw:
-                common_list = [c for c in common_list if kw in c["name"].lower() or kw in c["description"].lower()]
+                common_list = [c for c in common_list if kw in c["name"].lower() or kw in c.get("description","").lower() or kw in c.get("display_name","").lower()]
             result.extend(common_list)
 
     elif name == "list_securities":
