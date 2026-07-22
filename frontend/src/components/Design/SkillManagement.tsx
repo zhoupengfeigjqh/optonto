@@ -78,7 +78,7 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <Button icon={<ArrowLeftOutlined />} size="small" onClick={() => { setViewing(null); setPreviewMode(false); }} />
+            <Button icon={<ArrowLeftOutlined />} size="small" onClick={() => { setViewing(null); setPreviewMode(false); load(); }} />
             <h3 className="text-base font-semibold text-text-primary">{viewing.name}</h3>
           </div>
           <div className="flex items-center gap-2">
