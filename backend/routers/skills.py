@@ -61,10 +61,6 @@ def _skill_md_path(sc_name: str, on_name: str, skill_name: str) -> Path:
     return _skill_dir(sc_name, on_name, skill_name) / "SKILL.md"
 
 
-def _reference_dir(sc_name: str, on_name: str, skill_name: str) -> Path:
-    return _skill_dir(sc_name, on_name, skill_name) / "reference"
-
-
 # ─── List Skills ───────────────────────────────────────────────────────────
 
 @router.get("")
@@ -144,8 +140,6 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    generate_reference = body.get("generate_reference", False)
-
     # Read template
     if not SKILL_TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="技能模板文件不存在")
@@ -195,13 +189,11 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict):
 
     sdir = _skill_dir(sc_name, on_name, skill_name)
     sdir.mkdir(parents=True, exist_ok=True)
-    ref_path = str(_reference_dir(sc_name, on_name, skill_name))
 
     prompt = SKILL_GENERATE_PROMPT.format(
         ontology_name=f"{sc_name}/{on_name}",
         ontology_yaml=ontology_yaml,
         skill_template=skill_template,
-        reference_path=ref_path if generate_reference else "（未选择生成 reference）",
     )
 
     try:
@@ -220,27 +212,10 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict):
         md_path = sdir / "SKILL.md"
         md_path.write_text(content, encoding="utf-8")
 
-        # Generate reference file if needed
-        ref_info = []
-        if generate_reference:
-            ref_dir = _reference_dir(sc_name, on_name, skill_name)
-            ref_dir.mkdir(parents=True, exist_ok=True)
-            # Save a reference summary
-            ref_content = f"""# {skill_name} 详情参考
-
-## 本体数据摘要
-
-{ontology_yaml}
-"""
-            ref_file = ref_dir / "ontology_details.md"
-            ref_file.write_text(ref_content, encoding="utf-8")
-            ref_info.append({"name": "ontology_details.md"})
-
         return {
             "message": "技能已生成",
             "skill_name": skill_name,
             "content": content,
-            "reference_files": ref_info,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"技能生成失败: {str(e)}")

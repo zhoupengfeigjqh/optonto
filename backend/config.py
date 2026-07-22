@@ -444,10 +444,7 @@ SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智�
 
 【生成要求】
 1. 严格按照技能模板的格式生成内容
-2. 概念名称使用中文展示名称
-3. 行为、函数、规则必须来自本体 YAML 数据
-4. 每个行为需指明调用的 MCP 工具名称为 executeOntoBehavior
-5. 每个函数需指明调用的 MCP 工具名称为 executeOntoFunction
-6. 概述本体的业务逻辑和应用场景
-7. 如果选择生成 reference，则生成内容包括概要部分，详情放在 {reference_path} 中，SKILL.md 通过相对路径引用
-8. 输出格式为完整 Markdown 文件内容"""
+2. 本体的业务逻辑必须清晰可理解
+3. 不要随意增加概念-属性-关系-事件等内容，也不要随意增加字段或注释。
+4. 行为和函数需明确提供输入参数，能够为智能体的行为执行提供清晰的参数组装指引；其中executeOntoBehavior调用行为执行，executeOntoFunction调用函数
+5. 输出格式为完整 Markdown 文件内容"""

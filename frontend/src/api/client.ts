@@ -516,7 +516,6 @@ export interface SkillSummary {
 export interface SkillContent {
   content: string;
   skill_name: string;
-  reference_files: { name: string; updated_at: number }[];
 }
 
 export const getSkills = (ontologyId: number) =>

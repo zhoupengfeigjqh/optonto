@@ -37,7 +37,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Security) => {
-    if (!editData.action_name) { message.warning('请选择动作名称'); return; }
+    if (!editData.action_name) { message.warning('请选择行为名称'); return; }
     try {
       const data: Security = { action_name: editData.action_name, audit_node: editData.audit_node || '前置', audit_content: editData.audit_content || '' };
       const isNew = editingKey === '__new__';
