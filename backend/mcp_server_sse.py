@@ -23,11 +23,11 @@ API_BASE = os.getenv("API_BASE_URL", "http://optonto_backend:8001")
 
 # Common functions directory (inside container)
 COMMON_DIR = Path("/app/backend/.data/common_functions")
-MANIFEST_PATH = COMMON_DIR / "manifest.json"
+MANIFEST_PATH = COMMON_DIR / "functions.json"
 
 
 def _load_common_tools() -> list[Tool]:
-    """Load common function tools from manifest.json."""
+    """Load common function tools from functions.json."""
     if not MANIFEST_PATH.exists():
         return []
     try:
