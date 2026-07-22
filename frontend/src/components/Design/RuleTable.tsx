@@ -243,7 +243,6 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { label: '等于 (eq)', value: 'eq' },
     { label: '不等于 (ne)', value: 'ne' },
     { label: '模糊匹配 (like)', value: 'like' },
-    { label: '正则匹配 (match)', value: 'match' },
     { label: '小于 (lt)', value: 'lt' },
     { label: '大于 (gt)', value: 'gt' },
     { label: '小于等于 (le)', value: 'le' },
