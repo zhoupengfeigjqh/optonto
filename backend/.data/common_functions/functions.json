@@ -7,5 +7,43 @@
       "type": "object",
       "properties": {}
     }
+  },
+  {
+    "name": "dateAdd",
+    "display_name": "日期加减",
+    "description": "日期加减指定天数，返回计算后的日期",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {"type": "string", "description": "基准日期，格式 yyyy-MM-dd"},
+        "days": {"type": "integer", "description": "加减天数，正数加负数减"}
+      },
+      "required": ["date", "days"]
+    }
+  },
+  {
+    "name": "dateDiff",
+    "display_name": "日期差",
+    "description": "计算两个日期相差的天数（endDate - startDate，可为负数）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "startDate": {"type": "string", "description": "开始日期 yyyy-MM-dd"},
+        "endDate": {"type": "string", "description": "结束日期 yyyy-MM-dd"}
+      },
+      "required": ["startDate", "endDate"]
+    }
+  },
+  {
+    "name": "getWeekday",
+    "display_name": "星期几",
+    "description": "返回日期对应的星期（1=周一 ... 7=周日）",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {"type": "string", "description": "日期 yyyy-MM-dd"}
+      },
+      "required": ["date"]
+    }
   }
 ]
