@@ -267,7 +267,7 @@ relations:
   display_name: 拥有供应能力
 functions:
 - name: sumRawNotArrivalQty
-  display_name: 采购原材料未到位总数
+  display_name: 原材料未到位数
   description: 根据传入的数据包指定的原材料，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和。
   related_attributes:
   - PurchaseRecord.arrivalQuantity

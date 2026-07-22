@@ -227,7 +227,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const conceptOptions = useMemo(() => concepts.map(c => ({ label: c.display_name || c.name, value: c.name })), [concepts]);
   const attributeOptions = useMemo(() => (conceptName: string) => {
     const c = concepts.find(c => c.name === conceptName);
-    return (c?.attributes || []).map(a => ({ label: `${a.display_name || a.name} (${a.name}: ${a.type})`, value: a.name }));
+    return (c?.attributes || []).map(a => ({ label: `${a.display_name || a.name}（${a.type}）`, value: a.name }));
   }, [concepts]);
   const OPERATOR_OPTIONS = [
     { label: '等于 (eq)', value: 'eq' },
