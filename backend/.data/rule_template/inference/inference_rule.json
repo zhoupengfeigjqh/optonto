@@ -7,7 +7,10 @@
       "properties": {
         "logic": {
           "type": "string",
-          "enum": ["and", "or"],
+          "enum": [
+            "and",
+            "or"
+          ],
           "description": "多个条件之间的逻辑关系，默认为 and",
           "default": "and"
         },
@@ -23,7 +26,10 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": ["concept", "function"],
+                    "enum": [
+                      "concept",
+                      "function"
+                    ],
                     "description": "左侧数据来源类型"
                   },
                   "concept": {
@@ -43,37 +49,66 @@
                     "description": "函数返回字段名称，如 total、average"
                   }
                 },
-                "required": ["type"],
+                "required": [
+                  "type"
+                ],
                 "allOf": [
                   {
                     "if": {
-                      "properties": { "type": { "const": "concept" } }
+                      "properties": {
+                        "type": {
+                          "const": "concept"
+                        }
+                      }
                     },
                     "then": {
-                      "required": ["concept", "attribute"]
+                      "required": [
+                        "concept",
+                        "attribute"
+                      ]
                     }
                   },
                   {
                     "if": {
-                      "properties": { "type": { "const": "function" } }
+                      "properties": {
+                        "type": {
+                          "const": "function"
+                        }
+                      }
                     },
                     "then": {
-                      "required": ["function", "returnField"]
+                      "required": [
+                        "function",
+                        "returnField"
+                      ]
                     }
                   }
                 ]
               },
               "operator": {
                 "type": "string",
-                "enum": ["eq", "ne", "not in", "in", "lt", "gt", "le", "ge"],
-                "description": "比较操作符（eq=等于, ne=不等于, in=属于, not in=不属于, lt=小于, gt=大于, le=小于等于, ge=大于等于）"
+                "enum": [
+                  "eq",
+                  "ne",
+                  "not in",
+                  "in",
+                  "lt",
+                  "gt",
+                  "le",
+                  "ge"
+                ],
+                "description": "eq=等于, ne=不等于, in=属于, not in=不属于, lt=小于, gt=大于, le=小于等于, ge=大于等于"
               },
               "right": {
                 "type": "object",
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": ["value", "concept", "function"],
+                    "enum": [
+                      "value",
+                      "concept",
+                      "function"
+                    ],
                     "description": "右侧数据来源类型"
                   },
                   "value": {
@@ -96,40 +131,68 @@
                     "description": "函数返回字段名称，当 type=function 时使用"
                   }
                 },
-                "required": ["type"],
+                "required": [
+                  "type"
+                ],
                 "allOf": [
                   {
                     "if": {
-                      "properties": { "type": { "const": "value" } }
+                      "properties": {
+                        "type": {
+                          "const": "value"
+                        }
+                      }
                     },
                     "then": {
-                      "required": ["value"]
+                      "required": [
+                        "value"
+                      ]
                     }
                   },
                   {
                     "if": {
-                      "properties": { "type": { "const": "concept" } }
+                      "properties": {
+                        "type": {
+                          "const": "concept"
+                        }
+                      }
                     },
                     "then": {
-                      "required": ["concept", "attribute"]
+                      "required": [
+                        "concept",
+                        "attribute"
+                      ]
                     }
                   },
                   {
                     "if": {
-                      "properties": { "type": { "const": "function" } }
+                      "properties": {
+                        "type": {
+                          "const": "function"
+                        }
+                      }
                     },
                     "then": {
-                      "required": ["function", "returnField"]
+                      "required": [
+                        "function",
+                        "returnField"
+                      ]
                     }
                   }
                 ]
               }
             },
-            "required": ["left", "operator", "right"]
+            "required": [
+              "left",
+              "operator",
+              "right"
+            ]
           }
         }
       },
-      "required": ["conditions"]
+      "required": [
+        "conditions"
+      ]
     },
     "then": {
       "type": "string",
@@ -140,5 +203,9 @@
       "description": "条件为假时的文字描述，填写一段话说明应执行的行为或提示"
     }
   },
-  "required": ["if", "then", "else"]
+  "required": [
+    "if",
+    "then",
+    "else"
+  ]
 }
