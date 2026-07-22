@@ -76,7 +76,7 @@ async def _list_tools() -> list[Tool]:
     return COMMON_TOOLS + [
         Tool(
             name="listScenarios",
-            description="列出所有场景列表，支持可选 keyword 模糊搜索",
+            description="列出所有场景。返回每个场景的 id、name、description、created_at、updated_at。支持可选 keyword 按名称模糊搜索。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -86,7 +86,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntologies",
-            description="列出所有本体列表，支持可选 keyword 模糊搜索名称",
+            description="列出所有本体。返回每个本体的 id、name、description、scenario_name、ontology_name、creator、created_at、updated_at。支持可选 keyword 模糊搜索。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -96,7 +96,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoBehaviors",
-            description="列出指定本体下的行为，支持可选 keyword 模糊搜索",
+            description="列出指定本体的行为。返回行为的 name、display_name、description、params（输入参数结构）、response（返回结构）。支持可选 keyword 模糊搜索。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -108,7 +108,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoConcepts",
-            description="列出指定本体下的概念和属性，支持可选 keyword 模糊搜索或 concept_name 精确查找",
+            description="列出指定本体的概念。返回概念的 name、display_name、description、attributes（属性列表）。传入 concept_name 则直接返回该概念的属性列表。支持可选 keyword 模糊搜索。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -121,7 +121,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoRelations",
-            description="列出指定本体下的关系，支持可选 concept_name 过滤出该概念直接关联的关系",
+            description="列出指定本体的关系。返回关系的 name、source（源概念）、target（目标概念）、cardinality（基数）、description、display_name。传入 concept_name 则只返回该概念直接关联的关系。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -133,7 +133,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoFunctions",
-            description="列出指定本体下的函数，支持可选 keyword 模糊搜索",
+            description="列出指定本体的函数。返回函数的 name、display_name、description、params、response 以及公共函数。支持可选 keyword 模糊搜索。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -145,7 +145,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoSecurities",
-            description="列出指定本体下的所有安全审核信息",
+            description="列出指定本体的安全审核信息。返回 action_name（关联行为）、audit_node（前置/后置）、audit_content（审核内容）。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -156,26 +156,26 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="executeOntoBehavior",
-            description="调用本体行为对应的目标API，会经过完整的 input/output mapping 处理",
+            description="执行本体行为的 API 调用。传入 ontology_id、behavior_name 和 params，会经过 input_mapping 转换后调用目标 API，再通过 output_mapping 返回结果。返回目标 API 的响应数据。",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
                     "behavior_name": {"type": "string", "description": "行为名称"},
-                    "params": {"type": "object", "description": "行为输入参数"},
+                    "params": {"type": "object", "description": "行为输入参数，按 behavior.params 结构传入"},
                 },
                 "required": ["ontology_id", "behavior_name", "params"],
             },
         ),
         Tool(
             name="executeOntoFunction",
-            description="执行本体中函数的 Python 代码，传入参数并返回计算结果",
+            description="执行本体中函数的 Python 计算代码。传入 ontology_id、function_name 和 params，运行本地 Python 函数并返回计算结果。params 按函数定义的展开关键字传入。",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
                     "function_name": {"type": "string", "description": "函数名称"},
-                    "params": {"type": "object", "description": "函数输入参数，按展开的关键字传入"},
+                    "params": {"type": "object", "description": "函数输入参数，按函数定义的 key 名展开传入"},
                 },
                 "required": ["ontology_id", "function_name", "params"],
             },

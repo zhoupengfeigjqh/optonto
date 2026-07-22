@@ -2,7 +2,7 @@
   {
     "name": "getCurrentDate",
     "display_name": "当前日期",
-    "description": "获取当前日期，返回 yyyy-MM-dd 格式的日期字符串",
+    "description": "获取当前日期。无参数，返回 yyyy-MM-dd 格式的日期字符串，如 {\"result\": {\"date\": \"2026-07-22\"}}。",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -11,7 +11,7 @@
   {
     "name": "dateAdd",
     "display_name": "日期加减",
-    "description": "日期加减指定天数，返回计算后的日期",
+    "description": "日期加减指定天数。传入 date（yyyy-MM-dd）和 days（正数加/负数减），返回计算后的日期。返回格式 {\"result\": {\"date\": \"2026-08-01\"}}。",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -24,7 +24,7 @@
   {
     "name": "dateDiff",
     "display_name": "日期差",
-    "description": "计算两个日期相差的天数（endDate - startDate，可为负数）",
+    "description": "计算两个日期相差的天数。传入 startDate 和 endDate（yyyy-MM-dd），返回 endDate - startDate 的天数（可为负数）。返回格式 {\"result\": {\"days\": 21}}。",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -37,7 +37,7 @@
   {
     "name": "getWeekday",
     "display_name": "星期几",
-    "description": "返回日期对应的星期（1=周一 ... 7=周日）",
+    "description": "返回日期对应的星期。传入 date（yyyy-MM-dd），返回 weekday（1=周一 ... 7=周日）和 name（中文名称）。返回格式 {\"result\": {\"weekday\": 3, \"name\": \"周三\"}}。",
     "inputSchema": {
       "type": "object",
       "properties": {
