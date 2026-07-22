@@ -276,10 +276,12 @@ functions:
   params:
     filterRawMaterialName:
       type: string
+      display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
     currentDate:
       type: string
+      display_name: 日期
       description: 日期
       example: '2026-01-01'
     purchaseRecordSet:
@@ -289,14 +291,17 @@ functions:
         properties:
           arrivalTime:
             type: string
+            display_name: 到位时间
             description: 到位时间
             example: '2026-09-01'
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           arrivalQuantity:
             type: number
+            display_name: 计划的到位数量
             description: 计划的到位数量
             example: 100
   response:
@@ -305,10 +310,12 @@ functions:
       properties:
         rawMaterialName:
           type: string
+          display_name: 原材料名称
           description: 原材料名称
           example: 高强度钢板
         sumNotArrivalQty:
           type: number
+          display_name: 未到位总量
           description: 未到位总量
           example: 100
   code_file: functions/sumRawNotArrivalQty.py
@@ -319,41 +326,49 @@ behaviors:
     rawMaterialId:
       type: string
       required: true
+      display_name: 原材料编号
       description: 原材料编号
       example: RM-001
     rawMaterialName:
       type: string
       required: true
+      display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
     arrivalQuantity:
       type: number
       required: true
+      display_name: 到位数量
       description: 到位数量
       example: 50
     supplierName:
       type: string
       required: true
+      display_name: 供应商名称
       description: 供应商名称
       example: XX钢铁集团
     arrivalTime:
       type: string
       required: true
+      display_name: 到位时间
       description: 到位时间
       example: '2023-11-10'
     relatedOrderId:
       type: string
       required: true
+      display_name: 关联订单编号
       description: 关联订单编号
       example: SO-20231025-001
     relatedOrderName:
       type: string
       required: true
+      display_name: 关联订单名称
       description: 关联订单名称
       example: 客户A-项目X订单
     unit:
       type: string
       required: true
+      display_name: 单位
       description: 单位
       example: 吨
   response:
@@ -365,50 +380,62 @@ behaviors:
       properties:
         purchaseRecordId:
           type: string
+          display_name: 采购单号
           description: 采购单号
           example: PO-20231027-001
         rawMaterialId:
           type: string
+          display_name: 原材料编号
           description: 原材料编号
           example: RM-001
         rawMaterialName:
           type: string
+          display_name: 原材料名称
           description: 原材料名称
           example: 高强度钢板
         purchaseTime:
           type: string
+          display_name: 采购时间
           description: 采购时间
           example: '2023-10-27'
         arrivalTime:
           type: string
+          display_name: 到位时间
           description: 到位时间
           example: '2023-11-10'
         arrivalQuantity:
           type: number
+          display_name: 到位数量
           description: 到位数量
           example: 50
         unit:
           type: string
+          display_name: 单位
           description: 单位
           example: 吨
         supplierName:
           type: string
+          display_name: 供应商名称
           description: 供应商名称
           example: XX钢铁集团
         relatedOrderId:
           type: string
+          display_name: 关联订单编号
           description: 关联订单编号
           example: SO-20231025-001
         relatedOrderName:
           type: string
+          display_name: 关联订单名称
           description: 关联订单名称
           example: 客户A-项目X订单
         leadTime:
           type: number
+          display_name: 等待周期
           description: 等待周期
           example: 14
         status:
           type: string
+          display_name: 状态
           description: 状态
           example: 待入库
   related_concepts:
@@ -423,6 +450,7 @@ behaviors:
     purchaseRecordId:
       type: string
       required: true
+      display_name: 采购单号
       description: 采购单号
       example: PO-20231027-001
   response:
@@ -434,14 +462,17 @@ behaviors:
       properties:
         purchaseRecordId:
           type: string
+          display_name: 采购单号
           description: 采购单号
           example: PO-20231027-001
         rawMaterialId:
           type: string
+          display_name: 原材料ID
           description: 原材料ID
           example: CRX001
         rawMaterialName:
           type: string
+          display_name: 原材料名称
           description: 原材料名称
           example: 高强度钢板
   related_concepts:
@@ -452,6 +483,7 @@ behaviors:
   params:
     purchaseRecordId:
       type: string
+      display_name: 采购单号
       description: 采购单号
       example: PO-20231027-001
   response:
@@ -463,14 +495,17 @@ behaviors:
       properties:
         purchaseRecordId:
           type: string
+          display_name: 采购单号
           description: 采购单号
           example: PO-20231027-001
         rawMaterialId:
           type: string
+          display_name: 原材料ID
           description: 原材料ID
           example: CRX001
         rawMaterialName:
           type: string
+          display_name: 原材料名称
           description: 原材料名称
           example: 高强度钢板
   related_concepts:
@@ -482,11 +517,13 @@ behaviors:
     rawMaterialId:
       type: string
       required: true
+      display_name: 原材料编号
       description: 原材料编号
       example: RM-001
     rawMaterialName:
       type: string
       required: true
+      display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
   response:
@@ -500,34 +537,42 @@ behaviors:
         properties:
           inventoryId:
             type: string
+            display_name: 库存编号
             description: 库存编号
             example: INV-RM-001
           rawMaterialId:
             type: string
+            display_name: 原材料编号
             description: 原材料编号
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           materialType:
             type: string
+            display_name: 材料类型
             description: 材料类型
             example: 原材料
           pendingReceiptQuantity:
             type: number
+            display_name: 待入库量
             description: 待入库量
             example: 50
           cumulativeStockQuantity:
             type: number
+            display_name: 累计库存量
             description: 累计库存量
             example: 200
           availableStock:
             type: number
+            display_name: 可用库存
             description: 可用库存
             example: 150
           unit:
             type: string
+            display_name: 单位
             description: 单位
             example: 吨
   related_concepts:
@@ -540,16 +585,19 @@ behaviors:
     purchaseRecordId:
       type: string
       required: true
+      display_name: 采购单号
       description: 采购单号
       example: PO-20231027-001
     rawMaterialId:
       type: string
       required: true
+      display_name: 原材料编号
       description: 原材料编号
       example: RM-001
     rawMaterialName:
       type: string
       required: true
+      display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
   response:
@@ -563,46 +611,57 @@ behaviors:
         properties:
           purchaseRecordId:
             type: string
+            display_name: 采购单号
             description: 采购单号
             example: PO-20231027-001
           rawMaterialId:
             type: string
+            display_name: 原材料编号
             description: 原材料编号
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           purchaseTime:
             type: string
+            display_name: 采购时间
             description: 采购时间
             example: '2023-10-27'
           arrivalTime:
             type: string
+            display_name: 到位时间
             description: 到位时间
             example: '2023-11-10'
           arrivalQuantity:
             type: number
+            display_name: 到位数量
             description: 到位数量
             example: 50
           unit:
             type: string
+            display_name: 单位
             description: 单位
             example: 吨
           supplierName:
             type: string
+            display_name: 供应商名称
             description: 供应商名称
             example: XX钢铁集团
           relatedOrderId:
             type: string
+            display_name: 关联订单编号
             description: 关联订单编号
             example: SO-20231025-001
           relatedOrderName:
             type: string
+            display_name: 关联订单名称
             description: 关联订单名称
             example: 客户A-项目X订单
           leadTime:
             type: number
+            display_name: 等待周期
             description: 等待周期
             example: 14
   related_concepts:
@@ -615,11 +674,13 @@ behaviors:
     rawMaterialId:
       type: string
       required: true
+      display_name: 原材料编号
       description: 原材料编号
       example: RM-001
     rawMaterialName:
       type: string
       required: true
+      display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
   response:
@@ -633,18 +694,22 @@ behaviors:
         properties:
           rawMaterialId:
             type: string
+            display_name: 原材料编号
             description: 原材料编号
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           unit:
             type: string
+            display_name: 单位
             description: 单位
             example: 吨
           safetyStock:
             type: number
+            display_name: 安全库存
             description: 安全库存
             example: 100
   related_concepts:
@@ -655,10 +720,12 @@ behaviors:
   params:
     supplierName:
       type: string
+      display_name: 供应商名称，模糊匹配
       description: 供应商名称，模糊匹配
       example: 宝钢钢铁集团
     rawMaterialName:
       type: string
+      display_name: 原材料名称
       description: 原材料名称
       example: 钢板008
   response:
@@ -672,22 +739,27 @@ behaviors:
         properties:
           supplierId:
             type: string
+            display_name: 供应商编号
             description: 供应商编号
             example: SUP-001
           supplierName:
             type: string
+            display_name: 供应商名称
             description: 供应商名称
             example: 宝钢钢铁集团
           address:
             type: string
+            display_name: 地址
             description: 地址
             example: 上海市宝山区富锦路888号
           contactPerson:
             type: string
+            display_name: 联系人
             description: 联系人
             example: 张经理
           contactPhone:
             type: string
+            display_name: 联系电话
             description: 联系电话
             example: '13800131001'
   related_concepts:
@@ -698,10 +770,12 @@ behaviors:
   params:
     supplierName:
       type: string
+      display_name: 供应商名称，模糊匹配
       description: 供应商名称，模糊匹配
       example: 宝钢钢铁集团
     rawMaterialName:
       type: string
+      display_name: 原材料名称
       description: 原材料名称
       example: 钢板008
   response:
@@ -715,18 +789,22 @@ behaviors:
         properties:
           supplierName:
             type: string
+            display_name: 供应商名称
             description: 供应商名称
             example: 宝钢钢铁集团
           rawMaterialId:
             type: string
+            display_name: 原材料ID
             description: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           leadTime:
             type: number
+            display_name: 交货周期
             description: 交货周期
             example: 100
   related_concepts:
@@ -986,41 +1064,49 @@ data_engines:
     params:
       rawMaterialId:
         type: string
+        display_name: 原材料ID
         description: 原材料ID
         required: true
         example: RM-001
       rawMaterialName:
         type: string
+        display_name: 原材料名称
         description: 原材料名称
         required: true
         example: 高强度钢板
       unit:
         type: string
+        display_name: 单位 (吨/千件/桶/千米)
         description: 单位 (吨/千件/桶/千米)
         required: true
         example: 吨
       supplierName:
         type: string
+        display_name: 供应商名称
         description: 供应商名称
         required: true
         example: 宝钢钢铁集团
       arrivalTime:
         type: string
+        display_name: 到货日期 (yyyy-MM-dd)
         description: 到货日期 (yyyy-MM-dd)
         required: true
         example: '2026-08-01'
       arrivalQuantity:
         type: number
+        display_name: 到货数量
         description: 到货数量
         required: true
         example: 100
       relatedOrderId:
         type: string
+        display_name: 关联客户订单ID
         description: 关联客户订单ID
         required: false
         example: SO-20231001-001
       relatedOrderName:
         type: string
+        display_name: 关联客户订单名称
         description: 关联客户订单名称
         required: false
         example: 2023年10月-A客户-建筑钢结构
@@ -1033,46 +1119,57 @@ data_engines:
         properties:
           purchaseOrderId:
             type: string
+            display_name: 采购单号
             description: 采购单号
             example: PO-20260716-026
           rawMaterialId:
             type: string
+            display_name: 原材料ID
             description: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           unit:
             type: string
+            display_name: 单位
             description: 单位
             example: 吨
           purchaseTime:
             type: string
+            display_name: 采购时间
             description: 采购时间
             example: '2026-07-16'
           arrivalTime:
             type: string
+            display_name: 到货日期
             description: 到货日期
             example: '2026-08-01'
           arrivalQuantity:
             type: number
+            display_name: 到货数量
             description: 到货数量
             example: 100
           supplierName:
             type: string
+            display_name: 供应商名称
             description: 供应商名称
             example: 宝钢钢铁集团
           relatedOrderId:
             type: string
+            display_name: 关联客户订单ID
             description: 关联客户订单ID
             example: SO-20231001-001
           relatedOrderName:
             type: string
+            display_name: 关联客户订单名称
             description: 关联客户订单名称
             example: 2023年10月-A客户-建筑钢结构
           status:
             type: string
+            display_name: 状态
             description: 状态
             example: 待入库
   input_mapping:
@@ -1110,6 +1207,7 @@ data_engines:
     params:
       purchaseOrderId:
         type: string
+        display_name: 采购单号
         description: 采购单号
         required: true
         example: PO-20260716-026
@@ -1122,18 +1220,22 @@ data_engines:
         properties:
           purchaseOrderId:
             type: string
+            display_name: 采购单号
             description: 采购单号
             example: PO-20260716-026
           rawMaterialId:
             type: string
+            display_name: 原材料ID
             description: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           status:
             type: string
+            display_name: 状态
             description: 状态
             example: 已取消
   input_mapping:
@@ -1155,6 +1257,7 @@ data_engines:
     params:
       purchaseOrderId:
         type: string
+        display_name: 采购单号
         description: 采购单号
         required: true
         example: PO-20260716-026
@@ -1167,26 +1270,32 @@ data_engines:
         properties:
           purchaseOrderId:
             type: string
+            display_name: 采购单号
             description: 采购单号
             example: PO-20260716-026
           rawMaterialId:
             type: string
+            display_name: 原材料ID
             description: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
+            display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
           unit:
             type: string
+            display_name: 单位
             description: 单位
             example: 吨
           arrivalQuantity:
             type: number
+            display_name: 到货数量
             description: 到货数量
             example: 100
           status:
             type: string
+            display_name: 状态
             description: 状态
             example: 已入库
   input_mapping:
@@ -1208,11 +1317,13 @@ data_engines:
     params:
       rawMaterialId:
         type: string
+        display_name: 原材料ID
         description: 原材料ID
         required: false
         example: RM-001
       rawMaterialName:
         type: string
+        display_name: 原材料名称，模糊匹配
         description: 原材料名称，模糊匹配
         required: false
         example: 高强度钢板
@@ -1227,38 +1338,47 @@ data_engines:
           properties:
             rawMaterialId:
               type: string
+              display_name: 原材料ID
               description: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
+              display_name: 原材料名称
               description: 原材料名称
               example: 高强度钢板
             unit:
               type: string
+              display_name: 单位
               description: 单位
               example: 吨
             pendingReceiptQuantity:
               type: number
+              display_name: 待入库量
               description: 待入库量
               example: 0
             cumulativeStockQuantity:
               type: number
+              display_name: 累计库存量
               description: 累计库存量
               example: 2400
             availableQuantity:
               type: number
+              display_name: 可用库存
               description: 可用库存
               example: 1800
             consumedQuantity:
               type: number
+              display_name: 已消耗量
               description: 已消耗量
               example: 600
             createdAt:
               type: string
+              display_name: 创建时间
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
+              display_name: 更新时间
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1286,21 +1406,25 @@ data_engines:
     params:
       purchaseOrderId:
         type: string
+        display_name: 采购单号
         description: 采购单号
         required: false
         example: PO-20260716-026
       rawMaterialId:
         type: string
+        display_name: 原材料ID
         description: 原材料ID
         required: false
         example: RM-001
       rawMaterialName:
         type: string
+        display_name: 原材料名称，模糊匹配
         description: 原材料名称，模糊匹配
         required: false
         example: 高强度钢板
       relatedOrderId:
         type: string
+        display_name: 关联订单ID
         description: 关联订单ID
         required: false
         example: SO-20231001-001
@@ -1315,54 +1439,67 @@ data_engines:
           properties:
             purchaseOrderId:
               type: string
+              display_name: 采购单号
               description: 采购单号
               example: PO-20260716-026
             rawMaterialId:
               type: string
+              display_name: 原材料ID
               description: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
+              display_name: 原材料名称
               description: 原材料名称
               example: 高强度钢板
             unit:
               type: string
+              display_name: 单位
               description: 单位
               example: 吨
             purchaseTime:
               type: string
+              display_name: 采购时间
               description: 采购时间
               example: '2026-07-16'
             arrivalTime:
               type: string
+              display_name: 到位时间
               description: 到位时间
               example: '2026-08-01'
             arrivalQuantity:
               type: number
+              display_name: 到位数量
               description: 到位数量
               example: 100
             supplierName:
               type: string
+              display_name: 供应商名称
               description: 供应商名称
               example: 宝钢钢铁集团
             relatedOrderId:
               type: string
+              display_name: 关联订单ID
               description: 关联订单ID
               example: SO-20231001-001
             relatedOrderName:
               type: string
+              display_name: 关联订单名称
               description: 关联订单名称
               example: 2023年10月-A客户-建筑钢结构
             status:
               type: string
+              display_name: 状态
               description: 状态
               example: 已入库
             createdAt:
               type: string
+              display_name: 创建时间
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
+              display_name: 更新时间
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1394,11 +1531,13 @@ data_engines:
     params:
       rawMaterialId:
         type: string
+        display_name: 原材料ID
         description: 原材料ID
         required: false
         example: RM-001
       rawMaterialName:
         type: string
+        display_name: 原材料名称，模糊匹配
         description: 原材料名称，模糊匹配
         required: false
         example: 高强度钢板
@@ -1413,26 +1552,32 @@ data_engines:
           properties:
             rawMaterialId:
               type: string
+              display_name: 原材料ID
               description: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
+              display_name: 原材料名称
               description: 原材料名称
               example: 高强度钢板
             unit:
               type: string
+              display_name: 单位
               description: 单位
               example: 吨
             safetyStock:
               type: number
+              display_name: 安全库存
               description: 安全库存
               example: 100
             createdAt:
               type: string
+              display_name: 创建时间
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
+              display_name: 更新时间
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1456,11 +1601,13 @@ data_engines:
     params:
       supplierName:
         type: string
+        display_name: 供应商名称，模糊匹配
         description: 供应商名称，模糊匹配
         required: false
         example: 宝钢钢铁集团
       rawMaterialName:
         type: string
+        display_name: 原材料名称
         description: 原材料名称
         required: false
         example: 钢板008
@@ -1475,38 +1622,47 @@ data_engines:
           properties:
             supplierName:
               type: string
+              display_name: 供应商名称
               description: 供应商名称
               example: 宝钢钢铁集团
             address:
               type: string
+              display_name: 地址
               description: 地址
               example: 上海市宝山区富锦路888号
             contactPerson:
               type: string
+              display_name: 联系人
               description: 联系人
               example: 张经理
             contactPhone:
               type: string
+              display_name: 联系电话
               description: 联系电话
               example: '13800131001'
             rawMaterialId:
               type: string
+              display_name: 原材料ID
               description: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
+              display_name: 原材料名称
               description: 原材料名称
               example: 高强度钢板
             leadTime:
               type: number
+              display_name: 交货周期
               description: 交货周期
               example: 100
             createdAt:
               type: string
+              display_name: 创建时间
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
+              display_name: 更新时间
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
@@ -1531,11 +1687,13 @@ data_engines:
     params:
       supplierName:
         type: string
+        display_name: 供应商名称，模糊匹配
         description: 供应商名称，模糊匹配
         required: false
         example: 宝钢钢铁集团
       rawMaterialName:
         type: string
+        display_name: 原材料名称
         description: 原材料名称
         required: false
         example: 钢板008
@@ -1550,38 +1708,47 @@ data_engines:
           properties:
             supplierName:
               type: string
+              display_name: 供应商名称
               description: 供应商名称
               example: 宝钢钢铁集团
             address:
               type: string
+              display_name: 地址
               description: 地址
               example: 上海市宝山区富锦路888号
             contactPerson:
               type: string
+              display_name: 联系人
               description: 联系人
               example: 张经理
             contactPhone:
               type: string
+              display_name: 联系电话
               description: 联系电话
               example: '13800131001'
             rawMaterialId:
               type: string
+              display_name: 原材料ID
               description: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
+              display_name: 原材料名称
               description: 原材料名称
               example: 高强度钢板
             leadTime:
               type: number
+              display_name: 交货周期
               description: 交货周期
               example: 100
             createdAt:
               type: string
+              display_name: 创建时间
               description: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
+              display_name: 更新时间
               description: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
