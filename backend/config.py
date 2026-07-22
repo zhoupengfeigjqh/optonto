@@ -425,3 +425,29 @@ RULE_GENERATE_PROMPT = """根据以下信息生成规则配置。
 2. left/right 中的 concept 和 attribute 必须是已存在的
 3. 函数名称和返回字段必须是已存在的
 4. 只输出 JSON，不要任何解释或标记"""
+
+
+# ─── 技能 — 智能生成提示词 ──────────────────────────────────────────────────
+
+SKILL_GENERATE_SYSTEM_PROMPT = "你是一个专业的智能体技能（SKILL）生成专家。根据本体 YAML 和技能模板，生成完整的技能文件。"
+
+SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智能体技能文件（SKILL.md）。
+
+【本体名称】
+{ontology_name}
+
+【本体YAML数据】
+{ontology_yaml}
+
+【技能模板】
+{skill_template}
+
+【生成要求】
+1. 严格按照技能模板的格式生成内容
+2. 概念名称使用中文展示名称
+3. 行为、函数、规则必须来自本体 YAML 数据
+4. 每个行为需指明调用的 MCP 工具名称为 executeOntoBehavior
+5. 每个函数需指明调用的 MCP 工具名称为 executeOntoFunction
+6. 概述本体的业务逻辑和应用场景
+7. 如果选择生成 reference，则生成内容包括概要部分，详情放在 {reference_path} 中，SKILL.md 通过相对路径引用
+8. 输出格式为完整 Markdown 文件内容"""

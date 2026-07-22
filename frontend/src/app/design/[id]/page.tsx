@@ -27,6 +27,7 @@ import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
+import SkillManagement from '@/components/Design/SkillManagement';
 
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
@@ -128,7 +129,7 @@ export default function DesignPage() {
         <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
       )}
       {activeSection === 'agent' && activeTab === 'skill-management' && (
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>技能管理 — 开发中</p></div>
+        <SkillManagement ontologyId={ontologyId} activeTab={activeTab} />
       )}
       {activeSection === 'agent' && activeTab === 'agent-app' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>智能体应用 — 开发中</p></div>

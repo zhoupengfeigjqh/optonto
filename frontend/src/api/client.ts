@@ -503,3 +503,33 @@ export const getFileContent = (ontologyId: number) =>
 
 export const saveFileContent = (ontologyId: number, data: YamlFile) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/files/content`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── Skill ────────────────────────────────────────────────────────────────
+
+export interface SkillSummary {
+  name: string;
+  has_skill: boolean;
+  has_reference: boolean;
+  updated_at: number;
+}
+
+export interface SkillContent {
+  content: string;
+  skill_name: string;
+  reference_files: { name: string; updated_at: number }[];
+}
+
+export const getSkills = (ontologyId: number) =>
+  request<SkillSummary[]>(`/api/ontologies/${ontologyId}/skills`);
+
+export const getSkillContent = (ontologyId: number, name: string) =>
+  request<SkillContent>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/content`);
+
+export const saveSkillContent = (ontologyId: number, name: string, content: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/content`, { method: 'PUT', body: JSON.stringify({ content }) });
+
+export const deleteSkill = (ontologyId: number, name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+export const generateSkill = (ontologyId: number, name: string, generateReference: boolean) =>
+  request<{ message: string; skill_name: string; content: string; reference_files: { name: string }[] }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST', body: JSON.stringify({ generate_reference: generateReference }) });

@@ -21,6 +21,7 @@ from routers import (
     mcp_ctl_router,
     rule_templates_router,
     common_functions_router,
+    skills_router,
 )
 
 
@@ -57,6 +58,7 @@ app.include_router(chat_router)
 app.include_router(data_engines_router)
 app.include_router(rule_templates_router)
 app.include_router(common_functions_router)
+app.include_router(skills_router)
 
 
 @app.get("/")
