@@ -215,6 +215,9 @@ export const getRuleTemplateTypes = () =>
 
 export const getRuleTemplate = (ruleName: string) =>
   request<any>(`/api/rule-templates/${encodeURIComponent(ruleName)}`);
+
+export const generateRule = (ontologyId: number, data: any) =>
+  request<{ rule_detail: any }>(`/api/ontologies/${ontologyId}/rules/generate`, { method: 'POST', body: JSON.stringify(data) });
 export const createRule = (ontologyId: number, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules`, { method: 'POST', body: JSON.stringify(data) });
 

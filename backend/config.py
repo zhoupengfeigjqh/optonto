@@ -389,3 +389,31 @@ def sumRawNotArrivalQty(filterRawMaterialName:str, currentDate:str, purchaseReco
             datetime.strptime(currentDate, "%Y-%m-%d") < datetime.strptime(record["arrivalTime"], "%Y-%m-%d"):
             total_not_arrival += record["arrivalQuantity"]
     return {{"result": {{"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}}}"""
+
+
+# ─── 规则设计 — 智能生成提示词 ────────────────────────────────────────────────
+
+RULE_GENERATE_SYSTEM_PROMPT = "你是一个规则配置生成专家。根据用户描述的规则需求、本体数据、关联行为和函数信息，严格按照规则模板生成规则配置 JSON。"
+
+RULE_GENERATE_PROMPT = """根据以下信息生成规则配置。
+
+【规则基本信息】
+规则名称：{rule_name}
+规则展示名称：{rule_display_name}
+规则类型：{rule_type}
+规则描述：{rule_description}
+
+【关联行为与概念属性】
+{behavior_info}
+
+【关联函数信息（含公共函数）】
+{function_info}
+
+【规则模板】
+{rule_template}
+
+【要求】
+1. 严格按照规则模板的结构输出 JSON
+2. left/right 中的 concept 和 attribute 必须是已存在的
+3. 函数名称和返回字段必须是已存在的
+4. 只输出 JSON，不要任何解释或标记"""

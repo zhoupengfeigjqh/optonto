@@ -908,7 +908,8 @@ rules:
   description: IF 当前日期 >= 采购单arrivalTime  THEN 提示用户是否启动入库操作。
   related_behaviors:
   - QueryPurchaseRecords
-  related_functions: []
+  related_functions:
+  - getCurrentDate
   display_name: 采购到位超期预警
   rule_type: 推理规则
   position: 后置

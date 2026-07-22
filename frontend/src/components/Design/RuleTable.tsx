@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { Button, Input, Select, Modal, message, Space } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, FileTextOutlined } from '@ant-design/icons';
-import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, Rule, Behavior, Function, Concept } from '@/api/client';
+import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, FileTextOutlined, RobotOutlined } from '@ant-design/icons';
+import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, generateRule, Rule, Behavior, Function, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -215,6 +215,15 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const [ruleConfig, setRuleConfig] = useState<any>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
 
+  // smart generate dialog
+  const [genDialogOpen, setGenDialogOpen] = useState(false);
+  const [genName, setGenName] = useState('');
+  const [genDisplayName, setGenDisplayName] = useState('');
+  const [genDescription, setGenDescription] = useState('');
+  const [genBehaviors, setGenBehaviors] = useState<string[]>([]);
+  const [genFunctions, setGenFunctions] = useState<string[]>([]);
+  const [genLoading, setGenLoading] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -361,6 +370,30 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     setRuleDesignModalOpen(false);
   };
 
+  const handleGenerateRule = async () => {
+    if (!genName.trim()) { message.warning('请输入规则名称'); return; }
+    if (!editData.rule_type) { message.warning('请先选择规则类型'); return; }
+    setGenLoading(true);
+    try {
+      const result = await generateRule(ontologyId, {
+        rule_name: genName.trim(),
+        rule_display_name: genDisplayName.trim(),
+        rule_type: editData.rule_type,
+        rule_description: genDescription.trim(),
+        related_behaviors: genBehaviors,
+        related_functions: genFunctions,
+      });
+      setRuleConfig(result.rule_detail);
+      setEditData((p: any) => ({ ...p, name: genName.trim(), display_name: genDisplayName.trim(), description: genDescription.trim(), related_behaviors: genBehaviors, related_functions: genFunctions }));
+      setGenDialogOpen(false);
+      message.success('规则已智能生成，请确认后保存');
+    } catch (e: any) {
+      message.error('生成失败: ' + e.message);
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
   const renderCell = (val: any, record: Rule, dataIndex: string, render?: (v: any) => any) => {
     const editing = isEditing(record);
     const isNew = editingKey === '__new__' && record.name === '__new__';
@@ -425,6 +458,9 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         cancelText="取消"
         width={800}
       >
+        <div className="flex justify-end mb-3">
+          <Button size="small" icon={<RobotOutlined />} onClick={() => { setGenName(editData.name || ''); setGenDisplayName(editData.display_name || ''); setGenDescription(editData.description || ''); setGenBehaviors(editData.related_behaviors || []); setGenFunctions(editData.related_functions || []); setGenDialogOpen(true); }}>智能生成</Button>
+        </div>
         {!editData.rule_type ? (
           <p className="text-text-muted">请先选择规则类型后再进行规则设计</p>
         ) : templateLoading ? (
@@ -438,6 +474,43 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         ) : (
           <p className="text-text-muted">不支持的规则模板: {ruleTemplate.ruleName}</p>
         )}
+      </Modal>
+
+      {/* ─── Smart Generate Dialog ───────────────────────────────────── */}
+      <Modal
+        title="智能生成规则"
+        open={genDialogOpen}
+        onOk={handleGenerateRule}
+        onCancel={() => setGenDialogOpen(false)}
+        okText="生成"
+        cancelText="取消"
+        width={550}
+        confirmLoading={genLoading}
+      >
+        <div className="space-y-3">
+          <div>
+            <span className="text-text-muted text-xs">规则名称</span>
+            <Input size="small" value={genName} onChange={e => setGenName(e.target.value)} className="bg-dark-bg border-dark-border text-text-primary" placeholder="如 V01_StockWarning" />
+          </div>
+          <div>
+            <span className="text-text-muted text-xs">展示名称</span>
+            <Input size="small" value={genDisplayName} onChange={e => setGenDisplayName(e.target.value)} className="bg-dark-bg border-dark-border text-text-primary" placeholder="如 库存预警" />
+          </div>
+          <div>
+            <span className="text-text-muted text-xs">规则描述</span>
+            <Input.TextArea size="small" rows={2} value={genDescription} onChange={e => setGenDescription(e.target.value)} className="bg-dark-bg border-dark-border text-text-primary" placeholder="如 如果原材料库存低于安全库存则触发采购提醒" />
+          </div>
+          <div>
+            <span className="text-text-muted text-xs">关联行为</span>
+            <Select size="small" mode="multiple" placeholder="选择关联行为" value={genBehaviors} onChange={setGenBehaviors}
+              options={behaviorOptions} style={{ width: '100%' }} popupClassName="!bg-dark-card" />
+          </div>
+          <div>
+            <span className="text-text-muted text-xs">关联函数</span>
+            <Select size="small" mode="multiple" placeholder="选择关联函数" value={genFunctions} onChange={setGenFunctions}
+              options={functionOptions} style={{ width: '100%' }} popupClassName="!bg-dark-card" />
+          </div>
+        </div>
       </Modal>
     </div>
   );
