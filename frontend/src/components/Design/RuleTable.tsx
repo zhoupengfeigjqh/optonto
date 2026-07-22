@@ -14,11 +14,6 @@ function _label(v: any, k: string): string {
   return v?.display_name || v?.description || k;
 }
 
-function getRightOperatorOptions(allOps: { label: string; value: string }[], rightType: string | undefined) {
-  if (rightType === 'set') return allOps.filter(o => o.value === 'in' || o.value === 'not in');
-  return allOps;
-}
-
 function getReturnFields(funcs: any[], funcName: string | undefined): { label: string; value: string }[] {
   if (!funcName) return [];
   const fn = funcs.find(f => f.name === funcName);
@@ -67,14 +62,14 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
       <div className="flex items-center gap-3">
         <span className="text-text-primary text-sm w-16">操作符</span>
         <Select size="small" value={cfg.operator || 'eq'} onChange={v => onChange({ ...cfg, operator: v })}
-          options={getRightOperatorOptions(operatorOptions, right.type)} style={{ width: 180 }} popupClassName="!bg-dark-card" />
+          options={operatorOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
       </div>
 
       <div className="flex items-start gap-3">
         <span className="text-text-primary text-sm w-16 mt-1">右侧</span>
         <div className="flex-1 space-y-2">
           <Select size="small" value={right.type} onChange={v => setRight({ type: v, value: undefined, concept: undefined, attribute: undefined, function: undefined, returnField: undefined })}
-            options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '对象集', value: 'set' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
+            options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
           {right.type === 'value' ? (
             <Input size="small" placeholder="输入字面值" value={right.value || ''} onChange={e => setRight({ value: e.target.value })}
               className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
@@ -84,13 +79,6 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
                 options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
               <Select size="small" allowClear placeholder="返回字段" value={right.returnField} onChange={v => setRight({ returnField: v })}
                 options={getReturnFields(funcs, right.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : right.type === 'set' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择概念" value={right.concept} onChange={v => setRight({ concept: v, attribute: undefined })}
-                options={conceptOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="选择属性" value={right.attribute} onChange={v => setRight({ attribute: v })}
-                options={right.concept ? attributeOptions(right.concept) : []} style={{ width: 180 }} popupClassName="!bg-dark-card" />
             </div>
           ) : (
             <div className="flex gap-2">
@@ -130,7 +118,7 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
 
   const leftRightEditor = (cond: any, idx: number, side: 'left' | 'right', sideLabel: string) => {
     const obj = cond[side] || { type: side === 'left' ? 'concept' : 'value' };
-    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '对象集', value: 'set' }, { label: '函数', value: 'function' }];
+    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '函数', value: 'function' }];
     const types = side === 'left' ? [{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }] : rightTypes;
     return (
       <div className="flex items-start gap-2">
@@ -151,13 +139,6 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
                 options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
               <Select size="small" allowClear placeholder="返回字段" value={obj.returnField} onChange={v => updateCondition(idx, { [side]: { ...obj, returnField: v } })}
                 options={getReturnFields(funcs, obj.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : obj.type === 'set' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
-                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
-                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
             </div>
           ) : (
             <Input size="small" placeholder="字面值" value={obj.value || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, value: e.target.value } })}
@@ -192,7 +173,7 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
                 <div className="flex items-center gap-2">
                   <span className="text-text-muted text-xs w-12">操作符</span>
                   <Select size="small" value={cond.operator || 'eq'} onChange={v => updateCondition(idx, { operator: v })}
-                    options={getRightOperatorOptions(operatorOptions, cond.right?.type)} style={{ width: 140 }} popupClassName="!bg-dark-card" />
+                    options={operatorOptions} style={{ width: 140 }} popupClassName="!bg-dark-card" />
                 </div>
                 {leftRightEditor(cond, idx, 'right', '右侧')}
               </div>
@@ -346,9 +327,6 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       if (right.type === 'function' && (!right.function || !right.returnField)) {
         message.warning('请完善右侧条件：选择函数并填写返回字段'); return;
       }
-      if (right.type === 'set' && (!right.concept || !right.attribute)) {
-        message.warning('请完善右侧条件：选择概念和属性'); return;
-      }
     }
 
     if (editData.rule_type === '推理规则') {
@@ -369,7 +347,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         if (right.type === 'value' && (right.value === undefined || right.value === '')) {
           message.warning(`条件 ${i+1} 右侧字面值为空`); return;
         }
-        if ((right.type === 'concept' || right.type === 'set') && (!right.concept || !right.attribute)) {
+        if (right.type === 'concept' && (!right.concept || !right.attribute)) {
           message.warning(`条件 ${i+1} 右侧不完整，请选择概念和属性`); return;
         }
         if (right.type === 'function' && (!right.function || !right.returnField)) {
