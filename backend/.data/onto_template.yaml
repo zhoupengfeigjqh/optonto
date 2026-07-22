@@ -7,12 +7,13 @@ metadata:
 
 concepts:
 - name: ConceptName
-  display_name: 概念描述
+  description: 概念描述
   attributes:
   - name: attrName
     type: string
     required: true
     display_name: 属性展示名称
+    description: 属性详细描述
     example: 示例值
     constraint: ''
   display_name: 概念展示名称
@@ -22,13 +23,13 @@ relations:
   source: SourceConcept
   target: TargetConcept
   cardinality: 1:N
-  display_name: 关系描述
+  description: 关系描述
   display_name: 关系展示名称
 
 functions:
 - name: sumRawNotArrivalQty
   display_name: 采购原材料未到位总数
-  display_name: 根据原材料的采购单信息，将到位时间大于当前时间的原材料，对其到位数求和
+  description: 根据原材料的采购单信息，将到位时间大于当前时间的原材料，对其到位数求和
   related_attributes:
   - PurchaseRecord.arrivalQuantity
   - PurchaseRecord.arrivalTime
@@ -42,14 +43,17 @@ functions:
           arrivalTime:
             type: string
             display_name: 到位时间
+            description: 计划的原材料到位时间
             example: '2026-09-01'
           rawMaterialName:
             type: string
             display_name: 原材料名称
+            description: 采购的原材料的名称
             example: 高强度钢板
           arrivalQuantity:
             type: number
-            display_name: 计划的到位数量
+            display_name: 到位数量
+            description: 计划的到位数量
             example: 100
   response:
     result:
@@ -60,85 +64,100 @@ functions:
           rawMaterialName:
             type: string
             display_name: 原材料名称
+            description: 原材料名称
             example: 高强度钢板
           sumNotArrivalQty:
             type: number
-            display_name: 还未到位的采购量
+            display_name: 未到位总数
+            description: 还未到位的采购总量
             example: 100
 
 behaviors:
 - name: behaviorName
-  display_name: 行为描述
+  description: 行为描述
   params:
     tradeId:
       type: string
-      display_name: 参数描述
+      display_name: 交易编号
+      description: 交易唯一标识
       required: true
-      example: 示例值
-    status: 
-      type: "string",
-      enum: ["active", "inactive", "suspended"]
-      display_name: 参数描述
+      example: TRD001
+    status:
+      type: string
+      display_name: 状态
+      description: 交易状态
       required: true
-      example: 示例值
+      example: active
     user:
       type: object
-      display_name: 参数描述
+      display_name: 用户信息
+      description: 操作用户信息
       required: true
       properties:
         id:
           type: string
-          display_name: 参数描述
-          example: 示例值
+          display_name: 用户ID
+          description: 用户唯一标识
+          example: USR001
         name:
           type: string
-          display_name: 参数描述
-          example: 示例值
+          display_name: 用户名称
+          description: 用户显示名称
+          example: 张三
     tags:
       type: array
-      display_name: 参数描述
+      display_name: 标签列表
+      description: 订单标签
       required: false
       items:
         type: string
-        display_name: 参数描述
-        example: 示例值
+        example: 加急
     products:
       type: array
-      display_name: 参数描述
+      display_name: 产品列表
+      description: 订单包含的产品
       required: true
       items:
         type: object
         properties:
           sku:
             type: string
-            display_name: 参数描述
-            example: 示例值
+            display_name: SKU
+            description: 产品库存编码
+            example: SKU-001
           quantity:
             type: number
-            display_name: 参数描述
-            example: 示例值
+            display_name: 数量
+            description: 产品数量
+            example: 10
   response:
     code:
       type: number
+      display_name: 状态码
+      description: 接口返回状态码
       example: 0
     data:
       type: object
+      display_name: 返回数据
+      description: 接口返回数据
       properties:
         orderId:
           type: string
-          display_name: 字段描述
-          example: 示例值
+          display_name: 订单编号
+          description: 生成的订单编号
+          example: ORD001
         total:
           type: number
-          display_name: 字段描述
-          example: 示例值
+          display_name: 订单总额
+          description: 订单总金额
+          example: 1500.50
   related_concepts:
   - ConceptName
   display_name: 行为展示名称
 
 rules:
 - name: ruleName
-  display_name: 规则描述
+  description: 规则描述
   related_behaviors:
   - behaviorName
   display_name: 规则展示名称
@@ -159,11 +178,11 @@ processes:
 - name: processName
   display_name: 流程展示名称
   goal: 流程目标
-  display_name: 流程描述
+  description: 流程描述
   steps:
   - current_action: behaviorName
     previous_action: ''
-    display_name: 步骤描述
+    description: 步骤描述
     connection_type: 串行
 
 securities:
