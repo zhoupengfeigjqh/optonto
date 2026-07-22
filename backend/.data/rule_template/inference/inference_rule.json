@@ -90,14 +90,14 @@
                 "enum": [
                   "eq",
                   "ne",
-                  "not in",
-                  "in",
+                  "like",
+                  "match",
                   "lt",
                   "gt",
                   "le",
                   "ge"
                 ],
-                "description": "eq=等于, ne=不等于, in=属于, not in=不属于, lt=小于, gt=大于, le=小于等于, ge=大于等于"
+                "description": "eq=等于, ne=不等于,  lt=小于, gt=大于, le=小于等于, ge=大于等于"
               },
               "right": {
                 "type": "object",

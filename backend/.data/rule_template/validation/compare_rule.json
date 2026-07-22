@@ -70,14 +70,14 @@
       "enum": [
         "eq",
         "ne",
-        "not in",
-        "in",
+        "like",
+        "match",
         "lt",
         "gt",
         "le",
         "ge"
       ],
-      "description": "eq=equals, ne=not equals, in=belongs to, not in=not belongs to, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
+      "description": "eq=equals, ne=not equals,  like=fuzzy match, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
     },
     "right": {
       "type": "object",
