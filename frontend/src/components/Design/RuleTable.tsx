@@ -15,7 +15,7 @@ function getReturnFields(funcs: any[], funcName: string | undefined): { label: s
   const fn = funcs.find(f => f.name === funcName);
   if (!fn?.response) return [];
   const props = fn.response?.result?.properties || fn.response?.properties || {};
-  return Object.keys(props).map(k => ({ label: k, value: k }));
+  return Object.entries(props).map(([k, v]: [string, any]) => ({ label: `${k} (${v?.type || 'any'})`, value: k }));
 }
 
 function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {
@@ -227,7 +227,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const conceptOptions = useMemo(() => concepts.map(c => ({ label: c.display_name || c.name, value: c.name })), [concepts]);
   const attributeOptions = useMemo(() => (conceptName: string) => {
     const c = concepts.find(c => c.name === conceptName);
-    return (c?.attributes || []).map(a => ({ label: `${a.display_name || a.name} (${a.name})`, value: a.name }));
+    return (c?.attributes || []).map(a => ({ label: `${a.display_name || a.name} (${a.name}: ${a.type})`, value: a.name }));
   }, [concepts]);
   const OPERATOR_OPTIONS = [
     { label: '等于 (eq)', value: 'eq' },
