@@ -919,7 +919,7 @@ rules:
       - left:
           type: function
           function: getCurrentDate
-          returnField: currentDate
+          returnField: date
         operator: gt
         right:
           type: concept

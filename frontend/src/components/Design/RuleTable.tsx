@@ -273,7 +273,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const handleSave = async (record: Rule) => {
     if (!editData.name?.trim()) { message.warning('请输入规则名称'); return; }
     try {
-      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], rule_detail: editData.rule_detail || null };
+      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], rule_detail: normalizeDetail(editData.rule_detail) };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (rules.some(r => r.name === data.name)) { message.warning('规则名称已存在'); return; }
@@ -293,8 +293,22 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     });
   };
 
+  // Normalize undefined/null values to empty string
+  const normalizeDetail = (obj: any): any => {
+    if (obj === null || obj === undefined) return '';
+    if (Array.isArray(obj)) return obj.map(normalizeDetail);
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const [k, v] of Object.entries(obj)) {
+        cleaned[k] = normalizeDetail(v);
+      }
+      return cleaned;
+    }
+    return obj;
+  };
+
   const openRuleDesign = async () => {
-    setRuleConfig(editData.rule_detail ? JSON.parse(JSON.stringify(editData.rule_detail)) : null);
+    setRuleConfig(editData.rule_detail ? normalizeDetail(JSON.parse(JSON.stringify(editData.rule_detail))) : null);
     setRuleDesignModalOpen(true);
     if (!editData.rule_type) return;
     setTemplateLoading(true);
@@ -364,7 +378,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       }
     }
 
-    setEditData(p => ({ ...p, rule_detail: ruleConfig }));
+    setEditData(p => ({ ...p, rule_detail: normalizeDetail(ruleConfig) }));
     message.success('规则设计已保存到编辑缓存');
     setRuleDesignModalOpen(false);
   };
