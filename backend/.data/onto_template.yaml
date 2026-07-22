@@ -166,12 +166,14 @@ behaviors:
 
 rules:
 - name: ruleName
-  description: 规则描述
+  description: 规则描述，详细的规则逻辑
   related_behaviors:
   - behaviorName
+  related_functions:
+  - functionName
   display_name: 规则展示名称
-  rule_type: 验证规则
-  position: ''
+  rule_type: 规则类型
+  position: '前置/后置'
 
 events:
 - name: eventName

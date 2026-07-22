@@ -65,8 +65,8 @@
               },
               "operator": {
                 "type": "string",
-                "enum": ["eq", "ne", "contain", "in", "lt", "gt", "le", "ge"],
-                "description": "比较操作符（eq=等于, ne=不等于, contain=包含, in=属于, lt=小于, gt=大于, le=小于等于, ge=大于等于）"
+                "enum": ["eq", "ne", "not in", "in", "lt", "gt", "le", "ge"],
+                "description": "比较操作符（eq=等于, ne=不等于, in=属于, not in=不属于, lt=小于, gt=大于, le=小于等于, ge=大于等于）"
               },
               "right": {
                 "type": "object",

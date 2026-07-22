@@ -239,8 +239,8 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const OPERATOR_OPTIONS = [
     { label: '等于 (eq)', value: 'eq' },
     { label: '不等于 (ne)', value: 'ne' },
-    { label: '包含 (contain)', value: 'contain' },
     { label: '属于 (in)', value: 'in' },
+    { label: '不属于 (not in)', value: 'not in' },
     { label: '小于 (lt)', value: 'lt' },
     { label: '大于 (gt)', value: 'gt' },
     { label: '小于等于 (le)', value: 'le' },
