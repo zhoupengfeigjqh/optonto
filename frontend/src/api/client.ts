@@ -509,8 +509,8 @@ export const saveFileContent = (ontologyId: number, data: YamlFile) =>
 export interface SkillSummary {
   name: string;
   has_skill: boolean;
-  has_reference: boolean;
   updated_at: number;
+  has_reference?: boolean;
 }
 
 export interface SkillContent {
@@ -530,5 +530,5 @@ export const saveSkillContent = (ontologyId: number, name: string, content: stri
 export const deleteSkill = (ontologyId: number, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const generateSkill = (ontologyId: number, name: string, generateReference: boolean) =>
-  request<{ message: string; skill_name: string; content: string; reference_files: { name: string }[] }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST', body: JSON.stringify({ generate_reference: generateReference }) });
+export const generateSkill = (ontologyId: number, name: string) =>
+  request<{ message: string; skill_name: string; content: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST' });

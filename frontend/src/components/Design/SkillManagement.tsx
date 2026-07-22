@@ -61,7 +61,7 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
     if (!genName.trim()) { message.warning('请输入技能名称'); return; }
     setGenLoading(true);
     try {
-      const result = await generateSkill(ontologyId, genName.trim(), false);
+      const result = await generateSkill(ontologyId, genName.trim());
       setGenDialogOpen(false);
       setGenName('');
       // Auto-view the generated skill
