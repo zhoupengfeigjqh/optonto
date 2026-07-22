@@ -32,74 +32,75 @@ async def _api_get(path: str, timeout: int = 15) -> dict | list:
         return resp.json()
 
 
-@server.list_tools()
-async def handle_list_tools() -> list[Tool]:
+async def _list_tools() -> list[Tool]:
     return [
         Tool(
             name="list_scenarios",
-            description="列出所有可用的场景列表，返回每个场景的 id、名称和描述",
-            inputSchema={"type": "object", "properties": {}},
+            description="列出所有场景列表，支持可选 keyword 模糊搜索",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配场景名称"},
+                },
+            },
         ),
         Tool(
             name="list_ontologies",
-            description="列出所有可用的本体列表，返回每个本体的 id、名称和描述",
-            inputSchema={"type": "object", "properties": {}},
+            description="列出所有本体列表，支持可选 keyword 模糊搜索名称",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配本体名称或场景名称"},
+                },
+            },
         ),
         Tool(
             name="list_behaviors",
-            description="列出指定本体下的所有行为及其参数结构",
+            description="列出指定本体下的行为，支持可选 keyword 模糊搜索",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
+                    "keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配行为名称或展示名称"},
                 },
                 "required": ["ontology_id"],
             },
         ),
         Tool(
             name="list_concepts",
-            description="列出指定本体下的所有概念",
+            description="列出指定本体下的概念和属性，支持可选 keyword 模糊搜索或 concept_name 精确查找",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
+                    "keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配概念名称"},
+                    "concept_name": {"type": "string", "description": "概念名称（可选），精确查找指定概念的属性"},
                 },
                 "required": ["ontology_id"],
-            },
-        ),
-        Tool(
-            name="get_concept_attributes",
-            description="获取本体中某个概念的所有属性",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "concept_name": {"type": "string", "description": "概念名称"},
-                },
-                "required": ["ontology_id", "concept_name"],
             },
         ),
         Tool(
             name="list_relations",
-            description="列出指定本体下概念之间的所有关系",
+            description="列出指定本体下的关系，支持可选 concept_name 过滤出该概念直接关联的关系",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
+                    "concept_name": {"type": "string", "description": "概念名称（可选），仅返回与该概念相关的关系"},
                 },
                 "required": ["ontology_id"],
             },
         ),
         Tool(
-            name="get_concept_relations",
-            description="获取本体中某个概念的一阶关系（直接关联的概念）",
+            name="list_functions",
+            description="列出指定本体下的函数，支持可选 keyword 模糊搜索",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "concept_name": {"type": "string", "description": "概念名称"},
+                    "keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配函数名称或展示名称"},
                 },
-                "required": ["ontology_id", "concept_name"],
+                "required": ["ontology_id"],
             },
         ),
         Tool(
@@ -111,88 +112,6 @@ async def handle_list_tools() -> list[Tool]:
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
                 },
                 "required": ["ontology_id"],
-            },
-        ),
-        Tool(
-            name="search_scenarios",
-            description="根据场景名称模糊搜索场景，返回匹配场景的 id、名称、描述等信息",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "keyword": {"type": "string", "description": "搜索关键词，模糊匹配场景名称"},
-                },
-                "required": ["keyword"],
-            },
-        ),
-        Tool(
-            name="search_ontologies",
-            description="根据本体名称模糊搜索本体，返回匹配本体的 id、名称、描述、所属场景等信息",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "keyword": {"type": "string", "description": "搜索关键词，支持模糊匹配（如输入'原材料'会匹配'原材料采购和库存'）"},
-                },
-                "required": ["keyword"],
-            },
-        ),
-        Tool(
-            name="search_behaviors",
-            description="模糊搜索指定本体下的行为，返回匹配的行为名称、描述、输入输出结构等",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "keyword": {"type": "string", "description": "搜索关键词，模糊匹配行为名称"},
-                },
-                "required": ["ontology_id", "keyword"],
-            },
-        ),
-        Tool(
-            name="search_concepts",
-            description="模糊搜索指定本体下的概念，返回匹配的概念名称、描述、属性列表等",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "keyword": {"type": "string", "description": "搜索关键词，模糊匹配概念名称"},
-                },
-                "required": ["ontology_id", "keyword"],
-            },
-        ),
-        Tool(
-            name="list_functions",
-            description="列出指定本体下的所有函数及其输入参数和返回结构",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                },
-                "required": ["ontology_id"],
-            },
-        ),
-        Tool(
-            name="execute_function",
-            description="执行本体中函数的 Python 代码，传入参数并返回计算结果",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "function_name": {"type": "string", "description": "函数名称"},
-                    "params": {"type": "object", "description": "函数输入参数，按展开的关键字传入"},
-                },
-                "required": ["ontology_id", "function_name", "params"],
-            },
-        ),
-        Tool(
-            name="search_functions",
-            description="模糊搜索指定本体下的函数，返回匹配的函数名称、描述、输入输出结构等",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "keyword": {"type": "string", "description": "搜索关键词，模糊匹配函数名称"},
-                },
-                "required": ["ontology_id", "keyword"],
             },
         ),
         Tool(
@@ -208,7 +127,34 @@ async def handle_list_tools() -> list[Tool]:
                 "required": ["ontology_id", "behavior_name", "params"],
             },
         ),
+        Tool(
+            name="execute_function",
+            description="执行本体中函数的 Python 代码，传入参数并返回计算结果",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ontology_id": {"type": "integer", "description": "本体 ID"},
+                    "function_name": {"type": "string", "description": "函数名称"},
+                    "params": {"type": "object", "description": "函数输入参数，按展开的关键字传入"},
+                },
+                "required": ["ontology_id", "function_name", "params"],
+            },
+        ),
     ]
+
+
+@server.list_tools()
+async def handle_list_tools() -> list[Tool]:
+    return await _list_tools()
+
+
+async def _filter_list(data: list | dict, keyword: str | None, fields: list[str]) -> list | dict:
+    """Filter a list of dicts by keyword across given fields."""
+    if keyword is None or not isinstance(data, list):
+        return data
+    kw = keyword.lower()
+    matched = [item for item in data if any(kw in str(item.get(f, "")).lower() for f in fields)]
+    return matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的结果", "results": []}
 
 
 @server.call_tool()
@@ -216,117 +162,47 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     result = None
 
     if name == "list_scenarios":
-        result = await _api_get("/api/scenarios")
+        data = await _api_get("/api/scenarios")
+        result = await _filter_list(data, arguments.get("keyword"), ["name"])
 
     elif name == "list_ontologies":
-        result = await _api_get("/api/ontologies")
+        data = await _api_get("/api/ontologies")
+        result = await _filter_list(data, arguments.get("keyword"), ["name", "scenario_name"])
 
     elif name == "list_behaviors":
-        result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/behaviors")
+        oid = arguments["ontology_id"]
+        data = await _api_get(f"/api/ontologies/{oid}/behaviors")
+        result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
     elif name == "list_concepts":
-        result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/concepts")
-
-    elif name == "get_concept_attributes":
         oid = arguments["ontology_id"]
-        cname = arguments["concept_name"]
-        concepts = await _api_get(f"/api/ontologies/{oid}/concepts")
-        if isinstance(concepts, list):
-            for c in concepts:
-                if c.get("name") == cname:
-                    result = c.get("attributes", [])
-                    break
-        if result is None:
-            result = {"error": True, "message": f"概念 '{cname}' 不存在"}
+        cname = arguments.get("concept_name")
+        data = await _api_get(f"/api/ontologies/{oid}/concepts")
+        if isinstance(data, list) and cname:
+            matched = [c for c in data if c.get("name") == cname]
+            if matched:
+                result = matched[0].get("attributes", [])
+            else:
+                result = {"error": True, "message": f"概念 '{cname}' 不存在"}
+        else:
+            result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
     elif name == "list_relations":
-        result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/relations")
-
-    elif name == "get_concept_relations":
         oid = arguments["ontology_id"]
-        cname = arguments["concept_name"]
-        all_rels = await _api_get(f"/api/ontologies/{oid}/relations")
-        if isinstance(all_rels, list):
-            result = [
-                r for r in all_rels
-                if r.get("source") == cname or r.get("target") == cname
-            ]
+        data = await _api_get(f"/api/ontologies/{oid}/relations")
+        cname = arguments.get("concept_name")
+        if isinstance(data, list) and cname:
+            result = [r for r in data if r.get("source") == cname or r.get("target") == cname]
+        else:
+            result = data
 
     elif name == "list_functions":
-        result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/functions")
+        oid = arguments["ontology_id"]
+        data = await _api_get(f"/api/ontologies/{oid}/functions")
+        result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
     elif name == "list_securities":
         result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/securities")
-
-    elif name == "search_scenarios":
-        keyword = arguments["keyword"]
-        all_scenarios = await _api_get("/api/scenarios")
-        if isinstance(all_scenarios, list):
-            matched = [
-                s for s in all_scenarios
-                if keyword.lower() in s.get("name", "").lower()
-            ]
-            result = matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的场景", "results": []}
-        else:
-            result = all_scenarios
-
-    elif name == "search_ontologies":
-        keyword = arguments["keyword"]
-        all_ontos = await _api_get("/api/ontologies")
-        if isinstance(all_ontos, list):
-            matched = [
-                o for o in all_ontos
-                if keyword.lower() in o.get("name", "").lower()
-                or keyword.lower() in o.get("scenario_name", "").lower()
-            ]
-            result = matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的本体", "results": []}
-        else:
-            result = all_ontos
-
-    elif name == "search_behaviors":
-        oid = arguments["ontology_id"]
-        keyword = arguments["keyword"]
-        behaviors = await _api_get(f"/api/ontologies/{oid}/behaviors")
-        if isinstance(behaviors, list):
-            matched = [
-                b for b in behaviors
-                if keyword.lower() in b.get("name", "").lower()
-                or keyword.lower() in b.get("display_name", "").lower()
-            ]
-            result = matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的行为", "results": []}
-        else:
-            result = behaviors
-
-    elif name == "search_concepts":
-        oid = arguments["ontology_id"]
-        keyword = arguments["keyword"]
-        concepts = await _api_get(f"/api/ontologies/{oid}/concepts")
-        if isinstance(concepts, list):
-            matched = [
-                c for c in concepts
-                if keyword.lower() in c.get("name", "").lower()
-                or keyword.lower() in c.get("display_name", "").lower()
-            ]
-            result = matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的概念", "results": []}
-        else:
-            result = concepts
-
-    elif name == "search_functions":
-        oid = arguments["ontology_id"]
-        keyword = arguments["keyword"]
-        functions = await _api_get(f"/api/ontologies/{oid}/functions")
-        if isinstance(functions, list):
-            matched = [
-                f for f in functions
-                if keyword.lower() in f.get("name", "").lower()
-                or keyword.lower() in f.get("display_name", "").lower()
-            ]
-            result = matched if matched else {"message": f"未找到包含关键词 '{keyword}' 的函数", "results": []}
-        else:
-            result = functions
-
-    elif name == "list_functions":
-        result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/functions")
 
     elif name == "execute_function":
         oid = arguments["ontology_id"]
@@ -398,7 +274,7 @@ async def handle_health(request):
 
 async def handle_tools(request):
     """Return the list of available MCP tools with names and descriptions."""
-    tools = await handle_list_tools()
+    tools = await _list_tools()
     return JSONResponse([
         {"name": t.name, "description": t.description, "inputSchema": t.inputSchema}
         for t in tools
@@ -406,12 +282,8 @@ async def handle_tools(request):
 
 
 # ─── OAuth & Well-Known (MCP client auth discovery) ──────────────
-# Newer MCP clients (Claude Code) probe these before connecting via SSE.
-# Return "no auth needed" so the client proceeds without authentication.
-
 
 async def handle_oauth_auth_server(request):
-    """RFC 8414 OAuth Authorization Server metadata — no auth = no endpoints."""
     return JSONResponse({
         "issuer": "http://localhost:8002",
         "authorization_endpoint": None,
@@ -424,7 +296,6 @@ async def handle_oauth_auth_server(request):
 
 
 async def handle_oauth_resource(request):
-    """RFC 8705 OAuth Resource metadata — no protection."""
     return JSONResponse({
         "resource": "http://localhost:8002/sse",
         "scopes_supported": [],
@@ -433,7 +304,6 @@ async def handle_oauth_resource(request):
 
 
 async def handle_openid_config(request):
-    """OpenID Discovery — not supported."""
     return JSONResponse({
         "issuer": "http://localhost:8002",
         "authorization_endpoint": None,
@@ -442,7 +312,6 @@ async def handle_openid_config(request):
 
 
 async def handle_register(request):
-    """Client registration — not needed when no auth."""
     return JSONResponse({
         "client_id": "public-client",
         "client_secret": None,
@@ -450,18 +319,12 @@ async def handle_register(request):
 
 
 well_known_routes = [
-    Route("/.well-known/oauth-authorization-server",
-          endpoint=handle_oauth_auth_server),
-    Route("/.well-known/oauth-authorization-server/sse",
-          endpoint=handle_oauth_auth_server),
-    Route("/.well-known/oauth-protected-resource",
-          endpoint=handle_oauth_resource),
-    Route("/.well-known/oauth-protected-resource/sse",
-          endpoint=handle_oauth_resource),
-    Route("/.well-known/openid-configuration",
-          endpoint=handle_openid_config),
-    Route("/.well-known/openid-configuration/sse",
-          endpoint=handle_openid_config),
+    Route("/.well-known/oauth-authorization-server", endpoint=handle_oauth_auth_server),
+    Route("/.well-known/oauth-authorization-server/sse", endpoint=handle_oauth_auth_server),
+    Route("/.well-known/oauth-protected-resource", endpoint=handle_oauth_resource),
+    Route("/.well-known/oauth-protected-resource/sse", endpoint=handle_oauth_resource),
+    Route("/.well-known/openid-configuration", endpoint=handle_openid_config),
+    Route("/.well-known/openid-configuration/sse", endpoint=handle_openid_config),
     Route("/register", endpoint=handle_register, methods=["POST"]),
 ]
 
