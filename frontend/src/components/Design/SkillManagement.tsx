@@ -48,17 +48,12 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
     finally { setViewing(p => p ? { ...p, saving: false } : null); }
   };
 
-  const handleDownload = async (name: string) => {
-    try {
-      const result = await getSkillContent(ontologyId, name);
-      const blob = new Blob([result.content], { type: 'text/markdown;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${name}.md`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: any) { message.error('下载失败: ' + e.message); }
+  const handleDownload = (name: string) => {
+    const url = `/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/content`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.md`;
+    a.click();
   };
 
   const handleDelete = (name: string) => {
