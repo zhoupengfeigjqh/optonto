@@ -412,8 +412,16 @@ RULE_GENERATE_PROMPT = """根据以下信息生成规则配置。
 【规则模板】
 {rule_template}
 
+【输出格式】
+直接输出 rule_detail 数据本身，不要包装在 properties/required 中，参考以下格式：
+验证规则示例：
+{{"left": {{"type": "concept", "concept": "RawMaterialInventory", "attribute": "currentStock"}}, "operator": "lt", "right": {{"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}}}
+
+推理规则示例：
+{{"if": {{"logic": "and", "conditions": [{{"left": {{"type": "concept", "concept": "RawMaterialInventory", "attribute": "currentStock"}}, "operator": "lt", "right": {{"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}}}]}}, "then": "建议触发采购提醒", "else": "库存正常无需操作"}}
+
 【要求】
-1. 严格按照规则模板的结构输出 JSON
+1. 只输出纯 JSON 数据，不要包含 type、properties、required 等 Schema 字段
 2. left/right 中的 concept 和 attribute 必须是已存在的
 3. 函数名称和返回字段必须是已存在的
 4. 只输出 JSON，不要任何解释或标记"""
