@@ -10,7 +10,15 @@ interface Props { ontologyId: number; activeTab?: string; }
 
 // ─── Validation Rule Editor ───────────────────────────────────────────────
 
-function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions }: any) {
+function getReturnFields(funcs: any[], funcName: string | undefined): { label: string; value: string }[] {
+  if (!funcName) return [];
+  const fn = funcs.find(f => f.name === funcName);
+  if (!fn?.response) return [];
+  const props = fn.response?.result?.properties || fn.response?.properties || {};
+  return Object.keys(props).map(k => ({ label: k, value: k }));
+}
+
+function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {
   const cfg = config || {};
   const left = cfg.left || { type: 'concept' };
   const right = cfg.right || { type: 'value' };
@@ -35,10 +43,10 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
             </div>
           ) : (
             <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择函数" value={left.function} onChange={v => setLeft({ function: v })}
+              <Select size="small" allowClear placeholder="选择函数" value={left.function} onChange={v => setLeft({ function: v, returnField: undefined })}
                 options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Input size="small" placeholder="返回字段" value={left.returnField || ''} onChange={e => setLeft({ returnField: e.target.value })}
-                className="bg-dark-bg border-dark-border" style={{ width: 150 }} />
+              <Select size="small" allowClear placeholder="返回字段" value={left.returnField} onChange={v => setLeft({ returnField: v })}
+                options={getReturnFields(funcs, left.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
             </div>
           )}
         </div>
@@ -53,17 +61,17 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
       <div className="flex items-start gap-3">
         <span className="text-text-primary text-sm w-16 mt-1">右侧</span>
         <div className="flex-1 space-y-2">
-          <Select size="small" value={right.type} onChange={v => setRight({ type: v, value: undefined, concept: undefined, attribute: undefined })}
+          <Select size="small" value={right.type} onChange={v => setRight({ type: v, value: undefined, concept: undefined, attribute: undefined, function: undefined, returnField: undefined })}
             options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
           {right.type === 'value' ? (
             <Input size="small" placeholder="输入字面值" value={right.value || ''} onChange={e => setRight({ value: e.target.value })}
               className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
           ) : right.type === 'function' ? (
             <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择函数" value={right.function} onChange={v => setRight({ function: v })}
+              <Select size="small" allowClear placeholder="选择函数" value={right.function} onChange={v => setRight({ function: v, returnField: undefined })}
                 options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Input size="small" placeholder="返回字段" value={right.returnField || ''} onChange={e => setRight({ returnField: e.target.value })}
-                className="bg-dark-bg border-dark-border" style={{ width: 150 }} />
+              <Select size="small" allowClear placeholder="返回字段" value={right.returnField} onChange={v => setRight({ returnField: v })}
+                options={getReturnFields(funcs, right.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
             </div>
           ) : (
             <div className="flex gap-2">
@@ -81,7 +89,7 @@ function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptio
 
 // ─── Inference Rule Editor ────────────────────────────────────────────────
 
-function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions }: any) {
+function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {
   const cfg = config || {};
   const ifBlock = cfg.if || { logic: 'and', conditions: [{ left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] };
 
@@ -122,8 +130,8 @@ function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOption
             <div className="flex gap-2">
               <Select size="small" allowClear placeholder="函数" value={obj.function} onChange={v => updateCondition(idx, { [side]: { ...obj, function: v } })}
                 options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Input size="small" placeholder="返回字段" value={obj.returnField || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, returnField: e.target.value } })}
-                className="bg-dark-bg border-dark-border" style={{ width: 150 }} />
+              <Select size="small" allowClear placeholder="返回字段" value={obj.returnField} onChange={v => updateCondition(idx, { [side]: { ...obj, returnField: v } })}
+                options={getReturnFields(funcs, obj.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
             </div>
           ) : (
             <Input size="small" placeholder="字面值" value={obj.value || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, value: e.target.value } })}
@@ -402,9 +410,9 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         ) : !ruleTemplate ? (
           <p className="text-text-muted">未找到规则模板</p>
         ) : ruleTemplate.ruleName === '验证规则' ? (
-          <ValidationRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={functionOptions} operatorOptions={OPERATOR_OPTIONS} />
+          <ValidationRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={functionOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} />
         ) : ruleTemplate.ruleName === '推理规则' ? (
-          <InferenceRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={functionOptions} operatorOptions={OPERATOR_OPTIONS} />
+          <InferenceRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={functionOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} />
         ) : (
           <p className="text-text-muted">不支持的规则模板: {ruleTemplate.ruleName}</p>
         )}
