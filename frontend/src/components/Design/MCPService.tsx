@@ -9,7 +9,7 @@ export default function MCPService() {
   const [mcpChecking, setMcpChecking] = useState(true);
   const [mcpToggling, setMcpToggling] = useState(false);
   const [mcpTools, setMcpTools] = useState<{ name: string; description: string; inputSchema?: any }[]>([]);
-  const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
+  const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [mcpSelectedTool, setMcpSelectedTool] = useState<string | null>(null);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
@@ -77,45 +77,11 @@ export default function MCPService() {
           <div className="flex items-center gap-2">
             <span>可用工具：</span>
             <span className="text-accent-green font-semibold">{mcpTools.length}</span>
-            <Button type="link" size="small" onClick={() => setMcpToolsOpen(!mcpToolsOpen)}>
-              {mcpToolsOpen ? '收起工具' : '查看工具'}
+            <Button type="link" size="small" onClick={() => setToolsModalOpen(true)}>
+              查看工具
             </Button>
           </div>
         </div>
-
-        {/* Inline tool list */}
-        {mcpToolsOpen && (
-          <div className="mb-4 border border-dark-border rounded max-h-60 overflow-y-auto">
-            {mcpTools.length === 0 ? (
-              <div className="px-3 py-4 text-center text-text-muted text-xs">暂无工具信息</div>
-            ) : mcpTools.map(t => {
-              const selected = mcpSelectedTool === t.name;
-              const props = t.inputSchema?.properties || {};
-              const required = t.inputSchema?.required || [];
-              return (
-              <div key={t.name}>
-                <div className="px-3 py-2 border-b border-dark-border last:border-b-0 hover:bg-dark-hover cursor-pointer" onClick={() => setMcpSelectedTool(selected ? null : t.name)}>
-                  <div className="text-text-primary text-xs font-medium">{t.name}</div>
-                  <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
-                  {Object.keys(props).length > 0 && <div className="text-accent-blue text-xs mt-1">{Object.keys(props).length} 个参数 {selected ? '▲' : '▼'}</div>}
-                </div>
-                {selected && Object.keys(props).length > 0 && (
-                  <div className="px-6 py-2 bg-dark-bg border-b border-dark-border space-y-1">
-                    {Object.entries(props).map(([k, v]: any) => (
-                      <div key={k} className="flex items-center gap-2 text-xs">
-                        <span className="text-yellow-400 font-mono">{k}</span>
-                        <span className="text-text-muted">({v.type || 'any'})</span>
-                        {required.includes(k) && <span className="text-red-400">*必填</span>}
-                        {v.description && <span className="text-text-secondary">— {v.description}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
-        )}
 
         <div className="flex gap-2">
           <Button onClick={() => setConfigModalOpen(true)}>查看配置</Button>
@@ -131,6 +97,42 @@ export default function MCPService() {
           }}>测试</Button>
         </div>
       </div>
+
+      {/* ─── Tools Modal (工具列表) ──────────────────────────────────── */}
+      <Modal title="MCP 工具列表" open={toolsModalOpen} onCancel={() => { setToolsModalOpen(false); setMcpSelectedTool(null); }} footer={null} width={650}>
+        {mcpTools.length === 0 ? (
+          <p className="text-text-muted text-sm py-8 text-center">暂无工具信息</p>
+        ) : (
+          <div className="max-h-96 overflow-y-auto -mx-6 -mb-4 px-6 pb-4">
+            {mcpTools.map(t => {
+              const selected = mcpSelectedTool === t.name;
+              const props = t.inputSchema?.properties || {};
+              const required = t.inputSchema?.required || [];
+              return (
+              <div key={t.name}>
+                <div className="py-3 border-b border-dark-border last:border-b-0 cursor-pointer hover:bg-dark-hover -mx-6 px-6" onClick={() => setMcpSelectedTool(selected ? null : t.name)}>
+                  <div className="text-text-primary text-sm font-medium">{t.name}</div>
+                  <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
+                  {Object.keys(props).length > 0 && <div className="text-accent-blue text-xs mt-1">{Object.keys(props).length} 个参数 {selected ? '▲' : '▼'}</div>}
+                </div>
+                {selected && Object.keys(props).length > 0 && (
+                  <div className="px-6 py-2 bg-dark-bg border-b border-dark-border space-y-1.5">
+                    {Object.entries(props).map(([k, v]: any) => (
+                      <div key={k} className="flex items-start gap-2 text-xs">
+                        <span className="text-yellow-400 font-mono shrink-0 w-28">{k}</span>
+                        <span className="text-text-muted shrink-0">({v.type || 'any'})</span>
+                        {required.includes(k) && <span className="text-red-400 shrink-0">*必填</span>}
+                        {v.description && <span className="text-text-secondary">— {v.description}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
 
       {/* ─── Config Modal (MCP 配置) ──────────────────────────────────── */}
       <Modal title="MCP 服务配置" open={configModalOpen} onCancel={() => setConfigModalOpen(false)} footer={null} width={600}>
