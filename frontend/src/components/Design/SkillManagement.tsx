@@ -140,9 +140,9 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
   const columns = [
     { title: '技能名称', dataIndex: 'name', key: 'name', width: 140, render: (v: string) => <span className="text-text-primary">{v}</span> },
     { title: '技能简介', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: string) => <span className="text-text-secondary text-xs">{v || '-'}</span> },
-    { title: '状态', key: 'status', width: 80, render: (_: any, r: SkillSummary) => {
+    { title: '状态', key: 'status', width: 180, render: (_: any, r: SkillSummary) => {
       if (!r.has_skill) return <Tag color="default">未生成</Tag>;
-      if (!r.format_ok) return <Tag color="red" title={r.format_error || ''}>格式错误</Tag>;
+      if (!r.format_ok) return <span className="text-red-400 text-xs">{r.format_error || '格式错误'}</span>;
       return <Tag color="green">已输出</Tag>;
     }},
       {
