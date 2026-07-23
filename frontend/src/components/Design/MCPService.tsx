@@ -32,15 +32,18 @@ export default function MCPService() {
       const r = mcpRunning ? await stopMcp() : await startMcp();
       message.success(r.message);
       setMcpRunning(r.running);
-      // Try to fetch tools, ignore error (MCP may not be ready immediately)
-      try {
-        if (r.running) {
-          const tools = await getMcpTools(host);
-          setMcpTools(tools);
-        } else {
-          setMcpTools([]);
+      // Retry fetching tools until MCP is ready
+      if (r.running) {
+        for (let attempt = 0; attempt < 6; attempt++) {
+          await new Promise(r => setTimeout(r, 1000));
+          try {
+            const tools = await getMcpTools(host);
+            if (tools && tools.length > 0) { setMcpTools(tools); break; }
+          } catch { /* retry */ }
         }
-      } catch { /* MCP may not be ready yet */ }
+      } else {
+        setMcpTools([]);
+      }
     } catch (e: any) { message.error(e.message); }
     finally { setMcpToggling(false); }
   };
