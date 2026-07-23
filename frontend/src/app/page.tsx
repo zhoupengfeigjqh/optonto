@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PlusOutlined, DeleteOutlined, FolderOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, FolderOutlined, EditOutlined } from '@ant-design/icons';
 import { Modal, Input, message, Button, Empty } from 'antd';
 import {
-  getScenarios, createScenario, updateScenario, deleteScenario,
+  getScenarios, createScenario, updateScenario,
   getOntologies, createOntology, updateOntology, deleteOntology,
   getOntologyData,
   Scenario, Ontology,
@@ -21,7 +21,6 @@ export default function HomePage() {
   const [showEditScenario, setShowEditScenario] = useState<Scenario | null>(null);
   const [showNewOntology, setShowNewOntology] = useState(false);
   const [showEditOntology, setShowEditOntology] = useState<Ontology | null>(null);
-  const [showDeleteScenario, setShowDeleteScenario] = useState(false);
   const [showDeleteOntology, setShowDeleteOntology] = useState<Ontology | null>(null);
 
   // Form fields
@@ -97,23 +96,6 @@ export default function HomePage() {
   };
 
   // ── Delete Scenario ──
-  const handleDeleteScenario = async () => {
-    if (!selectedScenarioId) return;
-    if (deleteConfirmText !== selectedScenario?.name) {
-      message.warning('输入的业务场景名称不匹配');
-      return;
-    }
-    try {
-      await deleteScenario(selectedScenarioId);
-      message.success('业务场景已删除');
-      setShowDeleteScenario(false);
-      setDeleteConfirmText('');
-      setSelectedScenarioId(null);
-      await loadScenarios();
-    } catch (e: any) {
-      message.error(e.message);
-    }
-  };
 
   // ── Edit Scenario ──
   const handleEditScenario = async () => {
@@ -276,13 +258,7 @@ export default function HomePage() {
                   >
                     新建本体
                   </Button>
-                  <Button
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => { setDeleteConfirmText(''); setShowDeleteScenario(true); }}
-                  >
-                    删除业务场景
-                  </Button>
+                </div>
                 </div>
               </div>
 
@@ -508,27 +484,6 @@ export default function HomePage() {
 
       {/* Confirm Delete Scenario */}
       <Modal
-        title="确认删除业务场景"
-        open={showDeleteScenario}
-        onOk={handleDeleteScenario}
-        onCancel={() => { setShowDeleteScenario(false); setDeleteConfirmText(''); }}
-        okText="确认删除"
-        cancelText="取消"
-        okButtonProps={{ danger: true }}
-      >
-        <div className="space-y-3 pt-2">
-          <p className="text-text-secondary text-sm">
-            删除业务场景 <strong className="text-red-400">{selectedScenario?.name}</strong> 将同时删除该业务场景下所有本体，
-            且该业务场景下的本体必须为空才能删除。请输入业务场景名称以确认：
-          </p>
-          <Input
-            placeholder={`请输入 "${selectedScenario?.name || ''}" 确认删除`}
-            value={deleteConfirmText}
-            onChange={e => setDeleteConfirmText(e.target.value)}
-            className="bg-dark-bg border-dark-border text-text-primary"
-          />
-        </div>
-      </Modal>
 
       {/* Confirm Delete Ontology */}
       <Modal
