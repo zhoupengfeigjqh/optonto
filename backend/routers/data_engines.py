@@ -14,6 +14,9 @@ from services import load_ontology_data, save_ontology_data
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/data-engines", tags=["数据引擎"])
 
+# MySQL connection pools (lazy initialized)
+_sql_pools: dict = {}
+
 
 # ─── LLM setup ────────────────────────────────────────────────────────────────
 
@@ -304,7 +307,7 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
         if not de.sql:
             raise HTTPException(status_code=400, detail="SQL 语句为空")
         try:
-            # Replace :paramName placeholders with actual values
+            # Replace :paramName placeholders
             sql = de.sql
             for k, v in params.items():
                 var_name = de.sql_vars.get(k, k)
@@ -313,7 +316,37 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
                     sql = sql.replace(placeholder, f"'{v}'")
                 else:
                     sql = sql.replace(placeholder, str(v))
-            return {"result": sql, "executed": True}
+
+            # Only allow SELECT queries
+            stripped = sql.strip().upper()
+            if not stripped.startswith("SELECT"):
+                raise HTTPException(status_code=400, detail="只允许执行 SELECT 查询")
+
+            # Execute via connection pool
+            import mysql.connector.pooling
+            db_host = os.environ.get("DB_HOST", "mysql")
+            db_port = int(os.environ.get("DB_PORT", 3306))
+            db_user = os.environ.get("DB_USERNAME", "root")
+            db_pass = os.environ.get("DB_PASSWORD", "onto123456")
+            db_name = os.environ.get("DB_NAME", "onto_material")
+
+            if pool_key not in _sql_pools:
+                _sql_pools[pool_key] = mysql.connector.pooling.MySQLConnectionPool(
+                    pool_name=pool_key, pool_size=3,
+                    host=db_host, port=db_port,
+                    user=db_user, password=db_pass,
+                    database=db_name,
+                )
+            conn = _sql_pools[pool_key].get_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(sql)
+            rows = cursor.fetchmany(100)
+            cursor.close()
+            conn.close()
+
+            return {"result": {"data": rows, "row_count": len(rows)}}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"SQL 执行失败: {str(e)}")
 

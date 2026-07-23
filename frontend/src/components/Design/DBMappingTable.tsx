@@ -119,7 +119,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
     if (!schema.exists) { message.warning('请先上传数据库 Schema 文件'); return; }
     // Check behavior has response params
     const beh = behaviors.find(b => b.name === sqlEditorEngine.behavior_name);
-    if (!beh || !beh.response || Object.keys(beh.response).length === 0) {
+    if (!beh || !beh.response || Object.keys(beh.response || {}).length === 0) {
       message.warning('请先配置本体行为的输入参数和返回结构'); return;
     }
     setSqlGenLoading(true);
@@ -160,8 +160,8 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       const b = r._behavior;
       return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b?.name || v)}>{b?.display_name || v}</span>;
     }},
-    { title: 'SQL代码', key: 'sql_code', width: 90, render: (_: any, r: DataEngine) => {
-      const hasSql = r.sql?.trim().length > 0;
+    { title: 'SQL代码', key: 'sql_code', width: 90, render: (_: any, r: any) => {
+      const hasSql = r.sql && r.sql.trim().length > 0;
       return <Button size="small" icon={<EditOutlined />} onClick={() => openSqlEditor(r)}>{hasSql ? '已设置' : '编辑'}</Button>;
     }},
     {
