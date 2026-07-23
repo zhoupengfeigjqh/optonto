@@ -9,9 +9,9 @@ export default function MCPService() {
   const [mcpChecking, setMcpChecking] = useState(true);
   const [mcpToggling, setMcpToggling] = useState(false);
   const [mcpTools, setMcpTools] = useState<{ name: string; description: string; inputSchema?: any }[]>([]);
-  const [mcpModalOpen, setMcpModalOpen] = useState(false);
   const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
   const [mcpSelectedTool, setMcpSelectedTool] = useState<string | null>(null);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
   const checkMcpStatus = useCallback(async () => {
@@ -48,16 +48,6 @@ export default function MCPService() {
     finally { setMcpToggling(false); }
   };
 
-  const openMcpModal = async () => {
-    setMcpModalOpen(true);
-    setMcpToolsOpen(false);
-    setMcpSelectedTool(null);
-    try {
-      const tools = await getMcpTools(host);
-      setMcpTools(tools);
-    } catch { setMcpTools([]); }
-  };
-
   const mcpConfigJson = JSON.stringify({
     mcpServers: {
       'optonto-api': { type: 'url', url: `http://${host}:8002/sse` },
@@ -87,45 +77,18 @@ export default function MCPService() {
           <div className="flex items-center gap-2">
             <span>可用工具：</span>
             <span className="text-accent-green font-semibold">{mcpTools.length}</span>
-            <Button type="link" size="small" onClick={openMcpModal}>查看详情</Button>
+            <Button type="link" size="small" onClick={() => setMcpToolsOpen(!mcpToolsOpen)}>
+              {mcpToolsOpen ? '收起工具' : '查看工具'}
+            </Button>
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <Button loading={mcpToggling} onClick={handleMcpToggle}>
-            {mcpRunning ? '停止' : '启动'}
-          </Button>
-          <Button onClick={() => {
-            Modal.info({
-              title: <span style={{color:'#fff'}}>MCP 测试</span>,
-              content: <p className="text-text-secondary text-sm">请将 MCP 地址复制到其他平台用于测试，本平台暂不支持。</p>,
-              okText: '知道了',
-            });
-          }}>测试</Button>
-        </div>
-      </div>
-
-      {/* ─── MCP Config Modal ──────────────────────────────────────────── */}
-      <Modal
-        title="MCP 服务配置"
-        open={mcpModalOpen}
-        onCancel={() => setMcpModalOpen(false)}
-        footer={null}
-        width={600}
-      >
-        <p className="text-text-muted text-xs mb-3">将以下配置添加到你的 agent 的 MCP 配置中，即可连接本体服务。</p>
-        <div className="relative">
-          <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono text-yellow-400 whitespace-pre-wrap overflow-x-auto">{mcpConfigJson}</pre>
-          <Button size="small" className="absolute top-2 right-2" onClick={() => { navigator.clipboard.writeText(mcpConfigJson); message.success('MCP 配置已复制到剪贴板'); }}>复制</Button>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-text-muted text-xs">可用工具：</span>
-          <span className="text-accent-green text-sm font-semibold">{mcpTools.length}</span>
-          <Button size="small" type="link" onClick={() => setMcpToolsOpen(!mcpToolsOpen)}>{mcpToolsOpen ? '收起' : '查看详情'}</Button>
-        </div>
+        {/* Inline tool list */}
         {mcpToolsOpen && (
-          <div className="mt-2 border border-dark-border rounded max-h-60 overflow-y-auto">
-            {mcpTools.map(t => {
+          <div className="mb-4 border border-dark-border rounded max-h-60 overflow-y-auto">
+            {mcpTools.length === 0 ? (
+              <div className="px-3 py-4 text-center text-text-muted text-xs">暂无工具信息</div>
+            ) : mcpTools.map(t => {
               const selected = mcpSelectedTool === t.name;
               const props = t.inputSchema?.properties || {};
               const required = t.inputSchema?.required || [];
@@ -153,6 +116,33 @@ export default function MCPService() {
             })}
           </div>
         )}
+
+        <div className="flex gap-2">
+          <Button onClick={() => setConfigModalOpen(true)}>查看配置</Button>
+          <Button loading={mcpToggling} onClick={handleMcpToggle}>
+            {mcpRunning ? '停止' : '启动'}
+          </Button>
+          <Button onClick={() => {
+            Modal.info({
+              title: <span style={{color:'#fff'}}>MCP 测试</span>,
+              content: <p className="text-text-secondary text-sm">请将 MCP 地址复制到其他平台用于测试，本平台暂不支持。</p>,
+              okText: '知道了',
+            });
+          }}>测试</Button>
+        </div>
+      </div>
+
+      {/* ─── Config Modal (MCP 配置) ──────────────────────────────────── */}
+      <Modal title="MCP 服务配置" open={configModalOpen} onCancel={() => setConfigModalOpen(false)} footer={null} width={600}>
+        <p className="text-text-muted text-xs mb-3">将以下配置添加到你的 agent 的 MCP 配置中，即可连接本体服务。</p>
+        <div className="relative">
+          <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono text-yellow-400 whitespace-pre-wrap overflow-x-auto">{mcpConfigJson}</pre>
+          <Button size="small" className="absolute top-2 right-2" onClick={() => { navigator.clipboard.writeText(mcpConfigJson); message.success('MCP 配置已复制到剪贴板'); }}>复制</Button>
+        </div>
+        <div className="text-xs text-text-muted space-y-1 mt-4">
+          <div>SSE 端点：<code className="text-yellow-400">http://{host}:8002/sse</code></div>
+          <div>健康检查：<code className="text-yellow-400">http://{host}:8002/health</code></div>
+        </div>
       </Modal>
     </div>
   );
