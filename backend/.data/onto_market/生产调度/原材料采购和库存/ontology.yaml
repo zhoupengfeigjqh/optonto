@@ -322,6 +322,7 @@ functions:
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
+  behavior_type: API
   params:
     rawMaterialId:
       type: string
@@ -426,6 +427,7 @@ behaviors:
   display_name: 创建原材料采购单
 - name: CancelPurchaseRecord
   description: 取消一笔已创建但尚未入库的采购记录。
+  behavior_type: API
   params:
     purchaseRecordId:
       type: string
@@ -456,6 +458,7 @@ behaviors:
   display_name: 取消原材料采购单
 - name: ReceiveRawMaterial
   description: 将原材料采购入库。
+  behavior_type: API
   params:
     purchaseRecordId:
       type: string
@@ -485,6 +488,7 @@ behaviors:
   display_name: 入库原材料
 - name: QueryInventory
   description: 根据原材料ID或名称查询其最新的库存快照。
+  behavior_type: API
   params:
     rawMaterialId:
       type: string
@@ -543,6 +547,7 @@ behaviors:
   display_name: 查询原材料库存信息
 - name: QueryPurchaseRecords
   description: 根据采购单/原材料/关联客单来查询采购记录列表。
+  behavior_type: API
   params:
     purchaseRecordId:
       type: string
@@ -618,6 +623,7 @@ behaviors:
   display_name: 查询原材料采购单信息
 - name: QueryRawMaterials
   description: 根据原材料ID或名称查询原材料的基础信息。
+  behavior_type: API
   params:
     rawMaterialId:
       type: string
@@ -659,6 +665,7 @@ behaviors:
   display_name: 查询原材料基本信息
 - name: QuerySuppliers
   description: 根据供应商名或原材料名查询供应商
+  behavior_type: API
   params:
     supplierName:
       type: string
@@ -704,6 +711,7 @@ behaviors:
   display_name: 查询供应商信息
 - name: QuerySupplierCapability
   description: 根据供应商名或原材料名，查询供应商供货能力
+  behavior_type: API
   params:
     supplierName:
       type: string

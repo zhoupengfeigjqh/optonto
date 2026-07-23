@@ -316,7 +316,7 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('data-engine'); setActiveTab('data-engines'); }}
                 >
-                  <span>数据映射</span>
+                  <span>API映射</span>
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
