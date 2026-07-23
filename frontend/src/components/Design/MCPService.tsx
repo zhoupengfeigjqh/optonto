@@ -17,8 +17,9 @@ export default function MCPService() {
   const checkMcpStatus = useCallback(async () => {
     setMcpChecking(true);
     try {
-      const s = await getMcpStatus();
+      const [s, tools] = await Promise.all([getMcpStatus(), getMcpTools(host)]);
       setMcpRunning(s.running);
+      setMcpTools(tools);
     } catch { setMcpRunning(false); }
     finally { setMcpChecking(false); }
   }, []);
