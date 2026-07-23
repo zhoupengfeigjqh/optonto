@@ -754,8 +754,39 @@ behaviors:
 - name: QuerySupplierCapabilitySQL
   description: 根据供应商名或原材料名，查询供应能力
   behavior_type: SQL
-  params: {}
-  response: {}
+  params:
+    supplierName:
+      type: string
+      required: false
+      description: ''
+      example: 宝钢钢铁集团
+    rawMaterialName:
+      type: string
+      required: false
+      description: ''
+      example: 钢板008
+  response:
+    data:
+      type: array
+      items:
+        type: object
+        properties:
+          supplierName:
+            type: string
+            display_name: 供应商名称
+            example: 宝钢钢铁集团
+          rawMaterialId:
+            type: string
+            display_name: 原材料ID
+            example: RM-001
+          rawMaterialName:
+            type: string
+            display_name: 原材料名称
+            example: 高强度钢板
+          leadTime:
+            type: number
+            display_name: 交货周期
+            example: 100
   related_concepts:
   - DeliveryCapability
   display_name: 查询供应商供货能力SQL
