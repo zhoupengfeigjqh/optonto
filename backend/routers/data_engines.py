@@ -330,6 +330,7 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
             db_pass = os.environ.get("DB_PASSWORD", "onto123456")
             db_name = os.environ.get("DB_NAME", "onto_material")
 
+            pool_key = f"sql_pool_{ontology_id}"
             if pool_key not in _sql_pools:
                 _sql_pools[pool_key] = mysql.connector.pooling.MySQLConnectionPool(
                     pool_name=pool_key, pool_size=3,
