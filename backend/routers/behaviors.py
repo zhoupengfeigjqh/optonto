@@ -66,10 +66,17 @@ async def delete_behavior(ontology_id: int, behavior_name: str):
 
 @router.post("/{behavior_name}/call")
 async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dict):
-    """Call a behavior API. Routes through data engine if bound, otherwise calls behavior.url directly."""
+    """Call a behavior. API type routes through data engine, SQL type executes SQL query."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     params = body.get("params", {})
+
+    # Check if this behavior has a SQL data engine
+    de = next((d for d in data.data_engines if d.behavior_name == behavior_name), None)
+    if de and de.engine_type == "SQL":
+        # Route to SQL execution
+        from routers.data_engines import _execute_sql
+        return await _execute_sql(sc_name, on_name, de, params)
 
     try:
         from services.data_engine import call_behavior

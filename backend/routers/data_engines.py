@@ -291,6 +291,54 @@ async def smart_align(ontology_id: int, engine_name: str):
 # ─── Data Engine Call ──────────────────────────────────────────────────────────
 
 
+async def _execute_sql(sc_name: str, on_name: str, de: DataEngineItem, params: dict, ontology_id: int = 0) -> dict:
+    """Execute a SQL query from a data engine definition. Shared by data_engines and behaviors routers."""
+    if not de.sql:
+        raise HTTPException(status_code=400, detail="SQL 语句为空")
+    try:
+        import re
+        sql = de.sql
+        for k, v in params.items():
+            var_name = de.sql_vars.get(k, k)
+            placeholder = f":{var_name}"
+            if isinstance(v, str):
+                sql = sql.replace(placeholder, f"'{v}'")
+            else:
+                sql = sql.replace(placeholder, str(v))
+        sql = re.sub(r":[a-zA-Z_]+", "NULL", sql)
+
+        stripped = sql.strip().upper()
+        if not stripped.startswith("SELECT"):
+            raise HTTPException(status_code=400, detail="只允许执行 SELECT 查询")
+
+        import mysql.connector.pooling
+        db_host = os.environ.get("DB_HOST", "mysql")
+        db_port = int(os.environ.get("DB_PORT", 3306))
+        db_user = os.environ.get("DB_USERNAME", "root")
+        db_pass = os.environ.get("DB_PASSWORD", "onto123456")
+        db_name = os.environ.get("DB_NAME", "onto_material")
+
+        pool_key = f"sql_pool_{ontology_id}"
+        if pool_key not in _sql_pools:
+            _sql_pools[pool_key] = mysql.connector.pooling.MySQLConnectionPool(
+                pool_name=pool_key, pool_size=3,
+                host=db_host, port=db_port,
+                user=db_user, password=db_pass,
+                database=db_name,
+            )
+        conn = _sql_pools[pool_key].get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql)
+        rows = cursor.fetchmany(100)
+        cursor.close()
+        conn.close()
+        return {"result": {"data": rows, "row_count": len(rows)}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQL 执行失败: {str(e)}")
+
+
 @router.post("/{engine_name}/call")
 async def call_engine(ontology_id: int, engine_name: str, body: dict):
     """Call target API or execute SQL query via data engine."""
@@ -304,55 +352,9 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
     params = body.get("params", {})
 
     if de.engine_type == "SQL":
-        if not de.sql:
-            raise HTTPException(status_code=400, detail="SQL 语句为空")
-        try:
-            # Replace :paramName placeholders from params, replace unmatched with NULL
-            import re
-            sql = de.sql
-            for k, v in params.items():
-                var_name = de.sql_vars.get(k, k)
-                placeholder = f":{var_name}"
-                if isinstance(v, str):
-                    sql = sql.replace(placeholder, f"'{v}'")
-                else:
-                    sql = sql.replace(placeholder, str(v))
-            # Replace any remaining :paramName placeholders with NULL
-            sql = re.sub(r":[a-zA-Z_]+", "NULL", sql)
+        return await _execute_sql(sc_name, on_name, de, params, ontology_id)
 
-            # Only allow SELECT queries
-            stripped = sql.strip().upper()
-            if not stripped.startswith("SELECT"):
-                raise HTTPException(status_code=400, detail="只允许执行 SELECT 查询")
-
-            # Execute via connection pool
-            import mysql.connector.pooling
-            db_host = os.environ.get("DB_HOST", "mysql")
-            db_port = int(os.environ.get("DB_PORT", 3306))
-            db_user = os.environ.get("DB_USERNAME", "root")
-            db_pass = os.environ.get("DB_PASSWORD", "onto123456")
-            db_name = os.environ.get("DB_NAME", "onto_material")
-
-            pool_key = f"sql_pool_{ontology_id}"
-            if pool_key not in _sql_pools:
-                _sql_pools[pool_key] = mysql.connector.pooling.MySQLConnectionPool(
-                    pool_name=pool_key, pool_size=3,
-                    host=db_host, port=db_port,
-                    user=db_user, password=db_pass,
-                    database=db_name,
-                )
-            conn = _sql_pools[pool_key].get_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(sql)
-            rows = cursor.fetchmany(100)
-            cursor.close()
-            conn.close()
-
-            return {"result": {"data": rows, "row_count": len(rows)}}
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"SQL 执行失败: {str(e)}")
+    # API type — use existing data engine
 
     # API type — use existing data engine
     try:
