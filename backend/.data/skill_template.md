@@ -1,5 +1,8 @@
 ---
-name: 原材料库存和采购本体
+onto_name: 原材料库存和采购本体
+onto_id: ontology的id
+scenario_name: 场景名称
+scenario_id: scenario的id
 description: （约200字，介绍业务逻辑和重点内容）该技能提供能了原材料、原材料库存以及原材料采购的相关信息，当用户的意图涉及原材料查询、原材料采购以及原材料库存等相关操作时，请读取该文件进行进一步的业务理解和行为操作。
 ---
 

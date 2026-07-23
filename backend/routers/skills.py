@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
+from metadata import get_scenario_by_name
 from services import load_ontology_data, _get_ontology_dir
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/skills", tags=["技能"])
@@ -70,7 +71,7 @@ async def list_skills(ontology_id: int):
         format_ok = False
         if md_path.exists():
             head = md_path.read_text(encoding="utf-8")[:200]
-            format_ok = head.startswith("---\nname:") and "\ndescription:" in head
+            format_ok = head.startswith("---\nonto_name:") and "\ndescription:" in head
         desc = ""
         meta_path = d / "meta.json"
         if meta_path.exists():
@@ -215,8 +216,14 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
     from langchain_core.messages import HumanMessage, SystemMessage
     from config import SKILL_GENERATE_SYSTEM_PROMPT, SKILL_GENERATE_PROMPT
 
+    scenario = get_scenario_by_name(sc_name)
+    scenario_id = scenario.get("id", "") if scenario else ""
+
     prompt = SKILL_GENERATE_PROMPT.format(
-        ontology_name=f"{sc_name}/{on_name}",
+        onto_name=on_name,
+        onto_id=str(ontology_id),
+        scenario_name=sc_name,
+        scenario_id=str(scenario_id),
         ontology_yaml=ontology_summary,
         skill_template=skill_template,
     )

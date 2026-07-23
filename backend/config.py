@@ -433,8 +433,11 @@ SKILL_GENERATE_SYSTEM_PROMPT = "你是一个专业的智能体技能（SKILL）�
 
 SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智能体技能文件（SKILL.md）。
 
-【本体名称】
-{ontology_name}
+【头部信息】
+onto_name: {onto_name}
+onto_id: {onto_id}
+scenario_name: {scenario_name}
+scenario_id: {scenario_id}
 
 【本体YAML数据】
 {ontology_yaml}
