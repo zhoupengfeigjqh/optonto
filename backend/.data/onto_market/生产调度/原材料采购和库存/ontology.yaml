@@ -489,13 +489,13 @@ behaviors:
     rawMaterialId:
       type: string
       required: false
+      description: ''
       example: RM-001
-      display_name: 原材料编号
     rawMaterialName:
       type: string
       required: false
+      description: ''
       example: 高强度钢板
-      display_name: 原材料名称
   response:
     code:
       type: number
@@ -892,8 +892,8 @@ rules:
 - name: I04_RelatedOrderValidation
   description: IF 采购单relatedOrderId不为空且不在 CustomerOrder 表中 (或状态为 已取消) THEN 提示用户该客户订单可能已失效，请确认是否取消该采购单。
   related_behaviors:
-  - QueryPurchaseRecords
   - CreatePurchaseRecord
+  - QueryPurchaseRecords
   related_functions: []
   display_name: 采购关联订单校验
   rule_type: 推理规则

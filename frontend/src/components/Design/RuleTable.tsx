@@ -238,7 +238,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       const [ruleList, behList, fnList, types, conList, commonFnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId), getCommonFunctions()]);
       const allFuncs = [...fnList, ...commonFnList.map((f: any) => ({ ...f, related_attributes: [] as string[] }))];
       setRules(ruleList); setBehaviors(behList); setFuncs(allFuncs);
-      setRuleTypeOptions(types.map(t => ({ label: t, value: t })));
+      setRuleTypeOptions([...types.map(t => ({ label: t, value: t })), { label: '普通规则', value: '普通规则' }]);
       setConcepts(conList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
@@ -307,6 +307,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   };
 
   const openRuleDesign = async () => {
+    if (!editData.rule_type || editData.rule_type === '普通规则') return;
     setRuleConfig(editData.rule_detail ? normalizeDetail(JSON.parse(JSON.stringify(editData.rule_detail))) : null);
     setRuleDesignModalOpen(true);
     if (!editData.rule_type) return;
@@ -378,7 +379,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     }
 
     setEditData(p => ({ ...p, rule_detail: normalizeDetail(ruleConfig) }));
-    message.success('规则设计已保存到编辑缓存');
+    message.success('规则结构已保存到编辑缓存');
     setRuleDesignModalOpen(false);
   };
 
@@ -388,7 +389,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (!editing && !isNew) return render ? render(val) : (val || '-');
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'rule_type') return <Select size="small" allowClear placeholder="选择" value={editData.rule_type || undefined} onChange={v => setEditData(p => ({...p, rule_type: v || ''}))} options={ruleTypeOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'rule_type') return <Select size="small" allowClear placeholder="选择" value={editData.rule_type || undefined} onChange={v => { const isNormal = v === '普通规则'; setEditData(p => ({...p, rule_type: v || '', rule_detail: isNormal ? null : p.rule_detail })); }} options={ruleTypeOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'position') return <Select size="small" allowClear placeholder="选择" value={editData.position || undefined} onChange={v => setEditData(p => ({...p, position: v || ''}))} options={[{label:'前置',value:'前置'},{label:'后置',value:'后置'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behaviors') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_behaviors || []} onChange={v => setEditData(p => ({...p, related_behaviors: v}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
@@ -407,13 +408,17 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'description') },
     { title: '关联行为', dataIndex: 'related_behaviors', key: 'related_behaviors', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_behaviors', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.display_name || name).join(', ') || '-') },
     { title: '关联函数', dataIndex: 'related_functions', key: 'related_functions', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_functions', (list: string[]) => list?.map(name => funcs.find(f => f.name === name)?.display_name || name).join(', ') || '-') },
-    { title: '规则设计', dataIndex: 'rule_design', key: 'rule_design', width: 75, render: (_: any, r: Rule) => {
+    { title: '规则结构', dataIndex: 'rule_design', key: 'rule_design', width: 75, render: (_: any, r: Rule) => {
       const editing = isEditing(r);
       const isNew = editingKey === '__new__' && r.name === '__new__';
+      const rt = editing ? editData.rule_type : r.rule_type;
+      const isNormal = rt === '普通规则';
       if (!editing && !isNew) {
+        if (isNormal) return <span className="text-text-muted text-xs">-</span>;
         const hasConfig = r.rule_detail && Object.keys(r.rule_detail).length > 0;
         return <span className={`text-xs ${hasConfig ? 'text-green-500' : 'text-text-muted'}`}>{hasConfig ? '已设计' : '未设计'}</span>;
       }
+      if (isNormal) return <span className="text-text-muted text-xs">-</span>;
       return <Button type="link" size="small" icon={<FileTextOutlined />} disabled={!editData.rule_type} onClick={openRuleDesign}>设计</Button>;
     }},
     {
@@ -438,7 +443,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
 
       {/* ─── Rule Design Modal ──────────────────────────────────────────── */}
       <Modal
-        title={`规则设计 - ${editData.display_name || editData.name || ''}`}
+        title={`规则结构 - ${editData.display_name || editData.name || ''}`}
         open={ruleDesignModalOpen}
         onOk={saveRuleDesign}
         onCancel={() => setRuleDesignModalOpen(false)}
@@ -467,7 +472,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
           }}>智能生成</Button>
         </div>
         {!editData.rule_type ? (
-          <p className="text-text-muted">请先选择规则类型后再进行规则设计</p>
+          <p className="text-text-muted">请先选择规则类型后再进行规则结构</p>
         ) : templateLoading ? (
           <div className="flex items-center justify-center h-40"><span className="text-text-muted">加载模板中...</span></div>
         ) : !ruleTemplate ? (

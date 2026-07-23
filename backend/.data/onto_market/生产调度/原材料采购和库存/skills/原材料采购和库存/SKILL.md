@@ -154,7 +154,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 前置 (行为执行前)
 - **关联行为**: CreatePurchaseRecord
 - **关联函数**: 无
-- **规则设计**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "unit"}, "operator": "eq", "right": {"type": "concept", "concept": "RawMaterial", "attribute": "unit"}}`
+- **规则结构**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "unit"}, "operator": "eq", "right": {"type": "concept", "concept": "RawMaterial", "attribute": "unit"}}`
 
 ### V03_ArrivalTimeValidity（到位时间合理性）
 - **类型**: 验证规则
@@ -162,7 +162,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 前置 (行为执行前)
 - **关联行为**: CreatePurchaseRecord
 - **关联函数**: 无
-- **规则设计**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "arrivalTime"}, "operator": "gt", "right": {"type": "concept", "concept": "PurchaseRecord", "attribute": "purchaseTime"}}`
+- **规则结构**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "arrivalTime"}, "operator": "gt", "right": {"type": "concept", "concept": "PurchaseRecord", "attribute": "purchaseTime"}}`
 
 ### V04_RawMaterialExistence（采购-原料存在性）
 - **类型**: 验证规则
@@ -170,7 +170,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 前置 (行为执行前)
 - **关联行为**: CreatePurchaseRecord
 - **关联函数**: 无
-- **规则设计**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "rawMaterialId"}, "operator": "in", "right": {"type": "set", "concept": "RawMaterial", "attribute": "rawMaterialId"}}`
+- **规则结构**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "rawMaterialId"}, "operator": "in", "right": {"type": "set", "concept": "RawMaterial", "attribute": "rawMaterialId"}}`
 
 ### V05_SupplierExistence（采购-供应商存在性）
 - **类型**: 验证规则
@@ -178,7 +178,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 前置 (行为执行前)
 - **关联行为**: CreatePurchaseRecord
 - **关联函数**: 无
-- **规则设计**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "supplierName"}, "operator": "in", "right": {"type": "set", "concept": "Supplier", "attribute": "supplierName", "value": "", "function": "", "returnField": ""}}`
+- **规则结构**: `{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "supplierName"}, "operator": "in", "right": {"type": "set", "concept": "Supplier", "attribute": "supplierName", "value": "", "function": "", "returnField": ""}}`
 
 ### I01_SafetyStockAlert（安全库存预警）
 - **类型**: 推理规则
@@ -186,7 +186,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 后置 (行为执行后)
 - **关联行为**: QueryInventory, ReceiveRawMaterial
 - **关联函数**: 无
-- **规则设计**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "RawMaterialInventory", "attribute": "availableStock"}, "operator": "lt", "right": {"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}]}, "then": "可用库存低于安全库存，建议创建采购单或关注库存", "else": "库存正常，无需操作"}`
+- **规则结构**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "RawMaterialInventory", "attribute": "availableStock"}, "operator": "lt", "right": {"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}]}, "then": "可用库存低于安全库存，建议创建采购单或关注库存", "else": "库存正常，无需操作"}`
 
 ### I02_ArrivalOverdueAlert（采购到位超期预警）
 - **类型**: 推理规则
@@ -194,7 +194,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 后置 (行为执行后)
 - **关联行为**: QueryPurchaseRecords
 - **关联函数**: 无
-- **规则设计**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "function", "function": "getCurrentDate", "returnField": "date"}, "operator": "ge", "right": {"type": "concept", "concept": "PurchaseRecord", "attribute": "arrivalTime"}}]}, "then": "采购单已到位，建议启动入库操作", "else": "采购单尚未到位，无需操作"}`
+- **规则结构**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "function", "function": "getCurrentDate", "returnField": "date"}, "operator": "ge", "right": {"type": "concept", "concept": "PurchaseRecord", "attribute": "arrivalTime"}}]}, "then": "采购单已到位，建议启动入库操作", "else": "采购单尚未到位，无需操作"}`
 
 ### I03_PurchasePurposeInference（采购目的推理）
 - **类型**: 推理规则
@@ -202,7 +202,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 后置 (行为执行后)
 - **关联行为**: CreatePurchaseRecord, QueryPurchaseRecords
 - **关联函数**: 无
-- **规则设计**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "eq", "right": {"type": "value", "value": "\"\""}}]}, "then": "该采购单的采购目的可视为“补充库存”", "else": "该采购单有关联订单，采购目的可能为生产订单备料"}`
+- **规则结构**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "eq", "right": {"type": "value", "value": "\"\""}}]}, "then": "该采购单的采购目的可视为“补充库存”", "else": "该采购单有关联订单，采购目的可能为生产订单备料"}`
 
 ### I04_RelatedOrderValidation（采购关联订单校验）
 - **类型**: 推理规则
@@ -210,7 +210,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **介入位置**: 后置 (行为执行后)
 - **关联行为**: CreatePurchaseRecord, QueryPurchaseRecords
 - **关联函数**: 无
-- **规则设计**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "ne", "right": {"type": "value", "value": "\"\""}}, {"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "not in", "right": {"type": "set", "concept": "CustomerOrder", "attribute": "customerOrderId"}}]}, "then": "该采购单关联的客户订单可能已失效，请确认是否取消该采购单。", "else": "采购单关联的客户订单有效，无需操作。"}`
+- **规则结构**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "ne", "right": {"type": "value", "value": "\"\""}}, {"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "not in", "right": {"type": "set", "concept": "CustomerOrder", "attribute": "customerOrderId"}}]}, "then": "该采购单关联的客户订单可能已失效，请确认是否取消该采购单。", "else": "采购单关联的客户订单有效，无需操作。"}`
 
 ## 7 安全管控
 【重点：安全管控的目的是对危险行为引入人工确认，介入位置可以在行为的执行前或执行后。介入时，智能体应该临时暂停后续操作，让用户对当前任务内容进行审核（具体内容请参考审核内容）】

@@ -196,7 +196,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
           <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p className="text-sm">开始一段新的需求探索对话</p>
-            <p className="text-xs mt-1">输入您的问题或需求描述，AI 将协助您梳理</p>
+            <p className="text-xs mt-1">输入您的问题或需求描述，如DB schema、API 文档和业务需求等，AI 将协助您梳理</p>
           </div>
         )}
         {messages.map((msg, idx) => {

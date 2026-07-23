@@ -391,7 +391,7 @@ def sumRawNotArrivalQty(filterRawMaterialName:str, currentDate:str, purchaseReco
     return {{"result": {{"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}}}"""
 
 
-# ─── 规则设计 — 智能生成提示词 ────────────────────────────────────────────────
+# ─── 规则结构 — 智能生成提示词 ────────────────────────────────────────────────
 
 RULE_GENERATE_SYSTEM_PROMPT = "你是一个规则配置生成专家。根据用户描述的规则需求、本体数据、关联行为和函数信息，严格按照规则模板生成规则配置 JSON。"
 
