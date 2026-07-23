@@ -434,7 +434,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
 
   // ─── render ──────────────────────────────────────────────────────────────
 
-  const dataSource = behaviors.map(b => {
+  const dataSource = behaviors.filter(b => !(b as any).behavior_type || (b as any).behavior_type === 'API').map(b => {
     const de = getEngine(b.name);
     return { ...de, _key: b.name, _behavior: b };
   });
