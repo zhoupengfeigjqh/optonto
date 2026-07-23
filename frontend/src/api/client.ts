@@ -348,6 +348,9 @@ export const analyzeMapping = (ontologyId: number, name: string, body?: {
     { method: 'POST', body: body ? JSON.stringify(body) : undefined }
   );
 
+export const callDataEngine = (ontologyId: number, engineName: string, params: Record<string, any>) =>
+  request<any>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(engineName)}/call`, { method: 'POST', body: JSON.stringify({ params }) });
+
 export const callBehavior = (ontologyId: number, name: string, params: Record<string, any>) =>
   request<{ status_code: number; headers: Record<string, string>; data: any }>(
     `/api/ontologies/${ontologyId}/behaviors/${encodeURIComponent(name)}/call`,

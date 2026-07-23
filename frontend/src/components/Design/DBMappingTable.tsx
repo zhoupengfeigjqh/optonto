@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Tag } from 'antd';
 import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callDataEngine, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import SqlEditor from '@/components/SqlEditor';
 
@@ -148,7 +148,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const executeConnect = async () => {
     if (!connectEngine) return;
     setConnectLoading(true);
-    try { const result = await callBehavior(ontologyId, connectEngine.behavior_name, connectParams); setConnectResult(result); }
+    try { const result = await callDataEngine(ontologyId, connectEngine.name, connectParams); setConnectResult(result); }
     catch (e: any) { setConnectResult({ error: e.message }); }
     finally { setConnectLoading(false); }
   };
