@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Tag } from 'antd';
 import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -17,6 +17,39 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   // schema viewer
   const [schemaContent, setSchemaContent] = useState('');
   const [schemaOpen, setSchemaOpen] = useState(false);
+
+  // behavior edit modal
+  const [behaviorEditOpen, setBehaviorEditOpen] = useState(false);
+  const [behaviorEditName, setBehaviorEditName] = useState('');
+  const [behaviorParamsStr, setBehaviorParamsStr] = useState('{}');
+  const [behaviorResponseStr, setBehaviorResponseStr] = useState('{}');
+  const [behaviorEditLoading, setBehaviorEditLoading] = useState(false);
+
+  const openBehaviorEdit = (name: string) => {
+    const beh = behaviors.find(b => b.name === name);
+    if (!beh) return;
+    setBehaviorEditName(name);
+    setBehaviorParamsStr(JSON.stringify(beh.params || {}, null, 2));
+    setBehaviorResponseStr(JSON.stringify(beh.response || {}, null, 2));
+    setBehaviorEditOpen(true);
+  };
+
+  const saveBehaviorEdit = async () => {
+    let parsedParams: Record<string, unknown> = {};
+    let parsedResponse: Record<string, unknown> = {};
+    try { parsedParams = JSON.parse(behaviorParamsStr); } catch { message.warning('参数 JSON 格式错误'); return; }
+    try { parsedResponse = JSON.parse(behaviorResponseStr); } catch { message.warning('返回结构 JSON 格式错误'); return; }
+    setBehaviorEditLoading(true);
+    try {
+      const beh = behaviors.find(b => b.name === behaviorEditName);
+      if (!beh) { message.error('行为不存在'); return; }
+      await updateBehavior(ontologyId, behaviorEditName, { ...beh, params: parsedParams, response: parsedResponse });
+      message.success('行为参数已更新');
+      setBehaviorEditOpen(false);
+      await load();
+    } catch (e: any) { message.error('保存失败: ' + e.message); }
+    finally { setBehaviorEditLoading(false); }
+  };
 
   // connect test
   const [connectOpen, setConnectOpen] = useState(false);
@@ -103,12 +136,12 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
     finally { setConnectLoading(false); }
   };
 
-  const dataSource = engines.map(e => ({ ...e, _key: e.name }));
+  const dataSource = engines.map(e => ({ ...e, _key: e.name, _behavior: behaviors.find(b => b.name === e.behavior_name) }));
 
   const columns = [
-    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (v: string) => {
-      const b = behaviors.find(b => b.name === v);
-      return <span className="text-text-primary">{b?.display_name || v}</span>;
+    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (v: string, r: any) => {
+      const b = r._behavior;
+      return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b?.name || v)}>{b?.display_name || v}</span>;
     }},
     { title: 'SQL', dataIndex: 'sql', key: 'sql', width: 400, render: (v: string, r: DataEngine) => (
       <Input.TextArea size="small" value={v || ''} onChange={e => handleSQLChange(r, e.target.value)} rows={2} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
@@ -162,6 +195,28 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
               </pre>
             </div>
           )}
+        </div>
+      </Modal>
+      {/* ─── Behavior Params/Response Edit Modal ────────────────────────── */}
+      <Modal
+        title={`编辑行为参数 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`}
+        open={behaviorEditOpen}
+        onOk={saveBehaviorEdit}
+        onCancel={() => setBehaviorEditOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        width={800}
+        confirmLoading={behaviorEditLoading}
+      >
+        <div className="flex gap-3" style={{ minHeight: 320 }}>
+          <div className="flex-1">
+            <span className="text-text-muted text-xs mb-1 block">输入参数 (JSON)</span>
+            <Input.TextArea value={behaviorParamsStr} onChange={e => setBehaviorParamsStr(e.target.value)} rows={16} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+          </div>
+          <div className="flex-1">
+            <span className="text-text-muted text-xs mb-1 block">返回结构 (JSON)</span>
+            <Input.TextArea value={behaviorResponseStr} onChange={e => setBehaviorResponseStr(e.target.value)} rows={16} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+          </div>
         </div>
       </Modal>
     </div>
