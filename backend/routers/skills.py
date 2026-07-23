@@ -72,7 +72,8 @@ async def list_skills(ontology_id: int):
         if md_path.exists():
             head = md_path.read_text(encoding="utf-8")[:300]
             required = ["onto_name:", "onto_id:", "scenario_name:", "scenario_id:", "description:"]
-            format_ok = all(f"\n{r}" in head for r in required) and head.startswith("---\n")
+            missing = [r[:-1] for r in required if f"\n{r}" not in head]
+            format_ok = head.startswith("---\n") and len(missing) == 0
         desc = ""
         meta_path = d / "meta.json"
         if meta_path.exists():
@@ -81,8 +82,15 @@ async def list_skills(ontology_id: int):
                     desc = json.load(mf).get("description", "")
             except:
                 pass
+        format_error = ""
+        if md_path.exists() and not format_ok:
+            if not head.startswith("---\n"):
+                format_error = "文件头部缺少 ---"
+            elif missing:
+                format_error = f"缺少: {', '.join(missing)}"
         items.append({
             "name": d.name, "has_skill": md_path.exists(), "format_ok": format_ok,
+            "format_error": format_error,
             "description": desc,
             "updated_at": md_path.stat().st_mtime if md_path.exists() else d.stat().st_mtime,
         })

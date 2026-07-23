@@ -537,6 +537,7 @@ export interface SkillSummary {
   name: string;
   has_skill: boolean;
   format_ok: boolean;
+  format_error?: string;
   description?: string;
   updated_at: number;
 }
