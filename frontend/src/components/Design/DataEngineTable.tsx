@@ -478,7 +478,10 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold text-text-primary">数据引擎</h3>
+        <div>
+          <h3 className="text-base font-semibold text-text-primary">API映射</h3>
+          <p className="text-text-muted text-xs mt-0.5">管理 API 类型的数据映射，配置目标接口和字段映射关系。</p>
+        </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 text-xs bg-dark-card border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover" onClick={async () => { setMcpModalOpen(true); try { const tools = await getMcpTools(host); setMcpTools(tools); } catch { setMcpTools([]); } }} title="点击查看 MCP 配置">
             <span className={`w-2 h-2 rounded-full ${mcpChecking ? 'bg-gray-500' : mcpRunning ? 'bg-green-500' : 'bg-red-500'}`} />
