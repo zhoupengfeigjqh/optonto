@@ -404,7 +404,7 @@ export default function DesignPage() {
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
               : activeSection === 'data-engine'
-              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : '数据引擎'
+              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : 'API映射'
               : activeSection === 'agent'
               ? activeTab === 'skill-management' ? '技能管理' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
