@@ -279,11 +279,13 @@ functions:
       display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
+      required: true
     currentDate:
       type: string
       display_name: 日期
       description: 日期
       example: '2026-01-01'
+      required: true
     purchaseRecordSet:
       type: array
       items:
@@ -294,16 +296,20 @@ functions:
             display_name: 到位时间
             description: 到位时间
             example: '2026-09-01'
+            required: true
           rawMaterialName:
             type: string
             display_name: 原材料名称
             description: 原材料名称
             example: 高强度钢板
+            required: true
           arrivalQuantity:
             type: number
             display_name: 计划的到位数量
             description: 计划的到位数量
             example: 100
+            required: true
+      required: true
   response:
     result:
       type: object
