@@ -757,12 +757,12 @@ behaviors:
   params:
     supplierName:
       type: string
-      required: false
+      required: true
       description: ''
       example: 宝钢钢铁集团
     rawMaterialName:
       type: string
-      required: false
+      required: true
       description: ''
       example: 钢板008
   response:

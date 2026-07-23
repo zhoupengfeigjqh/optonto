@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Tag } from 'antd';
-import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
+import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
 import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import SqlEditor from '@/components/SqlEditor';
@@ -160,11 +160,10 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       const b = r._behavior;
       return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b?.name || v)}>{b?.display_name || v}</span>;
     }},
-    { title: 'SQL代码', dataIndex: 'sql', key: 'sql', width: 90, render: (v: string, r: DataEngine) => (
-      <div className="cursor-pointer hover:opacity-80" onClick={() => openSqlEditor(r)}>
-        <span className={`text-xs ${v?.trim() ? 'text-green-500' : 'text-yellow-400/70'}`}>{v?.trim() ? '已编辑' : '未编辑'}</span>
-      </div>
-    )},
+    { title: 'SQL代码', key: 'sql_code', width: 90, render: (_: any, r: DataEngine) => {
+      const hasSql = r.sql?.trim().length > 0;
+      return <Button size="small" icon={<EditOutlined />} onClick={() => openSqlEditor(r)}>{hasSql ? '已设置' : '编辑'}</Button>;
+    }},
     {
       title: '操作', key: 'actions', width: 100,
       render: (_: any, r: DataEngine) => (
