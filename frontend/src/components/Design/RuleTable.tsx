@@ -238,7 +238,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       const [ruleList, behList, fnList, types, conList, commonFnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId), getCommonFunctions()]);
       const allFuncs = [...fnList, ...commonFnList.map((f: any) => ({ ...f, related_attributes: [] as string[] }))];
       setRules(ruleList); setBehaviors(behList); setFuncs(allFuncs);
-      setRuleTypeOptions([...types.map(t => ({ label: t, value: t })), { label: '普通规则', value: '普通规则' }]);
+      setRuleTypeOptions([...types.map(t => ({ label: t, value: t })), { label: '其他规则', value: '其他规则' }]);
       setConcepts(conList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
@@ -307,7 +307,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   };
 
   const openRuleDesign = async () => {
-    if (!editData.rule_type || editData.rule_type === '普通规则') return;
+    if (!editData.rule_type || editData.rule_type === '其他规则') return;
     setRuleConfig(editData.rule_detail ? normalizeDetail(JSON.parse(JSON.stringify(editData.rule_detail))) : null);
     setRuleDesignModalOpen(true);
     if (!editData.rule_type) return;
@@ -389,7 +389,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (!editing && !isNew) return render ? render(val) : (val || '-');
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'rule_type') return <Select size="small" allowClear placeholder="选择" value={editData.rule_type || undefined} onChange={v => { const isNormal = v === '普通规则'; setEditData(p => ({...p, rule_type: v || '', rule_detail: isNormal ? null : p.rule_detail })); }} options={ruleTypeOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'rule_type') return <Select size="small" allowClear placeholder="选择" value={editData.rule_type || undefined} onChange={v => { const isNormal = v === '其他规则'; setEditData(p => ({...p, rule_type: v || '', rule_detail: isNormal ? null : p.rule_detail })); }} options={ruleTypeOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'position') return <Select size="small" allowClear placeholder="选择" value={editData.position || undefined} onChange={v => setEditData(p => ({...p, position: v || ''}))} options={[{label:'前置',value:'前置'},{label:'后置',value:'后置'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behaviors') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_behaviors || []} onChange={v => setEditData(p => ({...p, related_behaviors: v}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
@@ -412,7 +412,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       const editing = isEditing(r);
       const isNew = editingKey === '__new__' && r.name === '__new__';
       const rt = editing ? editData.rule_type : r.rule_type;
-      const isNormal = rt === '普通规则';
+      const isNormal = rt === '其他规则';
       if (!editing && !isNew) {
         if (isNormal) return <span className="text-text-muted text-xs">-</span>;
         const hasConfig = r.rule_detail && Object.keys(r.rule_detail).length > 0;
@@ -438,7 +438,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">规则管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增规则</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">配置行为执行前后的管控规则</p>
+      <p className="text-text-muted text-xs mb-3">配置行为执行前后的管控规则（验证规则和推理规则可以进行精细的规则结构设计，其他规则则侧重于语义上的自由表达，无结构设计）</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       {/* ─── Rule Design Modal ──────────────────────────────────────────── */}
