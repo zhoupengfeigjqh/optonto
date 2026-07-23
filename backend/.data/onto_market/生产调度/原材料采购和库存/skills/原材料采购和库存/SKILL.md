@@ -10,8 +10,9 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 原则2：行为推动任务的执行，为了确保整个行为的执行是合法的，规定每当智能体要行为执行时，还需要做如下检查：
 1）请判断该行为是否在行为集合里
 2）若在则先提取与该行为动作相关的规则和函数，进行规则验证推理或调用相关函数进行计算
-3）完成2）后，请同时判断该行为动作是否需要安全管控（即需要人工介入），若有则将你的规则内容输出给用户确认和把控。
+3）完成2）后，请同时判断该行为动作是否需要安全管控，即需要人工介入。
 4）不能绕过行为、规则和安全管控进行推理和行动
+原则3：执行细节原则，用户输入-基于本体的意图分析-任务生成和子任务拆分-子任务执行（规则-安全管控-执行-规则-安全管控）-下一个子任务执行-...
 
 ## 2 概念与关系
 【重点：特别注意，概念-属性-关系代表着该领域的最基本业务逻辑，智能体的任务生成和执行都必须从该网络出发展开】
@@ -52,11 +53,6 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 5. **再次查询库存**: 入库完成后，再次查询库存，确认库存状态已更新。
 
 ## 4 行为
-【重点：行为推动任务的执行，每当智能体要行为执行时：
-1）请判断该行为是否在行为集合里
-2）若在则先提取与该行为动作相关的规则和函数，进行规则验证推理或调用相关函数进行计算
-3）完成2）后，请同时判断该行为动作是否需要安全管控（即需要人工介入），若有则将你的规则内容输出给用户确认和把控。
-以确保整个行为的执行是合法的】
 
 ### CreatePurchaseRecord（创建原材料采购单）
 - **描述**: 创建一笔新的原材料采购记录。
@@ -66,8 +62,8 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
   - `arrivalQuantity` (number, 必填): 到位数量，例如 50
   - `supplierName` (string, 必填): 供应商名称，例如 "XX钢铁集团"
   - `arrivalTime` (string, 必填): 到位时间，例如 "2023-11-10"
-  - `relatedOrderId` (string, 必填): 关联订单编号，例如 "SO-20231025-001"
-  - `relatedOrderName` (string, 必填): 关联订单名称，例如 "客户A-项目X订单"
+  - `relatedOrderId` (string, 选填): 关联订单编号，例如 "SO-20231025-001"
+  - `relatedOrderName` (string, 选填): 关联订单名称，例如 "客户A-项目X订单"
   - `unit` (string, 必填): 单位，例如 "吨"
 - **输出结构**: 返回创建的采购记录对象，包含 `purchaseRecordId`, `rawMaterialId`, `rawMaterialName`, `purchaseTime`, `arrivalTime`, `arrivalQuantity`, `unit`, `supplierName`, `relatedOrderId`, `relatedOrderName`, `leadTime`, `status`。
 - **相关概念**: 原材料 (RawMaterial), 供应商 (Supplier), 客户订单 (CustomerOrder)
@@ -101,9 +97,9 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 ### QueryPurchaseRecords（查询原材料采购单信息）
 - **描述**: 根据采购单/原材料/关联客单来查询采购记录列表。
 - **输入参数**:
-  - `purchaseRecordId` (string, 必填): 采购单号，例如 "PO-20231027-001"
-  - `rawMaterialId` (string, 必填): 原材料编号，例如 "RM-001"
-  - `rawMaterialName` (string, 必填): 原材料名称，例如 "高强度钢板"
+  - `purchaseRecordId` (string, 选填): 采购单号，例如 "PO-20231027-001"
+  - `rawMaterialId` (string, 选填): 原材料编号，例如 "RM-001"
+  - `rawMaterialName` (string, 选填): 原材料名称，例如 "高强度钢板"
 - **输出结构**: 返回采购记录列表，每个元素包含 `purchaseRecordId`, `rawMaterialId`, `rawMaterialName`, `purchaseTime`, `arrivalTime`, `arrivalQuantity`, `unit`, `supplierName`, `relatedOrderId`, `relatedOrderName`, `leadTime`。
 - **相关概念**: 采购记录 (PurchaseRecord)
 - **调用接口**: 使用 `executeOntoBehavior` 工具，行为名为 `QueryPurchaseRecords`，参数为上述输入参数。
@@ -111,8 +107,8 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 ### QueryRawMaterials（查询原材料基本信息）
 - **描述**: 根据原材料ID或名称查询原材料的基础信息。
 - **输入参数**:
-  - `rawMaterialId` (string, 必填): 原材料编号，例如 "RM-001"
-  - `rawMaterialName` (string, 必填): 原材料名称，例如 "高强度钢板"
+  - `rawMaterialId` (string, 选填): 原材料编号，例如 "RM-001"
+  - `rawMaterialName` (string, 选填): 原材料名称，例如 "高强度钢板"
 - **输出结构**: 返回原材料信息列表，每个元素包含 `rawMaterialId`, `rawMaterialName`, `unit`, `safetyStock`。
 - **相关概念**: 原材料 (RawMaterial)
 - **调用接口**: 使用 `executeOntoBehavior` 工具，行为名为 `QueryRawMaterials`，参数为上述输入参数。
@@ -120,8 +116,8 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 ### QuerySuppliers（查询供应商信息）
 - **描述**: 根据供应商名或原材料名查询供应商。
 - **输入参数**:
-  - `supplierName` (string, 可选): 供应商名称，模糊匹配，例如 "宝钢钢铁集团"
-  - `rawMaterialName` (string, 可选): 原材料名称，例如 "钢板008"
+  - `supplierName` (string, 选填): 供应商名称，模糊匹配，例如 "宝钢钢铁集团"
+  - `rawMaterialName` (string, 选填): 原材料名称，例如 "钢板008"
 - **输出结构**: 返回供应商信息列表，每个元素包含 `supplierId`, `supplierName`, `address`, `contactPerson`, `contactPhone`。
 - **相关概念**: 供应商 (Supplier)
 - **调用接口**: 使用 `executeOntoBehavior` 工具，行为名为 `QuerySuppliers`，参数为上述输入参数。
@@ -129,8 +125,8 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 ### QuerySupplierCapability（查询供应商供货能力）
 - **描述**: 根据供应商名或原材料名，查询供应商供货能力。
 - **输入参数**:
-  - `supplierName` (string, 可选): 供应商名称，模糊匹配，例如 "宝钢钢铁集团"
-  - `rawMaterialName` (string, 可选): 原材料名称，例如 "钢板008"
+  - `supplierName` (string, 选填): 供应商名称，模糊匹配，例如 "宝钢钢铁集团"
+  - `rawMaterialName` (string, 选填): 原材料名称，例如 "钢板008"
 - **输出结构**: 返回供货能力信息列表，每个元素包含 `supplierName`, `rawMaterialId`, `rawMaterialName`, `leadTime`。
 - **相关概念**: 交货能力 (DeliveryCapability)
 - **调用接口**: 使用 `executeOntoBehavior` 工具，行为名为 `QuerySupplierCapability`，参数为上述输入参数。
@@ -217,7 +213,7 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 - **规则设计**: `{"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "ne", "right": {"type": "value", "value": "\"\""}}, {"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "not in", "right": {"type": "set", "concept": "CustomerOrder", "attribute": "customerOrderId"}}]}, "then": "该采购单关联的客户订单可能已失效，请确认是否取消该采购单。", "else": "采购单关联的客户订单有效，无需操作。"}`
 
 ## 7 安全管控
-【重点：安全管控的目的是对危险行为引入人工确认，介入位置可以在行为的执行前或执行后。介入时，大语言模型应该临时暂停后续操作，让用户对当前任务内容进行审核（具体内容请参考审核内容）】
+【重点：安全管控的目的是对危险行为引入人工确认，介入位置可以在行为的执行前或执行后。介入时，智能体应该临时暂停后续操作，让用户对当前任务内容进行审核（具体内容请参考审核内容）】
 
 ### CreatePurchaseRecord
 - **介入位置**: 前置
@@ -225,9 +221,9 @@ description: 该技能提供了原材料、原材料库存以及原材料采购�
 
 ### CancelPurchaseRecord
 - **介入位置**: 前置
-- **审核内容**: 审核取消的原因：确认取消采购单是否合理，是否已与供应商沟通，是否存在违约风险。
+- **审核内容**: 审核取消的原因：确认取消采购单是否合理，是否已与管理部门或供应商沟通，是否存在违约风险。
 
 ### ReceiveRawMaterial
 - **介入位置**: 前置
-- **审核内容**: 审核入库的准确性：确认到货的原材料、数量、供应商是否与采购单一致，质检是否已通过（如适用）。
+- **审核内容**: 审核入库的准确性：确认到货的原材料、数量、供应商是否与采购单一致。
 ```

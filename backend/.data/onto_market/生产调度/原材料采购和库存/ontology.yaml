@@ -326,51 +326,51 @@ behaviors:
     rawMaterialId:
       type: string
       required: true
-      display_name: 原材料编号
       description: 原材料编号
       example: RM-001
+      display_name: 原材料编号
     rawMaterialName:
       type: string
       required: true
-      display_name: 原材料名称
       description: 原材料名称
       example: 高强度钢板
+      display_name: 原材料名称
     arrivalQuantity:
       type: number
       required: true
-      display_name: 到位数量
       description: 到位数量
       example: 50
+      display_name: 到位数量
     supplierName:
       type: string
       required: true
-      display_name: 供应商名称
       description: 供应商名称
       example: XX钢铁集团
+      display_name: 供应商名称
     arrivalTime:
       type: string
       required: true
-      display_name: 到位时间
       description: 到位时间
       example: '2023-11-10'
+      display_name: 到位时间
     relatedOrderId:
       type: string
-      required: true
-      display_name: 关联订单编号
+      required: false
       description: 关联订单编号
       example: SO-20231025-001
+      display_name: 关联订单编号
     relatedOrderName:
       type: string
-      required: true
-      display_name: 关联订单名称
+      required: false
       description: 关联订单名称
       example: 客户A-项目X订单
+      display_name: 关联订单名称
     unit:
       type: string
       required: true
-      display_name: 单位
       description: 单位
       example: 吨
+      display_name: 单位
   response:
     code:
       type: number
@@ -516,16 +516,16 @@ behaviors:
   params:
     rawMaterialId:
       type: string
-      required: true
-      display_name: 原材料编号
+      required: false
       description: 原材料编号
       example: RM-001
+      display_name: 原材料编号
     rawMaterialName:
       type: string
-      required: true
-      display_name: 原材料名称
+      required: false
       description: 原材料名称
       example: 高强度钢板
+      display_name: 原材料名称
   response:
     code:
       type: number
@@ -584,22 +584,22 @@ behaviors:
   params:
     purchaseRecordId:
       type: string
-      required: true
-      display_name: 采购单号
+      required: false
       description: 采购单号
       example: PO-20231027-001
+      display_name: 采购单号
     rawMaterialId:
       type: string
-      required: true
-      display_name: 原材料编号
+      required: false
       description: 原材料编号
       example: RM-001
+      display_name: 原材料编号
     rawMaterialName:
       type: string
-      required: true
-      display_name: 原材料名称
+      required: false
       description: 原材料名称
       example: 高强度钢板
+      display_name: 原材料名称
   response:
     code:
       type: number
@@ -673,16 +673,16 @@ behaviors:
   params:
     rawMaterialId:
       type: string
-      required: true
-      display_name: 原材料编号
+      required: false
       description: 原材料编号
       example: RM-001
+      display_name: 原材料编号
     rawMaterialName:
       type: string
-      required: true
-      display_name: 原材料名称
+      required: false
       description: 原材料名称
       example: 高强度钢板
+      display_name: 原材料名称
   response:
     code:
       type: number
@@ -720,14 +720,16 @@ behaviors:
   params:
     supplierName:
       type: string
-      display_name: 供应商名称，模糊匹配
+      required: false
       description: 供应商名称，模糊匹配
       example: 宝钢钢铁集团
+      display_name: 供应商名称，模糊匹配
     rawMaterialName:
       type: string
-      display_name: 原材料名称
+      required: false
       description: 原材料名称
       example: 钢板008
+      display_name: 原材料名称
   response:
     code:
       type: number
@@ -770,14 +772,16 @@ behaviors:
   params:
     supplierName:
       type: string
-      display_name: 供应商名称，模糊匹配
+      required: false
       description: 供应商名称，模糊匹配
       example: 宝钢钢铁集团
+      display_name: 供应商名称，模糊匹配
     rawMaterialName:
       type: string
-      display_name: 原材料名称
+      required: false
       description: 原材料名称
       example: 钢板008
+      display_name: 原材料名称
   response:
     code:
       type: number
