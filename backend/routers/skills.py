@@ -140,35 +140,26 @@ async def delete_skill(ontology_id: int, skill_name: str):
 
 @router.put("/{skill_name}/meta")
 async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
-    """Update skill name and/or description."""
+    """Update skill description only (name is fixed after creation)."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     sdir = _skill_dir(sc_name, on_name, skill_name)
     if not sdir.exists():
         raise HTTPException(status_code=404, detail="技能不存在")
 
-    new_name = body.get("name", skill_name)
     new_desc = body.get("description", "")
 
-    # Update meta.json
     meta_path = sdir / "meta.json"
-    meta = {"name": new_name, "description": new_desc}
-    if meta_path.exists():
-        try:
+    meta = {"name": skill_name, "description": new_desc}
+    try:
+        if meta_path.exists():
             with open(meta_path, encoding="utf-8") as f:
                 existing = json.load(f)
                 existing.update(meta)
                 meta = existing
-        except:
-            pass
+    except:
+        pass
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
-
-    # Rename directory if name changed
-    if new_name != skill_name:
-        new_dir = _skill_dir(sc_name, on_name, new_name)
-        if new_dir.exists():
-            raise HTTPException(status_code=400, detail="技能名称已存在")
-        sdir.rename(new_dir)
 
     return {"message": "技能已更新"}
 

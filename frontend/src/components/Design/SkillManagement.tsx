@@ -87,10 +87,6 @@ description: <技能描述>
   };
 
   const handleEdit = async () => {
-    const name = editSkill.name.trim();
-    if (!name) { message.warning('技能名称不能为空'); return; }
-    const check = isSkillNameValid(name);
-    if (!check.ok) { message.warning(check.msg); return; }
     setEditLoading(true);
     try {
       await updateSkillMeta(ontologyId, editSkill.name, { description: editSkill.description });
@@ -215,7 +211,7 @@ description: <技能描述>
         <div className="space-y-3">
           <div>
             <span className="text-text-muted text-xs">技能名称</span>
-            <Input size="small" value={editSkill.name} onChange={e => setEditSkill(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />
+            <Input size="small" value={editSkill.name} disabled className="bg-dark-bg border-dark-border text-text-text-muted" />
           </div>
           <div>
             <span className="text-text-muted text-xs">技能简介</span>
