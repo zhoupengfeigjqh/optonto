@@ -493,7 +493,6 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
           <Button size="small" loading={mcpToggling} onClick={handleMcpToggle}>
             {mcpRunning ? '停止' : '启动'}
           </Button>
-          <Button onClick={load} loading={loading} size="small">刷新</Button>
         </div>
       </div>
 
