@@ -134,14 +134,26 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const openConnect = (engine: DataEngine) => {
     setConnectEngine(engine);
     setConnectResult(null);
-    setConnectParams({});
+    const beh = behaviors.find(b => b.name === engine.behavior_name);
+    const params: Record<string, any> = {};
+    if (beh?.params) {
+      for (const k of Object.keys(beh.params)) {
+        params[k] = '';
+      }
+    }
+    setConnectParams(params);
     setConnectOpen(true);
   };
 
   const executeConnect = async () => {
     if (!connectEngine) return;
     setConnectLoading(true);
-    try { const result = await callDataEngine(ontologyId, connectEngine.name, connectParams); setConnectResult(result); }
+    // Only send non-empty params
+    const filtered: Record<string, any> = {};
+    for (const [k, v] of Object.entries(connectParams)) {
+      if (v !== '' && v !== undefined && v !== null) filtered[k] = v;
+    }
+    try { const result = await callDataEngine(ontologyId, connectEngine.name, filtered); setConnectResult(result); }
     catch (e: any) { setConnectResult({ error: e.message }); }
     finally { setConnectLoading(false); }
   };
