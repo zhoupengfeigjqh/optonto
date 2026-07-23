@@ -237,7 +237,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       </Modal>
 
       {/* ─── Connect Test Modal ───────────────────────────────────────────── */}
-      <Modal title={`SQL 测试 - ${connectEngine?.behavior_name || ''}`} open={connectOpen} onCancel={() => { setConnectOpen(false); setConnectResult(null); }} footer={null} width={600}>
+      <Modal title={`SQL 测试 - ${(() => { const b = behaviors.find(bh => bh.name === connectEngine?.behavior_name); return b?.display_name || connectEngine?.behavior_name || ''; })()}`} open={connectOpen} onCancel={() => { setConnectOpen(false); setConnectResult(null); }} footer={null} width={600}>
         <div className="space-y-4">
           <div>
             <span className="text-text-muted text-xs mb-1 block">SQL</span>

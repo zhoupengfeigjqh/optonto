@@ -167,7 +167,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       <p className="text-text-muted text-xs mb-3">定义业务中的核心对象及其属性结构</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
-      <Modal title={`管理属性 - ${attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={850}
+      <Modal title={`管理属性 - ${attrConcept?.display_name || attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={850}
         footer={
           <div className="flex justify-start gap-2">
             <Button onClick={() => setAttrDialogOpen(false)}>取消</Button>
