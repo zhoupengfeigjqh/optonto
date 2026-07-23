@@ -471,5 +471,4 @@ DB_GENERATE_PROMPT = """根据以下信息生成 SQL 查询语句。
 1. 生成 SELECT 查询语句，只读，禁止 INSERT/UPDATE/DELETE/DROP/ALTER
 2. SQL 变量使用 :paramName 格式占位，参数来自输入参数的 key
 3. 查询结果的字段名必须与返回结构的 properties 的 key 对齐
-4. 如果涉及日期比较，使用 params 中的日期参数，不要硬编码
-5. 只输出 SQL 语句本身，不要任何解释或标记"""
+4. 只输出 SQL 语句本身，不要任何解释或标记"""

@@ -1696,6 +1696,9 @@ data_engines:
     response: {}
   input_mapping: {}
   output_mapping: {}
-  sql: ''
+  sql: "SELECT \n    s.supplier_name AS supplierName,\n    s.raw_material_id AS rawMaterialId,\n\
+    \    s.raw_material_name AS rawMaterialName,\n    s.lead_time AS leadTime\nFROM\
+    \ supplier s\nWHERE (s.supplier_name = :supplierName OR :supplierName IS NULL)\n\
+    \  AND (s.raw_material_name = :rawMaterialName OR :rawMaterialName IS NULL)"
   sql_vars: {}
   datasource: ''

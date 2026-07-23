@@ -160,9 +160,9 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       const b = r._behavior;
       return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b?.name || v)}>{b?.display_name || v}</span>;
     }},
-    { title: 'SQL代码', dataIndex: 'sql', key: 'sql', width: 300, render: (v: string, r: DataEngine) => (
+    { title: 'SQL代码', dataIndex: 'sql', key: 'sql', width: 90, render: (v: string, r: DataEngine) => (
       <div className="cursor-pointer hover:opacity-80" onClick={() => openSqlEditor(r)}>
-        <code className="text-xs font-mono text-yellow-400 line-clamp-2">{v || <span className="text-yellow-400/70">点击编辑 SQL</span>}</code>
+        <span className={`text-xs ${v?.trim() ? 'text-green-500' : 'text-yellow-400/70'}`}>{v?.trim() ? '已编辑' : '未编辑'}</span>
       </div>
     )},
     {
@@ -239,10 +239,6 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       {/* ─── Connect Test Modal ───────────────────────────────────────────── */}
       <Modal title={`SQL 测试 - ${(() => { const b = behaviors.find(bh => bh.name === connectEngine?.behavior_name); return b?.display_name || connectEngine?.behavior_name || ''; })()}`} open={connectOpen} onCancel={() => { setConnectOpen(false); setConnectResult(null); }} footer={null} width={600}>
         <div className="space-y-4">
-          <div>
-            <span className="text-text-muted text-xs mb-1 block">SQL</span>
-            <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono whitespace-pre-wrap text-yellow-400">{connectEngine?.sql || ''}</pre>
-          </div>
           {Object.keys(connectParams).length > 0 && (
             <div>
               <span className="text-text-muted text-xs mb-2 block">输入参数</span>
