@@ -70,8 +70,9 @@ async def list_skills(ontology_id: int):
         md_path = d / "SKILL.md"
         format_ok = False
         if md_path.exists():
-            head = md_path.read_text(encoding="utf-8")[:200]
-            format_ok = head.startswith("---\nonto_name:") and "\ndescription:" in head
+            head = md_path.read_text(encoding="utf-8")[:300]
+            required = ["onto_name:", "onto_id:", "scenario_name:", "scenario_id:", "description:"]
+            format_ok = all(f"\n{r}" in head for r in required) and head.startswith("---\n")
         desc = ""
         meta_path = d / "meta.json"
         if meta_path.exists():
