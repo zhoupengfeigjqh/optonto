@@ -244,6 +244,7 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
         scenario_id=str(scenario_id),
         ontology_yaml=ontology_summary,
         skill_template=skill_template,
+        skill_name=skill_name,
     )
 
     try:
