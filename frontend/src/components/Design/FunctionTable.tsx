@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, message, Space, Tag, Tooltip, Tree } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined, RobotOutlined } from '@ant-design/icons';
-import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, getCommonFunctions, getCommonFunctionCode, Function, Concept, Attribute } from '@/api/client';
+import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, getCommonFunctions, Function, Concept, Attribute } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import PythonEditor from '@/components/PythonEditor';
 import JsonEditor from '@/components/JsonEditor';
@@ -29,7 +29,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   // code editor modal
   const [codeEditorOpen, setCodeEditorOpen] = useState(false);
   const [codeStr, setCodeStr] = useState('');
-  const [codeReadonly, setCodeReadonly] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   // test modal
@@ -93,7 +92,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
 
   const openCodeEditor = async () => {
     setCodeStr('');
-    setCodeReadonly(false);
     setCodeEditorOpen(true);
     if (editData.code_file) {
       try {
@@ -178,15 +176,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     finally { setTestLoading(false); }
   };
 
-  const openCommonCode = async (record: any) => {
-    try {
-      const result = await getCommonFunctionCode(record.name);
-      setCodeStr(result.content);
-      setCodeReadonly(true);
-      setCodeEditorOpen(true);
-    } catch (e: any) { message.error('加载代码失败: ' + e.message); }
-  };
-
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Function) => {
@@ -249,10 +238,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     }
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
-    if (dataIndex === 'code') {
-      const isCommon = (funcs.find((f: any) => f.name === editData.name) as any)?._source === 'common';
-      return <Button size="small" icon={<CodeOutlined />} onClick={isCommon ? () => openCommonCode({ name: editData.name }) : openCodeEditor}>{isCommon ? '查看' : '编辑'}</Button>;
-    }
+    if (dataIndex === 'code') return <Button size="small" icon={<CodeOutlined />} onClick={openCodeEditor}>编辑</Button>;
     return render ? render(val) : (val || '-');
   };
 
@@ -345,7 +331,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         }
         return (
           <Space>
-            <Button type="link" size="small" icon={<CodeOutlined />} onClick={() => openCommonCode(record)} />
             {!isCommon && <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />}
             {!isCommon && <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.name)} />}
           </Space>
@@ -416,20 +401,18 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
 
       {/* ─── Code Editor Modal ─────────────────────────────────────── */}
       <Modal
-        title={codeReadonly ? `函数代码 - ${(() => { const f = funcs.find((x: any) => x.name === editData.name); return f?.display_name || f?.name || ''; })()}` : `函数代码编辑 - ${editData.display_name || editData.name || ''}`}
+        title={`函数代码编辑 - ${editData.display_name || editData.name || ''}`}
         open={codeEditorOpen}
-        onOk={codeReadonly ? () => setCodeEditorOpen(false) : saveCodeEditor}
+        onOk={saveCodeEditor}
         onCancel={() => setCodeEditorOpen(false)}
-        okText={codeReadonly ? '关闭' : '保存'}
+        okText="保存"
         cancelText="取消"
         width={800}
       >
-        {!codeReadonly && (
-          <div className="flex justify-end mb-2 gap-2">
-            <Button size="small" icon={<RobotOutlined />} loading={generating} onClick={handleGenerateCode}>智能生成</Button>
-            <Button size="small" icon={<PlayCircleOutlined />} onClick={openTestModal} disabled={!codeStr.trim()}>测试运行</Button>
-          </div>
-        )}
+        <div className="flex justify-end mb-2 gap-2">
+          <Button size="small" icon={<RobotOutlined />} loading={generating} onClick={handleGenerateCode}>智能生成</Button>
+          <Button size="small" icon={<PlayCircleOutlined />} onClick={openTestModal} disabled={!codeStr.trim()}>测试运行</Button>
+        </div>
         <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 400 }}>
           <PythonEditor value={codeStr} onChange={setCodeStr} />
         </div>
