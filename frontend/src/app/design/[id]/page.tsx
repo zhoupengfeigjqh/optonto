@@ -27,6 +27,7 @@ import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
+import DBMappingTable from '@/components/Design/DBMappingTable';
 import SkillManagement from '@/components/Design/SkillManagement';
 
 const DESIGN_TABS = [
@@ -127,6 +128,9 @@ export default function DesignPage() {
       )}
       {activeSection === 'data-engine' && activeTab === 'instance-collection' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
+      )}
+      {activeSection === 'data-engine' && activeTab === 'db-mapping' && (
+        <DBMappingTable ontologyId={ontologyId} activeTab={activeTab} />
       )}
       {activeSection === 'agent' && activeTab === 'skill-management' && (
         <SkillManagement ontologyId={ontologyId} activeTab={activeTab} />
@@ -320,6 +324,16 @@ export default function DesignPage() {
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'db-mapping'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('data-engine'); setActiveTab('db-mapping'); }}
+                >
+                  <span>DB映射</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
                     activeTab === 'instance-collection'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
@@ -390,7 +404,7 @@ export default function DesignPage() {
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
               : activeSection === 'data-engine'
-              ? activeTab === 'instance-collection' ? '实例集合' : '数据引擎'
+              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : '数据引擎'
               : activeSection === 'agent'
               ? activeTab === 'skill-management' ? '技能管理' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}

@@ -319,9 +319,13 @@ export interface DataEngine {
   name: string;
   display_name?: string;
   behavior_name: string;
+  engine_type?: string;
   target: TargetApiConfig;
   input_mapping: Record<string, string>;
   output_mapping: Record<string, string>;
+  sql?: string;
+  sql_vars?: Record<string, string>;
+  datasource?: string;
 }
 
 export const getDataEngines = (ontologyId: number) =>
@@ -504,6 +508,22 @@ export interface YamlFile {
 
 export const getFileContent = (ontologyId: number) =>
   request<YamlFile>(`/api/ontologies/${ontologyId}/files/content`);
+
+// ─── DB Schema ────────────────────────────────────────────────────────────
+
+export const getDbSchema = (ontologyId: number) =>
+  request<{ content: string; exists: boolean }>(`/api/ontologies/${ontologyId}/db-schema`);
+
+export const uploadDbSchema = (ontologyId: number, file: File) => {
+  const form = new FormData();
+  form.append('file', file);
+  return fetch(`/api/ontologies/${ontologyId}/db-schema`, { method: 'POST', body: form }).then(r => r.json());
+};
+
+// ─── Generate SQL ─────────────────────────────────────────────────────────
+
+export const generateSQL = (ontologyId: number, engineName: string) =>
+  request<{ sql: string }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(engineName)}/generate-sql`, { method: 'POST' });
 
 export const saveFileContent = (ontologyId: number, data: YamlFile) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/files/content`, { method: 'PUT', body: JSON.stringify(data) });

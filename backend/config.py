@@ -450,3 +450,26 @@ SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智�
 5. 【技能模板】里，【重点: xxxx】圈起来的是额外提示内容，请保持不变，不要改内容，不要做额外补充或解释。
 6. 直接从 Markdown 内容开始输出，不要添加任何对话性开头（如"好的"、"作为一名"等）
 7. 输出格式为完整 Markdown 文件内容"""
+
+
+# ─── DB 映射 — 智能生成 SQL 提示词 ──────────────────────────────────────────────
+
+DB_GENERATE_SYSTEM_PROMPT = "你是一个SQL查询生成专家。根据数据库 schema 和本体行为定义，生成只读 SQL 查询语句。"
+
+DB_GENERATE_PROMPT = """根据以下信息生成 SQL 查询语句。
+
+【数据库 Schema】
+{db_schema}
+
+【本体行为信息】
+行为名称：{behavior_name}
+行为描述：{behavior_description}
+输入参数结构：{params}
+返回结构：{response}
+
+【生成要求】
+1. 生成 SELECT 查询语句，只读，禁止 INSERT/UPDATE/DELETE/DROP/ALTER
+2. SQL 变量使用 :paramName 格式占位，参数来自输入参数的 key
+3. 查询结果的字段名必须与返回结构的 properties 的 key 对齐
+4. 如果涉及日期比较，使用 params 中的日期参数，不要硬编码
+5. 只输出 SQL 语句本身，不要任何解释或标记"""

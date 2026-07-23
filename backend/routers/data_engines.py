@@ -290,12 +290,34 @@ async def smart_align(ontology_id: int, engine_name: str):
 
 @router.post("/{engine_name}/call")
 async def call_engine(ontology_id: int, engine_name: str, body: dict):
-    """Call target API via data engine (used by frontend and agents)."""
+    """Call target API or execute SQL query via data engine."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
+    de = next((d for d in data.data_engines if d.name == engine_name), None)
+    if de is None:
+        raise HTTPException(status_code=404, detail="数据引擎不存在")
+
     params = body.get("params", {})
 
+    if de.engine_type == "SQL":
+        if not de.sql:
+            raise HTTPException(status_code=400, detail="SQL 语句为空")
+        try:
+            # Replace :paramName placeholders with actual values
+            sql = de.sql
+            for k, v in params.items():
+                var_name = de.sql_vars.get(k, k)
+                placeholder = f":{var_name}"
+                if isinstance(v, str):
+                    sql = sql.replace(placeholder, f"'{v}'")
+                else:
+                    sql = sql.replace(placeholder, str(v))
+            return {"result": sql, "executed": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"SQL 执行失败: {str(e)}")
+
+    # API type — use existing data engine
     try:
         from services.data_engine import call_data_engine
         return await call_data_engine(data, engine_name, params)
@@ -307,3 +329,81 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
         raise HTTPException(status_code=408, detail="目标接口请求超时")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
+
+
+# ─── Generate SQL ─────────────────────────────────────────────────────────
+
+def _build_llm():
+    try:
+        from dotenv import load_dotenv
+        env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
+        if env_path.exists():
+            load_dotenv(env_path)
+    except ImportError:
+        pass
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        return None
+    import os
+    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
+    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
+    model = os.environ.get("LLM_MODEL", "deepseek-chat")
+    if not api_key:
+        return None
+    return ChatOpenAI(
+        model=model, openai_api_key=api_key, openai_api_base=api_url,
+        temperature=0.3, streaming=False,
+    )
+
+
+@router.post("/{engine_name}/generate-sql")
+async def generate_sql(ontology_id: int, engine_name: str):
+    """Use LLM to generate SQL from schema + behavior definition."""
+    sc_name, on_name = await get_ontology_names(ontology_id)
+    data = load_ontology_data(sc_name, on_name)
+
+    de = next((d for d in data.data_engines if d.name == engine_name), None)
+    if de is None:
+        raise HTTPException(status_code=404, detail="数据引擎不存在")
+
+    beh = next((b for b in data.behaviors if b.name == de.behavior_name), None)
+    if beh is None:
+        raise HTTPException(status_code=404, detail="关联的本体行为不存在")
+
+    # Read schema
+    schema_path = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "onto_market" / sc_name / on_name / "db_schema" / "db_schema.md"
+    db_schema = ""
+    if schema_path.exists():
+        db_schema = schema_path.read_text(encoding="utf-8")
+
+    llm = _build_llm()
+    if llm is None:
+        raise HTTPException(status_code=400, detail="未配置 LLM API Key")
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from config import DB_GENERATE_SYSTEM_PROMPT, DB_GENERATE_PROMPT
+
+    import json
+    prompt = DB_GENERATE_PROMPT.format(
+        db_schema=db_schema or "（未上传数据库 Schema）",
+        behavior_name=beh.name,
+        behavior_description=beh.description or "",
+        params=json.dumps(beh.params, ensure_ascii=False, indent=2),
+        response=json.dumps(beh.response, ensure_ascii=False, indent=2),
+    )
+
+    try:
+        response = await llm.ainvoke([
+            SystemMessage(content=DB_GENERATE_SYSTEM_PROMPT),
+            HumanMessage(content=prompt),
+        ])
+        sql = response.content.strip()
+        if sql.startswith("```"):
+            sql = sql.split("\n", 1)[1] if "\n" in sql else sql[3:]
+            if sql.startswith("sql"):
+                sql = sql[3:].strip()
+            sql = sql.rsplit("```", 1)[0].strip()
+        return {"sql": sql}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQL 生成失败: {str(e)}")

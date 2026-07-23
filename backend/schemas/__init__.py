@@ -129,13 +129,17 @@ class TargetApiConfig(BaseModel):
 
 
 class DataEngineItem(BaseModel):
-    """数据引擎 — 本体行为与目标API映射"""
+    """数据引擎 — 本体行为与目标API/SQL映射"""
     name: str = Field(..., description="数据引擎名称")
     display_name: str = Field("", description="展示名称")
     behavior_name: str = Field(..., description="本体行为名称")
+    engine_type: str = Field("API", description="引擎类型（API/SQL）")
     target: TargetApiConfig = Field(default_factory=TargetApiConfig)
     input_mapping: dict = Field(default_factory=dict, description="输入映射 {ontology_param: target_param}")
     output_mapping: dict = Field(default_factory=dict, description="输出映射 {ontology_field: target_field}")
+    sql: str = Field("", description="SQL 查询语句")
+    sql_vars: dict = Field(default_factory=dict, description="SQL 变量映射 {param: column}")
+    datasource: str = Field("", description="数据源名称")
 
 
 class OntologyData(BaseModel):

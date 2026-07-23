@@ -22,6 +22,7 @@ from routers import (
     rule_templates_router,
     common_functions_router,
     skills_router,
+    db_schema_router,
 )
 
 
@@ -59,6 +60,7 @@ app.include_router(data_engines_router)
 app.include_router(rule_templates_router)
 app.include_router(common_functions_router)
 app.include_router(skills_router)
+app.include_router(db_schema_router)
 
 
 @app.get("/")

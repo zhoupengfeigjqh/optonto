@@ -156,7 +156,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="executeOntoBehavior",
-            description="执行本体行为的 API 调用。传入 ontology_id、behavior_name 和 params，会经过 input_mapping 转换后调用目标 API，再通过 output_mapping 返回结果。返回目标 API 的响应数据。",
+            description="执行本体行为。API 类型调用目标 HTTP 接口，SQL 类型执行 SQL 查询。传入 ontology_id、behavior_name 和 params，返回按 response 结构对齐的数据。",
             inputSchema={
                 "type": "object",
                 "properties": {
