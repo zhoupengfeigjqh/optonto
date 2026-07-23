@@ -307,7 +307,8 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
         if not de.sql:
             raise HTTPException(status_code=400, detail="SQL 语句为空")
         try:
-            # Replace :paramName placeholders
+            # Replace :paramName placeholders from params, replace unmatched with NULL
+            import re
             sql = de.sql
             for k, v in params.items():
                 var_name = de.sql_vars.get(k, k)
@@ -316,6 +317,8 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
                     sql = sql.replace(placeholder, f"'{v}'")
                 else:
                     sql = sql.replace(placeholder, str(v))
+            # Replace any remaining :paramName placeholders with NULL
+            sql = re.sub(r":[a-zA-Z_]+", "NULL", sql)
 
             # Only allow SELECT queries
             stripped = sql.strip().upper()
