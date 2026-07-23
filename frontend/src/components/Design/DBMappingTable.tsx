@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Tag } from 'antd';
-import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined } from '@ant-design/icons';
+import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
 import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
@@ -24,6 +24,12 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const [behaviorParamsStr, setBehaviorParamsStr] = useState('{}');
   const [behaviorResponseStr, setBehaviorResponseStr] = useState('{}');
   const [behaviorEditLoading, setBehaviorEditLoading] = useState(false);
+
+  // SQL editor modal
+  const [sqlEditorOpen, setSqlEditorOpen] = useState(false);
+  const [sqlEditorEngine, setSqlEditorEngine] = useState<DataEngine | null>(null);
+  const [sqlEditorText, setSqlEditorText] = useState('');
+  const [sqlGenLoading, setSqlGenLoading] = useState(false);
 
   const openBehaviorEdit = (name: string) => {
     const beh = behaviors.find(b => b.name === name);
@@ -63,7 +69,6 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
     try {
       const [engList, behList] = await Promise.all([getDataEngines(ontologyId), getBehaviors(ontologyId)]);
       let sqlEngines = engList.filter((e: DataEngine) => e.engine_type === 'SQL');
-      // Auto-create data engine for any behavior with behavior_type=SQL that has no engine yet
       for (const beh of behList) {
         if ((beh as any).behavior_type === 'SQL' && !sqlEngines.find(e => e.behavior_name === beh.name)) {
           const newEngine: DataEngine = {
@@ -71,10 +76,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
             target: { data_source_name: '', api_name: '', url: '', method: 'POST', params: {}, response: {} },
             input_mapping: {}, output_mapping: {},
           };
-          try {
-            const created = await createDataEngine(ontologyId, newEngine);
-            sqlEngines.push(created);
-          } catch { /* skip if already exists */ }
+          try { const created = await createDataEngine(ontologyId, newEngine); sqlEngines.push(created); } catch { }
         }
       }
       setEngines(sqlEngines);
@@ -86,42 +88,58 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   useEffect(() => { if (activeTab === 'db-mapping') load(); }, [ontologyId, activeTab]);
 
   const handleUploadSchema = async (file: File) => {
-    try {
-      const result = await uploadDbSchema(ontologyId, file);
-      message.success(result.message || 'Schema 已上传');
-    } catch (e: any) { message.error('上传失败: ' + e.message); }
+    try { const result = await uploadDbSchema(ontologyId, file); message.success(result.message || 'Schema 已上传'); } catch (e: any) { message.error('上传失败: ' + e.message); }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleViewSchema = async () => {
-    try {
-      const result = await getDbSchema(ontologyId);
-      setSchemaContent(result.content);
-      setSchemaOpen(true);
-    } catch (e: any) { message.error('加载失败: ' + e.message); }
+    try { const result = await getDbSchema(ontologyId); setSchemaContent(result.content); setSchemaOpen(true); } catch (e: any) { message.error('加载失败: ' + e.message); }
   };
 
-  const handleGenerateSQL = async (engine: DataEngine) => {
+  const openSqlEditor = (engine: DataEngine) => {
+    setSqlEditorEngine(engine);
+    setSqlEditorText(engine.sql || '');
+    setSqlEditorOpen(true);
+  };
+
+  const saveSqlEditor = async () => {
+    if (!sqlEditorEngine) return;
+    const updated = { ...sqlEditorEngine, sql: sqlEditorText };
+    await updateDataEngine(ontologyId, sqlEditorEngine.name, updated);
+    setEngines(prev => prev.map(e => e.name === sqlEditorEngine.name ? updated : e));
+    setSqlEditorOpen(false);
+    message.success('SQL 已保存');
+  };
+
+  const handleGenerateSQL = async () => {
+    if (!sqlEditorEngine) return;
+    // Check schema
+    const schema = await getDbSchema(ontologyId);
+    if (!schema.exists) { message.warning('请先上传数据库 Schema 文件'); return; }
+    // Check behavior has response params
+    const beh = behaviors.find(b => b.name === sqlEditorEngine.behavior_name);
+    if (!beh || !beh.response || Object.keys(beh.response).length === 0) {
+      message.warning('请先配置本体行为的输入参数和返回结构'); return;
+    }
+    setSqlGenLoading(true);
     try {
-      const result = await generateSQL(ontologyId, engine.name);
-      const updated = { ...engine, sql: result.sql };
-      await updateDataEngine(ontologyId, engine.name, updated);
-      setEngines(prev => prev.map(e => e.name === engine.name ? updated : e));
+      const result = await generateSQL(ontologyId, sqlEditorEngine.name);
+      setSqlEditorText(result.sql);
       message.success('SQL 已生成');
     } catch (e: any) { message.error('生成失败: ' + e.message); }
-  };
-
-  const handleSQLChange = async (engine: DataEngine, sql: string) => {
-    const updated = { ...engine, sql };
-    await updateDataEngine(ontologyId, engine.name, updated);
-    setEngines(prev => prev.map(e => e.name === engine.name ? updated : e));
+    finally { setSqlGenLoading(false); }
   };
 
   const openConnect = (engine: DataEngine) => {
     setConnectEngine(engine);
     setConnectResult(null);
+    const beh = behaviors.find(b => b.name === engine.behavior_name);
     const params: Record<string, any> = {};
-    const beh = engine; // engine has behavior info
+    if (beh?.params) {
+      for (const k of Object.keys(beh.params)) {
+        params[k] = '';
+      }
+    }
     setConnectParams(params);
     setConnectOpen(true);
   };
@@ -129,28 +147,27 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const executeConnect = async () => {
     if (!connectEngine) return;
     setConnectLoading(true);
-    try {
-      const result = await callBehavior(ontologyId, connectEngine.behavior_name, connectParams);
-      setConnectResult(result);
-    } catch (e: any) { setConnectResult({ error: e.message }); }
+    try { const result = await callBehavior(ontologyId, connectEngine.behavior_name, connectParams); setConnectResult(result); }
+    catch (e: any) { setConnectResult({ error: e.message }); }
     finally { setConnectLoading(false); }
   };
 
   const dataSource = engines.map(e => ({ ...e, _key: e.name, _behavior: behaviors.find(b => b.name === e.behavior_name) }));
 
   const columns = [
-    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (v: string, r: any) => {
+    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 140, render: (v: string, r: any) => {
       const b = r._behavior;
       return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b?.name || v)}>{b?.display_name || v}</span>;
     }},
-    { title: 'SQL', dataIndex: 'sql', key: 'sql', width: 400, render: (v: string, r: DataEngine) => (
-      <Input.TextArea size="small" value={v || ''} onChange={e => handleSQLChange(r, e.target.value)} rows={2} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+    { title: 'SQL代码', dataIndex: 'sql', key: 'sql', width: 300, render: (v: string, r: DataEngine) => (
+      <div className="cursor-pointer hover:text-accent-blue" onClick={() => openSqlEditor(r)}>
+        <code className="text-xs font-mono text-text-primary line-clamp-2">{v || <span className="text-text-muted">点击编辑 SQL</span>}</code>
+      </div>
     )},
     {
-      title: '操作', key: 'actions', width: 140,
+      title: '操作', key: 'actions', width: 100,
       render: (_: any, r: DataEngine) => (
         <Space>
-          <Button type="link" size="small" icon={<RobotOutlined />} onClick={() => handleGenerateSQL(r)}>生成</Button>
           <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => openConnect(r)}>测试</Button>
         </Space>
       ),
@@ -174,9 +191,46 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       <Modal title="数据库 Schema" open={schemaOpen} onCancel={() => setSchemaOpen(false)} footer={null} width={700}>
         {schemaContent ? (
           <pre className="bg-dark-bg border border-dark-border rounded p-4 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto text-text-primary">{schemaContent}</pre>
-        ) : (
-          <p className="text-text-muted text-sm">尚未上传 Schema 文件</p>
-        )}
+        ) : (<p className="text-text-muted text-sm">尚未上传 Schema 文件</p>)}
+      </Modal>
+
+      {/* ─── SQL Editor Modal ──────────────────────────────────────────────── */}
+      <Modal
+        title={`SQL 编辑 - ${sqlEditorEngine ? (behaviors.find(b => b.name === sqlEditorEngine.behavior_name)?.display_name || sqlEditorEngine.behavior_name) : ''}`}
+        open={sqlEditorOpen}
+        onOk={saveSqlEditor}
+        onCancel={() => setSqlEditorOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        width={800}
+        confirmLoading={sqlGenLoading}
+      >
+        <div className="flex justify-end mb-2">
+          <Button size="small" icon={<RobotOutlined />} loading={sqlGenLoading} onClick={handleGenerateSQL}>智能生成</Button>
+        </div>
+        <div>
+          <span className="text-text-muted text-xs mb-1 block">SQL 语句</span>
+          <Input.TextArea value={sqlEditorText} onChange={e => setSqlEditorText(e.target.value)} rows={8} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" placeholder="SELECT * FROM table WHERE status = :status" />
+        </div>
+        <div className="mt-3">
+          <span className="text-text-muted text-xs mb-1 block">输入参数（SQL 占位符变量）</span>
+          {sqlEditorEngine ? (
+            (() => {
+              const beh = behaviors.find(b => b.name === sqlEditorEngine.behavior_name);
+              const params = beh?.params || {};
+              const keys = Object.keys(params);
+              return keys.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {keys.map(k => (
+                    <Tag key={k} color="blue">:{k}</Tag>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-text-muted text-xs">该行为没有定义输入参数</p>
+              );
+            })()
+          ) : null}
+        </div>
       </Modal>
 
       {/* ─── Connect Test Modal ───────────────────────────────────────────── */}
@@ -186,6 +240,19 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
             <span className="text-text-muted text-xs mb-1 block">SQL</span>
             <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono whitespace-pre-wrap text-yellow-400">{connectEngine?.sql || ''}</pre>
           </div>
+          {Object.keys(connectParams).length > 0 && (
+            <div>
+              <span className="text-text-muted text-xs mb-2 block">输入参数</span>
+              <div className="space-y-1.5">
+                {Object.entries(connectParams).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <span className="w-24 text-text-secondary text-xs shrink-0">:{k}</span>
+                    <Input size="small" value={v as string} onChange={e => setConnectParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" placeholder="输入值" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <Button type="primary" icon={<PlayCircleOutlined />} onClick={executeConnect} loading={connectLoading} block>执行</Button>
           {connectResult && (
             <div>
@@ -197,17 +264,9 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
           )}
         </div>
       </Modal>
+
       {/* ─── Behavior Params/Response Edit Modal ────────────────────────── */}
-      <Modal
-        title={`编辑行为参数 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`}
-        open={behaviorEditOpen}
-        onOk={saveBehaviorEdit}
-        onCancel={() => setBehaviorEditOpen(false)}
-        okText="保存"
-        cancelText="取消"
-        width={800}
-        confirmLoading={behaviorEditLoading}
-      >
+      <Modal title={`编辑行为参数 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`} open={behaviorEditOpen} onOk={saveBehaviorEdit} onCancel={() => setBehaviorEditOpen(false)} okText="保存" cancelText="取消" width={800} confirmLoading={behaviorEditLoading}>
         <div className="flex gap-3" style={{ minHeight: 320 }}>
           <div className="flex-1">
             <span className="text-text-muted text-xs mb-1 block">输入参数 (JSON)</span>
