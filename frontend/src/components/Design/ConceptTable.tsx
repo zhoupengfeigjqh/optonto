@@ -136,7 +136,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     { title: '属性数', key: 'attr_count', width: 70,
       render: (_: any, r: Concept) => <Tag color="blue">{r.attributes?.length || 0}</Tag> },
     {
-      title: '操作', key: 'actions', width: 130,
+      title: '操作', key: 'actions', width: 160,
       render: (_: any, record: Concept) => {
         const editing = isEditing(record);
         if (editing || (editingKey === '__new__' && record.name === '__new__')) {
