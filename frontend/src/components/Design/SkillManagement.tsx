@@ -35,12 +35,32 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
 
   useEffect(() => { if (activeTab === 'skill-management') load(); }, [ontologyId, activeTab]);
 
-  const handleView = async (name: string) => {
-    try {
-      const result = await getSkillContent(ontologyId, name);
-      setViewing({ name: result.skill_name, content: result.content, saving: false });
-      setPreviewMode(true);
-    } catch (e: any) { message.error('加载失败: ' + e.message); }
+  const handleView = (name: string) => {
+    Modal.confirm({
+      title: <span style={{color:'#fff'}}>技能文件说明</span>,
+      content: (
+        <div className="text-text-secondary text-sm space-y-2">
+          <p>技能文件头部格式已固定，请勿修改以下字段：</p>
+          <pre className="bg-dark-bg border border-dark-border rounded p-2 text-xs font-mono text-yellow-400">
+onto_name
+onto_id
+scenario_name
+scenario_id
+description
+          </pre>
+          <p>修改内容时请保持头部结构不变。</p>
+        </div>
+      ),
+      okText: '我知道了',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const result = await getSkillContent(ontologyId, name);
+          setViewing({ name: result.skill_name, content: result.content, saving: false });
+          setPreviewMode(true);
+        } catch (e: any) { message.error('加载失败: ' + e.message); }
+      },
+    });
   };
 
   const handleSave = async () => {
