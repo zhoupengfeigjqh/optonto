@@ -34,36 +34,32 @@ functions:
     filterRawMaterialName:
       type: string
       display_name: 原材料名称
-      description: 原材料名称
       example: 高强度钢板
       required: true
     currentDate:
       type: string
       display_name: 日期
-      description: 日期
       example: '2026-01-01'
       required: true
     purchaseRecordSet:
       type: array
+      display_name: 采购记录集
       items:
         type: object
         properties:
           arrivalTime:
             type: string
             display_name: 到位时间
-            description: 到位时间
             example: '2026-09-01'
             required: true
           rawMaterialName:
             type: string
             display_name: 原材料名称
-            description: 原材料名称
             example: 高强度钢板
             required: true
           arrivalQuantity:
             type: number
             display_name: 计划的到位数量
-            description: 计划的到位数量
             example: 100
             required: true
       required: true
@@ -74,12 +70,10 @@ functions:
         rawMaterialName:
           type: string
           display_name: 原材料名称
-          description: 原材料名称
           example: 高强度钢板
         sumNotArrivalQty:
           type: number
           display_name: 未到位总量
-          description: 未到位总量
           example: 100
   code_file: functions/sumRawNotArrivalQty.py
 behaviors:
@@ -89,37 +83,31 @@ behaviors:
     tradeId:
       type: string
       display_name: 交易编号
-      description: 交易唯一标识
       required: true
       example: TRD001
     status:
       type: string
       display_name: 状态
-      description: 交易状态
       required: true
       example: active
     user:
       type: object
       display_name: 用户信息
-      description: 操作用户信息
       required: true
       properties:
         id:
           type: string
           display_name: 用户ID
-          description: 用户唯一标识
           required: true
           example: USR001
         name:
           type: string
           display_name: 用户名称
-          description: 用户显示名称
           required: true
           example: 张三
     tags:
       type: array
       display_name: 标签列表
-      description: 订单标签
       required: false
       items:
         type: string
@@ -127,7 +115,6 @@ behaviors:
     products:
       type: array
       display_name: 产品列表
-      description: 订单包含的产品
       required: true
       items:
         type: object
@@ -135,35 +122,29 @@ behaviors:
           sku:
             type: string
             display_name: SKU
-            description: 产品库存编码
             required: true
             example: SKU-001
           quantity:
             type: number
             display_name: 数量
-            description: 产品数量
             required: true
             example: 10
   response:
     code:
       type: number
       display_name: 状态码
-      description: 接口返回状态码
       example: 0
     data:
       type: object
       display_name: 返回数据
-      description: 接口返回数据
       properties:
         orderId:
           type: string
           display_name: 订单编号
-          description: 生成的订单编号
           example: ORD001
         total:
           type: number
           display_name: 订单总额
-          description: 订单总金额
           example: 1500.5
   related_concepts:
   - ConceptName
