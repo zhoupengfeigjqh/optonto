@@ -249,7 +249,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
               <div className="space-y-1.5">
                 {Object.entries(connectParams).map(([k, v]) => (
                   <div key={k} className="flex items-center gap-2">
-                    <span className="w-24 text-text-secondary text-xs shrink-0">:{k}</span>
+                    <span className="w-[140px] text-text-secondary text-xs shrink-0">:{k}</span>
                     <Input size="small" value={v as string} onChange={e => setConnectParams(p => ({...p, [k]: e.target.value}))} className="flex-1 bg-dark-bg border-dark-border text-text-primary" placeholder="输入值" />
                   </div>
                 ))}
