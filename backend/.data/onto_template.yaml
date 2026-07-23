@@ -79,6 +79,7 @@ functions:
 behaviors:
 - name: behaviorName
   description: 行为描述
+  behavior_type: API
   params:
     tradeId:
       type: string
@@ -149,6 +150,38 @@ behaviors:
   related_concepts:
   - ConceptName
   display_name: 行为展示名称
+- name: queryOrderSQL
+  description: 根据订单状态查询订单明细
+  behavior_type: SQL
+  params:
+    status:
+      type: string
+      display_name: 订单状态
+      required: true
+      example: active
+    orderDate:
+      type: string
+      display_name: 订单日期
+      required: false
+      example: '2026-01-01'
+  response:
+    code:
+      type: number
+      example: 0
+    data:
+      type: array
+      items:
+        type: object
+        properties:
+          orderId:
+            type: string
+            example: ORD001
+          amount:
+            type: number
+            example: 1500
+  related_concepts:
+  - ConceptName
+  display_name: SQL查询订单
 rules:
 - name: ruleName
   description: 规则描述，详细的规则逻辑

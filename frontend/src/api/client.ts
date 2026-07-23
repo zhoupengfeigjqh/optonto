@@ -179,6 +179,7 @@ export const updateFunction = (ontologyId: number, name: string, data: Function)
 export interface Behavior {
   name: string;
   description: string;
+  behavior_type?: string;
   params: Record<string, unknown>;
   response?: Record<string, unknown>;
   related_concepts: string[];
