@@ -250,13 +250,15 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
                 content = content[8:].strip()
             content = content.rsplit("```", 1)[0].strip()
 
-        first_hr = content.find("\n---\n")
-        if first_hr > 0 and content[:first_hr].count('\n') < 5:
-            content = content[first_hr + 1:].strip()
-        elif not content.startswith("---"):
-            first_h1 = content.find("\n# ")
-            if first_h1 > 0 and content[:first_h1].count('\n') < 5 and not content.startswith("#"):
-                content = content[first_h1 + 1:].strip()
+        # Strip leading conversational text only if content doesn't start with --- (YAML frontmatter)
+        if not content.startswith("---"):
+            first_hr = content.find("\n---\n")
+            if first_hr > 0 and content[:first_hr].count('\n') < 5:
+                content = content[first_hr + 1:].strip()
+            else:
+                first_h1 = content.find("\n# ")
+                if first_h1 > 0 and content[:first_h1].count('\n') < 5 and not content.startswith("#"):
+                    content = content[first_h1 + 1:].strip()
 
         sdir = _skill_dir(sc_name, on_name, skill_name)
         sdir.mkdir(parents=True, exist_ok=True)
