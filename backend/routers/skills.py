@@ -71,9 +71,10 @@ async def list_skills(ontology_id: int):
         format_ok = False
         if md_path.exists():
             head = md_path.read_text(encoding="utf-8")[:300]
-            required = ["onto_name:", "onto_id:", "scenario_name:", "scenario_id:", "description:"]
-            missing = [r[:-1] for r in required if f"\n{r}" not in head]
-            format_ok = head.startswith("---\n") and len(missing) == 0
+            import re
+            has_name_en = bool(re.search(r"\nname: [a-zA-Z]", head))
+            has_desc = "\ndescription:" in head
+            format_ok = head.startswith("---\n") and has_name_en and has_desc
         desc = ""
         meta_path = d / "meta.json"
         if meta_path.exists():
@@ -86,8 +87,10 @@ async def list_skills(ontology_id: int):
         if md_path.exists() and not format_ok:
             if not head.startswith("---\n"):
                 format_error = "文件头部缺少 ---"
-            elif missing:
-                format_error = f"缺少: {', '.join(missing)}"
+            elif not has_name_en:
+                format_error = "name 必须为英文"
+            elif not has_desc:
+                format_error = "缺少 description"
         items.append({
             "name": d.name, "has_skill": md_path.exists(), "format_ok": format_ok,
             "format_error": format_error,
