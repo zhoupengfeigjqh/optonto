@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/api/common-functions", tags=["公共函数"])
 
@@ -21,3 +21,13 @@ async def list_common_functions() -> list[dict]:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return []
+
+
+@router.get("/{func_name}/code")
+async def get_common_function_code(func_name: str) -> dict:
+    """Read a common function's Python source code."""
+    code_path = COMMON_DIR / f"{func_name}.py"
+    if not code_path.exists():
+        raise HTTPException(status_code=404, detail="函数代码文件不存在")
+    content = code_path.read_text(encoding="utf-8")
+    return {"content": content, "func_name": func_name}

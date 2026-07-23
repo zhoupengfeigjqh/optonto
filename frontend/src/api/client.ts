@@ -150,6 +150,9 @@ export const getFunctions = (ontologyId: number) =>
 export const getCommonFunctions = () =>
   request<any[]>('/api/common-functions');
 
+export const getCommonFunctionCode = (name: string) =>
+  request<{ content: string; func_name: string }>(`/api/common-functions/${encodeURIComponent(name)}/code`);
+
 export const createFunction = (ontologyId: number, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions`, { method: 'POST', body: JSON.stringify(data) });
 
