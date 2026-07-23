@@ -134,14 +134,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const openConnect = (engine: DataEngine) => {
     setConnectEngine(engine);
     setConnectResult(null);
-    const beh = behaviors.find(b => b.name === engine.behavior_name);
-    const params: Record<string, any> = {};
-    if (beh?.params) {
-      for (const k of Object.keys(beh.params)) {
-        params[k] = '';
-      }
-    }
-    setConnectParams(params);
+    setConnectParams({});
     setConnectOpen(true);
   };
 
