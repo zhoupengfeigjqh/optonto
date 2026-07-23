@@ -87,8 +87,10 @@ description: <技能描述>
   };
 
   const handleEdit = async () => {
-    if (!editSkill.name.trim()) { message.warning('技能名称不能为空'); return; }
-    if (!isEnglishName(editSkill.name.trim())) { message.warning('技能名称必须为英文'); return; }
+    const name = editSkill.name.trim();
+    if (!name) { message.warning('技能名称不能为空'); return; }
+    const check = isSkillNameValid(name);
+    if (!check.ok) { message.warning(check.msg); return; }
     setEditLoading(true);
     try {
       await updateSkillMeta(ontologyId, editSkill.name, { description: editSkill.description });
@@ -108,11 +110,20 @@ description: <技能描述>
     });
   };
 
-  const isEnglishName = (v: string) => /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v);
+  const isSkillNameValid = (v: string): { ok: boolean; msg: string } => {
+    if (v.length < 1 || v.length > 64) return { ok: false, msg: '技能名称长度 1-64 个字符' };
+    if (v !== v.toLowerCase()) return { ok: false, msg: '技能名称必须全部小写' };
+    if (v.startsWith('-') || v.endsWith('-')) return { ok: false, msg: '连字符不能放在开头或结尾' };
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(v)) return { ok: false, msg: '只能使用小写字母 (a-z)、数字 (0-9) 和连字符 (-)' };
+    if (v.includes('claude') || v.includes('anthropic')) return { ok: false, msg: '技能名称包含保留字 claude/anthropic' };
+    return { ok: true, msg: '' };
+  };
 
   const handleGenerate = async () => {
-    if (!genName.trim()) { message.warning('请输入技能名称'); return; }
-    if (!isEnglishName(genName.trim())) { message.warning('技能名称必须为英文'); return; }
+    const name = genName.trim();
+    if (!name) { message.warning('请输入技能名称'); return; }
+    const check = isSkillNameValid(name);
+    if (!check.ok) { message.warning(check.msg); return; }
     setGenLoading(true);
     try {
       const result = await generateSkill(ontologyId, genName.trim(), genDesc.trim());
