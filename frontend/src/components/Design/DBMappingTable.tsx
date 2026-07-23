@@ -5,6 +5,7 @@ import { Button, Input, Modal, message, Space, Tag } from 'antd';
 import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
 import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import SqlEditor from '@/components/SqlEditor';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -161,7 +162,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
     }},
     { title: 'SQL代码', dataIndex: 'sql', key: 'sql', width: 300, render: (v: string, r: DataEngine) => (
       <div className="cursor-pointer hover:opacity-80" onClick={() => openSqlEditor(r)}>
-        <code className="text-xs font-mono text-yellow-400 line-clamp-2">{v || <span className="text-text-muted">点击编辑 SQL</span>}</code>
+        <code className="text-xs font-mono text-yellow-400 line-clamp-2">{v || <span className="text-yellow-400/70">点击编辑 SQL</span>}</code>
       </div>
     )},
     {
@@ -210,7 +211,9 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
         </div>
         <div>
           <span className="text-text-muted text-xs mb-1 block">SQL 语句</span>
-          <Input.TextArea value={sqlEditorText} onChange={e => setSqlEditorText(e.target.value)} rows={8} className="bg-dark-bg border-dark-border text-yellow-400 font-mono text-xs" placeholder="SELECT * FROM table WHERE status = :status" />
+          <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 250 }}>
+            <SqlEditor value={sqlEditorText} onChange={setSqlEditorText} />
+          </div>
         </div>
         <div className="mt-3">
           <span className="text-text-muted text-xs mb-1 block">输入参数（SQL 占位符变量）</span>
