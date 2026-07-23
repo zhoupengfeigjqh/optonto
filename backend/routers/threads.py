@@ -14,14 +14,18 @@ from services import load_ontology_data
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
 
 
+def _thread_subdir() -> str:
+    return "threads/demand"
+
 def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path, str, str]]:
-    """Scan onto_market/*/*/threads/ directories. If scenario+ontology given, scan only that path."""
+    """Scan onto_market/*/*/threads/demand/ directories. If scenario+ontology given, scan only that path."""
     results: list[tuple[Path, str, str]] = []
     if not ONTO_MARKET_DIR.exists():
         return results
 
+    sub = _thread_subdir()
     if scenario and ontology:
-        threads_dir = ONTO_MARKET_DIR / scenario / ontology / "threads"
+        threads_dir = ONTO_MARKET_DIR / scenario / ontology / sub
         if threads_dir.exists():
             for thread_dir in sorted(threads_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
                 if thread_dir.is_dir():
@@ -34,7 +38,7 @@ def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path,
         for ontology_dir in sorted(scenario_dir.iterdir()):
             if not ontology_dir.is_dir():
                 continue
-            threads_dir = ontology_dir / "threads"
+            threads_dir = ontology_dir / sub
             if not threads_dir.exists():
                 continue
             for thread_dir in sorted(threads_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -45,7 +49,7 @@ def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path,
 
 def _thread_dir(scenario_name: str, ontology_name: str, thread_id: str) -> Path:
     """Get the directory for a specific thread under its ontology."""
-    return ONTO_MARKET_DIR / scenario_name / ontology_name / "threads" / thread_id
+    return ONTO_MARKET_DIR / scenario_name / ontology_name / _thread_subdir() / thread_id
 
 
 def _thread_path(scenario_name: str, ontology_name: str, thread_id: str) -> Path:
@@ -60,7 +64,7 @@ def _find_thread(thread_id: str) -> tuple[Path, str, str]:
         for ontology_dir in scenario_dir.iterdir():
             if not ontology_dir.is_dir():
                 continue
-            tdir = ontology_dir / "threads" / thread_id
+            tdir = ontology_dir / _thread_subdir() / thread_id
             if tdir.exists():
                 return tdir, scenario_dir.name, ontology_dir.name
     raise HTTPException(status_code=404, detail="对话不存在")
