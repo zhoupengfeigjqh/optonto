@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Tag } from 'antd';
 import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, getMcpStatus, startMcp, stopMcp, getMcpTools, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import JsonEditor from '@/components/JsonEditor';
 
@@ -126,44 +126,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [smartAlignBehaviorName, setSmartAlignBehaviorName] = useState('');
   const [smartAlignLoading, setSmartAlignLoading] = useState(false);
 
-  // mcp status & control
-  const [mcpRunning, setMcpRunning] = useState(false);
-  const [mcpChecking, setMcpChecking] = useState(true);
-  const [mcpToggling, setMcpToggling] = useState(false);
-  const [mcpModalOpen, setMcpModalOpen] = useState(false);
-  const [mcpTools, setMcpTools] = useState<{ name: string; description: string; inputSchema?: any }[]>([]);
-  const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
-  const [mcpSelectedTool, setMcpSelectedTool] = useState<string | null>(null);
-  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-  const mcpConfigJson = JSON.stringify({
-    mcpServers: {
-      'optonto-api': {
-        type: 'url',
-        url: `http://${host}:8002/sse`,
-      },
-    },
-  }, null, 2);
-
-  const checkMcpStatus = useCallback(async () => {
-    setMcpChecking(true);
-    try {
-      const s = await getMcpStatus();
-      setMcpRunning(s.running);
-    } catch { setMcpRunning(false); }
-    finally { setMcpChecking(false); }
-  }, []);
-
-  useEffect(() => { checkMcpStatus(); }, [checkMcpStatus]);
-
-  const handleMcpToggle = async () => {
-    setMcpToggling(true);
-    try {
-      const r = mcpRunning ? await stopMcp() : await startMcp();
-      message.success(r.message);
-      setMcpRunning(r.running);
-    } catch (e: any) { message.error(e.message); }
-    finally { setMcpToggling(false); }
-  };
+  // ─── (MCP 服务已移至独立页面) ───
 
   // smart mapping confirm modal
   const [smartMappingOpen, setSmartMappingOpen] = useState(false);
@@ -483,16 +446,6 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
           <p className="text-text-muted text-xs mt-0.5">管理 API 类型的数据映射，配置目标接口和字段映射关系。</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 text-xs bg-dark-card border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover" onClick={async () => { setMcpModalOpen(true); try { const tools = await getMcpTools(host); setMcpTools(tools); } catch { setMcpTools([]); } }} title="点击查看 MCP 配置">
-            <span className={`w-2 h-2 rounded-full ${mcpChecking ? 'bg-gray-500' : mcpRunning ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-text-muted">MCP</span>
-            <span className={mcpRunning ? 'text-green-400' : 'text-text-muted'}>
-              {mcpChecking ? '...' : mcpRunning ? '运行中' : '已停止'}
-            </span>
-          </div>
-          <Button size="small" loading={mcpToggling} onClick={handleMcpToggle}>
-            {mcpRunning ? '停止' : '启动'}
-          </Button>
         </div>
       </div>
 
@@ -817,69 +770,6 @@ total  Number  订单总价  15000.50`}
       </Modal>
 
       {/* ─── MCP Config Modal ──────────────────────────────────────────── */}
-      <Modal
-        title="MCP 服务配置"
-        open={mcpModalOpen}
-        onCancel={() => setMcpModalOpen(false)}
-        footer={null}
-        width={600}
-      >
-        <p className="text-text-muted text-xs mb-3">将以下配置添加到你的 agent 的 MCP 配置中，即可连接本体服务。</p>
-        <div className="relative">
-          <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono text-yellow-400 whitespace-pre-wrap overflow-x-auto">{mcpConfigJson}</pre>
-          <Button
-            size="small"
-            className="absolute top-2 right-2"
-            onClick={() => {
-              navigator.clipboard.writeText(mcpConfigJson);
-              message.success('MCP 配置已复制到剪贴板');
-            }}
-          >
-            复制
-          </Button>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-text-muted text-xs">可用工具：</span>
-          <span className="text-accent-green text-sm font-semibold">{mcpTools.length}</span>
-          <Button size="small" type="link" onClick={() => setMcpToolsOpen(!mcpToolsOpen)}>
-            {mcpToolsOpen ? '收起' : '查看详情'}
-          </Button>
-        </div>
-        {mcpToolsOpen && (
-          <div className="mt-2 border border-dark-border rounded max-h-60 overflow-y-auto">
-            {mcpTools.map(t => {
-              const selected = mcpSelectedTool === t.name;
-              const props = t.inputSchema?.properties || {};
-              const required = t.inputSchema?.required || [];
-              return (
-              <div key={t.name}>
-                <div className="px-3 py-2 border-b border-dark-border last:border-b-0 hover:bg-dark-hover cursor-pointer" onClick={() => setMcpSelectedTool(selected ? null : t.name)}>
-                  <div className="text-text-primary text-xs font-medium">{t.name}</div>
-                  <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
-                  {Object.keys(props).length > 0 && (
-                    <div className="text-accent-blue text-xs mt-1">
-                      {Object.keys(props).length} 个参数 {selected ? '▲' : '▼'}
-                    </div>
-                  )}
-                </div>
-                {selected && Object.keys(props).length > 0 && (
-                  <div className="px-6 py-2 bg-dark-bg border-b border-dark-border space-y-1">
-                    {Object.entries(props).map(([k, v]: any) => (
-                      <div key={k} className="flex items-center gap-2 text-xs">
-                        <span className="text-yellow-400 font-mono">{k}</span>
-                        <span className="text-text-muted">({v.type || 'any'})</span>
-                        {required.includes(k) && <span className="text-red-400">*必填</span>}
-                        {v.description && <span className="text-text-secondary">— {v.description}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }

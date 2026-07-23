@@ -28,6 +28,7 @@ import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
 import DBMappingTable from '@/components/Design/DBMappingTable';
+import MCPService from '@/components/Design/MCPService';
 import SkillManagement from '@/components/Design/SkillManagement';
 
 const DESIGN_TABS = [
@@ -131,6 +132,9 @@ export default function DesignPage() {
       )}
       {activeSection === 'data-engine' && activeTab === 'db-mapping' && (
         <DBMappingTable ontologyId={ontologyId} activeTab={activeTab} />
+      )}
+      {activeSection === 'data-engine' && activeTab === 'mcp-service' && (
+        <MCPService />
       )}
       {activeSection === 'agent' && activeTab === 'skill-management' && (
         <SkillManagement ontologyId={ontologyId} activeTab={activeTab} />
@@ -334,6 +338,16 @@ export default function DesignPage() {
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'mcp-service'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('data-engine'); setActiveTab('mcp-service'); }}
+                >
+                  <span>MCP服务</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
                     activeTab === 'instance-collection'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
@@ -404,7 +418,7 @@ export default function DesignPage() {
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
               : activeSection === 'data-engine'
-              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : 'API映射'
+              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
               : activeSection === 'agent'
               ? activeTab === 'skill-management' ? '技能管理' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
