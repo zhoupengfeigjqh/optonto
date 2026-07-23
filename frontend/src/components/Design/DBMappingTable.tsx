@@ -160,8 +160,8 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
       return <span className="cursor-pointer hover:text-accent-blue transition-colors" onClick={() => openBehaviorEdit(b?.name || v)}>{b?.display_name || v}</span>;
     }},
     { title: 'SQL代码', dataIndex: 'sql', key: 'sql', width: 300, render: (v: string, r: DataEngine) => (
-      <div className="cursor-pointer hover:text-accent-blue" onClick={() => openSqlEditor(r)}>
-        <code className="text-xs font-mono text-text-primary line-clamp-2">{v || <span className="text-text-muted">点击编辑 SQL</span>}</code>
+      <div className="cursor-pointer hover:opacity-80" onClick={() => openSqlEditor(r)}>
+        <code className="text-xs font-mono text-yellow-400 line-clamp-2">{v || <span className="text-text-muted">点击编辑 SQL</span>}</code>
       </div>
     )},
     {
@@ -210,7 +210,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
         </div>
         <div>
           <span className="text-text-muted text-xs mb-1 block">SQL 语句</span>
-          <Input.TextArea value={sqlEditorText} onChange={e => setSqlEditorText(e.target.value)} rows={8} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" placeholder="SELECT * FROM table WHERE status = :status" />
+          <Input.TextArea value={sqlEditorText} onChange={e => setSqlEditorText(e.target.value)} rows={8} className="bg-dark-bg border-dark-border text-yellow-400 font-mono text-xs" placeholder="SELECT * FROM table WHERE status = :status" />
         </div>
         <div className="mt-3">
           <span className="text-text-muted text-xs mb-1 block">输入参数（SQL 占位符变量）</span>
