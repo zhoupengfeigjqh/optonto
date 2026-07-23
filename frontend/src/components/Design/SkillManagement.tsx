@@ -88,6 +88,7 @@ description: <技能描述>
 
   const handleEdit = async () => {
     if (!editSkill.name.trim()) { message.warning('技能名称不能为空'); return; }
+    if (!isEnglishName(editSkill.name.trim())) { message.warning('技能名称必须为英文'); return; }
     setEditLoading(true);
     try {
       await updateSkillMeta(ontologyId, editSkill.name, { description: editSkill.description });
@@ -107,8 +108,11 @@ description: <技能描述>
     });
   };
 
+  const isEnglishName = (v: string) => /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v);
+
   const handleGenerate = async () => {
     if (!genName.trim()) { message.warning('请输入技能名称'); return; }
+    if (!isEnglishName(genName.trim())) { message.warning('技能名称必须为英文'); return; }
     setGenLoading(true);
     try {
       const result = await generateSkill(ontologyId, genName.trim(), genDesc.trim());
