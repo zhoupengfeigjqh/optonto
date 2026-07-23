@@ -151,7 +151,7 @@ async def create_thread(body: dict):
 async def get_thread(thread_id: str, scenario: str = "", ontology: str = ""):
     """Get a thread with all its messages."""
     if scenario and ontology:
-        tdir = ONTO_MARKET_DIR / scenario / ontology / "threads" / thread_id
+        tdir = ONTO_MARKET_DIR / scenario / ontology / _thread_subdir() / thread_id
         if not tdir.exists():
             raise HTTPException(status_code=404, detail="对话不存在")
         path = tdir / ".data.json"
@@ -238,7 +238,7 @@ async def list_requirements(scenario: str = "", ontology: str = ""):
 async def get_requirement_file(thread_id: str, filename: str, scenario: str = "", ontology: str = ""):
     """Read a requirement markdown file content."""
     if scenario and ontology:
-        tdir = ONTO_MARKET_DIR / scenario / ontology / "threads" / thread_id
+        tdir = ONTO_MARKET_DIR / scenario / ontology / _thread_subdir() / thread_id
     else:
         tdir, _, _ = _find_thread(thread_id)
     file_path = tdir / filename
