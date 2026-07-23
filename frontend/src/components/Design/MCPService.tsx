@@ -97,7 +97,7 @@ export default function MCPService() {
           </Button>
           <Button onClick={() => {
             Modal.info({
-              title: 'MCP 测试',
+              title: <span style={{color:'#fff'}}>MCP 测试</span>,
               content: <p className="text-text-secondary text-sm">请将 MCP 地址复制到其他平台用于测试，本平台暂不支持。</p>,
               okText: '知道了',
             });
