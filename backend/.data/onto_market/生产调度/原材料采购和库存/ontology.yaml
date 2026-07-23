@@ -751,6 +751,14 @@ behaviors:
   related_concepts:
   - DeliveryCapability
   display_name: 查询供应商供货能力
+- name: QuerySupplierCapabilitySQL
+  description: 根据供应商名或原材料名，查询供应能力
+  behavior_type: SQL
+  params: {}
+  response: {}
+  related_concepts:
+  - DeliveryCapability
+  display_name: 查询供应商供货能力SQL
 rules:
 - name: V01_UnitConsistency_Purchase
   description: 创建采购单时，输入的 unit 必须与关联原材料的 unit 一致。
@@ -996,6 +1004,7 @@ data_engines:
 - name: CreatePurchaseRecord
   display_name: ''
   behavior_name: CreatePurchaseRecord
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 创建采购单
@@ -1117,9 +1126,13 @@ data_engines:
     data.relatedOrderName: data.relatedOrderName
     data.leadTime: ''
     data.status: data.status
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: CancelPurchaseRecord
   display_name: ''
   behavior_name: CancelPurchaseRecord
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 取消原材料采购单
@@ -1162,9 +1175,13 @@ data_engines:
     data.purchaseRecordId: data.purchaseOrderId
     data.rawMaterialId: data.rawMaterialId
     data.rawMaterialName: data.rawMaterialName
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: ReceiveRawMaterial
   display_name: ''
   behavior_name: ReceiveRawMaterial
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 入库原材料
@@ -1215,9 +1232,13 @@ data_engines:
     data.purchaseRecordId: data.purchaseOrderId
     data.rawMaterialId: data.rawMaterialId
     data.rawMaterialName: data.rawMaterialName
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: QueryInventory
   display_name: ''
   behavior_name: QueryInventory
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 查询原材料库存
@@ -1293,9 +1314,13 @@ data_engines:
     data[*].cumulativeStockQuantity: data[*].cumulativeStockQuantity
     data[*].availableStock: data[*].availableQuantity
     data[*].unit: data[*].unit
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: QueryPurchaseRecords
   display_name: ''
   behavior_name: QueryPurchaseRecords
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 查询原材料采购订单
@@ -1401,9 +1426,13 @@ data_engines:
     data[*].relatedOrderId: data[*].relatedOrderId
     data[*].relatedOrderName: data[*].relatedOrderName
     data[*].leadTime: ''
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: QueryRawMaterials
   display_name: ''
   behavior_name: QueryRawMaterials
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 查询原材料基本信息
@@ -1463,9 +1492,13 @@ data_engines:
     data[*].rawMaterialName: data[*].rawMaterialName
     data[*].unit: data[*].unit
     data[*].safetyStock: data[*].safetyStock
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: QuerySuppliers
   display_name: ''
   behavior_name: QuerySuppliers
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 供应商查询
@@ -1538,9 +1571,13 @@ data_engines:
     data[*].address: data[*].address
     data[*].contactPerson: data[*].contactPerson
     data[*].contactPhone: data[*].contactPhone
+  sql: ''
+  sql_vars: {}
+  datasource: ''
 - name: QuerySupplierCapability
   display_name: ''
   behavior_name: QuerySupplierCapability
+  engine_type: API
   target:
     data_source_name: aps
     api_name: 供应商查询
@@ -1612,3 +1649,6 @@ data_engines:
     data[*].rawMaterialId: data[*].rawMaterialId
     data[*].rawMaterialName: data[*].rawMaterialName
     data[*].leadTime: data[*].leadTime
+  sql: ''
+  sql_vars: {}
+  datasource: ''

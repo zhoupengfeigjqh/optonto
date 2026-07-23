@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Tag } from 'antd';
 import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined } from '@ant-design/icons';
-import { getDataEngines, updateDataEngine, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, getDbSchema, uploadDbSchema, generateSQL, callBehavior, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -27,8 +27,23 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const list = await getDataEngines(ontologyId);
-      setEngines(list.filter((e: DataEngine) => e.engine_type === 'SQL'));
+      const [engList, behList] = await Promise.all([getDataEngines(ontologyId), getBehaviors(ontologyId)]);
+      let sqlEngines = engList.filter((e: DataEngine) => e.engine_type === 'SQL');
+      // Auto-create data engine for any behavior with behavior_type=SQL that has no engine yet
+      for (const beh of behList) {
+        if ((beh as any).behavior_type === 'SQL' && !sqlEngines.find(e => e.behavior_name === beh.name)) {
+          const newEngine: DataEngine = {
+            name: beh.name, behavior_name: beh.name, engine_type: 'SQL',
+            target: { data_source_name: '', api_name: '', url: '', method: 'POST', params: {}, response: {} },
+            input_mapping: {}, output_mapping: {},
+          };
+          try {
+            const created = await createDataEngine(ontologyId, newEngine);
+            sqlEngines.push(created);
+          } catch { /* skip if already exists */ }
+        }
+      }
+      setEngines(sqlEngines);
     } catch (e: any) { message.error('加载失败: ' + e.message); }
     finally { setLoading(false); }
   };
