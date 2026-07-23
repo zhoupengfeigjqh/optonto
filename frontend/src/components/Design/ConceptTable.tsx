@@ -136,14 +136,14 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     { title: '属性数', key: 'attr_count', width: 70,
       render: (_: any, r: Concept) => <Tag color="blue">{r.attributes?.length || 0}</Tag> },
     {
-      title: '操作', key: 'actions', width: 210,
+      title: '操作', key: 'actions', width: 130,
       render: (_: any, record: Concept) => {
         const editing = isEditing(record);
         if (editing || (editingKey === '__new__' && record.name === '__new__')) {
           return (
             <Space>
-              <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)}>保存</Button>
-              <Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel}>取消</Button>
+              <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} />
+              <Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} />
             </Space>
           );
         }
