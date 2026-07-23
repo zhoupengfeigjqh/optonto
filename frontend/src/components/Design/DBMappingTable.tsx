@@ -10,6 +10,7 @@ interface Props { ontologyId: number; activeTab?: string; }
 
 export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const [engines, setEngines] = useState<DataEngine[]>([]);
+  const [behaviors, setBehaviors] = useState<Behavior[]>([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -44,6 +45,7 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
         }
       }
       setEngines(sqlEngines);
+      setBehaviors(behList);
     } catch (e: any) { message.error('加载失败: ' + e.message); }
     finally { setLoading(false); }
   };
@@ -104,7 +106,10 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
   const dataSource = engines.map(e => ({ ...e, _key: e.name }));
 
   const columns = [
-    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (v: string) => <span className="text-text-primary">{v}</span> },
+    { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (v: string) => {
+      const b = behaviors.find(b => b.name === v);
+      return <span className="text-text-primary">{b?.display_name || v}</span>;
+    }},
     { title: 'SQL', dataIndex: 'sql', key: 'sql', width: 400, render: (v: string, r: DataEngine) => (
       <Input.TextArea size="small" value={v || ''} onChange={e => handleSQLChange(r, e.target.value)} rows={2} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
     )},

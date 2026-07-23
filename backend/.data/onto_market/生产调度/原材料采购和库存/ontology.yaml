@@ -1652,3 +1652,19 @@ data_engines:
   sql: ''
   sql_vars: {}
   datasource: ''
+- name: QuerySupplierCapabilitySQL
+  display_name: ''
+  behavior_name: QuerySupplierCapabilitySQL
+  engine_type: SQL
+  target:
+    data_source_name: ''
+    api_name: ''
+    url: ''
+    method: POST
+    params: {}
+    response: {}
+  input_mapping: {}
+  output_mapping: {}
+  sql: ''
+  sql_vars: {}
+  datasource: ''
