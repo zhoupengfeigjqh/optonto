@@ -32,6 +32,12 @@ export default function MCPService() {
       const r = mcpRunning ? await stopMcp() : await startMcp();
       message.success(r.message);
       setMcpRunning(r.running);
+      if (r.running) {
+        const tools = await getMcpTools(host);
+        setMcpTools(tools);
+      } else {
+        setMcpTools([]);
+      }
     } catch (e: any) { message.error(e.message); }
     finally { setMcpToggling(false); }
   };
