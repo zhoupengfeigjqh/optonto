@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PlusOutlined, FolderOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, FolderOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { Modal, Input, message, Button, Empty } from 'antd';
 import {
   getScenarios, createScenario, updateScenario,
@@ -210,15 +210,6 @@ export default function HomePage() {
                     setShowEditScenario(sc);
                   }}
                 />
-                <DeleteOutlined
-                  className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition-all text-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedScenarioId(sc.id);
-                    setDeleteConfirmText('');
-                    setShowDeleteScenario(true);
-                  }}
-                />
               </div>
             </div>
           ))}
@@ -258,7 +249,6 @@ export default function HomePage() {
                   >
                     新建本体
                   </Button>
-                </div>
                 </div>
               </div>
 
@@ -481,9 +471,6 @@ export default function HomePage() {
           </div>
         </div>
       </Modal>
-
-      {/* Confirm Delete Scenario */}
-      <Modal
 
       {/* Confirm Delete Ontology */}
       <Modal

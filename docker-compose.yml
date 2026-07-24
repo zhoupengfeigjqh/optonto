@@ -3,8 +3,32 @@ networks:
     driver: bridge
 
 services:
+  # ─── Agent 后端 (pi-agent-core) ──────────────────────────────────
+  optonto-agent-backend:
+    build:
+      context: ./agent-backend
+      dockerfile: Dockerfile
+    container_name: optonto_agent_backend
+    ports:
+      - "8003:8003"
+    depends_on:
+      - optonto-backend
+    volumes:
+      # .data 目录（读写，权限由 PathAccessController 代码层控制）
+      - ./backend/.data:/app/.data
+      # 共享配置（DEEPSEEK_API_KEY 等）
+      - ./config:/app/config
+    env_file:
+      - ./config/.env
+    environment:
+      - TZ=Asia/Shanghai
+      - DATA_DIR=/app/.data
+      - PORT=8003
+    networks:
+      - optonto-net
+
   # ─── MySQL 数据库 ────────────────────────────────────────────
-  mysql:
+  optonto-mysql:
     image: mysql:8.0
     container_name: optonto_mysql
     ports:
@@ -25,7 +49,7 @@ services:
       retries: 5
 
   # ─── Java 后端 (Spring Boot) ─────────────────────────────────
-  java-backend:
+  optonto-java-backend:
     build:
       context: ./java-backend
       dockerfile: Dockerfile
@@ -33,7 +57,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      mysql:
+      optonto-mysql:
         condition: service_healthy
     env_file:
       - ./config/.env
@@ -43,7 +67,7 @@ services:
       - optonto-net
 
   # ─── 前端 (Nginx + Next.js 合并) ───────────────────────────────
-  frontend:
+  optonto-frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
@@ -51,12 +75,12 @@ services:
     ports:
       - "81:81"
     depends_on:
-      - backend
+      - optonto-backend
     networks:
       - optonto-net
 
   # ─── 后端 API (FastAPI) ────────────────────────────────────────
-  backend:
+  optonto-backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -74,7 +98,7 @@ services:
       - optonto-net
 
   # ─── MCP 服务 (常驻 SSE) ───────────────────────────────────────
-  mcp:
+  optonto-mcp:
     build:
       context: .
       dockerfile: backend/Dockerfile.mcp
@@ -82,7 +106,7 @@ services:
     ports:
       - "8002:8002"
     depends_on:
-      - backend
+      - optonto-backend
     volumes:
       - ./backend/.data:/app/backend/.data
     environment:

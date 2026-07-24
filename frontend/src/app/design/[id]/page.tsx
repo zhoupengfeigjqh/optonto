@@ -30,6 +30,8 @@ import DataEngineTable from '@/components/Design/DataEngineTable';
 import DBMappingTable from '@/components/Design/DBMappingTable';
 import MCPService from '@/components/Design/MCPService';
 import SkillManagement from '@/components/Design/SkillManagement';
+import AgentApp from '@/components/Design/AgentApp';
+import MCPConfigPanel from '@/components/Design/MCPConfig';
 
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
@@ -140,7 +142,17 @@ export default function DesignPage() {
         <SkillManagement ontologyId={ontologyId} activeTab={activeTab} />
       )}
       {activeSection === 'agent' && activeTab === 'agent-app' && (
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>智能体应用 — 开发中</p></div>
+        <AgentApp
+          ontologyId={ontologyId}
+          scenarioName={ontology?.scenario_name}
+          ontologyName={ontology?.name}
+        />
+      )}
+      {activeSection === 'agent' && activeTab === 'mcp-config' && (
+        <MCPConfigPanel
+          scenarioName={ontology?.scenario_name}
+          ontologyName={ontology?.name}
+        />
       )}
     </div>
   );
@@ -399,6 +411,16 @@ export default function DesignPage() {
                 >
                   <span>智能体应用</span>
                 </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'mcp-config'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { setActiveSection('agent'); setActiveTab('mcp-config'); }}
+                >
+                  <span>MCP 配置</span>
+                </button>
               </div>
             )}
           </div>
@@ -420,7 +442,7 @@ export default function DesignPage() {
               : activeSection === 'data-engine'
               ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
               : activeSection === 'agent'
-              ? activeTab === 'skill-management' ? '技能管理' : '智能体应用'
+              ? activeTab === 'skill-management' ? '技能管理' : activeTab === 'mcp-config' ? 'MCP 配置' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
           <button
