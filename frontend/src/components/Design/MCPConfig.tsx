@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Input, message, Space, Spin, Switch,
-  Table, Tag, Modal, Collapse,
+  Button, Input, message, Space, Spin, Switch,
+  Table, Tag, Modal,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ApiOutlined,
-  CheckCircleOutlined, CloseCircleOutlined,
+  CheckOutlined, CloseOutlined, EditOutlined,
   ToolOutlined,
 } from '@ant-design/icons';
 import {
@@ -24,15 +24,8 @@ export default function MCPConfigPanel({
 }) {
   const [config, setConfig] = useState<MCPConfig>({ servers: [] });
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // 测试状态
-  const [testingUrl, setTestingUrl] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, {
-    loading: boolean;
-    tools?: MCPToolInfo[];
-    error?: string;
-  }>>({});
+  const [editingKey, setEditingKey] = useState<string>('');
+  const [editData, setEditData] = useState<Record<string, any>>({});
 
   // 工具弹窗
   const [modalServer, setModalServer] = useState<MCPServerConfig | null>(null);
@@ -42,7 +35,6 @@ export default function MCPConfigPanel({
   const [mcpSelectedTool, setMcpSelectedTool] = useState<string | null>(null);
   const [selectedToolNames, setSelectedToolNames] = useState<Set<string>>(new Set());
 
-  // 加载配置
   const load = async () => {
     if (!scenarioName || !ontologyName) return;
     setLoading(true);
@@ -60,60 +52,82 @@ export default function MCPConfigPanel({
     load();
   }, [scenarioName, ontologyName]);
 
-  // 保存配置
-  const handleSave = async () => {
+  // 直接保存到后端
+  const persistConfig = async (newConfig: MCPConfig) => {
     if (!scenarioName || !ontologyName) return;
-    setSaving(true);
     try {
-      await saveMCPConfig(scenarioName, ontologyName, config);
-      message.success('配置已保存');
+      await saveMCPConfig(scenarioName, ontologyName, newConfig);
     } catch (e: any) {
       message.error('保存失败: ' + e.message);
-    } finally {
-      setSaving(false);
     }
   };
 
-  // 添加服务器
   const handleAdd = () => {
-    setConfig(prev => ({
-      servers: [
-        ...prev.servers,
-        { name: '', url: 'http://optonto-mcp:8002/sse', enabled: true },
-      ],
-    }));
+    setEditData({ name: '', url: '', enabled: true });
+    setEditingKey('__new__');
   };
 
-  // 删除服务器（弹出确认）
-  const handleRemove = (idx: number, server: MCPServerConfig) => {
+  const handleEdit = (server: MCPServerConfig) => {
+    setEditData({ name: server.name, url: server.url, enabled: server.enabled, allowed_tools: server.allowed_tools });
+    setEditingKey(server.name);
+  };
+
+  const handleCancel = () => {
+    setEditingKey('');
+    setEditData({});
+  };
+
+  const handleSaveRow = async () => {
+    if (!editData.name?.trim()) { message.warning('请输入服务名称'); return; }
+    if (!editData.url?.trim()) { message.warning('请输入 MCP URL'); return; }
+    const isNew = editingKey === '__new__';
+    let newConfig: MCPConfig;
+    if (isNew) {
+      if (config.servers.some(s => s.name === editData.name.trim())) {
+        message.warning('服务名称已存在'); return;
+      }
+      newConfig = {
+        servers: [
+          ...config.servers,
+          {
+            name: editData.name.trim(),
+            url: editData.url.trim(),
+            enabled: editData.enabled !== false,
+            allowed_tools: editData.allowed_tools,
+          },
+        ],
+      };
+    } else {
+      newConfig = {
+        servers: config.servers.map(s =>
+          s.name === editingKey
+            ? { ...s, name: editData.name.trim(), url: editData.url.trim(), enabled: editData.enabled !== false, allowed_tools: editData.allowed_tools }
+            : s
+        ),
+      };
+    }
+    setConfig(newConfig);
+    setEditingKey('');
+    setEditData({});
+    await persistConfig(newConfig);
+  };
+
+  const handleDelete = (server: MCPServerConfig) => {
     Modal.confirm({
       title: <span style={{ color: '#fff' }}>确认删除</span>,
-      content: <span style={{ color: '#ef4444' }}>删除 MCP 服务「<strong>{server.name || '未命名'}</strong>」后不可恢复，确定要删除吗？</span>,
+      content: <span style={{ color: '#ef4444' }}>删除 MCP 服务「<strong>{server.name}</strong>」后不可恢复，确定要删除吗？</span>,
       okText: '确认删除', cancelText: '取消', okButtonProps: { danger: true },
       onOk: async () => {
-        setConfig(prev => ({
-          servers: prev.servers.filter((_, i) => i !== idx),
-        }));
-        message.success('已删除');
+        const newConfig = { servers: config.servers.filter(s => s.name !== server.name) };
+        setConfig(newConfig);
+        await persistConfig(newConfig);
       },
     });
   };
 
-  // 更新服务器字段
-  const updateServer = (idx: number, field: keyof MCPServerConfig, value: any) => {
-    setConfig(prev => ({
-      servers: prev.servers.map((s, i) =>
-        i === idx ? { ...s, [field]: value } : s
-      ),
-    }));
-  };
-
-  // 查看工具（弹窗）
   const handleViewTools = async (server: MCPServerConfig) => {
     if (!scenarioName || !ontologyName || !server.url) return;
-
     setModalServer(server);
-    // 从现有配置加载已选工具
     setSelectedToolNames(new Set(server.allowed_tools || []));
     setModalLoading(true);
     setModalError(null);
@@ -122,7 +136,12 @@ export default function MCPConfigPanel({
     try {
       const result = await testMCPConnection(scenarioName, ontologyName, server.url);
       if (result.success) {
-        setModalTools(result.tools || []);
+        const tools = result.tools || [];
+        setModalTools(tools);
+        // 没有设置 allowed_tools 时默认全选
+        if (!server.allowed_tools || server.allowed_tools.length === 0) {
+          setSelectedToolNames(new Set(tools.map(t => t.name)));
+        }
       } else {
         setModalError(result.error || '连接失败');
       }
@@ -133,7 +152,6 @@ export default function MCPConfigPanel({
     }
   };
 
-  // 切换选中工具
   const toggleTool = (name: string) => {
     setSelectedToolNames(prev => {
       const next = new Set(prev);
@@ -143,57 +161,120 @@ export default function MCPConfigPanel({
     });
   };
 
-  // 保存工具选择
-  const handleConfirmTools = () => {
-    if (!modalServer || !scenarioName || !ontologyName) return;
-    const idx = config.servers.findIndex(s => s.url === modalServer.url);
-    if (idx === -1) return;
+  const handleConfirmTools = async () => {
+    if (!modalServer) return;
     const allowed = Array.from(selectedToolNames);
-    updateServer(idx, 'allowed_tools', allowed.length > 0 ? allowed : undefined);
+    const newConfig = {
+      servers: config.servers.map(s =>
+        s.url === modalServer.url
+          ? { ...s, allowed_tools: allowed.length > 0 ? allowed : undefined }
+          : s
+      ),
+    };
+    setConfig(newConfig);
     setModalServer(null);
     setModalError(null);
     setModalTools([]);
     setMcpSelectedTool(null);
+    await persistConfig(newConfig);
     message.success(allowed.length > 0 ? `已选择 ${allowed.length} 个工具` : '将注册全部工具');
   };
 
+  const renderCell = (val: any, server: MCPServerConfig, field: string) => {
+    const editing = editingKey === server.name || (editingKey === '__new__' && server.name === '__new__');
+    if (!editing) return null;
+
+    if (field === 'name') {
+      return (
+        <Input
+          size="small"
+          value={editData.name || ''}
+          onChange={e => setEditData(p => ({...p, name: e.target.value}))}
+          className="bg-dark-bg border-dark-border text-text-primary"
+          placeholder="服务名称"
+        />
+      );
+    }
+    if (field === 'url') {
+      return (
+        <Input
+          size="small"
+          value={editData.url || ''}
+          onChange={e => setEditData(p => ({...p, url: e.target.value}))}
+          className="bg-dark-bg border-dark-border text-text-primary font-mono"
+          placeholder="http://example.com/sse"
+        />
+      );
+    }
+    return null;
+  };
+
+  // 数据源：加上新增空行
+  const dataSource = config.servers.map(s => ({ ...s, _key: s.name }));
+  if (editingKey === '__new__') {
+    dataSource.push({ name: '__new__', url: '', enabled: true } as any);
+  }
+
   const columns = [
     {
-      title: '工具名称',
+      title: '名称',
       dataIndex: 'name',
       key: 'name',
-      width: 200,
-      render: (v: string) => (
-        <span className="font-mono text-sm text-accent-blue">{v}</span>
+      width: 150,
+      render: (v: string, r: MCPServerConfig) => {
+        const cell = renderCell(v, r, 'name');
+        if (cell) return cell;
+        return <span className="text-text-primary">{v}</span>;
+      },
+    },
+    {
+      title: 'URL',
+      dataIndex: 'url',
+      key: 'url',
+      width: 320,
+      render: (v: string, r: MCPServerConfig) => {
+        const cell = renderCell(v, r, 'url');
+        if (cell) return cell;
+        return <span className="text-text-secondary font-mono text-sm">{v}</span>;
+      },
+    },
+    {
+      title: '工具',
+      key: 'tools',
+      width: 80,
+      render: (_: any, r: MCPServerConfig) => (
+        <Button type="link" size="small" icon={<ToolOutlined />} onClick={() => handleViewTools(r)}>选择</Button>
       ),
     },
     {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      render: (v: string) => (
-        <span className="text-text-secondary text-sm">{v || '-'}</span>
-      ),
-    },
-    {
-      title: '参数',
-      key: 'params',
-      width: 300,
-      render: (_: any, r: MCPToolInfo) => {
-        const props = r.inputSchema?.properties || {};
-        const names = Object.keys(props);
+      title: '操作',
+      key: 'actions',
+      width: 240,
+      render: (_: any, r: MCPServerConfig) => {
+        const editing = editingKey === r.name || (editingKey === '__new__' && r.name === '__new__');
+        if (editing) {
+          return (
+            <Space>
+              <Button type="link" size="small" icon={<CheckOutlined />} onClick={handleSaveRow} />
+              <Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} />
+            </Space>
+          );
+        }
+        if (r.name === '__new__') return null;
         return (
-          <div className="flex flex-wrap gap-1">
-            {names.length === 0 ? (
-              <span className="text-text-muted text-xs">无参数</span>
-            ) : (
-              names.map(k => (
-                <Tag key={k} color="blue" className="text-xs">
-                  {k}{props[k]?.type ? `: ${props[k].type}` : ''}
-                </Tag>
-              ))
-            )}
-          </div>
+          <Space>
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)}>编辑</Button>
+            <Switch
+              checked={r.enabled}
+              onChange={v => {
+                const newConfig = { servers: config.servers.map(s => s.name === r.name ? { ...s, enabled: v } : s) };
+                setConfig(newConfig);
+                persistConfig(newConfig);
+              }}
+              size="small"
+            />
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r)} />
+          </Space>
         );
       },
     },
@@ -207,84 +288,28 @@ export default function MCPConfigPanel({
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">MCP 配置</h3>
-        <Space>
-          <Button icon={<PlusOutlined />} onClick={handleAdd}>添加 MCP 服务</Button>
-          <Button type="primary" onClick={handleSave} loading={saving}>保存配置</Button>
-        </Space>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增 MCP 服务</Button>
       </div>
       <p className="text-text-muted text-xs mb-3">
-        配置 MCP (Model Context Protocol) 服务，Agent 将自动发现并注册其工具。连接后可查看工具名称、参数等信息。
+        配置 MCP 服务，Agent 将自动发现并注册其工具。
       </p>
 
-      {config.servers.length === 0 && (
-        <div className="flex flex-col items-center justify-center h-32 text-text-muted">
-          <ApiOutlined style={{ fontSize: 32, marginBottom: 8 }} />
-          <p className="text-sm">暂无 MCP 服务配置</p>
-          <p className="text-xs mt-1">点击「添加 MCP 服务」开始配置</p>
-        </div>
-      )}
+      <Table
+        dataSource={dataSource}
+        columns={columns}
+        rowKey="_key"
+        pagination={false}
+        size="small"
+        className="bg-transparent"
+        locale={{ emptyText: (
+          <div className="flex flex-col items-center justify-center h-24 text-text-muted">
+            <ApiOutlined style={{ fontSize: 24, marginBottom: 8 }} />
+            <p className="text-sm">暂无 MCP 服务配置</p>
+          </div>
+        )}}
+      />
 
-      <div className="space-y-3">
-        {config.servers.map((server, idx) => (
-          <Card
-            key={idx}
-            size="small"
-            className="bg-dark-card border-dark-border"
-          >
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <label className="text-text-secondary text-xs block mb-1">名称</label>
-                  <Input
-                    size="small"
-                    placeholder="MCP 服务名称"
-                    value={server.name}
-                    onChange={e => updateServer(idx, 'name', e.target.value)}
-                    className="bg-dark-bg border-dark-border text-text-primary"
-                  />
-                </div>
-                <div className="flex-[2]">
-                  <label className="text-text-secondary text-xs block mb-1">URL</label>
-                  <Input
-                    size="small"
-                    placeholder="http://optonto-mcp:8002/sse"
-                    value={server.url}
-                    onChange={e => updateServer(idx, 'url', e.target.value)}
-                    className="bg-dark-bg border-dark-border text-text-primary font-mono"
-                  />
-                </div>
-                <div className="pt-4" title="关闭后，对话时 Agent 不会连接此 MCP 服务">
-                  <Switch
-                    checked={server.enabled}
-                    onChange={v => updateServer(idx, 'enabled', v)}
-                    size="small"
-                  />
-                </div>
-                <div className="pt-4">
-                  <Button
-                    size="small"
-                    icon={<ToolOutlined />}
-                    onClick={() => handleViewTools(server)}
-                  >
-                    选择工具
-                  </Button>
-                </div>
-                <div className="pt-4">
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<DeleteOutlined />}
-                    danger
-                    onClick={() => handleRemove(idx, server)}
-                  />
-                </div>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* 查看工具弹窗 — 与数据引擎 MCP 服务风格一致 */}
+      {/* 选择工具弹窗 */}
       <Modal
         title={`MCP 工具列表 - ${modalServer?.name || ''}`}
         open={!!modalServer}
@@ -297,9 +322,7 @@ export default function MCPConfigPanel({
                   ? '当前未选择任何工具，将注册全部工具'
                   : `已选择 ${selectedToolNames.size}/${modalTools.length} 个工具，仅注册选中的工具`}
               </span>
-              <Button type="primary" onClick={handleConfirmTools}>
-                确认
-              </Button>
+              <Button type="primary" onClick={handleConfirmTools}>确认</Button>
             </div>
           ) : null
         }

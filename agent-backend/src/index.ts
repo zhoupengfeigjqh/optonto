@@ -18,7 +18,7 @@ const skillLoader = new SkillLoader(pac);
 const mcpConfigStore = new MCPConfigStore(pac);
 
 // AgentFactory — 每次对话动态读取 MCP 配置连接服务发现工具
-const agentFactory = new AgentFactory(mcpConfigStore);
+const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
 
 // ─── Express 应用 ────────────────────────────────
 

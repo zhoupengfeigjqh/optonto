@@ -419,7 +419,7 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { setActiveSection('agent'); setActiveTab('mcp-config'); }}
                 >
-                  <span>MCP 配置</span>
+                  <span>MCP配置</span>
                 </button>
               </div>
             )}

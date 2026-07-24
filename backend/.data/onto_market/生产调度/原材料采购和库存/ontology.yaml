@@ -1039,7 +1039,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 创建采购单
-    url: http://java-backend:8080/api/purchase-records
+    url: http://optonto-java-backend:8080/api/purchase-records
     method: POST
     params:
       rawMaterialId:
@@ -1167,7 +1167,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 取消原材料采购单
-    url: http://java-backend:8080/api/purchase-records/{purchaseOrderId}/cancel
+    url: http://optonto-java-backend:8080/api/purchase-records/{purchaseOrderId}/cancel
     method: POST
     params:
       purchaseOrderId:
@@ -1216,7 +1216,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 入库原材料
-    url: http://java-backend:8080/api/purchase-records/{purchaseOrderId}/receive
+    url: http://optonto-java-backend:8080/api/purchase-records/{purchaseOrderId}/receive
     method: POST
     params:
       purchaseOrderId:
@@ -1273,7 +1273,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 查询原材料库存
-    url: http://java-backend:8080/api/inventories
+    url: http://optonto-java-backend:8080/api/inventories
     method: GET
     params:
       rawMaterialId:
@@ -1355,7 +1355,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 查询原材料采购订单
-    url: http://java-backend:8080/api/purchase-records
+    url: http://optonto-java-backend:8080/api/purchase-records
     method: GET
     params:
       purchaseOrderId:
@@ -1467,7 +1467,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 查询原材料基本信息
-    url: http://java-backend:8080/api/raw-materials
+    url: http://optonto-java-backend:8080/api/raw-materials
     method: GET
     params:
       rawMaterialId:
@@ -1533,7 +1533,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 供应商查询
-    url: http://java-backend:8080/api/suppliers
+    url: http://optonto-java-backend:8080/api/suppliers
     method: GET
     params:
       supplierName:
@@ -1612,7 +1612,7 @@ data_engines:
   target:
     data_source_name: aps
     api_name: 供应商查询
-    url: http://java-backend:8080/api/suppliers
+    url: http://optonto-java-backend:8080/api/suppliers
     method: GET
     params:
       supplierName:

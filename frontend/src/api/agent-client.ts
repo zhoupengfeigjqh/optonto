@@ -40,7 +40,7 @@ export interface AgentThread {
 }
 
 export interface AgentMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'toolResult';
   content: string;
   timestamp: string;
 }

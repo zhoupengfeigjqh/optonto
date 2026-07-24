@@ -121,11 +121,8 @@ export function createThreadsRouter(
       const thread = threadStore.get(scenario, ontology, tid);
       const history: ThreadMessage[] = thread.messages || [];
 
-      // 2. 加载技能文件
-      const skillContent = skillLoader.loadSkills(scenario, ontology, thread.skill_names);
-
-      // 3. 创建 Agent（自动读取 MCP 配置，动态发现工具）
-      const agent = await agentFactory.createAgent(skillContent, history, scenario, ontology);
+      // 2. 创建 Agent
+      const agent = await agentFactory.createAgent(thread.skill_names, history, scenario, ontology, ontology_id);
 
       // 4. 订阅 agent 事件流，收集 assistant 回复
       const assistantMessage: ThreadMessage = {
@@ -142,7 +139,11 @@ export function createThreadsRouter(
         } else if (event.type === 'tool_execution_start') {
           sendEvent({ type: 'tool_start', name: event.toolName });
         } else if (event.type === 'tool_execution_end') {
-          sendEvent({ type: 'tool_end', name: event.toolName, result: '' });
+          const resultText = event.result?.content
+            ?.map((c: any) => ('text' in c ? c.text : ''))
+            .filter(Boolean)
+            .join('\n') || '';
+          sendEvent({ type: 'tool_end', name: event.toolName, result: resultText });
         }
       });
 

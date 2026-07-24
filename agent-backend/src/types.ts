@@ -16,6 +16,8 @@ export interface Thread {
   scenario_name: string;
   ontology_name: string;
   skill_names: string[];
+  /** pi-agent-core 完整消息状态，用于跨轮次恢复对话上下文（含 tool call/result） */
+  agent_messages?: any[];
 }
 
 export interface ThreadSummary {
@@ -33,6 +35,12 @@ export interface SkillInfo {
   description: string;
   /** SKILL.md 第一段的简短摘要 */
   summary?: string;
+}
+
+/** 技能描述（仅元数据，不含正文） */
+export interface SkillDescription {
+  name: string;
+  description: string;
 }
 
 // ─── SSE 事件类型 ──────────────────────────────

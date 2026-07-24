@@ -119,7 +119,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
       <ResizableTable dataSource={processes.map(p => ({ ...p, _key: p.name }))} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       <Modal
-        title={isNew ? '新增流程' : `编辑流程 - ${origName}`}
+        title={isNew ? '新增流程' : `编辑流程 - ${editProcess.display_name || origName}`}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         width={950}
@@ -133,12 +133,12 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
         {/* Basic fields */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
-            <label className="text-text-muted text-xs mb-1 block">名称</label>
-            <Input value={editProcess.name} onChange={e => setEditProcess(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程英文名称" />
+            <label className="text-text-muted text-xs mb-1 block">展示名称（中文）</label>
+            <Input value={editProcess.display_name || ''} onChange={e => setEditProcess(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程展示名称" />
           </div>
           <div>
-            <label className="text-text-muted text-xs mb-1 block">展示名称</label>
-            <Input value={editProcess.display_name || ''} onChange={e => setEditProcess(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程展示名称" />
+            <label className="text-text-muted text-xs mb-1 block">名称</label>
+            <Input value={editProcess.name} onChange={e => setEditProcess(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程英文名称" />
           </div>
           <div>
             <label className="text-text-muted text-xs mb-1 block">流程目标</label>

@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PathAccessController } from '../security/path-access-controller.js';
-import type { SkillInfo } from '../types.js';
+import type { SkillInfo, SkillDescription } from '../types.js';
 
 /**
  * SkillLoader — 只读加载技能目录下的 SKILL.md 文件。
@@ -56,6 +56,44 @@ export class SkillLoader {
         }
       })
       .join('\n\n---\n\n');
+  }
+
+  /**
+   * 读取本体的 meta.json，获取 scenario_id。
+   */
+  getScenarioId(scenario: string, ontology: string): number {
+    const baseDir = this.pac.resolveConfigDir(scenario, ontology);
+    const metaPath = join(baseDir, 'meta.json');
+    if (!existsSync(metaPath)) return 0;
+    try {
+      const raw = readFileSync(metaPath, 'utf-8');
+      const meta = JSON.parse(raw);
+      return meta.scenario_id || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * 获取指定技能的元数据（仅 name + description），用于 system prompt。
+   * 只解析 frontmatter，不加载全文，轻量快速。
+   */
+  getSkillDescriptions(scenario: string, ontology: string, skillNames: string[]): SkillDescription[] {
+    const skillsDir = this.pac.listSkillDirs(scenario, ontology);
+    if (!existsSync(skillsDir)) return [];
+
+    return skillNames
+      .map(name => {
+        const skillPath = join(skillsDir, name, 'SKILL.md');
+        if (!existsSync(skillPath)) return null;
+        try {
+          const content = readFileSync(skillPath, 'utf-8');
+          return { name, description: this.extractDescription(content) };
+        } catch {
+          return null;
+        }
+      })
+      .filter((s): s is SkillDescription => s !== null);
   }
 
   /** 从 SKILL.md 提取 description（YAML frontmatter 的 description 字段） */
