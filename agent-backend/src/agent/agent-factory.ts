@@ -5,12 +5,11 @@ import { Type } from '@sinclair/typebox';
 import { MCPClient } from '../services/mcp-client.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
+import { AGENT_PRINCIPLES } from '../config.js';
 import type { ThreadMessage, SkillDescription } from '../types.js';
 
 /**
  * 构建 Agent 的 system prompt。
- * 只放技能名称和描述（不加载全文），全文通过 load_skill 工具按需加载。
- * toolResult 不传入 system prompt，也不透传给 pi-agent-core（避免消息格式不兼容）。
  */
 interface AgentContext {
   scenarioName: string;
@@ -25,7 +24,7 @@ function buildSystemPrompt(descriptions: SkillDescription[], context?: AgentCont
     .join('\n');
 
   const contextBlock = descriptions.length > 0 && context
-    ? `\n## 当前上下文\n- 场景名称（scenario_name）: ${context.scenarioName}\n- 场景ID（scenario_id）: ${context.scenarioId}\n- 本体名称（ontology_name）: ${context.ontologyName}\n- 本体ID（ontology_id）: ${context.ontologyId}`
+    ? `\n## 本体基本信息\n- 场景名称（scenario_name）: ${context.scenarioName}\n- 场景ID（scenario_id）: ${context.scenarioId}\n- 本体名称（ontology_name）: ${context.ontologyName}\n- 本体ID（ontology_id）: ${context.ontologyId}`
     : '';
 
   return `你是一个智能业务助手，帮助用户解答关于业务领域的问题。
@@ -33,16 +32,19 @@ function buildSystemPrompt(descriptions: SkillDescription[], context?: AgentCont
 你需要基于加载的技能文件中定义的领域知识来回答用户的问题。
 严格按照技能文件中定义的业务规则、流程和概念进行推理。
 
-## 核心原则
+## 基本准则
 1. 只回答与当前业务领域相关的问题
 2. 基于加载的技能文件中的知识进行回答
 3. 如果超出技能范围，礼貌说明无法回答
 4. 所有回答用中文
+
+## 任务执行原则
+${AGENT_PRINCIPLES}
 ${contextBlock}
 ## 可用技能
 ${skillList || '（无可用技能）'}
 
-## 工具使用说明
+## 工具说明
 - 当用户问题涉及某个技能领域时，先调用 \`load_skill\` 加载该技能的完整知识文件
 - 加载后基于知识回答，必要时再根据技能文件中提供的调用 MCP 工具查询实时数据`;
 }
