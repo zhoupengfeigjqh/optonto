@@ -1,0 +1,24 @@
+{
+  "id": "f6fc41dc-310a-4857-84e0-53d11d4cd0fc",
+  "title": "e2e-test",
+  "status": "active",
+  "messages": [
+    {
+      "role": "user",
+      "content": "query inventory for steel plate",
+      "timestamp": "2026-07-28T16:47:34.650Z"
+    },
+    {
+      "role": "assistant",
+      "content": "数据查询成功！现在执行**后置规则验证**。\n\n---\n\n## 后置规则 [I01_SafetyStockAlert] 验证\n\n规则：如果 `可用库存(availableStock)` < `安全库存(safetyStock)`，则推送预警。\n\n| 原材料 | 可用库存 | 安全库存 | 判断结果 |\n|--------|---------|---------|---------|\n| **高强度钢板** (RM-001) | **1,800 吨** | 100 吨 | ✅ 充足 |\n| **冷轧钢板** (RM-002) | **1,200 吨** | 80 吨 | ✅ 充足 |\n| **不锈钢板304** (RM-003) | **850 吨** | 50 吨 | ✅ 充足 |\n\n**结论：** 所有钢板的可用库存均远高于安全库存，无需推送预警。✅\n\n---\n\n## 执行结果汇总\n\n由于查询时使用的是英文名称 `\"steel plate\"`，系统未匹配到数据（空结果）。改用中文名称后成功查询到 **3种钢板原材料** 的实时库存信息：\n\n| 原材料名称 | 编号 | 可用库存 | ",
+      "timestamp": "2026-07-28T16:47:34.650Z"
+    }
+  ],
+  "created_at": "2026-07-28T16:47:04.167Z",
+  "updated_at": "2026-07-28T16:47:34.665Z",
+  "scenario_name": "生产调度",
+  "ontology_name": "原材料采购和库存",
+  "skill_names": [
+    "raw-material-inventory"
+  ]
+}

@@ -792,7 +792,7 @@ behaviors:
   display_name: 查询供应商供货能力SQL
 rules:
 - name: V01_UnitConsistency_Purchase
-  description: 创建采购单时，输入的 unit 必须与关联原材料的 unit 一致。
+  description: 创建采购单时，输入的 unit 必须与关联RawMaterial的 unit 一致。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
