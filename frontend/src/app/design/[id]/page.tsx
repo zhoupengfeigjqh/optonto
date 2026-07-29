@@ -57,6 +57,18 @@ export default function DesignPage() {
   const [expandedSection, setExpandedSection] = useState<string | null>('design');
   const [threadParam, setThreadParam] = useState<string | null>(null);
 
+  // 切换标签页时同步更新 URL 查询参数，刷新后保持当前页面
+  const navigateTo = (section: string, tab: string, extra?: { expand?: string | null; thread?: string | null }) => {
+    setActiveSection(section as any);
+    setActiveTab(tab);
+    if (extra?.expand !== undefined) setExpandedSection(extra.expand);
+    if (extra?.thread !== undefined) setThreadParam(extra.thread);
+    const params = new URLSearchParams(window.location.search);
+    params.set('section', section);
+    params.set('tab', tab);
+    window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -69,14 +81,20 @@ export default function DesignPage() {
         setLoading(false);
       }
     })();
-    // Check for ?thread=xxx query param to switch to requirements tab
+    // 从 URL 查询参数恢复标签页状态
     const params = new URLSearchParams(window.location.search);
+    const sec = params.get('section');
+    const tab = params.get('tab');
     const tid = params.get('thread');
     if (tid) {
       setThreadParam(tid);
-      setActiveSection('requirements');
       setExpandedSection('requirements');
+      setActiveSection('requirements');
       setActiveTab('requirements');
+    } else if (sec && tab) {
+      setActiveSection(sec as any);
+      setActiveTab(tab);
+      setExpandedSection(sec);
     }
   }, [ontologyId]);
 
@@ -201,7 +219,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('requirements'); setActiveTab('requirements'); setThreadParam(null); }}
+                  onClick={() => { navigateTo('requirements', 'requirements'); }}
                 >
                   <span>需求对话</span>
                 </button>
@@ -211,7 +229,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('requirements'); setActiveTab('requirement-confirm'); }}
+                  onClick={() => { navigateTo('requirements', 'requirement-confirm'); }}
                 >
                   <span>本体输出</span>
                 </button>
@@ -221,7 +239,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('requirements'); setActiveTab('files'); }}
+                  onClick={() => { navigateTo('requirements', 'files'); }}
                 >
                   <span>本体文件</span>
                 </button>
@@ -257,7 +275,7 @@ export default function DesignPage() {
                         ? 'text-accent-blue bg-accent-blue/5'
                         : 'text-text-muted hover:text-text-secondary'
                     }`}
-                    onClick={() => { setActiveSection('design'); setActiveTab(tab.key); }}
+                    onClick={() => { navigateTo('design', tab.key); }}
                   >
                     {tab.label}
                   </button>
@@ -291,7 +309,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('view'); setActiveTab('view'); }}
+                  onClick={() => { navigateTo('view', 'view'); }}
                 >
                   本体视图
                 </button>
@@ -301,7 +319,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('view'); setActiveTab('instance'); }}
+                  onClick={() => { navigateTo('view', 'instance'); }}
                 >
                   实例视图
                 </button>
@@ -334,7 +352,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('data-engine'); setActiveTab('data-engines'); }}
+                  onClick={() => { navigateTo('data-engine', 'data-engines'); }}
                 >
                   <span>API映射</span>
                 </button>
@@ -344,7 +362,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('data-engine'); setActiveTab('db-mapping'); }}
+                  onClick={() => { navigateTo('data-engine', 'db-mapping'); }}
                 >
                   <span>DB映射</span>
                 </button>
@@ -354,7 +372,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('data-engine'); setActiveTab('mcp-service'); }}
+                  onClick={() => { navigateTo('data-engine', 'mcp-service'); }}
                 >
                   <span>MCP服务</span>
                 </button>
@@ -364,7 +382,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('data-engine'); setActiveTab('instance-collection'); }}
+                  onClick={() => { navigateTo('data-engine', 'instance-collection'); }}
                 >
                   <span>实例集合</span>
                 </button>
@@ -397,7 +415,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('agent'); setActiveTab('skill-management'); }}
+                  onClick={() => { navigateTo('agent', 'skill-management'); }}
                 >
                   <span>技能管理</span>
                 </button>
@@ -407,7 +425,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('agent'); setActiveTab('agent-app'); }}
+                  onClick={() => { navigateTo('agent', 'agent-app'); }}
                 >
                   <span>智能体应用</span>
                 </button>
@@ -417,7 +435,7 @@ export default function DesignPage() {
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { setActiveSection('agent'); setActiveTab('mcp-config'); }}
+                  onClick={() => { navigateTo('agent', 'mcp-config'); }}
                 >
                   <span>MCP配置</span>
                 </button>
