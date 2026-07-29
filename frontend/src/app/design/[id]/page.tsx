@@ -144,7 +144,7 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
 
       {/* ── 数据引擎 & 智能体：条件渲染 ── */}
-      {activeSection === 'data-engine' && activeTab === 'data-engines' && (
+      {activeSection === 'data-engine' && activeTab === 'api-mapping' && (
         <DataEngineTable ontologyId={ontologyId} activeTab={activeTab} />
       )}
       {activeSection === 'data-engine' && activeTab === 'instance-collection' && (
@@ -348,11 +348,11 @@ export default function DesignPage() {
               <div className="ml-4 mt-1 space-y-0.5">
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'data-engines'
+                    activeTab === 'api-mapping'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { navigateTo('data-engine', 'data-engines'); }}
+                  onClick={() => { navigateTo('data-engine', 'api-mapping'); }}
                 >
                   <span>API映射</span>
                 </button>

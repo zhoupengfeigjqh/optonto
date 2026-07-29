@@ -151,7 +151,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (activeTab === 'data-engines') load(); }, [ontologyId, activeTab]);
+  useEffect(() => { if (activeTab === 'data-engines' || activeTab === 'api-mapping') load(); }, [ontologyId, activeTab]);
 
   const getEngine = (behaviorName: string): DataEngine =>
     engines.find(e => e.behavior_name === behaviorName) || emptyEngine(behaviorName);
