@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Button, Input, Modal, message, Space, Spin } from 'antd';
 import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined } from '@ant-design/icons';
 import { getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage } from '@/api/client';
@@ -45,7 +45,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   useEffect(() => { load(); }, [threadId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [messages]);
 
   const handleSend = async () => {
@@ -171,6 +171,60 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
 
   const hasSelected = selectedIndex !== null;
 
+  // 消息列表用 useMemo 缓存，避免输入框按键时重新渲染 renderMarkdown
+  const messagesContent = useMemo(() => messages.map((msg, idx) => {
+    const isAssistant = msg.role === 'assistant';
+    const isSelected = selectedIndex === idx;
+    const hasContent = !!msg.content.trim();
+
+    return (
+      <div key={idx} className={`flex gap-3 ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+        {isAssistant && (
+          <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
+            <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
+          </div>
+        )}
+        <div className={`relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm ${
+          isAssistant
+            ? 'bg-dark-card border border-dark-border text-text-primary'
+            : 'bg-accent-blue text-white'
+        }`}>
+          {isAssistant && msg.content ? (
+            sending && idx === messages.length - 1 ? (
+              <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
+            ) : (
+              <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+            )
+          ) : (
+            <div className="whitespace-pre-wrap break-words">{msg.content || (idx === messages.length - 1 && isAssistant ? <Spin size="small" /> : '')}</div>
+          )}
+          {msg.timestamp && (
+            <div className={`text-xs mt-1 ${isAssistant ? 'text-text-muted' : 'text-white/60'}`}>
+              {new Date(msg.timestamp).toLocaleTimeString()}
+            </div>
+          )}
+          {isAssistant && hasContent && (
+            <div
+              className="absolute -bottom-2 -right-2 cursor-pointer transition-colors"
+              onClick={(e) => { e.stopPropagation(); toggleSelect(idx, isAssistant); }}
+            >
+              {isSelected ? (
+                <CheckCircleFilled style={{ color: '#3b82f6', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
+              ) : (
+                <CheckCircleOutlined style={{ color: '#64748b', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
+              )}
+            </div>
+          )}
+        </div>
+        {!isAssistant && (
+          <div className="w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center shrink-0">
+            <UserOutlined style={{ color: '#10b981', fontSize: 16 }} />
+          </div>
+        )}
+      </div>
+    );
+  }), [messages, selectedIndex, sending]);
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Spin /></div>;
   }
@@ -192,67 +246,13 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-        {messages.length === 0 && (
+        {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p className="text-sm">开始一段新的需求探索对话</p>
             <p className="text-xs mt-1">输入您的问题或需求描述，如DB schema、API 文档和业务需求等，AI 将协助您梳理</p>
           </div>
-        )}
-        {messages.map((msg, idx) => {
-          const isAssistant = msg.role === 'assistant';
-          const isSelected = selectedIndex === idx;
-          const hasContent = !!msg.content.trim();
-
-          return (
-            <div key={idx} className={`flex gap-3 ${isAssistant ? 'justify-start' : 'justify-end'}`}>
-              {isAssistant && (
-                <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
-                  <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
-                </div>
-              )}
-              <div className={`relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm ${
-                isAssistant
-                  ? 'bg-dark-card border border-dark-border text-text-primary'
-                  : 'bg-accent-blue text-white'
-              } ${isSelected ? 'ring-2 ring-accent-blue' : ''}`}>
-                {isAssistant && msg.content ? (
-                  // Last streaming message: plain text to avoid raw markdown tokens; others: rendered
-                  sending && idx === messages.length - 1 ? (
-                    <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
-                  ) : (
-                    <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                  )
-                ) : (
-                  <div className="whitespace-pre-wrap break-words">{msg.content || (idx === messages.length - 1 && isAssistant ? <Spin size="small" /> : '')}</div>
-                )}
-                {msg.timestamp && (
-                  <div className={`text-xs mt-1 ${isAssistant ? 'text-text-muted' : 'text-white/60'}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </div>
-                )}
-                {/* Selection checkmark for assistant messages */}
-                {isAssistant && hasContent && (
-                  <div
-                    className="absolute -bottom-2 -right-2 cursor-pointer transition-colors"
-                    onClick={(e) => { e.stopPropagation(); toggleSelect(idx, isAssistant); }}
-                  >
-                    {isSelected ? (
-                      <CheckCircleFilled style={{ color: '#3b82f6', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
-                    ) : (
-                      <CheckCircleOutlined style={{ color: '#64748b', fontSize: 18, background: '#0a0a0f', borderRadius: '50%' }} />
-                    )}
-                  </div>
-                )}
-              </div>
-              {!isAssistant && (
-                <div className="w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center shrink-0">
-                  <UserOutlined style={{ color: '#10b981', fontSize: 16 }} />
-                </div>
-              )}
-            </div>
-          );
-        })}
+        ) : messagesContent}
         <div ref={messagesEndRef} />
       </div>
 

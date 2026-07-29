@@ -137,7 +137,7 @@ export function createThreadsRouter(
           assistantMessage.content += token;
           sendEvent({ type: 'token', token });
         } else if (event.type === 'tool_execution_start') {
-          sendEvent({ type: 'tool_start', name: event.toolName });
+          sendEvent({ type: 'tool_start', name: event.toolName, toolCallId: event.toolCallId, args: event.args });
         } else if (event.type === 'tool_execution_end') {
           const resultText = event.result?.content
             ?.map((c: any) => ('text' in c ? c.text : ''))

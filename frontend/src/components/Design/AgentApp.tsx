@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { Button, Input, Modal, message, Space, Spin, Select, Table, Tooltip } from 'antd';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { Button, Input, Modal, message, Space, Spin, Select, Table, Tooltip, Drawer } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ArrowLeftOutlined,
   SendOutlined, RobotOutlined, UserOutlined,
-  MessageOutlined, CopyOutlined,
+  MessageOutlined, CopyOutlined, CodeOutlined,
 } from '@ant-design/icons';
 import {
   listAgentThreads, createAgentThread, deleteAgentThread,
@@ -30,7 +30,11 @@ function AgentConversation({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [toolCalls, setToolCalls] = useState<{name: string; done: boolean; result?: string}[]>([]);
+  const [executionLog, setExecutionLog] = useState<{
+    time: string; type: 'load_skill' | 'execute_behavior';
+    name: string; description?: string; params?: any; result?: string; status: 'running' | 'done';
+  }[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -51,7 +55,7 @@ function AgentConversation({
 
   // 自动滚动
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [messages]);
 
   const handleSend = async () => {
@@ -69,7 +73,6 @@ function AgentConversation({
     setMessages(prev => [...prev, assistantMsg]);
 
     abortRef.current = new AbortController();
-    setToolCalls([]);
 
     try {
       const response = await agentChatStream(scenarioName, ontologyName, threadId, text, ontologyId);
@@ -106,10 +109,17 @@ function AgentConversation({
               break;
             }
             if (data.type === 'tool_start') {
-              setToolCalls(prev => [...prev, { name: data.name, done: false }]);
+              setExecutionLog(prev => [...prev, {
+                time: new Date().toLocaleTimeString(), type: 'execute_behavior',
+                name: data.name, status: 'running', params: data.args,
+              }]);
             }
             if (data.type === 'tool_end') {
-              setToolCalls(prev => prev.map(t => t.name === data.name ? { ...t, done: true, result: data.result || '' } : t));
+              setExecutionLog(prev => prev.map(e =>
+                e.name === data.name && e.status === 'running'
+                  ? { ...e, status: 'done', result: data.result || '' }
+                  : e
+              ));
             }
             if (data.type === 'token') {
               setMessages(prev => {
@@ -137,10 +147,110 @@ function AgentConversation({
       }
     } finally {
       setSending(false);
-      setToolCalls([]);
       abortRef.current = null;
     }
   };
+
+  // 消息列表用 useMemo 缓存，仅 messages/sending/toolCalls 变化时重新渲染
+  // 避免输入框每按一次键都触发全部消息的 renderMarkdown()
+  const messagesContent = useMemo(() => messages.map((msg, idx) => {
+    const isAssistant = msg.role === 'assistant';
+    const isToolResult = msg.role === 'toolResult';
+    const isLast = idx === messages.length - 1;
+    return (
+      <div key={idx}>
+        {/* User message */}
+        {msg.role === 'user' && (
+          <div className="flex gap-3 justify-end mb-2">
+            <div className="relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm bg-accent-blue text-white">
+              <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+              {msg.timestamp && (
+                <div className="text-xs mt-1 text-white/60">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+            <div className="w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center shrink-0">
+              <UserOutlined style={{ color: '#10b981', fontSize: 16 }} />
+            </div>
+          </div>
+        )}
+
+        {/* Tool result (from history) */}
+        {isToolResult && (
+          <div className="flex gap-3 justify-start mb-2 ml-10">
+            <div className="max-w-[75%] text-xs text-text-muted bg-dark-bg border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover"
+              onClick={(e) => {
+                const target = e.currentTarget.nextElementSibling as HTMLElement;
+                if (target) target.classList.toggle('hidden');
+              }}>
+              🔧 工具返回数据 <span className="text-accent-blue">▼</span>
+              <pre className="hidden mt-1 text-xs text-text-secondary whitespace-pre-wrap max-h-40 overflow-y-auto">{msg.content}</pre>
+            </div>
+          </div>
+        )}
+
+        {/* Tool calls (only for the last assistant turn when sending) */}
+        {isAssistant && isLast && sending && executionLog.filter(e => e.status === 'running').length > 0 && (
+          <div className="flex gap-3 mb-2">
+            <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
+              <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
+            </div>
+            <div className="flex flex-col gap-1">
+              {executionLog.filter(e => e.status === 'running').map((entry, ti) => (
+                <div key={ti} className="flex items-center gap-2 text-xs text-text-muted bg-dark-card border border-dark-border rounded px-3 py-1.5">
+                  <Spin size="small" />
+                  <span>调用了 <code className="text-accent-blue">{entry.name}</code></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Assistant message */}
+        {isAssistant && (
+          <div className="flex gap-3 justify-start mb-2">
+            <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
+              <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
+            </div>
+            <div className="relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm bg-dark-card border border-dark-border text-text-primary">
+              {msg.content ? (
+                sending && isLast ? (
+                  <div>
+                    <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
+                    <div className="flex items-center gap-2 text-xs text-text-muted mt-2">
+                      <Spin size="small" />
+                      <span>正在输出...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                    <div className="flex items-center justify-end gap-2 mt-2">
+                      <Tooltip title="复制内容">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<CopyOutlined />}
+                          className="text-text-muted hover:text-text-primary opacity-0 hover:opacity-100 transition-opacity"
+                          onClick={() => { navigator.clipboard.writeText(msg.content); message.success('已复制'); }}
+                        />
+                      </Tooltip>
+                      {msg.timestamp && (
+                        <span className="text-xs text-text-muted">{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="whitespace-pre-wrap break-words">{isLast ? <Spin size="small" /> : ''}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }), [messages, sending, executionLog]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Spin /></div>;
@@ -149,128 +259,25 @@ function AgentConversation({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center mb-4">
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} className="text-text-muted hover:text-text-primary" />
-        <h3 className="text-base font-semibold text-text-primary ml-2">智能体对话</h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} className="text-text-muted hover:text-text-primary" />
+          <h3 className="text-base font-semibold text-text-primary ml-2">智能体对话</h3>
+        </div>
+        <Button size="small" icon={<CodeOutlined />} onClick={() => setLogOpen(true)}>
+          执行记录
+        </Button>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2" style={{ maxHeight: 'calc(100vh - 380px)' }}>
-        {messages.length === 0 && (
+        {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p className="text-sm">开始一段新的智能体对话</p>
             <p className="text-xs mt-1">输入您的问题，AI Agent 将基于加载的技能为您解答</p>
           </div>
-        )}
-        {messages.map((msg, idx) => {
-          const isAssistant = msg.role === 'assistant';
-          const isToolResult = msg.role === 'toolResult';
-          const isLast = idx === messages.length - 1;
-          return (
-            <div key={idx}>
-              {/* User message */}
-              {msg.role === 'user' && (
-                <div className="flex gap-3 justify-end mb-2">
-                  <div className="relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm bg-accent-blue text-white">
-                    <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                    {msg.timestamp && (
-                      <div className="text-xs mt-1 text-white/60">
-                        {new Date(msg.timestamp).toLocaleTimeString()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-accent-green/20 flex items-center justify-center shrink-0">
-                    <UserOutlined style={{ color: '#10b981', fontSize: 16 }} />
-                  </div>
-                </div>
-              )}
-
-              {/* Tool result (from history) */}
-              {isToolResult && (
-                <div className="flex gap-3 justify-start mb-2 ml-10">
-                  <div className="max-w-[75%] text-xs text-text-muted bg-dark-bg border border-dark-border rounded px-3 py-1.5 cursor-pointer hover:bg-dark-hover"
-                    onClick={(e) => {
-                      const target = e.currentTarget.nextElementSibling as HTMLElement;
-                      if (target) target.classList.toggle('hidden');
-                    }}>
-                    🔧 工具返回数据 <span className="text-accent-blue">▼</span>
-                    <pre className="hidden mt-1 text-xs text-text-secondary whitespace-pre-wrap max-h-40 overflow-y-auto">{msg.content}</pre>
-                  </div>
-                </div>
-              )}
-
-              {/* Tool calls (only for the last assistant turn when sending) */}
-              {isAssistant && isLast && sending && toolCalls.length > 0 && (
-                <div className="flex gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
-                    <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    {toolCalls.map((tc, ti) => (
-                      <div key={ti} className="flex flex-col gap-1 text-xs text-text-muted bg-dark-card border border-dark-border rounded px-3 py-1.5">
-                        <div className="flex items-center gap-2">
-                          {tc.done ? <span className="text-green-500">✓</span> : <Spin size="small" />}
-                          <span>调用了 <code className="text-accent-blue">{tc.name}</code></span>
-                        </div>
-                        {tc.done && tc.result && (
-                          <pre className="mt-1 p-2 bg-dark-bg rounded text-xs text-text-secondary max-h-32 overflow-y-auto whitespace-pre-wrap">{tc.result}</pre>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Assistant message */}
-              {isAssistant && (
-                <div className="flex gap-3 justify-start mb-2">
-                  <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
-                    <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
-                  </div>
-                  <div className="relative max-w-[75%] rounded-xl px-4 py-2.5 text-sm bg-dark-card border border-dark-border text-text-primary">
-                    {isAssistant && msg.content ? (
-                      sending && isLast ? (
-                        <div>
-                          <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
-                          <div className="flex items-center gap-2 text-xs text-text-muted mt-2">
-                            <Spin size="small" />
-                            <span>正在输出...</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="prose prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                          <div className="flex items-center justify-end gap-2 mt-2">
-                            <Tooltip title="复制内容">
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<CopyOutlined />}
-                                className="text-text-muted hover:text-text-primary opacity-0 hover:opacity-100 transition-opacity"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(msg.content);
-                                  message.success('已复制');
-                                }}
-                              />
-                            </Tooltip>
-                            {msg.timestamp && (
-                              <span className="text-xs text-text-muted">
-                                {new Date(msg.timestamp).toLocaleTimeString()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    ) : (
-                      <div className="whitespace-pre-wrap break-words">{msg.content || (isLast && isAssistant ? <Spin size="small" /> : '')}</div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+        ) : messagesContent}
         <div ref={messagesEndRef} />
       </div>
 
@@ -295,6 +302,65 @@ function AgentConversation({
           发送
         </Button>
       </div>
+
+      {/* 执行记录侧面板 */}
+      <Drawer
+        title="执行记录"
+        placement="right"
+        width={420}
+        open={logOpen}
+        onClose={() => setLogOpen(false)}
+      >
+        {executionLog.length === 0 ? (
+          <p className="text-text-muted text-sm">暂无执行记录</p>
+        ) : (
+          <div className="space-y-2">
+            {executionLog.map((entry, idx) => (
+              <div key={idx} className="bg-dark-card border border-dark-border rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  {entry.status === 'running' ? (
+                    <Spin size="small" />
+                  ) : (
+                    <span className="text-green-500 text-xs">✓</span>
+                  )}
+                  <span className="text-accent-blue text-xs font-mono">{entry.name}</span>
+                  <span className="text-text-muted text-xs ml-auto">{entry.time}</span>
+                </div>
+                {entry.status === 'done' && (entry.name === 'load_skill' ? (
+                  <div className="mt-1 text-xs">
+                    <div className="text-text-muted">技能名称: <span className="text-text-secondary">{entry.params?.skill_name || '-'}</span></div>
+                    <div className="text-text-muted">描述: <span className="text-text-secondary">{(entry.result || '').match(/^---[\s\S]*?description:\s*(.+?)[\s\S]*?^---/m)?.[1]?.trim() || '已加载'}</span></div>
+                  </div>
+                ) : (
+                  <div className="mt-1">
+                    <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
+                      onClick={(e) => {
+                        const panel = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (panel) panel.classList.toggle('hidden');
+                      }}>
+                      <span className="text-accent-blue text-xs">▼ 查看详情</span>
+                    </div>
+                    <div className="hidden mt-1 space-y-1">
+                      {entry.params && Object.keys(entry.params).length > 0 && (
+                        <div>
+                          <span className="text-text-muted text-xs">输入参数</span>
+                          <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
+                        </div>
+                      )}
+                      {entry.result && (
+                        <div>
+                          <span className="text-text-muted text-xs">返回数据</span>
+                          <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }

@@ -49,7 +49,7 @@ export type SSEEvent =
   | { type: 'token'; token: string }
   | { type: 'error'; message: string }
   | { type: 'done' }
-  | { type: 'tool_start'; name: string }
+  | { type: 'tool_start'; name: string; toolCallId?: string; args?: any }
   | { type: 'tool_end'; name: string; result: string };
 
 // ─── API 请求类型 ──────────────────────────────

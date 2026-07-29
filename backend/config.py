@@ -414,9 +414,10 @@ RULE_GENERATE_PROMPT = """根据以下信息生成规则配置。
 {rule_template}
 
 【输出格式】
-直接输出 rule_detail 数据本身，不要包装在 properties/required 中，参考以下格式：
+直接输出 rule_detail 数据本身，不要包装在 properties/required 中，参考以下格式。
+注意：字段一致性校验（如单位一致、名称匹配）必须使用 eq（等于），不要使用 ne（不等于）。
 验证规则示例：
-{{"left": {{"type": "concept", "concept": "RawMaterialInventory", "attribute": "currentStock"}}, "operator": "lt", "right": {{"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}}}
+{{"if": {{"logic": "and", "conditions": [{{"left": {{"type": "concept", "concept": "RawMaterialInventory", "attribute": "currentStock"}}, "operator": "lt", "right": {{"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}}}]}}}}
 
 推理规则示例：
 {{"if": {{"logic": "and", "conditions": [{{"left": {{"type": "concept", "concept": "RawMaterialInventory", "attribute": "currentStock"}}, "operator": "lt", "right": {{"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}}}]}}, "then": "建议触发采购提醒", "else": "库存正常无需操作"}}

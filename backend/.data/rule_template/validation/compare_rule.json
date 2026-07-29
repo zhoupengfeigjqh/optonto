@@ -2,177 +2,54 @@
   "ruleName": "验证规则",
   "type": "object",
   "properties": {
-    "left": {
+    "if": {
       "type": "object",
       "properties": {
-        "type": {
+        "logic": {
           "type": "string",
-          "enum": [
-            "concept",
-            "function"
-          ]
+          "enum": ["and", "or"],
+          "description": "条件组合逻辑：and=且, or=或"
         },
-        "concept": {
-          "type": "string",
-          "description": "Concept name, e.g. A, B"
-        },
-        "attribute": {
-          "type": "string",
-          "description": "Attribute name, e.g. age, score"
-        },
-        "function": {
-          "type": "string",
-          "description": "Function name, e.g. sum, avg"
-        },
-        "returnField": {
-          "type": "string",
-          "description": "Function return field, e.g. total, average"
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "enum": ["concept", "function"] },
+                  "concept": { "type": "string", "description": "概念名称" },
+                  "attribute": { "type": "string", "description": "属性名称" },
+                  "function": { "type": "string", "description": "函数名称" },
+                  "returnField": { "type": "string", "description": "函数返回字段" }
+                },
+                "required": ["type"]
+              },
+              "operator": {
+                "type": "string",
+                "enum": ["eq", "ne", "in", "not in", "like", "lt", "gt", "le", "ge"],
+                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如单位一致、名称匹配）应使用 eq，不要使用 ne"
+              },
+              "right": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "enum": ["value", "concept", "set", "function"] },
+                  "value": { "description": "字面值" },
+                  "concept": { "type": "string", "description": "概念名称" },
+                  "attribute": { "type": "string", "description": "属性名称" },
+                  "function": { "type": "string", "description": "函数名称" },
+                  "returnField": { "type": "string", "description": "函数返回字段" }
+                },
+                "required": ["type"]
+              }
+            },
+            "required": ["left", "operator", "right"]
+          }
         }
       },
-      "required": [
-        "type"
-      ],
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "concept"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "concept",
-              "attribute"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "function"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "function",
-              "returnField"
-            ]
-          }
-        }
-      ]
-    },
-    "operator": {
-      "type": "string",
-      "enum": [
-        "eq",
-        "ne",
-        "in",
-        "not in",
-        "like",
-        "lt",
-        "gt",
-        "le",
-        "ge"
-      ],
-      "description": "eq=equals, ne=not equals,  like=fuzzy match, lt=less than, gt=greater than, le=less than or equal, ge=greater than or equal"
-    },
-    "right": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "value",
-            "concept",
-            "set",
-            "function"
-          ]
-        },
-        "value": {
-          "description": "Literal comparison value when type=value (supports string/number/boolean)"
-        },
-        "concept": {
-          "type": "string",
-          "description": "Concept name when type=concept"
-        },
-        "attribute": {
-          "type": "string",
-          "description": "Attribute name when type=concept"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "value"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "value"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "concept"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "concept",
-              "attribute"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "function"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "function",
-              "returnField"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "set"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "concept",
-              "attribute"
-            ]
-          }
-        }
-      ]
+      "required": ["logic", "conditions"]
     }
   },
-  "required": [
-    "left",
-    "operator",
-    "right"
-  ]
+  "required": ["if"]
 }

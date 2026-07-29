@@ -98,7 +98,7 @@
                   "le",
                   "ge"
                 ],
-                "description": "eq=等于, ne=不等于,  lt=小于, gt=大于, le=小于等于, ge=大于等于"
+                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如名称匹配）应使用 eq，不要使用 ne"
               },
               "right": {
                 "type": "object",

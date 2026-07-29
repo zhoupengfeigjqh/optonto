@@ -27,76 +27,92 @@ function getReturnFields(funcs: any[], funcName: string | undefined): { label: s
 
 function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {
   const cfg = config || {};
-  const left = cfg.left || { type: 'concept' };
-  const right = cfg.right || { type: 'value' };
+  const ifBlock = cfg.if || { logic: 'and', conditions: [{ left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] };
 
-  const setLeft = (patch: any) => onChange({ ...cfg, left: { ...left, ...patch } });
-  const setRight = (patch: any) => onChange({ ...cfg, right: { ...right, ...patch } });
+  const setIf = (patch: any) => onChange({ ...cfg, if: { ...ifBlock, ...patch } });
+
+  const updateCondition = (idx: number, patch: any) => {
+    const conditions = [...(ifBlock.conditions || [])];
+    conditions[idx] = { ...conditions[idx], ...patch };
+    setIf({ ...ifBlock, conditions });
+  };
+
+  const addCondition = () => {
+    setIf({ ...ifBlock, conditions: [...(ifBlock.conditions || []), { left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] });
+  };
+
+  const removeCondition = (idx: number) => {
+    setIf({ ...ifBlock, conditions: (ifBlock.conditions || []).filter((_: any, i: number) => i !== idx) });
+  };
+
+  const leftRightEditor = (cond: any, idx: number, side: 'left' | 'right', sideLabel: string) => {
+    const obj = cond[side] || { type: side === 'left' ? 'concept' : 'value' };
+    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '对象集', value: 'set' }, { label: '函数', value: 'function' }];
+    const types = side === 'left' ? [{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }] : rightTypes;
+    return (
+      <div className="flex items-start gap-2">
+        <span className="text-text-muted text-xs w-12 mt-1">{sideLabel}</span>
+        <div className="flex-1 space-y-1">
+          <Select size="small" value={obj.type} onChange={v => updateCondition(idx, { [side]: { type: v } })}
+            options={types} style={{ width: 120 }} popupClassName="!bg-dark-card" />
+          {obj.type === 'concept' ? (
+            <div className="flex gap-2">
+              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
+                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
+                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+            </div>
+          ) : obj.type === 'function' ? (
+            <div className="flex gap-2">
+              <Select size="small" allowClear placeholder="函数" value={obj.function} onChange={v => updateCondition(idx, { [side]: { ...obj, function: v } })}
+                options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+              <Select size="small" allowClear placeholder="返回字段" value={obj.returnField} onChange={v => updateCondition(idx, { [side]: { ...obj, returnField: v } })}
+                options={getReturnFields(funcs, obj.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+            </div>
+          ) : obj.type === 'set' ? (
+            <div className="flex gap-2">
+              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
+                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
+                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+            </div>
+          ) : (
+            <Input size="small" placeholder="字面值" value={obj.value || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, value: e.target.value } })}
+              className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
-      <p className="text-text-muted text-xs mb-2">配置条件表达式，所有字段均为必填</p>
-      <div className="flex items-start gap-3">
-        <span className="text-text-primary text-sm w-16 mt-1">左侧</span>
-        <div className="flex-1 space-y-2">
-          <Select size="small" value={left.type} onChange={v => setLeft({ type: v, concept: undefined, attribute: undefined, function: undefined, returnField: undefined })}
-            options={[{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
-          {left.type === 'concept' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择概念" value={left.concept} onChange={v => setLeft({ concept: v, attribute: undefined })}
-                options={conceptOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="选择属性" value={left.attribute} onChange={v => setLeft({ attribute: v })}
-                options={left.concept ? attributeOptions(left.concept) : []} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择函数" value={left.function} onChange={v => setLeft({ function: v, returnField: undefined })}
-                options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="返回字段" value={left.returnField} onChange={v => setLeft({ returnField: v })}
-                options={getReturnFields(funcs, left.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          )}
-        </div>
+      <p className="text-text-muted text-xs mb-2">配置验证条件，支持 AND/OR 多条件组合，所有字段均为必填</p>
+      <div className="flex items-center gap-2">
+        <span className="text-text-muted text-xs">条件逻辑</span>
+        <Select size="small" value={ifBlock.logic || 'and'} onChange={v => setIf({ ...ifBlock, logic: v })}
+          options={[{ label: '且 (AND)', value: 'and' }, { label: '或 (OR)', value: 'or' }]} style={{ width: 140 }} popupClassName="!bg-dark-card" />
       </div>
-
-      <div className="flex items-center gap-3">
-        <span className="text-text-primary text-sm w-16">操作符</span>
-        <Select size="small" value={cfg.operator || 'eq'} onChange={v => onChange({ ...cfg, operator: v })}
-          options={right.type === 'set' ? operatorOptions.filter((o: any) => o.value === 'in' || o.value === 'not in') : operatorOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
+      <div className="space-y-2">
+        {(ifBlock.conditions || []).map((cond: any, idx: number) => (
+          <div key={idx} className="bg-dark-card border border-dark-border rounded p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-text-muted text-xs">条件 {idx + 1}</span>
+              {(ifBlock.conditions || []).length > 1 && (
+                <Button type="link" size="small" danger onClick={() => removeCondition(idx)}>删除</Button>
+              )}
+            </div>
+            {leftRightEditor(cond, idx, 'left', '左侧')}
+            <div className="flex items-center gap-2">
+              <span className="text-text-muted text-xs w-12">操作符</span>
+              <Select size="small" value={cond.operator || 'eq'} onChange={v => updateCondition(idx, { operator: v })}
+                options={cond.right?.type === 'set' ? operatorOptions.filter((o: any) => o.value === 'in' || o.value === 'not in') : operatorOptions} style={{ width: 140 }} popupClassName="!bg-dark-card" />
+            </div>
+            {leftRightEditor(cond, idx, 'right', '右侧')}
+          </div>
+        ))}
       </div>
-
-      <div className="flex items-start gap-3">
-        <span className="text-text-primary text-sm w-16 mt-1">右侧</span>
-        <div className="flex-1 space-y-2">
-          <Select size="small" value={right.type} onChange={v => setRight({ type: v, value: undefined, concept: undefined, attribute: undefined, function: undefined, returnField: undefined })}
-            options={[{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '对象集', value: 'set' }, { label: '函数', value: 'function' }]} style={{ width: 120 }} popupClassName="!bg-dark-card" />
-          {right.type === 'value' ? (
-            <Input size="small" placeholder="输入字面值" value={right.value || ''} onChange={e => setRight({ value: e.target.value })}
-              className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
-          ) : right.type === 'function' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择函数" value={right.function} onChange={v => setRight({ function: v, returnField: undefined })}
-                options={funcOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="返回字段" value={right.returnField} onChange={v => setRight({ returnField: v })}
-                options={getReturnFields(funcs, right.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : right.type === 'set' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择概念" value={right.concept} onChange={v => setRight({ concept: v, attribute: undefined })}
-                options={conceptOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="选择属性" value={right.attribute} onChange={v => setRight({ attribute: v })}
-                options={right.concept ? attributeOptions(right.concept) : []} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="选择概念" value={right.concept} onChange={v => setRight({ concept: v, attribute: undefined })}
-                options={conceptOptions} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="选择属性" value={right.attribute} onChange={v => setRight({ attribute: v })}
-                options={right.concept ? attributeOptions(right.concept) : []} style={{ width: 180 }} popupClassName="!bg-dark-card" />
-            </div>
-          )}
-        </div>
-      </div>
+      <Button size="small" type="dashed" onClick={addCondition} block>+ 添加条件</Button>
     </div>
   );
 }
@@ -328,26 +344,29 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (!editData.rule_type) { message.warning('请先选择规则类型'); return; }
 
     if (editData.rule_type === '验证规则') {
-      const left = cfg.left || {};
-      if (left.type === 'concept' && (!left.concept || !left.attribute)) {
-        message.warning('请完善左侧条件：选择概念和属性'); return;
-      }
-      if (left.type === 'function' && (!left.function || !left.returnField)) {
-        message.warning('请完善左侧条件：选择函数并填写返回字段'); return;
-      }
-      if (!cfg.operator) { message.warning('请选择操作符'); return; }
-      const right = cfg.right || {};
-      if (right.type === 'value' && (right.value === undefined || right.value === '')) {
-        message.warning('请填写右侧字面值'); return;
-      }
-      if (right.type === 'concept' && (!right.concept || !right.attribute)) {
-        message.warning('请完善右侧条件：选择概念和属性'); return;
-      }
-      if (right.type === 'function' && (!right.function || !right.returnField)) {
-        message.warning('请完善右侧条件：选择函数并填写返回字段'); return;
-      }
-      if (right.type === 'set' && (!right.concept || !right.attribute)) {
-        message.warning('请完善右侧条件：选择概念和属性'); return;
+      const ifBlock = cfg.if || {};
+      const conditions = ifBlock.conditions || [];
+      if (conditions.length === 0) { message.warning('请至少添加一个条件'); return; }
+      for (let i = 0; i < conditions.length; i++) {
+        const c = conditions[i];
+        const left = c.left || {};
+        if (left.type === 'concept' && (!left.concept || !left.attribute)) {
+          message.warning(`条件 ${i+1} 左侧不完整，请选择概念和属性`); return;
+        }
+        if (left.type === 'function' && (!left.function || !left.returnField)) {
+          message.warning(`条件 ${i+1} 左侧不完整，请选择函数并填写返回字段`); return;
+        }
+        if (!c.operator) { message.warning(`条件 ${i+1} 未选择操作符`); return; }
+        const right = c.right || {};
+        if (right.type === 'value' && (right.value === undefined || right.value === '')) {
+          message.warning(`条件 ${i+1} 右侧字面值为空`); return;
+        }
+        if ((right.type === 'concept' || right.type === 'set') && (!right.concept || !right.attribute)) {
+          message.warning(`条件 ${i+1} 右侧不完整，请选择概念和属性`); return;
+        }
+        if (right.type === 'function' && (!right.function || !right.returnField)) {
+          message.warning(`条件 ${i+1} 右侧不完整，请选择函数并填写返回字段`); return;
+        }
       }
     }
 
