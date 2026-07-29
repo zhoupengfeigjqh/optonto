@@ -792,80 +792,82 @@ behaviors:
   display_name: 查询供应商供货能力SQL
 rules:
 - name: V01_UnitConsistency_Purchase
-  description: 创建采购单时，输入的 unit 必须与关联RawMaterial的 unit 一致。
+  description: 创建采购单时，提供的 rawMaterialId 必须与RawMaterial 概念中的rawMaterialId一致，并且unit页必须一致。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
-  display_name: 采购-原料单位一致性
+  display_name: 采购-原料存在且单位一致
   rule_type: 验证规则
   position: 前置
   rule_detail:
-    left:
-      type: concept
-      concept: PurchaseRecord
-      attribute: unit
-    operator: eq
-    right:
-      type: concept
-      concept: RawMaterial
-      attribute: unit
+    if:
+      logic: and
+      conditions:
+      - left:
+          type: concept
+          concept: PurchaseRecord
+          attribute: rawMaterialId
+        operator: in
+        right:
+          type: set
+          concept: RawMaterial
+          attribute: rawMaterialId
+      - left:
+          type: concept
+          concept: PurchaseRecord
+          attribute: unit
+        operator: eq
+        right:
+          type: concept
+          concept: RawMaterial
+          attribute: unit
+  data_supplements:
+  - QueryRawMaterials
 - name: V03_ArrivalTimeValidity
   description: 创建采购单时，输入的 arrivalTime 必须晚于 purchaseTime。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
-  display_name: 到位时间合理性
+  display_name: 采购-到位时间合理性
   rule_type: 验证规则
   position: 前置
   rule_detail:
-    left:
-      type: concept
-      concept: PurchaseRecord
-      attribute: arrivalTime
-    operator: gt
-    right:
-      type: concept
-      concept: PurchaseRecord
-      attribute: purchaseTime
-- name: V04_RawMaterialExistence
-  description: 创建采购单时，提供的 rawMaterialId 必须与RawMaterial 概念中的rawMaterialId一致。
-  related_behaviors:
-  - CreatePurchaseRecord
-  related_functions: []
-  display_name: 采购-原料存在性
-  rule_type: 验证规则
-  position: 前置
-  rule_detail:
-    left:
-      type: concept
-      concept: PurchaseRecord
-      attribute: rawMaterialId
-    operator: in
-    right:
-      type: set
-      concept: RawMaterial
-      attribute: rawMaterialId
+    if:
+      logic: and
+      conditions:
+      - left:
+          type: concept
+          concept: PurchaseRecord
+          attribute: arrivalTime
+        operator: gt
+        right:
+          type: concept
+          concept: PurchaseRecord
+          attribute: purchaseTime
+  data_supplements: []
 - name: V05_SupplierExistence
   description: 创建采购单时，提供的 supplierName 必须与 Supplier 概念中suplierName的一致。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
-  display_name: 采购-供应商存在性
+  display_name: 采购-供应商名称一致
   rule_type: 验证规则
   position: 前置
   rule_detail:
-    left:
-      type: concept
-      concept: PurchaseRecord
-      attribute: supplierName
-    operator: in
-    right:
-      type: set
-      concept: Supplier
-      attribute: supplierName
-      value: ''
-      function: ''
-      returnField: ''
+    if:
+      logic: and
+      conditions:
+      - left:
+          type: concept
+          concept: PurchaseRecord
+          attribute: supplierName
+        operator: in
+        right:
+          type: set
+          concept: Supplier
+          attribute: supplierName
+  data_supplements:
+  - QuerySuppliers
 - name: I01_SafetyStockAlert
   description: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
   related_behaviors:
@@ -889,6 +891,7 @@ rules:
           attribute: safetyStock
     then: 可用库存低于安全库存，建议创建采购单或关注库存
     else: 库存正常，无需操作
+  data_supplements: []
 - name: I02_ArrivalOverdueAlert
   description: IF 当前日期 >= 采购单arrivalTime  THEN 提示用户是否启动入库操作。
   related_behaviors:
@@ -913,6 +916,7 @@ rules:
           attribute: arrivalTime
     then: 采购单已到位，建议启动入库操作
     else: 采购单尚未到位，无需操作
+  data_supplements: []
 - name: I03_PurchasePurposeInference
   description: IF 采购单relatedOrderId 为空 THEN 该采购目的可视为“补充库存”。
   related_behaviors:
@@ -936,15 +940,15 @@ rules:
           value: '""'
     then: 该采购单的采购目的可视为“补充库存”
     else: 该采购单有关联订单，采购目的可能为生产订单备料
+  data_supplements: []
 - name: I04_RelatedOrderValidation
-  description: IF 采购单relatedOrderId不为空且不在 CustomerOrder 表中 (或状态为 已取消) THEN 提示用户该客户订单可能已失效，请确认是否取消该采购单。
+  description: 创建采购单时，如果客户订单relatedOrderId不为空，则必须存在于客户订单中
   related_behaviors:
   - CreatePurchaseRecord
-  - QueryPurchaseRecords
   related_functions: []
-  display_name: 采购关联订单校验
+  display_name: 采购-关联订单存在性
   rule_type: 推理规则
-  position: 后置
+  position: 前置
   rule_detail:
     if:
       logic: and
@@ -966,8 +970,9 @@ rules:
           type: set
           concept: CustomerOrder
           attribute: customerOrderId
-    then: 该采购单关联的客户订单可能已失效，请确认是否取消该采购单。
-    else: 采购单关联的客户订单有效，无需操作。
+    then: 关联订单编号不存在于客户订单中，请中断后续推理，并检查
+    else: 关联订单编号存在或未填写，校验通过
+  data_supplements: []
 events:
 - name: PurchaseRecordCreated
   event_type: 动作执行

@@ -1,4 +1,4 @@
-import { resolve, normalize, relative, sep } from 'node:path';
+import { resolve, normalize, relative } from 'node:path';
 import { existsSync } from 'node:fs';
 
 /**

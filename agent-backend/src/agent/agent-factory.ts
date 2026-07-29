@@ -167,6 +167,9 @@ export class AgentFactory {
             execute: async (toolCallId, params) => {
               if (!client) throw new Error('MCP 未连接');
               const p = params as any;
+              // LLM 可能传字符串类型，强制转数字
+              if (p.ontology_id !== undefined) p.ontology_id = Number(p.ontology_id);
+              if (p.scenario_id !== undefined) p.scenario_id = Number(p.scenario_id);
               const result = await client.callTool(toolName, p);
               const text = result.content
                 ?.map((c: any) => ('text' in c ? c.text : ''))

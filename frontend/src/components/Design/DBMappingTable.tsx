@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Button, Input, Modal, message, Space, Tag } from 'antd';
 import { RobotOutlined, PlayCircleOutlined, UploadOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
+import JsonEditor from '@/components/JsonEditor';
 import { getDataEngines, createDataEngine, updateDataEngine, getBehaviors, updateBehavior, getDbSchema, uploadDbSchema, generateSQL, callDataEngine, DataEngine, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import SqlEditor from '@/components/SqlEditor';
@@ -273,11 +274,15 @@ export default function DBMappingTable({ ontologyId, activeTab }: Props) {
         <div className="flex gap-3" style={{ minHeight: 320 }}>
           <div className="flex-1">
             <span className="text-text-muted text-xs mb-1 block">输入参数 (JSON)</span>
-            <Input.TextArea value={behaviorParamsStr} onChange={e => setBehaviorParamsStr(e.target.value)} rows={16} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+            <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 280 }}>
+              <JsonEditor value={behaviorParamsStr} onChange={setBehaviorParamsStr} />
+            </div>
           </div>
           <div className="flex-1">
             <span className="text-text-muted text-xs mb-1 block">返回结构 (JSON)</span>
-            <Input.TextArea value={behaviorResponseStr} onChange={e => setBehaviorResponseStr(e.target.value)} rows={16} className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs" />
+            <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 280 }}>
+              <JsonEditor value={behaviorResponseStr} onChange={setBehaviorResponseStr} />
+            </div>
           </div>
         </div>
       </Modal>

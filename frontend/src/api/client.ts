@@ -31,8 +31,6 @@ export const createScenario = (data: { name: string; description?: string }) =>
   request<Scenario>('/api/scenarios', { method: 'POST', body: JSON.stringify(data) });
 export const updateScenario = (id: number, data: { name?: string; description?: string }) =>
   request<Scenario>(`/api/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const deleteScenario = (id: number) =>
-  request<{ message: string }>(`/api/scenarios/${id}`, { method: 'DELETE' });
 
 // ─── Ontology ──────────────────────────────────────────────────────────────
 
@@ -150,8 +148,6 @@ export const getFunctions = (ontologyId: number) =>
 export const getCommonFunctions = () =>
   request<any[]>('/api/common-functions');
 
-export const getCommonFunctionCode = (name: string) =>
-  request<{ content: string; func_name: string }>(`/api/common-functions/${encodeURIComponent(name)}/code`);
 
 export const createFunction = (ontologyId: number, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions`, { method: 'POST', body: JSON.stringify(data) });

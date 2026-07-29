@@ -263,11 +263,6 @@ def delete_ontology(ontology_id: int) -> bool:
     return True
 
 
-def get_scenario_name_by_id(scenario_id: int) -> Optional[str]:
-    scenario = get_scenario_by_id(scenario_id)
-    return scenario["name"] if scenario else None
-
-
 def get_ontology_name_by_id(ontology_id: int) -> Optional[tuple[str, str]]:
     """Returns (scenario_name, ontology_name) or None."""
     result = get_ontology_by_id(ontology_id)

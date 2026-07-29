@@ -30,28 +30,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError:
-    ChatOpenAI = None
-
-
-def _build_llm():
-    if ChatOpenAI is None:
-        return None
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
-    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    if not api_key:
-        return None
-    return ChatOpenAI(
-        model=model,
-        openai_api_key=api_key,
-        openai_api_base=api_url,
-        temperature=0.3,
-        streaming=False,
-    )
-
 
 # ─── CRUD ──────────────────────────────────────────────────────────────────────
 

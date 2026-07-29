@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, message, Space, Tag, Table } from 'antd';
-import { PlusOutlined, DeleteOutlined, RobotOutlined, EyeOutlined, EditOutlined, ArrowLeftOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getSkills, getSkillContent, saveSkillContent, deleteSkill, generateSkill, updateSkillMeta, SkillSummary } from '@/api/client';
 import MarkdownEditor from '@/components/MarkdownEditor';
 import { renderMarkdown } from '@/lib/markdown';

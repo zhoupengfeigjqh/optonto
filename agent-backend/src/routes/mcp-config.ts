@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { MCPConfigStore, type MCPServerConfig } from '../services/mcp-config-store.js';
+import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 

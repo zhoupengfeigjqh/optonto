@@ -53,16 +53,3 @@ export type SSEEvent =
   | { type: 'tool_end'; name: string; result: string };
 
 // ─── API 请求类型 ──────────────────────────────
-
-export interface CreateThreadBody {
-  title: string;
-  skill_names: string[];
-}
-
-export interface ChatBody {
-  message: string;
-}
-
-export interface ApiError {
-  error: string;
-}

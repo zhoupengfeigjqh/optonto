@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
 from schemas import RuleItem
-from services import load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir
+from services import load_ontology_data, save_ontology_data
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/rules", tags=["规则"])
 

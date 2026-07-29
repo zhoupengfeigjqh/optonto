@@ -61,6 +61,7 @@ class RuleItem(BaseModel):
     rule_type: str = Field("", description="规则类型（验证规则/推理规则）")
     position: str = Field("", description="介入位置（前置/后置）")
     rule_detail: dict | None = Field(None, description="规则结构配置（条件结构）")
+    data_supplements: list[str] = Field(default_factory=list, description="数据补充（可多选行为）")
 
 
 class EventItem(BaseModel):
