@@ -27,25 +27,46 @@ const CONFIRM_TIMEOUT = 60000;
 
 export class ConfirmManager {
   private pending = new Map<string, {
-    resolve: (v: boolean) => void;
+    resolve: (v: { approved: boolean; params?: Record<string, any> }) => void;
+    timer: NodeJS.Timeout;
+  }>();
+  private planPending = new Map<string, {
+    resolve: (v: { approved: boolean; plan?: SubTaskPlan }) => void;
     timer: NodeJS.Timeout;
   }>();
 
-  async requestConfirm(behavior: string, content: string, sendEvent: (e: SSEEvent) => void): Promise<boolean> {
+  async requestConfirm(behavior: string, content: string, params: Record<string, any> | undefined, sendEvent: (e: SSEEvent) => void): Promise<{ approved: boolean; params?: Record<string, any> }> {
     const confirmId = randomUUID();
-    sendEvent({ type: 'confirm', confirmId, behavior, content } as any);
+    sendEvent({ type: 'confirm', confirmId, behavior, content, params } as any);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => { this.pending.delete(confirmId); resolve(false); }, CONFIRM_TIMEOUT);
+      const timer = setTimeout(() => { this.pending.delete(confirmId); resolve({ approved: false }); }, CONFIRM_TIMEOUT);
       this.pending.set(confirmId, { resolve, timer });
     });
   }
 
-  handleConfirm(confirmId: string, approved: boolean): void {
+  handleConfirm(confirmId: string, approved: boolean, params?: Record<string, any>): void {
     const entry = this.pending.get(confirmId);
     if (!entry) return;
     clearTimeout(entry.timer);
     this.pending.delete(confirmId);
-    entry.resolve(approved);
+    entry.resolve({ approved, params });
+  }
+
+  async requestPlanConfirm(plan: SubTaskPlan, sendEvent: (e: SSEEvent) => void): Promise<{ approved: boolean; plan?: SubTaskPlan }> {
+    const confirmId = randomUUID();
+    sendEvent({ type: 'plan_confirm', confirmId, plan } as any);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { this.planPending.delete(confirmId); resolve({ approved: false }); }, CONFIRM_TIMEOUT);
+      this.planPending.set(confirmId, { resolve, timer });
+    });
+  }
+
+  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan): void {
+    const entry = this.planPending.get(confirmId);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    this.planPending.delete(confirmId);
+    entry.resolve({ approved, plan });
   }
 }
 
@@ -81,14 +102,16 @@ export class Orchestrator {
   ): Promise<string> {
     const pushEntry = (entry: ExecutionEntry) => sendEvent({ type: 'exec_entry', entry } as any);
 
-    // ── 阶段1：父Agent 规划（创建父 Agent，后续循环复用） ──
-    // 通过 onSkillLoaded 回调收集实际加载的技能名
+    // ── 阶段1：父Agent 规划 ──
     const loadedSkillNames: string[] = [];
+    let emitTokens = true;
     const parentAgent = await this.agentFactory.createParentAgent(
       skillNames, history, scenario, ontology,
-      (name: string) => { if (!loadedSkillNames.includes(name)) loadedSkillNames.push(name); },
+      (name: string) => {
+        if (!loadedSkillNames.includes(name)) loadedSkillNames.push(name);
+        sendEvent({ type: 'token', token: `\n📖 已加载技能：${name}\n` });
+      },
     );
-    let emitTokens = true;
     parentAgent.subscribe((event: any) => {
       if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && emitTokens) {
         sendEvent({ type: 'token', token: event.assistantMessageEvent.delta });
@@ -97,15 +120,10 @@ export class Orchestrator {
 
     let plan: SubTaskPlan | null = null;
 
-    // 第一轮：分析需求 + 获取规划
-    await parentAgent.prompt(`用户: ${message}`);
-    const hasLoaded = parentAgent.state.messages.some((m: any) => m.role === 'toolResult' || m.role === 'tool');
-    if (hasLoaded) {
-      emitTokens = false;
-      await parentAgent.prompt(`你已了解技能内容。请根据用户需求判断：
-- 如果用户只需要查询信息或了解知识，直接回答即可，不要输出 JSON
-- 如果需要执行业务操作，请输出 JSON 子任务规划，behavior 必须是技能中定义的行为名称`);
-    }
+    // 单轮 prompt：判断是否需要加载技能，然后直接回答或输出 JSON 规划
+    await parentAgent.prompt(`用户: ${message}
+
+先判断是否需要加载技能，然后直接回答用户问题。如果是业务操作，请同时输出 JSON 子任务规划。`);
     let planResult = this.extractPlan(parentAgent.state.messages);
     if (planResult && planResult.subtasks && planResult.subtasks.length > 0) {
       plan = planResult;
@@ -159,16 +177,42 @@ export class Orchestrator {
           sendEvent({ type: 'error', message: '无法生成有效的执行计划' });
           return '无法生成有效的执行计划，请重新描述需求。';
         }
+      } else if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) {
+        sendEvent({ type: 'error', message: '行为名修正失败，无法继续执行' });
+        return '行为名修正失败，无法继续执行';
       }
     }
 
     sendEvent({ type: 'plan_received', plan } as any);
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+    sendEvent({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
+
+    // 聊天区显示简洁规划摘要
+    const planSummary = plan.subtasks
+      .sort((a, b) => a.seq - b.seq)
+      .map(st => `${st.seq}. ${st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
+      .join('\n');
+    sendEvent({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
+
+    // ── 规划确认（弹窗让用户审核规划） ──
+    const planConfirm = await this.confirmManager.requestPlanConfirm(plan, sendEvent);
+    if (!planConfirm.approved) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划审核', status: 'failed', detail: '用户拒绝执行规划', source: 'parent' });
+      sendEvent({ type: 'done' });
+      return '用户已拒绝执行规划';
+    }
+    if (planConfirm.plan) {
+      plan = planConfirm.plan;
+      sendEvent({ type: 'plan_received', plan } as any);
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+    }
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
 
     // ── 阶段2：按依赖顺序执行子任务，每完成一个反馈父Agent ──
+    emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
     const sorted = this.topologicalSort(plan.subtasks);
     const results: SubTaskResult[] = [];
-    let finalResponse = '';
+    let aborted = false;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const currentIdx = results.length;
@@ -197,19 +241,29 @@ export class Orchestrator {
       const result = await this.runSubTask(subTask, meta, skillContext!, sendEvent, pushEntry);
       results.push(result);
 
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: result.summary, result: result.summary, source: 'child' });
+      const shortStatus = result.success ? '✅ 执行完成' : '❌ 执行失败';
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${shortStatus} — ${result.summary.slice(0, 80)}`, result: result.summary, source: 'child' });
 
       if (result.success) {
-        finalResponse = result.summary;
-        sendEvent({ type: 'token', token: `\n✅ **子任务 ${subTask.seq} ${subTask.behavior}**\n` });
+        sendEvent({ type: 'token', token: `\n${result.summary}\n` });
+        sendEvent({ type: 'token', token: `✅ **子任务 ${subTask.seq} ${subTask.behavior}**\n` });
 
-        // 反馈父Agent 评估结果，判断是否需要调整后续计划
-        emitTokens = true;
-        await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。结果：${result.summary.slice(0, 200)}。\n请确认是否按原计划继续。如果需调整，请输出调整后的 JSON 规划。`);
-        emitTokens = false;
+        // 反馈父Agent 深入分析结果并决定后续计划
+        await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。
+
+【执行结果】
+${result.summary}
+
+请分析：
+1. 结果是否符合预期？有无异常或风险？
+2. 对后续子任务有何影响？
+3. 请按原计划继续，或输出调整后的 JSON 规划替换后续任务。`);
+        // 提取父Agent的分析结果推送到前端执行记录
+        const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
         const adjusted = this.extractPlan(parentAgent.state.messages);
+        let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
         if (adjusted && adjusted.subtasks && adjusted.subtasks.length > 0) {
-          const remaining = sorted.filter(s => !results.find(r => r.seq === s.seq));
+          analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
           for (const adjSubtasks of adjusted.subtasks) {
             if (!results.find(r => r.seq === adjSubtasks.seq)) {
               const idx = sorted.findIndex(s => s.seq === adjSubtasks.seq);
@@ -217,17 +271,33 @@ export class Orchestrator {
               else sorted.push(adjSubtasks);
             }
           }
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '父Agent调整计划', status: 'done', source: 'parent' });
         }
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
       } else {
+        aborted = !!(result.error?.includes('中断') || result.error?.includes('拒绝'));
         sendEvent({ type: 'token', token: `\r📋 **子任务 ${subTask.seq} ${subTask.behavior}** ❌ ${result.error}\n` });
         break;
       }
     }
 
-    sendEvent({ type: 'token', token: `\n\n${finalResponse || '执行完成'}` });
+    // 中断/拒绝 → 直接结束，不汇总
+    if (aborted) {
+      const msg = '已中断执行';
+      sendEvent({ type: 'token', token: `\n\n${msg}` });
+      sendEvent({ type: 'done' });
+      return msg;
+    }
+
+    // 所有子任务完成，父Agent 汇总总结
+    let finalSummary = '执行完成';
+    if (results.length > 0 && results.every(r => r.success)) {
+      emitTokens = false;
+      await parentAgent.prompt(`所有子任务已执行完毕。请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
+      finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
+    }
+    sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
     sendEvent({ type: 'done' });
-    return finalResponse || '执行完成';
+    return finalSummary;
   }
 
   /** 从 messages 提取 JSON 规划 */
@@ -277,19 +347,21 @@ export class Orchestrator {
     context: SkillContext,
     sendEvent: (e: SSEEvent) => void, pushEntry: (e: ExecutionEntry) => void,
   ): Promise<SubTaskResult> {
-    // 安全管控
+    // 安全管控（含参数审核）
     if (meta.security) {
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: meta.security.audit_content });
-      const approved = await this.confirmManager.requestConfirm(subTask.behavior, meta.security.audit_content, sendEvent);
-      if (!approved) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: meta.security.audit_content, params: subTask.params });
+      const confirmResult = await this.confirmManager.requestConfirm(subTask.behavior, meta.security.audit_content, subTask.params, sendEvent);
+      if (!confirmResult.approved) {
         return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户拒绝安全管控', summary: '' };
       }
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认' });
+      if (confirmResult.params) {
+        subTask.params = confirmResult.params;
+      }
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params });
     }
 
-    // 组装指令
+    // 组装指令（subTask.params 可能已被用户确认时修改）
     const instruction = this.buildInstruction(subTask, meta);
-    // 推送子任务输入到前端（子Agent明细面板）
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child' });
     let lastError = '';
 
@@ -334,12 +406,10 @@ export class Orchestrator {
     text += `场景: ${subTask.scenario_name}\n`;
     text += `本体: ${subTask.ontology_name}\n`;
     text += `本体ID: ${subTask.ontology_id}\n`;
-    // 执行指导
     if (subTask.guidance) {
       text += `\n### 执行指导\n${subTask.guidance}\n`;
     }
 
-    // 参数（父 Agent 已传完整结构，含 type/required/description/value）
     text += `\n### 参数\n`;
     const rawParams = subTask.params || {};
     const paramKeys = Object.keys(rawParams);
@@ -356,7 +426,6 @@ export class Orchestrator {
       text += `  （父 Agent 未提供详细参数）\n`;
     }
 
-    // 前置规则
     if (meta.preRules.length > 0) {
       text += `\n### 前置规则（执行前必须全部验证通过）\n`;
       meta.preRules.forEach(r => {
@@ -366,12 +435,10 @@ export class Orchestrator {
       });
     }
 
-    // 安全管控
     if (meta.security) {
       text += `\n### 安全管控\n需要用户确认: ${meta.security.audit_content}\n`;
     }
 
-    // 后置规则
     if (meta.postRules.length > 0) {
       text += `\n### 后置规则（执行后进行推理验证）\n`;
       meta.postRules.forEach(r => {
@@ -381,7 +448,6 @@ export class Orchestrator {
       });
     }
 
-    // 关联概念属性
     if (meta.concepts.length > 0) {
       text += `\n### 关联概念属性\n`;
       meta.concepts.forEach(c => {
@@ -399,10 +465,13 @@ export class Orchestrator {
       ? (typeof last.content === 'string' ? last.content
           : Array.isArray(last.content) ? last.content.map((c: any) => c.text || '').join('') : '')
       : '';
+    // 从末尾解析 【状态】标记，子Agent的system prompt要求输出此标记
+    const statusMatch = content.match(/【状态】(成功|失败)/);
+    const success = statusMatch ? statusMatch[1] === '成功' : true;
     return {
       seq, behavior,
-      success: !content.includes('失败') && !content.includes('错误') && !content.includes('无法') && !content.includes('缺失'),
-      summary: content.slice(0, 2000),
+      success,
+      summary: content.replace(/【状态】(成功|失败)/, '').trim().slice(0, 2000),
     };
   }
 

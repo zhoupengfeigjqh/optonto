@@ -131,7 +131,8 @@ export type SSEEvent =
   | { type: 'error'; message: string }
   | { type: 'done' }
   | { type: 'plan_received'; plan: SubTaskPlan }
-  | { type: 'confirm'; confirmId: string; behavior: string; content: string }
+  | { type: 'confirm'; confirmId: string; behavior: string; content: string; params?: Record<string, any> }
+  | { type: 'plan_confirm'; confirmId: string; plan: SubTaskPlan }
   | { type: 'exec_entry'; entry: ExecutionEntry };
 
 // ─── API 请求类型 ──────────────────────────────

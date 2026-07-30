@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { Button, Input, Modal, message, Space, Spin, Select, Table, Tooltip, Drawer } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ArrowLeftOutlined,
@@ -35,15 +36,17 @@ function AgentConversation({
   }[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [subtaskBox, setSubtaskBox] = useState<{lines: {text: string; done: boolean; failed?: boolean; params?: any}[]; childRunning?: boolean} | null>(null);
-  const [planRoute, setPlanRoute] = useState<{seq: number; behavior: string; description: string}[] | null>(null);
-  const [childAgentDetail, setChildAgentDetail] = useState<{
-    seq: number;
+  const [planConfirmModal, setPlanConfirmModal] = useState<{
+    confirmId: string;
+    plan: any;
+    editedPlan: any;
+  } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    confirmId: string;
     behavior: string;
-    description?: string;
-    input?: string;
-    steps: { type: 'tool_call' | 'result'; name: string; params?: any; result?: string; time: string }[];
-    output?: string;
-    status: 'running' | 'done' | 'failed';
+    content: string;
+    params: Record<string, any>;
+    editedParams: Record<string, any>;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -91,11 +94,11 @@ function AgentConversation({
     const assistantMsg: AgentMessage = { role: 'assistant', content: '', timestamp: '' };
     setMessages(prev => [...prev, assistantMsg]);
 
-    // 重置规划链路、子Agent明细、执行状态
-    setPlanRoute(null);
-    setChildAgentDetail(null);
+    // 重置执行状态
     setSubtaskBox(null);
     setExecutionLog([]);
+    setPlanConfirmModal(null);
+    setConfirmModal(null);
     abortRef.current = new AbortController();
 
     try {
@@ -132,40 +135,20 @@ function AgentConversation({
               });
               break;
             }
-            if (data.type === 'plan_received') {
-              setPlanRoute((data.plan?.subtasks || []).map((st: any) => ({
-                seq: st.seq,
-                behavior: st.behavior,
-                description: st.description,
-              })));
-            }
             if (data.type === 'confirm') {
-              Modal.confirm({
-                title: <span style={{ color: '#fff' }}>🔒 安全管控确认 — {data.behavior}</span>,
-                content: <div style={{ color: '#e5e7eb', whiteSpace: 'pre-wrap' }}>{data.content}</div>,
-                icon: null,
-                okText: '批准执行',
-                cancelText: '拒绝',
-                okButtonProps: { style: { background: '#1677ff' } },
-                cancelButtonProps: { danger: true },
-                onOk: async () => {
-                  try {
-                    await fetch(`/agent-api/confirm/${data.confirmId}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ approved: true }),
-                    });
-                  } catch {}
-                },
-                onCancel: async () => {
-                  try {
-                    await fetch(`/agent-api/confirm/${data.confirmId}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ approved: false }),
-                    });
-                  } catch {}
-                },
+              setConfirmModal({
+                confirmId: data.confirmId,
+                behavior: data.behavior,
+                content: data.content,
+                params: data.params || {},
+                editedParams: JSON.parse(JSON.stringify(data.params || {})),
+              });
+            }
+            if (data.type === 'plan_confirm') {
+              setPlanConfirmModal({
+                confirmId: data.confirmId,
+                plan: data.plan,
+                editedPlan: JSON.parse(JSON.stringify(data.plan)),
               });
             }
             if (data.type === 'exec_entry') {
@@ -191,51 +174,18 @@ function AgentConversation({
                   return { ...prev, lines: [...prev.lines, { text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed', params: entry.params }], childRunning: entry.source === 'child' && entry.status === 'running' };
                 });
               }
-              // 子Agent明细面板
-              if (entry.type === 'subtask_input') {
-                setChildAgentDetail({
-                  seq: 0,
-                  behavior: entry.name,
-                  description: entry.detail?.split('\n')[1]?.replace('描述: ', '') || '',
-                  input: entry.detail,
-                  steps: [],
-                  status: 'running',
-                });
-              } else if (entry.type === 'tool_call') {
-                setChildAgentDetail(prev => {
-                  if (!prev) return prev;
-                  // 找到同名的 running 步骤更新 result，否则新增
-                  const idx = prev.steps.findIndex(s => s.type === 'tool_call' && s.name === entry.name && !s.result);
-                  if (idx >= 0 && entry.status === 'done') {
-                    const newSteps = [...prev.steps];
-                    newSteps[idx] = { ...newSteps[idx], result: entry.result };
-                    return { ...prev, steps: newSteps };
-                  }
-                  if (entry.status === 'running') {
-                    return { ...prev, steps: [...prev.steps, { type: 'tool_call', name: entry.name, params: entry.params, time: entry.time }] };
-                  }
-                  return prev;
-                });
-              } else if (entry.type === 'subtask_done' && entry.source === 'child') {
-                setChildAgentDetail(prev => {
-                  if (!prev) return prev;
-                  return {
-                    ...prev,
-                    output: entry.detail || entry.result || '',
-                    status: entry.status === 'done' ? 'done' : 'failed',
-                    steps: [...prev.steps, { type: 'result', name: '执行结果', result: entry.result || entry.detail, time: entry.time }],
-                  };
-                });
-              }
             }
             if (data.type === 'token') {
-              setMessages(prev => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
-                if (last.role === 'assistant') {
-                  updated[updated.length - 1] = { ...last, content: last.content + (data.token || '') };
-                }
-                return updated;
+              const tokenText = data.token || '';
+              flushSync(() => {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last.role === 'assistant') {
+                    updated[updated.length - 1] = { ...last, content: last.content + tokenText };
+                  }
+                  return updated;
+                });
               });
             }
           } catch { /* skip parse errors */ }
@@ -385,86 +335,8 @@ function AgentConversation({
             <p className="text-xs mt-1">输入您的问题，AI Agent 将基于加载的技能为您解答</p>
           </div>
         ) : messagesContent}
-
-        {/* 规划链路 */}
-        {planRoute && !sending && (
-          <div className="mb-3 p-3 rounded-lg bg-dark-card/40 border border-accent-blue/20">
-            <div className="text-xs font-semibold text-accent-blue mb-2">📋 规划链路</div>
-            <div className="space-y-1">
-              {planRoute.map((step, i) => (
-                <div key={step.seq} className="flex items-center gap-2 text-xs">
-                  <span className="text-accent-blue font-mono">{i + 1}.</span>
-                  <span className="text-text-primary font-medium">{step.behavior}</span>
-                  <span className="text-text-muted">— {step.description}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* 子Agent执行明细面板 */}
-      {childAgentDetail && (
-        <div className="mb-2 rounded-lg bg-dark-card/60 border border-blue-500/20">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-blue-500/10">
-            <span className="text-xs font-semibold text-blue-400">📦 子Agent 执行明细</span>
-            <span className={`text-xs ${childAgentDetail.status === 'running' ? 'text-yellow-400' : childAgentDetail.status === 'done' ? 'text-green-400' : 'text-red-400'}`}>
-              {childAgentDetail.status === 'running' ? '⟳ 执行中' : childAgentDetail.status === 'done' ? '✓ 完成' : '✗ 失败'}
-            </span>
-          </div>
-          <div className="p-3 space-y-2 max-h-48 overflow-y-auto font-mono text-xs">
-            {/* 行为名 */}
-            <div>
-              <span className="text-text-muted">行为: </span>
-              <span className="text-accent-blue">{childAgentDetail.behavior}</span>
-              {childAgentDetail.description && (
-                <span className="text-text-muted ml-2">— {childAgentDetail.description}</span>
-              )}
-            </div>
-            {/* 输入（可折叠） */}
-            <div>
-              <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
-                onClick={(e) => { const p = e.currentTarget.nextElementSibling as HTMLElement; if (p) p.classList.toggle('hidden'); }}>
-                <span className="text-text-muted">▶ 查看输入</span>
-              </div>
-              <pre className="hidden mt-1 text-text-secondary whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">
-                {childAgentDetail.input || ''}
-              </pre>
-            </div>
-            {/* 执行步骤 */}
-            {childAgentDetail.steps.map((step, si) => (
-              <div key={si} className="flex items-start gap-2">
-                {step.type === 'tool_call' ? (
-                  <>
-                    <span className="text-yellow-400 shrink-0">🔧</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-yellow-400 break-all">{step.name}</div>
-                      <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
-                        onClick={(e) => { const p = e.currentTarget.nextElementSibling as HTMLElement; if (p) p.classList.toggle('hidden'); }}>
-                        <span className="text-text-muted text-xxs">查看详情 ▼</span>
-                      </div>
-                      <div className="hidden mt-0.5 space-y-1">
-                        {step.params && Object.keys(step.params).length > 0 && (
-                          <pre className="text-text-muted whitespace-pre-wrap bg-dark-bg rounded p-1">{JSON.stringify(step.params, null, 2)}</pre>
-                        )}
-                        {step.result && (
-                          <pre className="text-green-400/80 whitespace-pre-wrap bg-dark-bg rounded p-1 max-h-60 overflow-y-auto">{step.result}</pre>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-green-400 shrink-0">✓</span>
-                    <div className="text-green-400/80 min-w-0 flex-1 break-all">{step.result || ''}</div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* 子任务实时执行框 */}
       {subtaskBox && (
@@ -517,6 +389,152 @@ function AgentConversation({
           发送
         </Button>
       </div>
+
+      {/* 规划确认弹窗 */}
+      <Modal
+        title={<span style={{ color: '#fff' }}>📋 规划确认</span>}
+        open={!!planConfirmModal}
+        width={520}
+        onCancel={() => {
+            const m = planConfirmModal; if (!m) return;
+            fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ approved: false }),
+            }).catch(() => {});
+            setPlanConfirmModal(null);
+          }}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button danger onClick={() => {
+                const m = planConfirmModal; if (!m) return;
+                fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ approved: false }),
+                }).catch(() => {});
+                setPlanConfirmModal(null);
+              }}>拒绝执行</Button>
+              <Button type="primary" onClick={() => {
+                const m = planConfirmModal; if (!m) return;
+                fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ approved: true, plan: m.editedPlan }),
+                }).catch(() => {});
+                setPlanConfirmModal(null);
+              }}>确认执行</Button>
+            </div>
+          }
+        >
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            <div className="text-text-muted text-xs mb-2">若你清楚这些参数，可以补充或修改；若留空则 AI 会根据上下文自动补充。</div>
+            {planConfirmModal?.plan?.subtasks?.map((st: any, idx: number) => (
+              <div key={st.seq} className="border border-dark-border rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-accent-blue text-xs font-mono">{idx + 1}.</span>
+                  <span className="text-text-primary text-sm font-medium">{st.behavior}</span>
+                  <span className="text-text-muted text-xs">— {st.description}</span>
+                </div>
+                {st.params && Object.keys(st.params).length > 0 && (
+                  <div className="space-y-1.5 ml-4">
+                    {Object.entries(st.params).map(([key, val]: [string, any]) => {
+                      const pVal = typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
+                      const pReq = typeof val === 'object' && val.required ? ' *' : '';
+                      return (
+                        <div key={key} className="flex items-center gap-2">
+                          <span className="text-text-muted text-xs w-24 shrink-0">{key}{pReq}</span>
+                          <Input
+                            size="small"
+                            value={planConfirmModal?.editedPlan?.subtasks?.find((s: any) => s.seq === st.seq)?.params?.[key]?.value ?? pVal}
+                            onChange={(e) => {
+                              setPlanConfirmModal(prev => {
+                                if (!prev) return prev;
+                                const newPlan = JSON.parse(JSON.stringify(prev.editedPlan));
+                                const target = newPlan.subtasks?.find((s: any) => s.seq === st.seq);
+                                if (target?.params?.[key]) {
+                                  target.params[key].value = e.target.value;
+                                }
+                                return { ...prev, editedPlan: newPlan };
+                              });
+                            }}
+                            className="bg-dark-bg border-dark-border text-text-primary flex-1"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Modal>
+
+      {/* 安全管控确认弹窗 */}
+      {confirmModal && (
+      <Modal
+        title={<span style={{ color: '#fff' }}>🔒 安全管控确认 — {confirmModal.behavior}</span>}
+        open={true}
+        destroyOnClose
+        onCancel={() => {
+            fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ approved: false }),
+            }).catch(() => {});
+            setConfirmModal(null);
+          }}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button danger onClick={() => {
+                fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ approved: false }),
+                }).catch(() => {});
+                setConfirmModal(null);
+              }}>拒绝</Button>
+              <Button type="primary" onClick={() => {
+                fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ approved: true, params: confirmModal.editedParams }),
+                }).catch(() => {});
+                setConfirmModal(null);
+              }}>批准执行</Button>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <div className="text-text-secondary text-sm whitespace-pre-wrap">{confirmModal.content}</div>
+            {Object.keys(confirmModal.params).length > 0 && (
+              <div>
+                <div className="text-text-secondary text-xs font-semibold mb-2">参数（可修改）</div>
+                {Object.entries(confirmModal.params).map(([key, val]: [string, any]) => {
+                  const displayVal = typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
+                  return (
+                    <div key={key} className="flex items-center gap-2 mb-1.5">
+                      <span className="text-text-muted text-xs w-28 shrink-0">{key}</span>
+                      <Input
+                        size="small"
+                        value={confirmModal.editedParams[key]?.value ?? confirmModal.editedParams[key] ?? displayVal}
+                        onChange={(e) => {
+                          const newVal = e.target.value;
+                          setConfirmModal(prev => {
+                            if (!prev) return prev;
+                            const newEdited = { ...prev.editedParams };
+                            if (typeof prev.params[key] === 'object' && prev.params[key] !== null) {
+                              newEdited[key] = { ...prev.params[key], value: newVal };
+                            } else {
+                              newEdited[key] = newVal;
+                            }
+                            return { ...prev, editedParams: newEdited };
+                          });
+                        }}
+                        className="bg-dark-bg border-dark-border text-text-primary flex-1"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {/* 执行记录侧面板 */}
       <Drawer

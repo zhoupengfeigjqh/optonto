@@ -112,8 +112,14 @@ export function createThreadsRouter(
   });
 
   router.post('/confirm/:confirmId', (req: Request, res: Response) => {
-    const { approved } = req.body as { approved: boolean };
-    orchestrator.getConfirmManager().handleConfirm(req.params.confirmId as string, approved);
+    const { approved, params } = req.body as { approved: boolean; params?: Record<string, any> };
+    orchestrator.getConfirmManager().handleConfirm(req.params.confirmId as string, approved, params);
+    res.json({ message: 'ok' });
+  });
+
+  router.post('/plan-confirm/:confirmId', (req: Request, res: Response) => {
+    const { approved, plan } = req.body as { approved: boolean; plan?: any };
+    orchestrator.getConfirmManager().handlePlanConfirm(req.params.confirmId as string, approved, plan);
     res.json({ message: 'ok' });
   });
 
