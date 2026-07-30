@@ -161,7 +161,6 @@ export default function DesignPage() {
       )}
       {activeSection === 'agent' && activeTab === 'agent-app' && (
         <AgentApp
-          ontologyId={ontologyId}
           scenarioName={ontology?.scenario_name}
           ontologyName={ontology?.name}
         />

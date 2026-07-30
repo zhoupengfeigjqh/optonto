@@ -14,10 +14,10 @@ export interface Thread {
   created_at: string;
   updated_at: string;
   scenario_name: string;
+  scenario_id?: number;
   ontology_name: string;
+  ontology_id?: number;
   skill_names: string[];
-  /** pi-agent-core 完整消息状态，用于跨轮次恢复对话上下文（含 tool call/result） */
-  agent_messages?: any[];
 }
 
 export interface ThreadSummary {
@@ -26,6 +26,18 @@ export interface ThreadSummary {
   created_at: string;
   updated_at: string;
   message_count: number;
+}
+
+/**
+ * 从 SKILL.md 提取的场景/本体上下文。
+ * 由 SkillLoader.extractSkillContext() 解析 frontmatter 得到，
+ * 是 agent 所有操作的权威来源，不从 URL/body 提取。
+ */
+export interface SkillContext {
+  scenario_name: string;
+  scenario_id: number;
+  ontology_name: string;
+  ontology_id: number;
 }
 
 // ─── Skill 类型 ─────────────────────────────────
@@ -43,13 +55,83 @@ export interface SkillDescription {
   description: string;
 }
 
+// ─── 多 Agent 编排类型 ─────────────────────────
+
+/** 单个子任务规划 */
+export interface SubTask {
+  seq: number;
+  behavior: string;
+  params: Record<string, any>;
+  description: string;
+  guidance?: string;
+  scenario_name: string;
+  scenario_id?: number;
+  ontology_name: string;
+  ontology_id: number;
+  depends_on?: number[];
+}
+
+/** 父Agent 输出的完整规划 */
+export interface SubTaskPlan {
+  subtasks: SubTask[];
+}
+
+/** 规则明细（含结构化详情） */
+export interface RuleDetail {
+  name: string;
+  description: string;
+  position: '前置' | '后置';
+  related_behaviors: string[];
+  rule_detail?: any;
+  related_functions?: string[];
+  data_supplements?: string[];
+}
+
+/** 概念属性信息 */
+export interface ConceptInfo {
+  name: string;
+  display_name: string;
+  attributes: { name: string; type: string; display_name: string }[];
+}
+
+/** 行为元信息（OntologyGateway 提取结果） */
+export interface BehaviorMeta {
+  params: Record<string, any>;
+  preRules: RuleDetail[];
+  postRules: RuleDetail[];
+  security?: { audit_node: string; audit_content: string };
+  concepts: ConceptInfo[];
+}
+
+/** 子任务执行结果 */
+export interface SubTaskResult {
+  seq: number;
+  behavior: string;
+  success: boolean;
+  error?: string;
+  summary: string;
+}
+
+/** 执行记录条目 */
+export interface ExecutionEntry {
+  time: string;
+  type: 'subtask_start' | 'subtask_done' | 'tool_call' | 'security_confirm' | 'subtask_input';
+  name: string;
+  status: 'running' | 'done' | 'failed';
+  detail?: string;
+  params?: any;
+  result?: string;
+  source?: 'parent' | 'child';
+}
+
 // ─── SSE 事件类型 ──────────────────────────────
 
 export type SSEEvent =
   | { type: 'token'; token: string }
   | { type: 'error'; message: string }
   | { type: 'done' }
-  | { type: 'tool_start'; name: string; toolCallId?: string; args?: any }
-  | { type: 'tool_end'; name: string; result: string };
+  | { type: 'plan_received'; plan: SubTaskPlan }
+  | { type: 'confirm'; confirmId: string; behavior: string; content: string }
+  | { type: 'exec_entry'; entry: ExecutionEntry };
 
 // ─── API 请求类型 ──────────────────────────────

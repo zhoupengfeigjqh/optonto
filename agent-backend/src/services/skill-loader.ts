@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PathAccessController } from '../security/path-access-controller.js';
-import type { SkillInfo, SkillDescription } from '../types.js';
+import type { SkillInfo, SkillDescription, SkillContext } from '../types.js';
 
 /**
  * SkillLoader — 只读加载技能目录下的 SKILL.md 文件。
@@ -44,36 +44,6 @@ export class SkillLoader {
     return readFileSync(path, 'utf-8');
   }
 
-  /** 批量加载多个技能（合并为一个 context） */
-  loadSkills(scenario: string, ontology: string, skillNames: string[]): string {
-    return skillNames
-      .map(name => {
-        try {
-          const content = this.loadSkill(scenario, ontology, name);
-          return `## 技能: ${name}\n\n${content}`;
-        } catch {
-          return `## 技能: ${name}\n\n(技能文件不可用)`;
-        }
-      })
-      .join('\n\n---\n\n');
-  }
-
-  /**
-   * 读取本体的 meta.json，获取 scenario_id。
-   */
-  getScenarioId(scenario: string, ontology: string): number {
-    const baseDir = this.pac.resolveConfigDir(scenario, ontology);
-    const metaPath = join(baseDir, 'meta.json');
-    if (!existsSync(metaPath)) return 0;
-    try {
-      const raw = readFileSync(metaPath, 'utf-8');
-      const meta = JSON.parse(raw);
-      return meta.scenario_id || 0;
-    } catch {
-      return 0;
-    }
-  }
-
   /**
    * 获取指定技能的元数据（仅 name + description），用于 system prompt。
    * 只解析 frontmatter，不加载全文，轻量快速。
@@ -96,13 +66,100 @@ export class SkillLoader {
       .filter((s): s is SkillDescription => s !== null);
   }
 
+  /** 校验每个 SKILL.md 的 frontmatter 是否包含全部 4 个字段，缺失即报错 */
+  validateSkillContext(scenario: string, ontology: string, skillNames: string[]): void {
+    const errors: string[] = [];
+    for (const name of skillNames) {
+      try {
+        const content = this.loadSkill(scenario, ontology, name);
+        const fm = this.parseFrontmatter(content);
+        const required = ['scenario_name', 'scenario_id', 'ontology_name', 'ontology_id'] as const;
+        for (const field of required) {
+          if (!fm[field] || !String(fm[field]).trim()) {
+            errors.push(`技能 "${name}" 缺少 ${field}`);
+          }
+        }
+      } catch (e: any) {
+        errors.push(`技能 "${name}" 加载失败: ${e.message}`);
+      }
+    }
+    if (errors.length > 0) {
+      throw new Error(`技能上下文校验失败：\n${errors.join('\n')}`);
+    }
+  }
+
+  /** 从 SKILL.md frontmatter 提取场景/本体上下文 */
+  extractSkillContext(scenario: string, ontology: string, skillNames: string[]): SkillContext {
+    if (!skillNames || skillNames.length === 0) {
+      throw new Error('没有选择技能，无法提取场景/本体信息');
+    }
+
+    let merged: SkillContext | null = null;
+    const errors: string[] = [];
+
+    for (const name of skillNames) {
+      try {
+        const content = this.loadSkill(scenario, ontology, name);
+        const fm = this.parseFrontmatter(content);
+
+        const ctx: SkillContext = {
+          scenario_name: (fm['scenario_name'] || '').trim(),
+          scenario_id: Number(fm['scenario_id']),
+          ontology_name: (fm['ontology_name'] || '').trim(),
+          ontology_id: Number(fm['ontology_id']),
+        };
+
+        // 校验每个字段
+        if (!ctx.scenario_name) errors.push(`技能 "${name}" 缺少 scenario_name`);
+        if (!ctx.scenario_id && ctx.scenario_id !== 0) errors.push(`技能 "${name}" 缺少或无效 scenario_id`);
+        if (!ctx.ontology_name) errors.push(`技能 "${name}" 缺少 ontology_name`);
+        if (!ctx.ontology_id && ctx.ontology_id !== 0) errors.push(`技能 "${name}" 缺少或无效 ontology_id`);
+
+        // 校验跨技能一致性
+        if (merged) {
+          if (merged.scenario_name !== ctx.scenario_name) errors.push(`技能 "${name}" 的 scenario_name ("${ctx.scenario_name}") 与之前技能 ("${merged.scenario_name}") 不一致`);
+          if (merged.scenario_id !== ctx.scenario_id) errors.push(`技能 "${name}" 的 scenario_id (${ctx.scenario_id}) 与之前技能 (${merged.scenario_id}) 不一致`);
+          if (merged.ontology_name !== ctx.ontology_name) errors.push(`技能 "${name}" 的 ontology_name ("${ctx.ontology_name}") 与之前技能 ("${merged.ontology_name}") 不一致`);
+          if (merged.ontology_id !== ctx.ontology_id) errors.push(`技能 "${name}" 的 ontology_id (${ctx.ontology_id}) 与之前技能 (${merged.ontology_id}) 不一致`);
+        } else {
+          merged = ctx;
+        }
+      } catch (e: any) {
+        errors.push(`技能 "${name}" 加载失败: ${e.message}`);
+      }
+    }
+
+    if (errors.length > 0 || !merged) {
+      throw new Error(`技能上下文提取失败：\n${errors.join('\n')}`);
+    }
+
+    return merged;
+  }
+
+  /** 从 SKILL.md 提取 YAML frontmatter 为键值对 */
+  private parseFrontmatter(content: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+    if (!match) return result;
+
+    const yamlBlock = match[1];
+    for (const line of yamlBlock.split('\n')) {
+      const sep = line.indexOf(':');
+      if (sep <= 0) continue;
+      const key = line.slice(0, sep).trim();
+      let val = line.slice(sep + 1).trim();
+      // 去除可选的引号
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (key) result[key] = val;
+    }
+    return result;
+  }
+
   /** 从 SKILL.md 提取 description（YAML frontmatter 的 description 字段） */
   private extractDescription(content: string): string {
-    const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!match) return '';
-    const frontmatter = match[1];
-    const descMatch = frontmatter.match(/description:\s*["']?(.+?)["']?\s*$/m);
-    return descMatch ? descMatch[1].trim() : '';
+    return this.parseFrontmatter(content)['description'] || '';
   }
 
   /** 提取 SKILL.md 的第一段非空文本作为摘要 */

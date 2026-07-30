@@ -18,12 +18,11 @@ import { renderMarkdown } from '@/lib/markdown';
 // ─── Agent Conversation 子组件（聊天界面） ─────────────────
 
 function AgentConversation({
-  threadId, scenarioName, ontologyName, ontologyId, onBack,
+  threadId, scenarioName, ontologyName, onBack,
 }: {
   threadId: string;
   scenarioName: string;
   ontologyName: string;
-  ontologyId?: number;
   onBack: () => void;
 }) {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -31,10 +30,21 @@ function AgentConversation({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [executionLog, setExecutionLog] = useState<{
-    time: string; type: 'load_skill' | 'execute_behavior';
-    name: string; description?: string; params?: any; result?: string; status: 'running' | 'done';
+    time: string; type: string;
+    name: string; description?: string; params?: any; result?: string; status: string; detail?: string; source?: string;
   }[]>([]);
   const [logOpen, setLogOpen] = useState(false);
+  const [subtaskBox, setSubtaskBox] = useState<{lines: {text: string; done: boolean; failed?: boolean; params?: any}[]; childRunning?: boolean} | null>(null);
+  const [planRoute, setPlanRoute] = useState<{seq: number; behavior: string; description: string}[] | null>(null);
+  const [childAgentDetail, setChildAgentDetail] = useState<{
+    seq: number;
+    behavior: string;
+    description?: string;
+    input?: string;
+    steps: { type: 'tool_call' | 'result'; name: string; params?: any; result?: string; time: string }[];
+    output?: string;
+    status: 'running' | 'done' | 'failed';
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -56,7 +66,16 @@ function AgentConversation({
   // 自动滚动
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [messages]);
+  }, [messages, subtaskBox]);
+
+  // received `done` event from orchestrator → 4s后隐藏执行框
+  const [subtaskDoneTimer, setSubtaskDoneTimer] = useState<boolean>(false);
+  useEffect(() => {
+    if (subtaskDoneTimer) {
+      const timer = setTimeout(() => { setSubtaskBox(null); setSubtaskDoneTimer(false); }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [subtaskDoneTimer]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -72,10 +91,15 @@ function AgentConversation({
     const assistantMsg: AgentMessage = { role: 'assistant', content: '', timestamp: '' };
     setMessages(prev => [...prev, assistantMsg]);
 
+    // 重置规划链路、子Agent明细、执行状态
+    setPlanRoute(null);
+    setChildAgentDetail(null);
+    setSubtaskBox(null);
+    setExecutionLog([]);
     abortRef.current = new AbortController();
 
     try {
-      const response = await agentChatStream(scenarioName, ontologyName, threadId, text, ontologyId);
+      const response = await agentChatStream(scenarioName, ontologyName, threadId, text);
       if (!response.ok) throw new Error(await response.text());
 
       const reader = response.body?.getReader();
@@ -96,7 +120,7 @@ function AgentConversation({
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'done') break;
+            if (data.type === 'done') { setSubtaskDoneTimer(true); break; }
             if (data.type === 'error') {
               setMessages(prev => {
                 const updated = [...prev];
@@ -108,18 +132,101 @@ function AgentConversation({
               });
               break;
             }
-            if (data.type === 'tool_start') {
-              setExecutionLog(prev => [...prev, {
-                time: new Date().toLocaleTimeString(), type: 'execute_behavior',
-                name: data.name, status: 'running', params: data.args,
-              }]);
+            if (data.type === 'plan_received') {
+              setPlanRoute((data.plan?.subtasks || []).map((st: any) => ({
+                seq: st.seq,
+                behavior: st.behavior,
+                description: st.description,
+              })));
             }
-            if (data.type === 'tool_end') {
-              setExecutionLog(prev => prev.map(e =>
-                e.name === data.name && e.status === 'running'
-                  ? { ...e, status: 'done', result: data.result || '' }
-                  : e
-              ));
+            if (data.type === 'confirm') {
+              Modal.confirm({
+                title: <span style={{ color: '#fff' }}>🔒 安全管控确认 — {data.behavior}</span>,
+                content: <div style={{ color: '#e5e7eb', whiteSpace: 'pre-wrap' }}>{data.content}</div>,
+                icon: null,
+                okText: '批准执行',
+                cancelText: '拒绝',
+                okButtonProps: { style: { background: '#1677ff' } },
+                cancelButtonProps: { danger: true },
+                onOk: async () => {
+                  try {
+                    await fetch(`/agent-api/confirm/${data.confirmId}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ approved: true }),
+                    });
+                  } catch {}
+                },
+                onCancel: async () => {
+                  try {
+                    await fetch(`/agent-api/confirm/${data.confirmId}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ approved: false }),
+                    });
+                  } catch {}
+                },
+              });
+            }
+            if (data.type === 'exec_entry') {
+              const entry = data.entry;
+              setExecutionLog(prev => {
+                const exists = prev.findIndex(e => e.name === entry.name && e.status === 'running');
+                if (exists >= 0 && entry.status !== 'running') {
+                  const n = [...prev]; n[exists] = { ...n[exists], status: entry.status, detail: entry.detail, params: entry.params, result: entry.result }; return n;
+                }
+                if (exists >= 0) return prev;
+                return [...prev, { time: entry.time, type: entry.type, name: entry.name, status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, source: entry.source }];
+              });
+              // 子任务框实时更新
+              if (entry.source === 'child' || entry.source === 'parent') {
+                setSubtaskBox(prev => {
+                  if (!prev) return { lines: [{ text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed' }], childRunning: entry.source === 'child' && entry.status === 'running' };
+                  const key = entry.name;
+                  const idx = prev.lines.findIndex(l => l.text.startsWith(key));
+                  if (idx >= 0) {
+                    const n = [...prev.lines]; n[idx] = { text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed', params: entry.params };
+                    return { ...prev, lines: n, childRunning: entry.source === 'child' && entry.status === 'running' };
+                  }
+                  return { ...prev, lines: [...prev.lines, { text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed', params: entry.params }], childRunning: entry.source === 'child' && entry.status === 'running' };
+                });
+              }
+              // 子Agent明细面板
+              if (entry.type === 'subtask_input') {
+                setChildAgentDetail({
+                  seq: 0,
+                  behavior: entry.name,
+                  description: entry.detail?.split('\n')[1]?.replace('描述: ', '') || '',
+                  input: entry.detail,
+                  steps: [],
+                  status: 'running',
+                });
+              } else if (entry.type === 'tool_call') {
+                setChildAgentDetail(prev => {
+                  if (!prev) return prev;
+                  // 找到同名的 running 步骤更新 result，否则新增
+                  const idx = prev.steps.findIndex(s => s.type === 'tool_call' && s.name === entry.name && !s.result);
+                  if (idx >= 0 && entry.status === 'done') {
+                    const newSteps = [...prev.steps];
+                    newSteps[idx] = { ...newSteps[idx], result: entry.result };
+                    return { ...prev, steps: newSteps };
+                  }
+                  if (entry.status === 'running') {
+                    return { ...prev, steps: [...prev.steps, { type: 'tool_call', name: entry.name, params: entry.params, time: entry.time }] };
+                  }
+                  return prev;
+                });
+              } else if (entry.type === 'subtask_done' && entry.source === 'child') {
+                setChildAgentDetail(prev => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    output: entry.detail || entry.result || '',
+                    status: entry.status === 'done' ? 'done' : 'failed',
+                    steps: [...prev.steps, { type: 'result', name: '执行结果', result: entry.result || entry.detail, time: entry.time }],
+                  };
+                });
+              }
             }
             if (data.type === 'token') {
               setMessages(prev => {
@@ -278,8 +385,116 @@ function AgentConversation({
             <p className="text-xs mt-1">输入您的问题，AI Agent 将基于加载的技能为您解答</p>
           </div>
         ) : messagesContent}
+
+        {/* 规划链路 */}
+        {planRoute && !sending && (
+          <div className="mb-3 p-3 rounded-lg bg-dark-card/40 border border-accent-blue/20">
+            <div className="text-xs font-semibold text-accent-blue mb-2">📋 规划链路</div>
+            <div className="space-y-1">
+              {planRoute.map((step, i) => (
+                <div key={step.seq} className="flex items-center gap-2 text-xs">
+                  <span className="text-accent-blue font-mono">{i + 1}.</span>
+                  <span className="text-text-primary font-medium">{step.behavior}</span>
+                  <span className="text-text-muted">— {step.description}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* 子Agent执行明细面板 */}
+      {childAgentDetail && (
+        <div className="mb-2 rounded-lg bg-dark-card/60 border border-blue-500/20">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-blue-500/10">
+            <span className="text-xs font-semibold text-blue-400">📦 子Agent 执行明细</span>
+            <span className={`text-xs ${childAgentDetail.status === 'running' ? 'text-yellow-400' : childAgentDetail.status === 'done' ? 'text-green-400' : 'text-red-400'}`}>
+              {childAgentDetail.status === 'running' ? '⟳ 执行中' : childAgentDetail.status === 'done' ? '✓ 完成' : '✗ 失败'}
+            </span>
+          </div>
+          <div className="p-3 space-y-2 max-h-48 overflow-y-auto font-mono text-xs">
+            {/* 行为名 */}
+            <div>
+              <span className="text-text-muted">行为: </span>
+              <span className="text-accent-blue">{childAgentDetail.behavior}</span>
+              {childAgentDetail.description && (
+                <span className="text-text-muted ml-2">— {childAgentDetail.description}</span>
+              )}
+            </div>
+            {/* 输入（可折叠） */}
+            <div>
+              <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
+                onClick={(e) => { const p = e.currentTarget.nextElementSibling as HTMLElement; if (p) p.classList.toggle('hidden'); }}>
+                <span className="text-text-muted">▶ 查看输入</span>
+              </div>
+              <pre className="hidden mt-1 text-text-secondary whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">
+                {childAgentDetail.input || ''}
+              </pre>
+            </div>
+            {/* 执行步骤 */}
+            {childAgentDetail.steps.map((step, si) => (
+              <div key={si} className="flex items-start gap-2">
+                {step.type === 'tool_call' ? (
+                  <>
+                    <span className="text-yellow-400 shrink-0">🔧</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-yellow-400 break-all">{step.name}</div>
+                      <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
+                        onClick={(e) => { const p = e.currentTarget.nextElementSibling as HTMLElement; if (p) p.classList.toggle('hidden'); }}>
+                        <span className="text-text-muted text-xxs">查看详情 ▼</span>
+                      </div>
+                      <div className="hidden mt-0.5 space-y-1">
+                        {step.params && Object.keys(step.params).length > 0 && (
+                          <pre className="text-text-muted whitespace-pre-wrap bg-dark-bg rounded p-1">{JSON.stringify(step.params, null, 2)}</pre>
+                        )}
+                        {step.result && (
+                          <pre className="text-green-400/80 whitespace-pre-wrap bg-dark-bg rounded p-1 max-h-60 overflow-y-auto">{step.result}</pre>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-green-400 shrink-0">✓</span>
+                    <div className="text-green-400/80 min-w-0 flex-1 break-all">{step.result || ''}</div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 子任务实时执行框 */}
+      {subtaskBox && (
+        <div className="mb-2 p-3 rounded-lg bg-dark-card/60 border border-yellow-500/20 font-mono text-xs space-y-1">
+          {subtaskBox.lines.map((l, i) => (
+            <div key={i}>
+              <div className={`${l.failed ? 'text-red-400' : l.done ? 'text-green-400' : 'text-yellow-400'} ${l.done && !l.failed ? 'opacity-70' : ''}`}>
+                {l.failed ? '✗' : l.done ? '✓' : '⟳'} {l.text}
+              </div>
+              {l.params && !l.done && Object.keys(l.params).length > 0 && (
+                <div className="mt-0.5 ml-3 text-text-muted text-xxs">
+                  {Object.entries(l.params).slice(0, 4).map(([k, v]: any) => {
+                    const val = typeof v === 'object' ? (v.value !== undefined && v.value !== '' ? v.value : '?') : v;
+                    return <span key={k} className="mr-2">{k}={val}</span>;
+                  })}
+                  {Object.keys(l.params).length > 4 && <span>...</span>}
+                </div>
+              )}
+            </div>
+          ))}
+          {subtaskBox.childRunning && (
+            <button
+              className="mt-1 text-xs text-red-400 hover:text-red-300 border border-red-500/30 rounded px-2 py-0.5"
+              onClick={async () => { await fetch('/agent-api/abort', { method: 'POST' }); }}
+            >
+              中断执行
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Input */}
       <div className="flex gap-2 items-end border-t border-dark-border pt-3">
@@ -323,39 +538,45 @@ function AgentConversation({
                   ) : (
                     <span className="text-green-500 text-xs">✓</span>
                   )}
+                  {entry.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
+                  {entry.source === 'parent' && <span className="text-yellow-500 text-xs mr-1">父</span>}
+                  {entry.source === 'child' && <span className="text-blue-400 text-xs mr-1">子</span>}
                   <span className="text-accent-blue text-xs font-mono">{entry.name}</span>
                   <span className="text-text-muted text-xs ml-auto">{entry.time}</span>
                 </div>
-                {entry.status === 'done' && (entry.name === 'load_skill' ? (
-                  <div className="mt-1 text-xs">
-                    <div className="text-text-muted">技能名称: <span className="text-text-secondary">{entry.params?.skill_name || '-'}</span></div>
-                    <div className="text-text-muted">描述: <span className="text-text-secondary">{(entry.result || '').match(/^---[\s\S]*?description:\s*(.+?)[\s\S]*?^---/m)?.[1]?.trim() || '已加载'}</span></div>
-                  </div>
-                ) : (
-                  <div className="mt-1">
-                    <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
-                      onClick={(e) => {
-                        const panel = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (panel) panel.classList.toggle('hidden');
-                      }}>
-                      <span className="text-accent-blue text-xs">▼ 查看详情</span>
+                {entry.detail && <div className="text-text-muted text-xs mt-1">{entry.detail}</div>}
+                {(entry.params && Object.keys(entry.params).length > 0) || entry.result ? (
+                  entry.name === 'load_skill' ? (
+                    <div className="mt-1 text-xs">
+                      <div className="text-text-muted">技能名称: <span className="text-text-secondary">{entry.params?.skill_name || '-'}</span></div>
+                      <div className="text-text-muted">描述: <span className="text-text-secondary">{(entry.result || '').match(/^---[\s\S]*?description:\s*(.+?)[\s\S]*?^---/m)?.[1]?.trim() || '已加载'}</span></div>
                     </div>
-                    <div className="hidden mt-1 space-y-1">
-                      {entry.params && Object.keys(entry.params).length > 0 && (
-                        <div>
-                          <span className="text-text-muted text-xs">输入参数</span>
-                          <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
-                        </div>
-                      )}
-                      {entry.result && (
-                        <div>
-                          <span className="text-text-muted text-xs">返回数据</span>
-                          <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
-                        </div>
-                      )}
+                  ) : (
+                    <div className="mt-1">
+                      <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
+                        onClick={(e) => {
+                          const panel = e.currentTarget.nextElementSibling as HTMLElement;
+                          if (panel) panel.classList.toggle('hidden');
+                        }}>
+                        <span className="text-accent-blue text-xs">▼ 查看详情</span>
+                      </div>
+                      <div className="hidden mt-1 space-y-1">
+                        {entry.params && Object.keys(entry.params).length > 0 && (
+                          <div>
+                            <span className="text-text-muted text-xs">输入参数</span>
+                            <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
+                          </div>
+                        )}
+                        {entry.result && (
+                          <div>
+                            <span className="text-text-muted text-xs">返回数据</span>
+                            <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                ) : null}
               </div>
             ))}
           </div>
@@ -368,11 +589,9 @@ function AgentConversation({
 // ─── Agent Thread List 子组件（线程列表） ─────────────────
 
 export default function AgentApp({
-  ontologyId,
   scenarioName,
   ontologyName,
 }: {
-  ontologyId?: number;
   scenarioName?: string;
   ontologyName?: string;
 }) {
@@ -453,7 +672,6 @@ export default function AgentApp({
         threadId={activeThreadId}
         scenarioName={scenarioName || ''}
         ontologyName={ontologyName || ''}
-        ontologyId={ontologyId}
         onBack={() => { setActiveThreadId(null); load(); }}
       />
     );

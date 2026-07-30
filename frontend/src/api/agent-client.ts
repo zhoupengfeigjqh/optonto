@@ -101,14 +101,13 @@ export const agentChatStream = (
   ontology: string,
   threadId: string,
   message: string,
-  ontologyId?: number
 ): Promise<Response> =>
   fetch(
     `${AGENT_API}/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/threads/${threadId}/chat`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, ontology_id: ontologyId }),
+      body: JSON.stringify({ message }),
     }
   );
 
