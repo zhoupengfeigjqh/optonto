@@ -1,46 +1,24 @@
 """API for skill management — CRUD + LLM generation."""
 
 import json
-import os
+import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
+from config import DATA_DIR
 from dependencies import get_ontology_names
 from metadata import get_scenario_by_name
 from services import load_ontology_data, _get_ontology_dir
+from llm_utils import load_env, build_llm
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/skills", tags=["技能"])
+logger = logging.getLogger(__name__)
 
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
-
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError:
-    ChatOpenAI = None
+load_env()
 
 
-def _build_llm():
-    if ChatOpenAI is None:
-        return None
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
-    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    if not api_key:
-        return None
-    return ChatOpenAI(
-        model=model, openai_api_key=api_key, openai_api_base=api_url,
-        temperature=0.3, streaming=False,
-    )
-
-
-SKILL_TEMPLATE_PATH = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "skill_template.md"
+SKILL_TEMPLATE_PATH = DATA_DIR / "skill_template.md"
 
 
 def _skills_dir(sc_name: str, on_name: str) -> Path:
@@ -81,8 +59,8 @@ async def list_skills(ontology_id: int):
             try:
                 with open(meta_path, encoding="utf-8") as mf:
                     desc = json.load(mf).get("description", "")
-            except:
-                pass
+            except Exception as e:
+                logger.warning("读取技能元数据失败: %s", e)
         format_error = ""
         if md_path.exists() and not format_ok:
             if not head.startswith("---\n"):
@@ -202,7 +180,7 @@ def _build_ontology_summary(data) -> str:
 
 
 @router.post("/{skill_name}/generate")
-async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
+async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(default={})):
     import re
     if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", skill_name) or len(skill_name) > 64:
         raise HTTPException(status_code=400, detail="技能名称必须为小写字母/数字/连字符，1-64字符")
@@ -218,7 +196,7 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = {}):
     skill_template = SKILL_TEMPLATE_PATH.read_text(encoding="utf-8")
     ontology_summary = _build_ontology_summary(data)
 
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key")
 

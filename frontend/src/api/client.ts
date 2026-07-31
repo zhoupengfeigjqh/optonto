@@ -383,6 +383,9 @@ export const getMcpStatus = () =>
 
 export const getMcpTools = async (host: string) => {
   const resp = await fetch(`http://${host}:8002/tools`);
+  if (!resp.ok) {
+    throw new Error(`获取 MCP 工具失败 (${resp.status})`);
+  }
   return resp.json() as Promise<{ name: string; description: string }[]>;
 };
 
@@ -513,10 +516,15 @@ export const getFileContent = (ontologyId: number) =>
 export const getDbSchema = (ontologyId: number) =>
   request<{ content: string; exists: boolean }>(`/api/ontologies/${ontologyId}/db-schema`);
 
-export const uploadDbSchema = (ontologyId: number, file: File) => {
+export const uploadDbSchema = async (ontologyId: number, file: File) => {
   const form = new FormData();
   form.append('file', file);
-  return fetch(`/api/ontologies/${ontologyId}/db-schema`, { method: 'POST', body: form }).then(r => r.json());
+  const res = await fetch(`/api/ontologies/${ontologyId}/db-schema`, { method: 'POST', body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `上传失败 (${res.status})`);
+  }
+  return res.json();
 };
 
 // ─── Generate SQL ─────────────────────────────────────────────────────────

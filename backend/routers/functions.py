@@ -3,7 +3,6 @@ Function code is stored as .py files in onto_market/{scenario}/{ontology}/functi
 """
 
 import json
-import os
 from pathlib import Path
 
 import datetime as _datetime
@@ -16,41 +15,12 @@ from fastapi import APIRouter, HTTPException
 from dependencies import get_ontology_names
 from schemas import FunctionItem
 from services import load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir
+from llm_utils import load_env, build_llm
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/functions", tags=["函数"])
 
 
-# ─── LLM setup ────────────────────────────────────────────────────────────
-
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
-
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError:
-    ChatOpenAI = None
-
-
-def _build_llm():
-    if ChatOpenAI is None:
-        return None
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
-    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    if not api_key:
-        return None
-    return ChatOpenAI(
-        model=model,
-        openai_api_key=api_key,
-        openai_api_base=api_url,
-        temperature=0.3,
-        streaming=False,
-    )
+load_env()
 
 
 def _code_path(sc_name: str, on_name: str, func_name: str) -> Path:
@@ -167,7 +137,7 @@ async def generate_function_code(ontology_id: int, function_name: str):
     if fn is None:
         raise HTTPException(status_code=404, detail="函数不存在")
 
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法智能生成代码")
 

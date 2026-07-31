@@ -76,6 +76,16 @@ async def _http_call(url: str, method: str, params: dict, timeout: int = 30) -> 
         }
 
 
+async def _call_engine(de, params: dict) -> dict:
+    """按数据引擎定义转发请求并应用输入/输出映射（call_data_engine/call_behavior 共用）。"""
+    if not de.target.url:
+        raise ValueError("目标接口未配置 URL")
+    translated = _translate_input(params, de.input_mapping)
+    result = await _http_call(de.target.url, de.target.method, translated)
+    result["data"] = _translate_output(result["data"], de.output_mapping)
+    return result
+
+
 async def call_data_engine(
     data: OntologyData,
     engine_name: str,
@@ -85,13 +95,7 @@ async def call_data_engine(
     de = next((d for d in data.data_engines if d.name == engine_name), None)
     if de is None:
         raise ValueError(f"数据引擎不存在: {engine_name}")
-    if not de.target.url:
-        raise ValueError("目标接口未配置 URL")
-
-    translated = _translate_input(params, de.input_mapping)
-    result = await _http_call(de.target.url, de.target.method, translated)
-    result["data"] = _translate_output(result["data"], de.output_mapping)
-    return result
+    return await _call_engine(de, params)
 
 
 async def call_behavior(
@@ -107,10 +111,4 @@ async def call_behavior(
     de = next((d for d in data.data_engines if d.behavior_name == behavior_name), None)
     if de is None:
         raise ValueError("该行为未绑定数据引擎，请先配置数据引擎")
-    if not de.target.url:
-        raise ValueError("目标接口未配置 URL")
-
-    translated = _translate_input(params, de.input_mapping)
-    result = await _http_call(de.target.url, de.target.method, translated)
-    result["data"] = _translate_output(result["data"], de.output_mapping)
-    return result
+    return await _call_engine(de, params)

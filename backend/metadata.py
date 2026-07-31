@@ -67,7 +67,7 @@ def list_scenarios() -> list[dict]:
     scenarios = []
     if not ONTO_MARKET_DIR.exists():
         return scenarios
-    for d in sorted(ONTO_MARKET_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+    for d in ONTO_MARKET_DIR.iterdir():
         if not d.is_dir():
             continue
         meta_path = d / "meta.json"
@@ -78,6 +78,7 @@ def list_scenarios() -> list[dict]:
                 scenarios.append(json.load(f))
         except (json.JSONDecodeError, KeyError):
             continue
+    # 统一按 updated_at 排序（此前先按目录 mtime 排序再按 updated_at 重排，第一次排序无效）
     scenarios.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
     return scenarios
 

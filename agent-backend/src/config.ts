@@ -7,8 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /** 查找项目根目录下的 config/.env */
 function findEnvPath(): string {
   const candidates = [
-    resolve(__dirname, '../../config/.env'),     // 开发: agent-backend/ -> config/
-    resolve(__dirname, '../../../config/.env'),  // 编译后: dist/ -> .. -> config/
+    resolve(__dirname, '../../config/.env'),     // src/ 与 dist/ 向上两级均为项目根 → config/
     '/app/config/.env',                          // Docker 容器内
   ];
   for (const p of candidates) {

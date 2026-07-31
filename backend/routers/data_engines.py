@@ -2,15 +2,16 @@
 
 import json
 import os
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from config import DATA_DIR
 from dependencies import get_ontology_names
 from schemas import DataEngineItem
 from services import load_ontology_data, save_ontology_data
+from llm_utils import load_env, build_llm
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/data-engines", tags=["数据引擎"])
 
@@ -18,17 +19,8 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/data-engines", tags=["�
 _sql_pools: dict = {}
 
 
-# ─── LLM setup ────────────────────────────────────────────────────────────────
-
 # ─── Load .env ────────────────────────────────────────────────────────────
-try:
-    from dotenv import load_dotenv
-
-    env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
+load_env()
 
 
 # ─── CRUD ──────────────────────────────────────────────────────────────────────
@@ -99,7 +91,7 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
     if beh is None:
         raise HTTPException(status_code=404, detail="关联的本体行为不存在")
 
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能映射")
 
@@ -154,7 +146,7 @@ async def smart_parse(ontology_id: int, engine_name: str, body: SmartParseReques
     if de is None:
         raise HTTPException(status_code=404, detail="数据引擎不存在")
 
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能解析")
 
@@ -226,7 +218,7 @@ async def smart_align(ontology_id: int, engine_name: str):
     if not de.target.params and not de.target.response:
         raise HTTPException(status_code=400, detail="目标接口参数和返回结构均为空，无法对齐")
 
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能对齐")
 
@@ -293,7 +285,7 @@ async def _execute_sql(sc_name: str, on_name: str, de: DataEngineItem, params: d
         db_host = os.environ.get("DB_HOST", "mysql")
         db_port = int(os.environ.get("DB_PORT", 3306))
         db_user = os.environ.get("DB_USERNAME", "root")
-        db_pass = os.environ.get("DB_PASSWORD", "onto123456")
+        db_pass = os.environ.get("DB_PASSWORD", "")
         db_name = os.environ.get("DB_NAME", "onto_material")
 
         pool_key = f"sql_pool_{ontology_id}"
@@ -350,29 +342,6 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
 
 # ─── Generate SQL ─────────────────────────────────────────────────────────
 
-def _build_llm():
-    try:
-        from dotenv import load_dotenv
-        env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
-        if env_path.exists():
-            load_dotenv(env_path)
-    except ImportError:
-        pass
-    try:
-        from langchain_openai import ChatOpenAI
-    except ImportError:
-        return None
-    import os
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
-    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    if not api_key:
-        return None
-    return ChatOpenAI(
-        model=model, openai_api_key=api_key, openai_api_base=api_url,
-        temperature=0.3, streaming=False,
-    )
-
 
 @router.post("/{engine_name}/generate-sql")
 async def generate_sql(ontology_id: int, engine_name: str):
@@ -389,12 +358,12 @@ async def generate_sql(ontology_id: int, engine_name: str):
         raise HTTPException(status_code=404, detail="关联的本体行为不存在")
 
     # Read schema
-    schema_path = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "onto_market" / sc_name / on_name / "db_schema" / "db_schema.md"
+    schema_path = DATA_DIR / "onto_market" / sc_name / on_name / "db_schema" / "db_schema.md"
     db_schema = ""
     if schema_path.exists():
         db_schema = schema_path.read_text(encoding="utf-8")
 
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key")
 

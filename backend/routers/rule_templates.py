@@ -1,13 +1,14 @@
 """API for listing rule template types from rule_template/ files."""
 
 import json
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from config import DATA_DIR
+
 router = APIRouter(prefix="/api/rule-templates", tags=["规则模板"])
 
-RULE_TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "rule_template"
+RULE_TEMPLATE_DIR = DATA_DIR / "rule_template"
 
 
 @router.get("/types")

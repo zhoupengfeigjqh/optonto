@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
 import type { SkillInfo, SkillDescription, SkillContext } from '../types.js';
 
@@ -68,24 +69,9 @@ export class SkillLoader {
 
   /** 校验每个 SKILL.md 的 frontmatter 是否包含全部 4 个字段，缺失即报错 */
   validateSkillContext(scenario: string, ontology: string, skillNames: string[]): void {
-    const errors: string[] = [];
-    for (const name of skillNames) {
-      try {
-        const content = this.loadSkill(scenario, ontology, name);
-        const fm = this.parseFrontmatter(content);
-        const required = ['scenario_name', 'scenario_id', 'ontology_name', 'ontology_id'] as const;
-        for (const field of required) {
-          if (!fm[field] || !String(fm[field]).trim()) {
-            errors.push(`技能 "${name}" 缺少 ${field}`);
-          }
-        }
-      } catch (e: any) {
-        errors.push(`技能 "${name}" 加载失败: ${e.message}`);
-      }
-    }
-    if (errors.length > 0) {
-      throw new Error(`技能上下文校验失败：\n${errors.join('\n')}`);
-    }
+    if (!skillNames || skillNames.length === 0) return;
+    // 复用 extractSkillContext 的逐技能加载、字段校验与跨技能一致性校验
+    this.extractSkillContext(scenario, ontology, skillNames);
   }
 
   /** 从 SKILL.md frontmatter 提取场景/本体上下文 */
@@ -103,9 +89,9 @@ export class SkillLoader {
         const fm = this.parseFrontmatter(content);
 
         const ctx: SkillContext = {
-          scenario_name: (fm['scenario_name'] || '').trim(),
+          scenario_name: String(fm['scenario_name'] ?? '').trim(),
           scenario_id: Number(fm['scenario_id']),
-          ontology_name: (fm['ontology_name'] || '').trim(),
+          ontology_name: String(fm['ontology_name'] ?? '').trim(),
           ontology_id: Number(fm['ontology_id']),
         };
 
@@ -136,30 +122,21 @@ export class SkillLoader {
     return merged;
   }
 
-  /** 从 SKILL.md 提取 YAML frontmatter 为键值对 */
-  private parseFrontmatter(content: string): Record<string, string> {
-    const result: Record<string, string> = {};
+  /** 从 SKILL.md 提取 YAML frontmatter 为对象（与 ontology-gateway 一致使用 js-yaml） */
+  private parseFrontmatter(content: string): Record<string, unknown> {
     const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!match) return result;
-
-    const yamlBlock = match[1];
-    for (const line of yamlBlock.split('\n')) {
-      const sep = line.indexOf(':');
-      if (sep <= 0) continue;
-      const key = line.slice(0, sep).trim();
-      let val = line.slice(sep + 1).trim();
-      // 去除可选的引号
-      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-        val = val.slice(1, -1);
-      }
-      if (key) result[key] = val;
+    if (!match) return {};
+    try {
+      const yaml = load(match[1]);
+      return yaml && typeof yaml === 'object' ? (yaml as Record<string, unknown>) : {};
+    } catch {
+      return {};
     }
-    return result;
   }
 
   /** 从 SKILL.md 提取 description（YAML frontmatter 的 description 字段） */
   private extractDescription(content: string): string {
-    return this.parseFrontmatter(content)['description'] || '';
+    return String(this.parseFrontmatter(content)['description'] ?? '').trim();
   }
 
   /** 提取 SKILL.md 的第一段非空文本作为摘要 */

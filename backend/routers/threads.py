@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
 from config import ONTO_MARKET_DIR
 from services import load_ontology_data
@@ -177,7 +177,7 @@ async def delete_thread(thread_id: str):
 
 
 @router.put("/{thread_id}")
-async def update_thread(thread_id: str, body: dict = {}):
+async def update_thread(thread_id: str, body: dict = Body(default={})):
     """Update thread title or status."""
     data, sc, onto = _load_thread(thread_id)
     if "title" in body and body["title"] is not None:
@@ -194,6 +194,8 @@ async def update_thread(thread_id: str, body: dict = {}):
 @router.get("/requirements/list")
 async def list_requirements(scenario: str = "", ontology: str = ""):
     """Scan thread directories for .md files. Optionally filter by scenario/ontology."""
+    # 同一本体可能对应多个线程目录，缓存 ontology 解析结果避免重复读盘
+    ontology_cache: dict[tuple[str, str], str] = {}
     items = []
     for tdir, sc_name, onto_name in _all_thread_dirs(scenario, ontology):
         thread_id = tdir.name
@@ -209,11 +211,14 @@ async def list_requirements(scenario: str = "", ontology: str = ""):
         # Check if this scenario/ontology has been generated from a requirement
         onto_source_file = None
         if sc_name and onto_name:
-            try:
-                onto_data = load_ontology_data(sc_name, onto_name)
-                onto_source_file = onto_data.metadata.get("source_file", "") if onto_data.metadata else ""
-            except Exception:
-                pass
+            key = (sc_name, onto_name)
+            if key not in ontology_cache:
+                try:
+                    onto_data = load_ontology_data(sc_name, onto_name)
+                    ontology_cache[key] = onto_data.metadata.get("source_file", "") if onto_data.metadata else ""
+                except Exception:
+                    ontology_cache[key] = ""
+            onto_source_file = ontology_cache[key] or None
 
         for f in sorted(tdir.glob("*.md")):
             stat = f.stat()

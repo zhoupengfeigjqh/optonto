@@ -8,41 +8,52 @@
  *   - 关联的概念属性
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
 import type { BehaviorMeta, RuleDetail, ConceptInfo } from '../types.js';
 
 export class OntologyGateway {
+  /** 按 (scenario, ontology) 缓存解析后的 ontology.yaml，用文件 mtime 失效，避免编排中反复读盘 */
+  private cache = new Map<string, { data: any; mtimeMs: number }>();
+
   constructor(private pac: PathAccessController) {}
+
+  /** 读取并缓存 ontology.yaml 的解析结果；文件 mtime 变化时自动重读 */
+  private loadOntologyData(scenario: string, ontology: string): any | null {
+    const key = `${scenario}\u0000${ontology}`;
+    const yamlPath = join(this.pac.resolveConfigDir(scenario, ontology), 'ontology.yaml');
+    if (!existsSync(yamlPath)) return null;
+    try {
+      const mtimeMs = statSync(yamlPath).mtimeMs;
+      const hit = this.cache.get(key);
+      if (hit && hit.mtimeMs === mtimeMs) return hit.data;
+      const data = load(readFileSync(yamlPath, 'utf-8'));
+      this.cache.set(key, { data, mtimeMs });
+      return data;
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * 获取指定本体下所有行为名称列表（用于校验）。
    */
   getBehaviorNames(scenario: string, ontology: string): string[] {
-    const baseDir = this.pac.resolveConfigDir(scenario, ontology);
-    const yamlPath = join(baseDir, 'ontology.yaml');
-    if (!existsSync(yamlPath)) return [];
-    try {
-      const raw = readFileSync(yamlPath, 'utf-8');
-      const data = load(raw) as any;
-      return (data?.behaviors || []).map((b: any) => b.name).filter(Boolean);
-    } catch { return []; }
+    const data = this.loadOntologyData(scenario, ontology);
+    return (data?.behaviors || []).map((b: any) => b.name).filter(Boolean);
   }
 
   /**
    * 按行为名称提取完整的元信息。
    */
   getBehaviorMeta(scenario: string, ontology: string, behaviorName: string): BehaviorMeta {
-    const baseDir = this.pac.resolveConfigDir(scenario, ontology);
-    const yamlPath = join(baseDir, 'ontology.yaml');
-    if (!existsSync(yamlPath)) {
+    const data = this.loadOntologyData(scenario, ontology);
+    if (!data) {
       return { params: {}, preRules: [], postRules: [], concepts: [] };
     }
 
-    const raw = readFileSync(yamlPath, 'utf-8');
-    const data = load(raw) as any;
 
     // 行为定义 → 取 params 参数结构
     const behavior = data?.behaviors?.find((b: any) => b.name === behaviorName);

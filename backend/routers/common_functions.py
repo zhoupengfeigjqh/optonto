@@ -1,13 +1,14 @@
 """API for listing common functions."""
 
 import json
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from config import DATA_DIR
+
 router = APIRouter(prefix="/api/common-functions", tags=["公共函数"])
 
-COMMON_DIR = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "common_functions"
+COMMON_DIR = DATA_DIR / "common_functions"
 FUNCTIONS_PATH = COMMON_DIR / "functions.json"
 
 

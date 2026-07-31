@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { MCPClient } from '../services/mcp-client.js';
 
 export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
   const router = Router();
@@ -49,13 +48,8 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
     const timeout = setTimeout(() => abortController.abort(), 15000);
 
     try {
-      const client = new Client(
-        { name: 'optonto-config-test', version: '1.0.0' },
-        { capabilities: {} },
-      );
-
-      const transport = new SSEClientTransport(new URL(url));
-      await client.connect(transport);
+      const client = new MCPClient(url);
+      await client.connect();
 
       const result = await client.listTools();
 

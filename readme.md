@@ -78,7 +78,7 @@
 
 2.3 大语言模型相关：
 
-1）模型配置保存在 `./config/xxx.yaml` 中，服务启动时直接从中读取模型参数（包括模型名称、API地址、API Key等），无需额外配置界面
+1）模型名称在 `./config/config.yaml` 的 `models.model` 配置（agent-backend 启动时读取，无效时回退 deepseek-v4-flash）；API Key 等密钥放在 `./config/.env`（如 `DEEPSEEK_API_KEY`）。两者职责分离，`config/` 目录不入库，可参考 `config/config.yaml.example` 新建
 
 2）大语言模型**不使用推理模式**（即不开启思维链/Reasoning），采用标准对话模式进行响应
 

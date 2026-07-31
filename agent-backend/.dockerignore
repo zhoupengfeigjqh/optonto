@@ -1,0 +1,5 @@
+# 减少 Docker 构建上下文体积（根 .dockerignore 不作用于 ./agent-backend）
+node_modules
+dist
+*.log
+.env

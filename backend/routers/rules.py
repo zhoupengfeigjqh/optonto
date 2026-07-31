@@ -1,53 +1,23 @@
 """CRUD API for rules within an ontology."""
 
 import json
-import os
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from config import DATA_DIR
 from dependencies import get_ontology_names
 from schemas import RuleItem
 from services import load_ontology_data, save_ontology_data
+from llm_utils import load_env, build_llm
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/rules", tags=["规则"])
 
 
-# ─── LLM setup ────────────────────────────────────────────────────────────
-
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
-
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError:
-    ChatOpenAI = None
+load_env()
 
 
-def _build_llm():
-    if ChatOpenAI is None:
-        return None
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
-    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    if not api_key:
-        return None
-    return ChatOpenAI(
-        model=model,
-        openai_api_key=api_key,
-        openai_api_base=api_url,
-        temperature=0.3,
-        streaming=False,
-    )
-
-
-COMMON_FUNCTIONS_DIR = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "common_functions"
-RULE_TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "backend" / ".data" / "rule_template"
+COMMON_FUNCTIONS_DIR = DATA_DIR / "common_functions"
+RULE_TEMPLATE_DIR = DATA_DIR / "rule_template"
 
 
 @router.get("")
@@ -183,7 +153,7 @@ async def generate_rule(ontology_id: int, body: dict):
         raise HTTPException(status_code=400, detail=f"未找到规则类型 '{rule_type}' 的模板")
 
     # 4. Call LLM
-    llm = _build_llm()
+    llm = build_llm(temperature=0.3, streaming=False)
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key")
 

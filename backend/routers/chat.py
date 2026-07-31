@@ -1,9 +1,7 @@
 """Chat API — streaming conversation using LangChain."""
 
 import json
-import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import AsyncGenerator
 
 from config import (
@@ -13,6 +11,7 @@ from config import (
     VALIDATION_SYSTEM_PROMPT,
     VALIDATION_PROMPT_TEMPLATE,
     TITLE_SUMMARIZE_PROMPT,
+    DATA_DIR,
 )
 
 import yaml
@@ -21,45 +20,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from routers.threads import _load_thread, _save_thread, _thread_dir
+from llm_utils import load_env, build_llm, strip_code_fence
 
 router = APIRouter(prefix="/api/threads", tags=["对话"])
 
 # ─── Load .env ────────────────────────────────────────────────────────────
-try:
-    from dotenv import load_dotenv
-
-    env_path = Path(__file__).resolve().parent.parent.parent / "config" / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
-
-# ─── LLM setup ────────────────────────────────────────────────────────────
-# Try to import LangChain; if unavailable, use mock fallback.
-try:
-    from langchain_openai import ChatOpenAI
-except ImportError:
-    ChatOpenAI = None
-
-
-def _build_llm():
-    """Build a LangChain chat model from environment variables."""
-    if ChatOpenAI is None:
-        return None
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
-    api_url = os.environ.get("LLM_API_URL", "https://api.deepseek.com")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-
-    if not api_key:
-        return None  # fallback to mock
-
-    return ChatOpenAI(
-        model=model,
-        openai_api_key=api_key,
-        openai_api_base=api_url,
-        temperature=0.7,
-        streaming=True,
-    )
+load_env()
 
 
 async def _mock_stream(prompt: str) -> AsyncGenerator[str, None]:
@@ -145,7 +111,7 @@ async def chat(thread_id: str, body: dict):
     thread["updated_at"] = now
     _save_thread(thread)
 
-    llm = _build_llm()
+    llm = build_llm()
 
     async def generate():
         nonlocal assistant_idx
@@ -267,17 +233,13 @@ async def generate_ontology(thread_id: str, body: dict):
         raise HTTPException(status_code=404, detail="需求文件不存在")
     markdown_content = file_path.read_text(encoding="utf-8")
 
-    # Read the template
-    config_dir = Path(__file__).resolve().parent.parent.parent
-    template_path = config_dir / "backend" / ".data" / "onto_template.yaml"
-    # Inside Docker: the .data is at /app/backend/.data
-    template_path_docker = Path("/app/backend/.data/onto_template.yaml")
-    tp = template_path_docker if template_path_docker.exists() else template_path
+    # Read the template（config.DATA_DIR 在本地与 Docker 容器内均指向 .data）
+    tp = DATA_DIR / "onto_template.yaml"
     if not tp.exists():
         raise HTTPException(status_code=500, detail="本体模板文件不存在")
     template_content = tp.read_text(encoding="utf-8")
 
-    llm = _build_llm()
+    llm = build_llm()
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法自动生成本体")
 
@@ -298,10 +260,7 @@ async def generate_ontology(thread_id: str, body: dict):
         ])
         yaml_text = response.content.strip()
         # Strip markdown code fences if present
-        if yaml_text.startswith("```"):
-            yaml_text = yaml_text.split("\n", 1)[1]
-            yaml_text = yaml_text.rsplit("```", 1)[0]
-            yaml_text = yaml_text.strip()
+        yaml_text = strip_code_fence(yaml_text)
 
         # Validate YAML
         parsed = yaml.safe_load(yaml_text)
@@ -363,7 +322,7 @@ async def validate_analysis(thread_id: str, body: dict):
 
     analysis_text = "\n\n---\n\n".join(selected_content)
 
-    llm = _build_llm()
+    llm = build_llm()
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行验证")
 

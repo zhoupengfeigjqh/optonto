@@ -41,4 +41,14 @@ export class MCPClient {
     }
     return this.client.listTools();
   }
+
+  /** 关闭连接，释放 SSE 传输资源 */
+  async close(): Promise<void> {
+    if (!this.connected) return;
+    try {
+      await this.client.close();
+    } finally {
+      this.connected = false;
+    }
+  }
 }

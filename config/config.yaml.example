@@ -1,0 +1,6 @@
+# 模型配置模板：复制为 config.yaml 使用（config/ 目录在 .gitignore 中，不入库）。
+# - models.model: 模型名称，agent-backend 启动时读取（无效时回退 deepseek-v4-flash）
+# - models.api_key: 占位符；实际密钥从 config/.env 的 DEEPSEEK_API_KEY 读取
+models:
+- api_key: $DEEPSEEK_API_KEY
+  model: deepseek-v4-flash

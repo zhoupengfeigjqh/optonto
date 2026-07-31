@@ -26,14 +26,14 @@ COMMON_DIR = Path("/app/backend/.data/common_functions")
 MANIFEST_PATH = COMMON_DIR / "functions.json"
 
 
-def _load_common_tools() -> list[Tool]:
-    """Load common function tools from functions.json."""
+def _load_common_functions() -> tuple[list[Tool], list[dict]]:
+    """一次读取 functions.json，产出 Tool 列表与原始 manifest 条目（此前两次读取同一文件）。"""
     if not MANIFEST_PATH.exists():
-        return []
+        return [], []
     try:
         with open(MANIFEST_PATH, encoding="utf-8") as f:
             entries = json.load(f)
-        return [
+        tools = [
             Tool(
                 name=entry["name"],
                 description=entry.get("description", ""),
@@ -41,24 +41,13 @@ def _load_common_tools() -> list[Tool]:
             )
             for entry in entries
         ]
+        return tools, entries
     except (json.JSONDecodeError, KeyError, OSError):
-        return []
+        return [], []
 
 
-COMMON_TOOLS = _load_common_tools()
+COMMON_TOOLS, COMMON_MANIFEST = _load_common_functions()
 COMMON_TOOL_NAMES = {t.name for t in COMMON_TOOLS}
-
-# Load raw manifest entries for metadata not in Tool object (e.g. display_name)
-def _load_manifest_entries() -> list[dict]:
-    if not MANIFEST_PATH.exists():
-        return []
-    try:
-        with open(MANIFEST_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return []
-
-COMMON_MANIFEST = _load_manifest_entries()
 
 server = Server("optonto-api")
 
@@ -362,9 +351,15 @@ async def handle_tools(request):
 
 # ─── OAuth & Well-Known (MCP client auth discovery) ──────────────
 
+def _request_base_url(request) -> str:
+    """从请求推导本服务基础地址，避免硬编码 localhost:8002 导致容器化部署 issuer 错误。"""
+    return f"{request.url.scheme}://{request.url.netloc}"
+
+
 async def handle_oauth_auth_server(request):
+    base = _request_base_url(request)
     return JSONResponse({
-        "issuer": "http://localhost:8002",
+        "issuer": base,
         "authorization_endpoint": None,
         "token_endpoint": None,
         "scopes_supported": [],
@@ -375,16 +370,18 @@ async def handle_oauth_auth_server(request):
 
 
 async def handle_oauth_resource(request):
+    base = _request_base_url(request)
     return JSONResponse({
-        "resource": "http://localhost:8002/sse",
+        "resource": f"{base}/sse",
         "scopes_supported": [],
         "bearer_methods_supported": [],
     })
 
 
 async def handle_openid_config(request):
+    base = _request_base_url(request)
     return JSONResponse({
-        "issuer": "http://localhost:8002",
+        "issuer": base,
         "authorization_endpoint": None,
         "token_endpoint": None,
     })
