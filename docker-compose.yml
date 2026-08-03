@@ -24,6 +24,7 @@ services:
       - TZ=Asia/Shanghai
       - DATA_DIR=/app/.data
       - PORT=8003
+      - MCP_CONFIG_PATH=/app/config/mcp-config.json
     networks:
       - optonto-net
 

@@ -5,16 +5,14 @@ Function code is stored as .py files in onto_market/{scenario}/{ontology}/functi
 import json
 from pathlib import Path
 
-import datetime as _datetime
-import json as _json
-import math as _math
-import re as _re
-
 from fastapi import APIRouter, HTTPException
 
 from dependencies import get_ontology_names
 from schemas import FunctionItem
-from services import load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir
+from services import (
+    load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir,
+    build_restricted_globals,
+)
 from llm_utils import load_env, build_llm
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/functions", tags=["函数"])
@@ -194,18 +192,7 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
     code = code_path.read_text(encoding="utf-8")
     params = body.get("params", {})
 
-    restricted_globals = {
-        "datetime": _datetime, "json": _json, "math": _math, "re": _re,
-        "__builtins__": {
-            "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-            "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
-            "len": len, "list": list, "max": max, "min": min, "range": range,
-            "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
-            "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
-            "True": True, "False": False, "None": None,
-            "__import__": __import__, "print": print,
-        },
-    }
+    restricted_globals = build_restricted_globals()
     local_vars = {}
 
     try:

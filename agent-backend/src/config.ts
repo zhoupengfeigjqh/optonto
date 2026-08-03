@@ -55,7 +55,7 @@ function loadConfig() {
     dataDir: process.env['DATA_DIR'] || resolve(__dirname, '../../backend/.data'),
     port: parseInt(process.env['PORT'] || '8003', 10),
     // 全局 MCP 配置路径（./config/mcp-config.json，src/ 与 dist/ 均向上两级到项目根；Docker 为 /app/config）
-    mcpConfigPath: resolve(__dirname, '../../config/mcp-config.json'),
+    mcpConfigPath: process.env['MCP_CONFIG_PATH'] || resolve(__dirname, '../../config/mcp-config.json'),
   };
 }
 

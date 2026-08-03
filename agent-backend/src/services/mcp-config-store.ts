@@ -7,21 +7,39 @@ export interface MCPServerConfig {
   enabled: boolean;
   /** 为空/不设置时注册全部工具；设置后只注册指定名称的工具 */
   allowed_tools?: string[];
+  /** 内置服务标记（本体MCP）：不可删除、不可编辑、始终注册全部工具 */
+  builtin?: boolean;
 }
 
 export interface MCPConfig {
   servers: MCPServerConfig[];
 }
 
+/** 内置本体MCP —— 恒存在、恒启用、恒全选，不可删除 */
+export const BUILTIN_MCP = {
+  name: '本体MCP',
+  url: 'http://optonto-mcp:8002/sse',
+  enabled: true,
+  builtin: true,
+} as MCPServerConfig;
+
 const DEFAULT_CONFIG: MCPConfig = {
-  servers: [
-    {
-      name: '本体MCP',
-      url: 'http://optonto-mcp:8002/sse',
-      enabled: true,
-    },
-  ],
+  servers: [BUILTIN_MCP],
 };
+
+/**
+ * 规整配置：确保内置本体MCP 恒存在且形态固定；用户服务剥离 builtin 标记。
+ * 身份以内置 URL 识别——即使文件里没写 builtin 也能正确归类。
+ */
+function normalize(config: MCPConfig): MCPConfig {
+  const others = (config.servers || [])
+    .filter(s => s && s.url !== BUILTIN_MCP.url)
+    .map(s => {
+      const { builtin, ...rest } = s as any;
+      return rest;
+    });
+  return { servers: [BUILTIN_MCP, ...others] };
+}
 
 /**
  * MCP 配置存储 —— 全局唯一，不区分场景/本体。
@@ -30,22 +48,22 @@ const DEFAULT_CONFIG: MCPConfig = {
 export class MCPConfigStore {
   constructor(private configPath: string) {}
 
-  /** 读取全局配置，不存在则返回默认 */
+  /** 读取全局配置，不存在则返回默认；读入时强制规整内置本体MCP */
   getConfig(): MCPConfig {
     try {
       if (existsSync(this.configPath)) {
         const raw = readFileSync(this.configPath, 'utf-8');
-        return JSON.parse(raw);
+        return normalize(JSON.parse(raw));
       }
     } catch {
       // 文件损坏回退默认
     }
-    return { ...DEFAULT_CONFIG, servers: [...DEFAULT_CONFIG.servers] };
+    return normalize({ ...DEFAULT_CONFIG, servers: [...DEFAULT_CONFIG.servers] });
   }
 
-  /** 保存全局配置（覆盖写入） */
+  /** 保存全局配置（覆盖写入，写入前强制规整内置本体MCP） */
   saveConfig(config: MCPConfig): void {
     mkdirSync(dirname(this.configPath), { recursive: true });
-    writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+    writeFileSync(this.configPath, JSON.stringify(normalize(config), null, 2), 'utf-8');
   }
 }

@@ -132,6 +132,8 @@ export interface MCPServerConfig {
   enabled: boolean;
   /** 为空/不设置时注册全部工具；设置后只注册指定名称的工具 */
   allowed_tools?: string[];
+  /** 内置本体MCP：不可删除/编辑，始终注册全部工具 */
+  builtin?: boolean;
 }
 
 export interface MCPConfig {

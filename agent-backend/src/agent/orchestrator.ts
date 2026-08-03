@@ -149,11 +149,13 @@ export class Orchestrator {
     let plan: SubTaskPlan | null = null;
 
     // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
-    await parentAgent.prompt(`用户: ${message}
-先判断需求类型：
-- 问候/寒暄 → 直接文字回复；
-- 本体/场景结构查询 → 直接调用相关 MCP 工具回答，不要提交规划；
-- 业务数据查询或执行操作 → 先调用 load_skill，再调用 submit_plan 提交子任务规划。`);
+    await parentAgent.prompt(`${message}`);
+
+//     await parentAgent.prompt(`用户: ${message}
+// 先判断需求类型：
+// - 问候/寒暄 → 直接文字回复；
+// - 本体/场景结构查询 → 直接调用相关 MCP 工具回答，不要提交规划；
+// - 业务数据查询或执行操作 → 先调用 load_skill加载好需要的技能（可能是多个），再调用 submit_plan 提交子任务规划。`);
     // 规划只来自 submit_plan 工具（schema 校验），不再用正则从文本抓取，避免误判
     plan = submittedPlan.value;
     if (plan && (!plan.subtasks || plan.subtasks.length === 0)) {
@@ -177,6 +179,23 @@ export class Orchestrator {
       sendEvent({ type: 'error', message: '无法生成执行计划，请重新描述需求或重试。' });
       sendEvent({ type: 'done' });
       return '无法生成执行计划，请重新描述需求或重试。';
+    }
+
+    // 校验：提交规划前必须已加载全部选中技能（prompt 是软约束，这里硬兜底）。
+    // 缺技能就规划，behavior 名/参数结构可能基于不完整知识，靠这个闭环补齐（最多修正 1 次）。
+    if (skills.length > 0 && loadedSkillNames.length < skills.length) {
+      const missing = skills.filter(s => !loadedSkillNames.includes(s.name)).map(s => s.name).join('、');
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '技能加载校验', status: 'failed', detail: `规划前未加载技能: ${missing}`, source: 'parent' });
+      submittedPlan.value = null; // 只认补齐后重新提交的规划
+      await parentAgent.prompt(`你提交规划前尚未加载全部选中技能的完整知识。缺失：${missing}。\n请先用 load_skill 补齐这些技能，全部加载完成后重新调用 submit_plan 提交规划。`);
+      const reloaded = submittedPlan.value as SubTaskPlan | null;
+      if (!reloaded || !reloaded.subtasks || reloaded.subtasks.length === 0 || skills.some(s => !loadedSkillNames.includes(s.name))) {
+        sendEvent({ type: 'error', message: '技能加载不完整，无法生成有效规划' });
+        sendEvent({ type: 'done' });
+        return '技能加载不完整，无法生成有效规划，请重试。';
+      }
+      plan = reloaded;
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '技能加载完成', status: 'done', detail: `已补齐 ${missing}`, source: 'parent' });
     }
 
     // 校验 behavior 名称合法性（最多修正 1 次）

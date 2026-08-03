@@ -12,11 +12,8 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '.
 
 // ─── 工具集配置 ─────────────────────────────
 
-/** 父 Agent（规划专家）的 MCP 只读工具：浏览场景/本体 + 本体结构明细，不含执行类 */
-const PARENT_MCP_TOOL_NAMES = [
-  'listScenarios', 'listOntologies', 'getCurrentDate',
-  'listOntoBehaviors', 'listOntoConcepts', 'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities',
-];
+/** 父 Agent 不挂的 本体MCP 工具：仅执行类。其余（浏览类 + 全部公共函数）都给父 Agent */
+const PARENT_MCP_EXCLUDED = ['executeOntoBehavior', 'executeOntoFunction'];
 
 /** 子 Agent（执行专家）的 MCP 工具：行为/函数执行 + 时间计算，不含浏览类 */
 const CHILD_MCP_TOOL_NAMES = [
@@ -91,7 +88,12 @@ export class AgentFactory {
     const submitPlanTool = this.createSubmitPlanTool(onPlanSubmitted);
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
-    const parentMcpTools = allMcp.filter(t => PARENT_MCP_TOOL_NAMES.includes(t.name));
+    // 父 Agent（规划专家）：
+    // - 内置本体MCP 挂浏览类 + 全部公共函数（仅排除执行类）
+    // - 用户新增的 MCP 工具默认全部挂到父 Agent
+    const parentMcpTools = allMcp
+      .filter(({ tool, builtin }) => builtin ? !PARENT_MCP_EXCLUDED.includes(tool.name) : true)
+      .map(({ tool }) => tool);
     const tools: AgentTool[] = [loadSkillTool, submitPlanTool, ...parentMcpTools];
 
     const historyMessages: AgentMessage[] = history.map(msg => {
@@ -119,7 +121,9 @@ export class AgentFactory {
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
     // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文
-    const mcpTools = allMcp.filter(t => CHILD_MCP_TOOL_NAMES.includes(t.name));
+    const mcpTools = allMcp
+      .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
+      .map(({ tool }) => tool);
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
@@ -204,14 +208,16 @@ export class AgentFactory {
 
   /**
    * 从 MCP 配置中连接启用的服务，自动发现并注册工具。
+   * 返回带归属标记（是否内置本体MCP）的工具，供父/子 Agent 分流。
    */
-  private async discoverTools(): Promise<AgentTool[]> {
+  private async discoverTools(): Promise<{ tool: AgentTool; builtin: boolean }[]> {
     // MCP 配置全局唯一（./config/mcp-config.json），不区分场景/本体
     const mcpConfig = this.mcpConfigStore.getConfig();
-    const tools: AgentTool[] = [];
+    const tools: { tool: AgentTool; builtin: boolean }[] = [];
 
     for (const server of mcpConfig.servers) {
       if (!server.enabled) continue;
+      const builtin = server.builtin === true;
 
       let client: MCPClient | null = null;
       try {
@@ -231,25 +237,28 @@ export class AgentFactory {
           // 无 schema 时退回宽松校验（validateToolArguments 原生支持 JSON Schema）
           const inputSchema = (t as any).inputSchema;
           tools.push({
-            name: toolName,
-            label: toolName,
-            description: (t.description as string) || `[${server.name}] ${toolName}`,
-            parameters: inputSchema && typeof inputSchema === 'object' && Object.keys(inputSchema).length > 0
-              ? inputSchema
-              : Type.Object({}, { additionalProperties: true }),
-            execute: async (toolCallId, params) => {
-              if (!client) throw new Error('MCP 未连接');
-              const p = params as any;
-              // LLM 可能传字符串类型，强制转数字
-              if (p.ontology_id !== undefined) p.ontology_id = Number(p.ontology_id);
-              if (p.scenario_id !== undefined) p.scenario_id = Number(p.scenario_id);
-              const result = await client.callTool(toolName, p);
-              const text = toolResultToText(result.content);
-              if (result.isError) {
-                return { content: [{ type: 'text', text }], details: {}, isError: true };
-              }
-              return { content: [{ type: 'text', text }], details: {} };
+            tool: {
+              name: toolName,
+              label: toolName,
+              description: (t.description as string) || `[${server.name}] ${toolName}`,
+              parameters: inputSchema && typeof inputSchema === 'object' && Object.keys(inputSchema).length > 0
+                ? inputSchema
+                : Type.Object({}, { additionalProperties: true }),
+              execute: async (toolCallId, params) => {
+                if (!client) throw new Error('MCP 未连接');
+                const p = params as any;
+                // LLM 可能传字符串类型，强制转数字
+                if (p.ontology_id !== undefined) p.ontology_id = Number(p.ontology_id);
+                if (p.scenario_id !== undefined) p.scenario_id = Number(p.scenario_id);
+                const result = await client.callTool(toolName, p);
+                const text = toolResultToText(result.content);
+                if (result.isError) {
+                  return { content: [{ type: 'text', text }], details: {}, isError: true };
+                }
+                return { content: [{ type: 'text', text }], details: {} };
+              },
             },
+            builtin,
           });
         }
 

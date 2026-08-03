@@ -92,3 +92,27 @@ def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dic
         if f.is_file() and f.suffix in (".yaml", ".yml"):
             files.append({"name": f.name, "path": str(f.relative_to(ONTO_MARKET_DIR))})
     return files
+
+
+def build_restricted_globals() -> dict:
+    """Restricted globals for exec'ing user function code (ontology + common).
+
+    注意：__import__ 有意保留——现有函数代码依赖它（如公共函数在 run() 内部
+    `from datetime import ...`）。这是"可信插件执行"，不是安全沙箱。
+    """
+    import datetime as _datetime
+    import json as _json
+    import math as _math
+    import re as _re
+    return {
+        "datetime": _datetime, "json": _json, "math": _math, "re": _re,
+        "__builtins__": {
+            "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+            "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
+            "len": len, "list": list, "max": max, "min": min, "range": range,
+            "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
+            "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
+            "True": True, "False": False, "None": None,
+            "__import__": __import__, "print": print,
+        },
+    }

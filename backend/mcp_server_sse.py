@@ -283,30 +283,21 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             else:
                 result = resp.json()
 
-    # ─── Common function execution ─────────────────────────────────────
+    # ─── Common function execution (proxied to backend) ────────────────
     if result is None and name in COMMON_TOOL_NAMES:
-        code_path = COMMON_DIR / f"{name}.py"
-        if code_path.exists():
-            code = code_path.read_text(encoding="utf-8")
-            restricted_globals = {
-                "__builtins__": {
-                    "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-                    "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
-                    "len": len, "list": list, "max": max, "min": min, "range": range,
-                    "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
-                    "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
-                    "True": True, "False": False, "None": None,
-                    "__import__": __import__, "print": print,
-                },
-            }
-            local_vars = {}
-            try:
-                exec(code, restricted_globals, local_vars)
-                func = local_vars.get("run")
-                if func:
-                    result = func(arguments)
-            except Exception as e:
-                result = {"error": True, "message": str(e)}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{API_BASE}/api/common-functions/{name}/execute",
+                json={"params": arguments},
+            )
+            if resp.status_code >= 400:
+                try:
+                    err = resp.json()
+                except Exception:
+                    err = {"detail": resp.text}
+                result = {"error": True, "status_code": resp.status_code, "detail": err}
+            else:
+                result = resp.json()
 
     if result is None:
         raise ValueError(f"未知工具: {name}")

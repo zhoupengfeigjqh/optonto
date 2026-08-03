@@ -236,15 +236,19 @@ export default function MCPConfigPanel() {
       title: '工具',
       key: 'tools',
       width: 80,
-      render: (_: any, r: MCPServerConfig) => (
-        <Button type="link" size="small" icon={<ToolOutlined />} onClick={() => handleViewTools(r)}>选择</Button>
-      ),
+      render: (_: any, r: MCPServerConfig) => r.builtin
+        ? <Tag color="green">全部工具</Tag>
+        : <Button type="link" size="small" icon={<ToolOutlined />} onClick={() => handleViewTools(r)}>选择</Button>,
     },
     {
       title: '操作',
       key: 'actions',
       width: 240,
       render: (_: any, r: MCPServerConfig) => {
+        // 内置本体MCP：默认配置，不可编辑/删除，始终启用
+        if (r.builtin) {
+          return <Tag>默认配置</Tag>;
+        }
         const editing = editingKey === r.name || (editingKey === '__new__' && r.name === '__new__');
         if (editing) {
           return (
