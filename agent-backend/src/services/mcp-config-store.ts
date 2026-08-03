@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { PathAccessController } from '../security/path-access-controller.js';
+import { dirname } from 'node:path';
 
 export interface MCPServerConfig {
   name: string;
@@ -25,25 +24,17 @@ const DEFAULT_CONFIG: MCPConfig = {
 };
 
 /**
- * MCP 配置存储。
- * 每个本体一个 mcp-config.json，存放在 ontology 目录下。
+ * MCP 配置存储 —— 全局唯一，不区分场景/本体。
+ * 所有新增配置的 MCP 服务统一存入 ./config/mcp-config.json。
  */
 export class MCPConfigStore {
-  constructor(private pac: PathAccessController) {}
+  constructor(private configPath: string) {}
 
-  private configPath(scenario: string, ontology: string): string {
-    // 校验场景和本体名（通过 PAC 的路径校验机制）
-    this.pac.assertCanConfigAccess(scenario, ontology);
-    const baseDir = this.pac.resolveConfigDir(scenario, ontology);
-    return join(baseDir, 'mcp-config.json');
-  }
-
-  /** 读取配置，不存在则返回默认 */
-  getConfig(scenario: string, ontology: string): MCPConfig {
-    const path = this.configPath(scenario, ontology);
+  /** 读取全局配置，不存在则返回默认 */
+  getConfig(): MCPConfig {
     try {
-      if (existsSync(path)) {
-        const raw = readFileSync(path, 'utf-8');
+      if (existsSync(this.configPath)) {
+        const raw = readFileSync(this.configPath, 'utf-8');
         return JSON.parse(raw);
       }
     } catch {
@@ -52,10 +43,9 @@ export class MCPConfigStore {
     return { ...DEFAULT_CONFIG, servers: [...DEFAULT_CONFIG.servers] };
   }
 
-  /** 保存配置 */
-  saveConfig(scenario: string, ontology: string, config: MCPConfig): void {
-    const path = this.configPath(scenario, ontology);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(config, null, 2), 'utf-8');
+  /** 保存全局配置（覆盖写入） */
+  saveConfig(config: MCPConfig): void {
+    mkdirSync(dirname(this.configPath), { recursive: true });
+    writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 }

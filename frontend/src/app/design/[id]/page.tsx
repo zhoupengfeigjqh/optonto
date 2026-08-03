@@ -166,10 +166,7 @@ export default function DesignPage() {
         />
       )}
       {activeSection === 'agent' && activeTab === 'mcp-config' && (
-        <MCPConfigPanel
-          scenarioName={ontology?.scenario_name}
-          ontologyName={ontology?.name}
-        />
+        <MCPConfigPanel />
       )}
     </div>
   );

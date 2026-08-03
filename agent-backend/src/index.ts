@@ -17,7 +17,7 @@ import { createMCPConfigRouter } from './routes/mcp-config.js';
 const pac = new PathAccessController(config.dataDir);
 const threadStore = new ThreadStore(pac);
 const skillLoader = new SkillLoader(pac);
-const mcpConfigStore = new MCPConfigStore(pac);
+const mcpConfigStore = new MCPConfigStore(config.mcpConfigPath);
 
 const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
 const ontologyGateway = new OntologyGateway(pac);

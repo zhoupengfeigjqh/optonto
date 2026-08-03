@@ -6,6 +6,13 @@ export interface ThreadMessage {
   timestamp: string;
 }
 
+/** 选中的技能及其所在本体/场景（跨本体技能选择的存储单元） */
+export interface SkillSelection {
+  name: string;
+  scenario: string;
+  ontology: string;
+}
+
 export interface Thread {
   id: string;
   title: string;
@@ -17,7 +24,7 @@ export interface Thread {
   scenario_id?: number;
   ontology_name: string;
   ontology_id?: number;
-  skill_names: string[];
+  skill_names: SkillSelection[];
 }
 
 export interface ThreadSummary {
@@ -47,6 +54,10 @@ export interface SkillInfo {
   description: string;
   /** SKILL.md 第一段的简短摘要 */
   summary?: string;
+  /** 技能所在场景 */
+  scenario?: string;
+  /** 技能所在本体 */
+  ontology?: string;
 }
 
 /** 技能描述（仅元数据，不含正文） */

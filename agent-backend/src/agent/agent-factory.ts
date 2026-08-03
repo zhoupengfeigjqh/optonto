@@ -8,7 +8,7 @@ import { SkillLoader } from '../services/skill-loader.js';
 import { config } from '../config.js';
 import { buildParentPrompt, CHILD_SYSTEM_PROMPT } from './prompts.js';
 import { toolResultToText } from './text-utils.js';
-import type { ThreadMessage, SkillContext, SubTaskPlan } from '../types.js';
+import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
 
@@ -77,21 +77,20 @@ export class AgentFactory {
    * - onPlanSubmitted：父 Agent 调用 submit_plan 提交规划时触发，规划已通过 TypeBox schema 校验。
    */
   async createParentAgent(
-    skillNames: string[],
+    skills: SkillSelection[],
     history: ThreadMessage[],
-    scenario: string,
-    ontology: string,
     onSkillLoaded: (skillName: string) => void,
     onPlanSubmitted?: (plan: SubTaskPlan) => void,
   ): Promise<Agent> {
-    const descriptions = this.skillLoader.getSkillDescriptions(scenario, ontology, skillNames);
-    // 父 Agent 初始时不含"本体基本信息"——它在 load_skill 后从 SKILL.md 内容获取
+    // 合并所有选中技能（可跨本体）的 name+description 进 system prompt
+    const descriptions = this.skillLoader.getSkillDescriptions(skills);
     const systemPrompt = buildParentPrompt(descriptions);
     const model = resolveDeepSeekModel();
 
-    const loadSkillTool = this.createLoadSkillTool(scenario, ontology, onSkillLoaded);
+    const loadSkillTool = this.createLoadSkillTool(skills, onSkillLoaded);
     const submitPlanTool = this.createSubmitPlanTool(onPlanSubmitted);
-    const allMcp = await this.discoverTools(scenario, ontology);
+    // MCP 配置全局唯一，不区分场景/本体
+    const allMcp = await this.discoverTools();
     const parentMcpTools = allMcp.filter(t => PARENT_MCP_TOOL_NAMES.includes(t.name));
     const tools: AgentTool[] = [loadSkillTool, submitPlanTool, ...parentMcpTools];
 
@@ -117,7 +116,8 @@ export class AgentFactory {
   async createChildAgent(context: SkillContext): Promise<Agent> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
-    const allMcp = await this.discoverTools(scenario, ontology);
+    // MCP 配置全局唯一，不区分场景/本体
+    const allMcp = await this.discoverTools();
     // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文
     const mcpTools = allMcp.filter(t => CHILD_MCP_TOOL_NAMES.includes(t.name));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
@@ -130,9 +130,10 @@ export class AgentFactory {
   /**
    * 创建 load_skill 工具。
    * Agent 在需要某个技能的完整知识时调用。
+   * 从本对话选中的技能列表解析该技能的 (scenario, ontology) 再加载全文，支持跨本体。
    * 加载后通过 onSkillLoaded 回调通知 orchestrator 记录。
    */
-  private createLoadSkillTool(scenario: string, ontology: string, onSkillLoaded?: (skillName: string) => void): AgentTool {
+  private createLoadSkillTool(skills: SkillSelection[], onSkillLoaded?: (skillName: string) => void): AgentTool {
     return {
       name: 'load_skill',
       label: '加载技能知识',
@@ -143,11 +144,13 @@ export class AgentFactory {
       execute: async (toolCallId, params) => {
         const p = params as any;
         const skillName = p.skill_name as string;
-        const content = this.skillLoader.loadSkill(scenario, ontology, skillName);
+        const sel = skills.find(s => s.name === skillName);
+        if (!sel) throw new Error(`技能 "${skillName}" 不在本对话选中的技能中`);
+        const content = this.skillLoader.loadSkill(sel.scenario, sel.ontology, skillName);
         if (onSkillLoaded) onSkillLoaded(skillName);
         return {
           content: [{ type: 'text', text: content }],
-          details: { skill_name: skillName },
+          details: { skill_name: skillName, scenario: sel.scenario, ontology: sel.ontology },
         };
       },
     };
@@ -202,8 +205,9 @@ export class AgentFactory {
   /**
    * 从 MCP 配置中连接启用的服务，自动发现并注册工具。
    */
-  private async discoverTools(scenario: string, ontology: string): Promise<AgentTool[]> {
-    const mcpConfig = this.mcpConfigStore.getConfig(scenario, ontology);
+  private async discoverTools(): Promise<AgentTool[]> {
+    // MCP 配置全局唯一（./config/mcp-config.json），不区分场景/本体
+    const mcpConfig = this.mcpConfigStore.getConfig();
     const tools: AgentTool[] = [];
 
     for (const server of mcpConfig.servers) {

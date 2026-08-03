@@ -2,7 +2,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
-import type { SkillInfo, SkillDescription, SkillContext } from '../types.js';
+import type { SkillInfo, SkillDescription, SkillContext, SkillSelection } from '../types.js';
 
 /**
  * SkillLoader — 只读加载技能目录下的 SKILL.md 文件。
@@ -39,27 +39,22 @@ export class SkillLoader {
     return skills;
   }
 
-  /** 加载单个技能的 SKILL.md 完整内容 */
+  /** 加载单个技能的 SKILL.md 完整内容（按显式位置） */
   loadSkill(scenario: string, ontology: string, skillName: string): string {
     const path = this.pac.resolveReadPath('skill', scenario, ontology, skillName, 'SKILL.md');
     return readFileSync(path, 'utf-8');
   }
 
   /**
-   * 获取指定技能的元数据（仅 name + description），用于 system prompt。
-   * 只解析 frontmatter，不加载全文，轻量快速。
+   * 获取选中技能的元数据（仅 name + description），用于父 Agent system prompt。
+   * 每个技能用自身声明的 (scenario, ontology) 定位，支持跨本体技能集。
    */
-  getSkillDescriptions(scenario: string, ontology: string, skillNames: string[]): SkillDescription[] {
-    const skillsDir = this.pac.listSkillDirs(scenario, ontology);
-    if (!existsSync(skillsDir)) return [];
-
-    return skillNames
-      .map(name => {
-        const skillPath = join(skillsDir, name, 'SKILL.md');
-        if (!existsSync(skillPath)) return null;
+  getSkillDescriptions(skills: SkillSelection[]): SkillDescription[] {
+    return skills
+      .map(s => {
         try {
-          const content = readFileSync(skillPath, 'utf-8');
-          return { name, description: this.extractDescription(content) };
+          const content = this.loadSkill(s.scenario, s.ontology, s.name);
+          return { name: s.name, description: this.extractDescription(content) };
         } catch {
           return null;
         }
@@ -67,59 +62,64 @@ export class SkillLoader {
       .filter((s): s is SkillDescription => s !== null);
   }
 
-  /** 校验每个 SKILL.md 的 frontmatter 是否包含全部 4 个字段，缺失即报错 */
-  validateSkillContext(scenario: string, ontology: string, skillNames: string[]): void {
-    if (!skillNames || skillNames.length === 0) return;
-    // 复用 extractSkillContext 的逐技能加载、字段校验与跨技能一致性校验
-    this.extractSkillContext(scenario, ontology, skillNames);
-  }
-
-  /** 从 SKILL.md frontmatter 提取场景/本体上下文 */
-  extractSkillContext(scenario: string, ontology: string, skillNames: string[]): SkillContext {
-    if (!skillNames || skillNames.length === 0) {
-      throw new Error('没有选择技能，无法提取场景/本体信息');
-    }
-
-    let merged: SkillContext | null = null;
+  /** 校验每个选中技能的 SKILL.md 的 frontmatter 是否包含全部 4 个字段，缺失即报错 */
+  validateSkillContext(skills: SkillSelection[]): void {
+    if (!skills || skills.length === 0) return;
     const errors: string[] = [];
-
-    for (const name of skillNames) {
+    for (const s of skills) {
       try {
-        const content = this.loadSkill(scenario, ontology, name);
+        const content = this.loadSkill(s.scenario, s.ontology, s.name);
         const fm = this.parseFrontmatter(content);
-
-        const ctx: SkillContext = {
-          scenario_name: String(fm['scenario_name'] ?? '').trim(),
-          scenario_id: Number(fm['scenario_id']),
-          ontology_name: String(fm['ontology_name'] ?? '').trim(),
-          ontology_id: Number(fm['ontology_id']),
-        };
-
-        // 校验每个字段
-        if (!ctx.scenario_name) errors.push(`技能 "${name}" 缺少 scenario_name`);
-        if (!ctx.scenario_id && ctx.scenario_id !== 0) errors.push(`技能 "${name}" 缺少或无效 scenario_id`);
-        if (!ctx.ontology_name) errors.push(`技能 "${name}" 缺少 ontology_name`);
-        if (!ctx.ontology_id && ctx.ontology_id !== 0) errors.push(`技能 "${name}" 缺少或无效 ontology_id`);
-
-        // 校验跨技能一致性
-        if (merged) {
-          if (merged.scenario_name !== ctx.scenario_name) errors.push(`技能 "${name}" 的 scenario_name ("${ctx.scenario_name}") 与之前技能 ("${merged.scenario_name}") 不一致`);
-          if (merged.scenario_id !== ctx.scenario_id) errors.push(`技能 "${name}" 的 scenario_id (${ctx.scenario_id}) 与之前技能 (${merged.scenario_id}) 不一致`);
-          if (merged.ontology_name !== ctx.ontology_name) errors.push(`技能 "${name}" 的 ontology_name ("${ctx.ontology_name}") 与之前技能 ("${merged.ontology_name}") 不一致`);
-          if (merged.ontology_id !== ctx.ontology_id) errors.push(`技能 "${name}" 的 ontology_id (${ctx.ontology_id}) 与之前技能 (${merged.ontology_id}) 不一致`);
-        } else {
-          merged = ctx;
+        const required = ['scenario_name', 'scenario_id', 'ontology_name', 'ontology_id'] as const;
+        for (const field of required) {
+          if (!fm[field] || !String(fm[field]).trim()) {
+            errors.push(`技能 "${s.name}" 缺少 ${field}`);
+          }
         }
       } catch (e: any) {
-        errors.push(`技能 "${name}" 加载失败: ${e.message}`);
+        errors.push(`技能 "${s.name}" 加载失败: ${e.message}`);
       }
     }
-
-    if (errors.length > 0 || !merged) {
-      throw new Error(`技能上下文提取失败：\n${errors.join('\n')}`);
+    if (errors.length > 0) {
+      throw new Error(`技能上下文校验失败：\n${errors.join('\n')}`);
     }
+  }
 
-    return merged;
+  /** 扫描 onto_market 全部本体，返回所有技能及所在位置（技能选择下拉用） */
+  listAllSkills(): SkillInfo[] {
+    const ontoMarket = join(this.pac.getDataDir(), 'onto_market');
+    const result: SkillInfo[] = [];
+    try {
+      for (const sc of readdirSync(ontoMarket, { withFileTypes: true })) {
+        if (!sc.isDirectory()) continue;
+        const scDir = join(ontoMarket, sc.name);
+        for (const on of readdirSync(scDir, { withFileTypes: true })) {
+          if (!on.isDirectory()) continue;
+          const skillsDir = join(scDir, on.name, 'skills');
+          if (!existsSync(skillsDir)) continue;
+          for (const skill of readdirSync(skillsDir, { withFileTypes: true })) {
+            if (!skill.isDirectory()) continue;
+            const skillPath = join(skillsDir, skill.name, 'SKILL.md');
+            if (!existsSync(skillPath)) continue;
+            try {
+              const content = readFileSync(skillPath, 'utf-8');
+              result.push({
+                name: skill.name,
+                description: this.extractDescription(content),
+                summary: this.extractSummary(content),
+                scenario: sc.name,
+                ontology: on.name,
+              });
+            } catch {
+              continue;
+            }
+          }
+        }
+      }
+    } catch {
+      // 目录不存在等
+    }
+    return result;
   }
 
   /** 从 SKILL.md 提取 YAML frontmatter 为对象（与 ontology-gateway 一致使用 js-yaml） */

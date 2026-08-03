@@ -29,12 +29,12 @@ export function createThreadsRouter(
     try {
       const scenario = req.params.scenario as string;
       const ontology = req.params.ontology as string;
-      const { title, skill_names } = req.body as { title: string; skill_names: string[] };
+      const { title, skill_names } = req.body as { title: string; skill_names: { name: string; scenario: string; ontology: string }[] };
       const names = skill_names || [];
 
-      // 如果选了技能，校验每个 SKILL.md frontmatter 必含 4 个字段
+      // 如果选了技能，校验每个 SKILL.md frontmatter 必含 4 个字段（按技能自带位置）
       if (names.length > 0) {
-        skillLoader.validateSkillContext(scenario, ontology, names);
+        skillLoader.validateSkillContext(names);
       }
 
       const thread = threadStore.create(scenario, ontology, title || '新对话', names);
@@ -93,7 +93,7 @@ export function createThreadsRouter(
       const history: ThreadMessage[] = thread.messages || [];
 
       const result = await orchestrator.execute(
-        message, thread.skill_names, history, scenario, ontology, sendEvent,
+        message, thread.skill_names, history, sendEvent,
       );
 
       const userMsg: ThreadMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };

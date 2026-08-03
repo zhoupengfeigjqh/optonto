@@ -94,6 +94,11 @@ export class PathAccessController {
     return resolve(this.dataDir, 'onto_market', scenario, ontology);
   }
 
+  /** 暴露数据根目录（只读，用于跨本体扫描技能文件） */
+  getDataDir(): string {
+    return this.dataDir;
+  }
+
   // ── 私有校验方法 ──────────────────────────────
 
   /** 校验路径组件，拒绝路径穿越和空值 */

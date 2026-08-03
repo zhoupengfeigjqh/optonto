@@ -15,13 +15,7 @@ import {
   MCPConfig, MCPServerConfig, MCPToolInfo,
 } from '@/api/agent-client';
 
-export default function MCPConfigPanel({
-  scenarioName,
-  ontologyName,
-}: {
-  scenarioName?: string;
-  ontologyName?: string;
-}) {
+export default function MCPConfigPanel() {
   const [config, setConfig] = useState<MCPConfig>({ servers: [] });
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState<string>('');
@@ -36,10 +30,10 @@ export default function MCPConfigPanel({
   const [selectedToolNames, setSelectedToolNames] = useState<Set<string>>(new Set());
 
   const load = async () => {
-    if (!scenarioName || !ontologyName) return;
     setLoading(true);
     try {
-      const cfg = await getMCPConfig(scenarioName, ontologyName);
+      // MCP 配置全局唯一
+      const cfg = await getMCPConfig();
       setConfig(cfg);
     } catch (e: any) {
       message.error('加载 MCP 配置失败: ' + e.message);
@@ -50,13 +44,13 @@ export default function MCPConfigPanel({
 
   useEffect(() => {
     load();
-  }, [scenarioName, ontologyName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // 直接保存到后端
+  // 直接保存到后端（全局配置）
   const persistConfig = async (newConfig: MCPConfig) => {
-    if (!scenarioName || !ontologyName) return;
     try {
-      await saveMCPConfig(scenarioName, ontologyName, newConfig);
+      await saveMCPConfig(newConfig);
     } catch (e: any) {
       message.error('保存失败: ' + e.message);
     }
@@ -126,7 +120,7 @@ export default function MCPConfigPanel({
   };
 
   const handleViewTools = async (server: MCPServerConfig) => {
-    if (!scenarioName || !ontologyName || !server.url) return;
+    if (!server.url) return;
     setModalServer(server);
     setSelectedToolNames(new Set(server.allowed_tools || []));
     setModalLoading(true);
@@ -134,7 +128,7 @@ export default function MCPConfigPanel({
     setModalTools([]);
 
     try {
-      const result = await testMCPConnection(scenarioName, ontologyName, server.url);
+      const result = await testMCPConnection(server.url);
       if (result.success) {
         const tools = result.tools || [];
         setModalTools(tools);

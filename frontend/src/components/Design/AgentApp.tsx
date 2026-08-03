@@ -11,8 +11,8 @@ import {
 import {
   listAgentThreads, createAgentThread, deleteAgentThread,
   getAgentThread, agentChatStream,
-  listSkills,
-  AgentThreadSummary, AgentMessage, SkillInfo,
+  listAllSkills,
+  AgentThreadSummary, AgentMessage, SkillInfo, SkillSelection,
 } from '@/api/agent-client';
 import { renderMarkdown } from '@/lib/markdown';
 
@@ -619,16 +619,16 @@ export default function AgentApp({
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<SkillSelection[]>([]);
 
-  // 加载线程列表和技能列表
+  // 加载线程列表和技能列表（技能跨全部本体扫描）
   const load = async () => {
     if (!scenarioName || !ontologyName) return;
     setLoading(true);
     try {
       const [threadList, skillList] = await Promise.all([
         listAgentThreads(scenarioName, ontologyName),
-        listSkills(scenarioName, ontologyName),
+        listAllSkills(),
       ]);
       setThreads(threadList);
       setSkills(skillList);
@@ -791,18 +791,24 @@ export default function AgentApp({
             <Select
               mode="multiple"
               placeholder="选择该对话要加载的技能文件"
-              value={selectedSkills}
-              onChange={setSelectedSkills}
+              value={selectedSkills.map(sk => `${sk.scenario}/${sk.ontology}/${sk.name}`)}
+              onChange={(keys: string[]) => {
+                const sel: SkillSelection[] = keys.map(k => {
+                  const [scenario, ontology, ...rest] = k.split('/');
+                  return { scenario, ontology, name: rest.join('/') };
+                });
+                setSelectedSkills(sel);
+              }}
               options={skills.map(s => ({
-                label: s.name,
-                value: s.name,
+                label: s.ontology ? `${s.name}（${s.ontology}）` : s.name,
+                value: `${s.scenario || ''}/${s.ontology || ''}/${s.name}`,
               }))}
               className="w-full"
               style={{ background: '#1a1a2e' }}
               popupClassName="bg-dark-card"
             />
             <p className="text-text-muted text-xs mt-1">
-              选中的技能将作为 AI Agent 的知识来源
+              选中的技能将作为 AI Agent 的知识来源（可跨本体选择）
             </p>
           </div>
         </div>

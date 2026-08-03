@@ -36,7 +36,7 @@ export interface AgentThread {
   updated_at: string;
   scenario_name: string;
   ontology_name: string;
-  skill_names: string[];
+  skill_names: SkillSelection[];
 }
 
 export interface AgentMessage {
@@ -45,10 +45,19 @@ export interface AgentMessage {
   timestamp: string;
 }
 
+/** 选中的技能及其所在本体/场景 */
+export interface SkillSelection {
+  name: string;
+  scenario: string;
+  ontology: string;
+}
+
 export interface SkillInfo {
   name: string;
   description: string;
   summary?: string;
+  scenario?: string;
+  ontology?: string;
 }
 
 // ─── Skills ─────────────────────────────────────────────────────────
@@ -58,6 +67,10 @@ export const listSkills = (scenario: string, ontology: string) =>
   request<SkillInfo[]>(
     `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/skills`
   );
+
+/** 扫描全部本体，获取所有技能及所在位置（技能选择下拉用） */
+export const listAllSkills = () =>
+  request<SkillInfo[]>(`/onto_market/skills/all`);
 
 // ─── Threads ────────────────────────────────────────────────────────
 
@@ -72,13 +85,13 @@ export const createAgentThread = (
   scenario: string,
   ontology: string,
   title: string,
-  skillNames: string[]
+  skills: SkillSelection[]
 ) =>
   request<AgentThread>(
     `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/threads`,
     {
       method: 'POST',
-      body: JSON.stringify({ title, skill_names: skillNames }),
+      body: JSON.stringify({ title, skill_names: skills }),
     }
   );
 
@@ -137,26 +150,22 @@ export interface MCPTestResult {
   error?: string;
 }
 
-/** 读取 MCP 配置 */
-export const getMCPConfig = (scenario: string, ontology: string) =>
-  request<MCPConfig>(
-    `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/mcp-config`
-  );
+/** 读取 MCP 配置（全局唯一） */
+export const getMCPConfig = () =>
+  request<MCPConfig>(`/mcp-config`);
 
-/** 保存 MCP 配置 */
-export const saveMCPConfig = (scenario: string, ontology: string, config: MCPConfig) =>
+/** 保存 MCP 配置（全局唯一） */
+export const saveMCPConfig = (config: MCPConfig) =>
   request<{ message: string }>(
-    `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/mcp-config`,
+    `/mcp-config`,
     { method: 'PUT', body: JSON.stringify(config) }
   );
 
 /** 测试 MCP 连接并列出工具 */
 export const testMCPConnection = (
-  scenario: string,
-  ontology: string,
   url: string
 ): Promise<MCPTestResult> =>
   request<MCPTestResult>(
-    `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/mcp-config/test`,
+    `/mcp-config/test`,
     { method: 'POST', body: JSON.stringify({ url }) }
   );

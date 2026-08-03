@@ -2,28 +2,26 @@ import { Router, Request, Response } from 'express';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { MCPClient } from '../services/mcp-client.js';
 
+/**
+ * MCP 配置路由 —— 全局唯一，不区分场景/本体。
+ * 配置存于 ./config/mcp-config.json。
+ */
 export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
   const router = Router();
 
-  /** GET — 读取 MCP 配置 */
-  router.get('/onto_market/:scenario/:ontology/mcp-config', (req: Request, res: Response) => {
+  /** GET — 读取全局 MCP 配置 */
+  router.get('/mcp-config', (_req: Request, res: Response) => {
     try {
-      const scenario = req.params.scenario as string;
-      const ontology = req.params.ontology as string;
-      const config = configStore.getConfig(scenario, ontology);
-      res.json(config);
+      res.json(configStore.getConfig());
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
   });
 
-  /** PUT — 保存 MCP 配置 */
-  router.put('/onto_market/:scenario/:ontology/mcp-config', (req: Request, res: Response) => {
+  /** PUT — 保存全局 MCP 配置 */
+  router.put('/mcp-config', (req: Request, res: Response) => {
     try {
-      const scenario = req.params.scenario as string;
-      const ontology = req.params.ontology as string;
-      const config = req.body;
-      configStore.saveConfig(scenario, ontology, config);
+      configStore.saveConfig(req.body);
       res.json({ message: '配置已保存' });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
@@ -35,7 +33,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
    * body: { url: "http://mcp:8002/sse" }
    * 返回: { success: true, tools: [{name, description, inputSchema}] }
    */
-  router.post('/onto_market/:scenario/:ontology/mcp-config/test', async (req: Request, res: Response) => {
+  router.post('/mcp-config/test', async (req: Request, res: Response) => {
     const { url } = req.body as { url: string };
 
     if (!url || typeof url !== 'string') {

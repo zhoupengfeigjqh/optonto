@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { PathAccessController, ForbiddenError } from '../security/path-access-controller.js';
-import type { Thread, ThreadSummary, ThreadMessage } from '../types.js';
+import type { Thread, ThreadSummary, ThreadMessage, SkillSelection } from '../types.js';
 
 /**
  * ThreadStore — 对话线程数据的读写。
@@ -47,7 +47,7 @@ export class ThreadStore {
   }
 
   /** 创建新线程 */
-  create(scenario: string, ontology: string, title: string, skillNames: string[]): Thread {
+  create(scenario: string, ontology: string, title: string, skillNames: SkillSelection[]): Thread {
     const threadId = randomUUID();
     const now = new Date().toISOString();
 

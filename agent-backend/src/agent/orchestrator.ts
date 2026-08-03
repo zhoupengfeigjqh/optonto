@@ -16,7 +16,7 @@ import { AgentFactory } from './agent-factory.js';
 import { OntologyGateway } from '../services/ontology-gateway.js';
 import { contentToText, toolResultToText } from './text-utils.js';
 import type {
-  ThreadMessage, SubTaskPlan, SubTaskResult, BehaviorMeta, SubTask, SSEEvent, ExecutionEntry, SkillContext,
+  ThreadMessage, SubTaskPlan, SubTaskResult, BehaviorMeta, SubTask, SSEEvent, ExecutionEntry, SkillContext, SkillSelection,
 } from '../types.js';
 
 const MAX_RETRIES = 3;
@@ -106,14 +106,12 @@ export class Orchestrator {
 
   async execute(
     message: string,
-    skillNames: string[],
+    skills: SkillSelection[],
     history: ThreadMessage[],
-    scenario: string,
-    ontology: string,
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
     try {
-      return await this.runExecute(message, skillNames, history, scenario, ontology, sendEvent);
+      return await this.runExecute(message, skills, history, sendEvent);
     } finally {
       // 编排结束（无论成功/失败/中断）释放 MCP 连接，避免跨子任务累积泄漏
       await this.agentFactory.closeAll();
@@ -122,10 +120,8 @@ export class Orchestrator {
 
   private async runExecute(
     message: string,
-    skillNames: string[],
+    skills: SkillSelection[],
     history: ThreadMessage[],
-    scenario: string,
-    ontology: string,
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
     const pushEntry = (entry: ExecutionEntry) => sendEvent({ type: 'exec_entry', entry } as any);
@@ -137,7 +133,7 @@ export class Orchestrator {
     const submittedPlan: { value: SubTaskPlan | null } = { value: null };
     let emitTokens = true;
     const parentAgent = await this.agentFactory.createParentAgent(
-      skillNames, history, scenario, ontology,
+      skills, history,
       (name: string) => {
         if (!loadedSkillNames.includes(name)) loadedSkillNames.push(name);
         sendEvent({ type: 'token', token: `\n📖 已加载技能：${name}\n` });
@@ -253,20 +249,22 @@ export class Orchestrator {
     const sorted = this.topologicalSort(plan.subtasks);
     const results: SubTaskResult[] = [];
     let aborted = false;
+    let blocked = false; // 依赖未满足导致执行终止
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const currentIdx = results.length;
       if (currentIdx >= sorted.length) break;
       const subTask = sorted[currentIdx];
 
-      // 检查依赖
+      // 检查依赖：前置依赖未成功则终止执行（依赖已失败，不存在"等待完成"的可能）
       if (subTask.depends_on) {
         let depFailed = false;
         for (const dep of subTask.depends_on) {
           if (!results.find(r => r.seq === dep && r.success)) { depFailed = true; break; }
         }
         if (depFailed) {
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: `等待子任务${subTask.depends_on}完成`, status: 'failed', detail: '依赖未完成', source: 'child' });
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: `依赖子任务${subTask.depends_on}未成功执行`, status: 'failed', detail: '前置依赖失败，任务终止', source: 'child' });
+          blocked = true;
           break;
         }
       }
@@ -275,7 +273,6 @@ export class Orchestrator {
       const meta = this.ontologyGateway.getBehaviorMeta(subTask.scenario_name, subTask.ontology_name, subTask.behavior);
 
       // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体，
-      // 不能用"合并的 SKILL.md 上下文"（那会强制所有子任务同本体）
       const childContext: SkillContext = {
         scenario_name: subTask.scenario_name,
         scenario_id: subTask.scenario_id ?? 0,
@@ -304,10 +301,12 @@ export class Orchestrator {
 【执行结果】
 ${result.summary}
 
-请分析：
+请简要分析：
 1. 结果是否符合预期？有无异常或风险？
 2. 对后续子任务有何影响？
-3. 请按原计划继续，或调用 submit_plan 工具提交调整后的规划替换后续任务。`);
+
+若结果正常、无需调整，直接简要说明"继续执行原计划"即可，不要调用 submit_plan。
+仅当结果出现异常、需要修改后续子任务时，才调用 submit_plan 提交调整后的规划。`);
         // 提取父Agent的分析结果推送到前端执行记录
         const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
         // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
@@ -334,15 +333,17 @@ ${result.summary}
 
     // 无论成功/失败/中断，父Agent 统一生成最终总结
     let finalSummary = '执行完成';
-    if (results.length > 0) {
-      const allSuccess = results.every(r => r.success);
-      if (allSuccess && !aborted) {
+    if (results.length > 0 || aborted || blocked) {
+      const allSuccess = results.length > 0 && results.every(r => r.success);
+      if (allSuccess && !aborted && !blocked) {
         await parentAgent.prompt(`所有子任务已执行完毕。请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
       } else {
-        const outcomeSummary = results.map(r =>
-          `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
-        ).join('\n');
-        const reason = aborted ? '任务被用户中断或拒绝' : '存在子任务执行失败';
+        const outcomeSummary = results.length > 0
+          ? results.map(r =>
+              `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
+            ).join('\n')
+          : '（无子任务成功执行）';
+        const reason = aborted ? '任务被用户中断或拒绝' : (blocked ? '存在前置依赖未完成' : '存在子任务执行失败');
         await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明：总结已完成的操作与结果、说明终止/失败的原因，并给出后续建议。`);
       }
       finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || (allSuccess ? '执行完成' : '执行未完成');
