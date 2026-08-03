@@ -181,23 +181,6 @@ export class Orchestrator {
       return '无法生成执行计划，请重新描述需求或重试。';
     }
 
-    // 校验：提交规划前必须已加载全部选中技能（prompt 是软约束，这里硬兜底）。
-    // 缺技能就规划，behavior 名/参数结构可能基于不完整知识，靠这个闭环补齐（最多修正 1 次）。
-    if (skills.length > 0 && loadedSkillNames.length < skills.length) {
-      const missing = skills.filter(s => !loadedSkillNames.includes(s.name)).map(s => s.name).join('、');
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '技能加载校验', status: 'failed', detail: `规划前未加载技能: ${missing}`, source: 'parent' });
-      submittedPlan.value = null; // 只认补齐后重新提交的规划
-      await parentAgent.prompt(`你提交规划前尚未加载全部选中技能的完整知识。缺失：${missing}。\n请先用 load_skill 补齐这些技能，全部加载完成后重新调用 submit_plan 提交规划。`);
-      const reloaded = submittedPlan.value as SubTaskPlan | null;
-      if (!reloaded || !reloaded.subtasks || reloaded.subtasks.length === 0 || skills.some(s => !loadedSkillNames.includes(s.name))) {
-        sendEvent({ type: 'error', message: '技能加载不完整，无法生成有效规划' });
-        sendEvent({ type: 'done' });
-        return '技能加载不完整，无法生成有效规划，请重试。';
-      }
-      plan = reloaded;
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '技能加载完成', status: 'done', detail: `已补齐 ${missing}`, source: 'parent' });
-    }
-
     // 校验 behavior 名称合法性（最多修正 1 次）
     const invalid: { sub: SubTask; valid: string[] }[] = [];
     for (const st of plan.subtasks) {
@@ -265,15 +248,14 @@ export class Orchestrator {
 
     // ── 阶段2：按依赖顺序执行子任务，每完成一个反馈父Agent ──
     emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
-    const sorted = this.topologicalSort(plan.subtasks);
+    let pending = this.topologicalSort(plan.subtasks);
     const results: SubTaskResult[] = [];
     let aborted = false;
     let blocked = false; // 依赖未满足导致执行终止
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const currentIdx = results.length;
-      if (currentIdx >= sorted.length) break;
-      const subTask = sorted[currentIdx];
+      if (pending.length === 0) break;
+      const subTask = pending[0];
 
       // 检查依赖：前置依赖未成功则终止执行（依赖已失败，不存在"等待完成"的可能）
       if (subTask.depends_on) {
@@ -305,6 +287,8 @@ export class Orchestrator {
 
       const result = await this.runSubTask(subTask, meta, childContext, sendEvent, pushEntry);
       results.push(result);
+      // 已执行的子任务从待执行列表移除，下一轮直接消费 pending[0]
+      pending = pending.filter(st => st.seq !== subTask.seq);
 
       const shortStatus = result.success ? '✅ 执行完成' : '❌ 执行失败';
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${shortStatus} — ${result.summary.slice(0, 80)}`, result: result.summary, source: 'child' });
@@ -334,13 +318,10 @@ ${result.summary}
         let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
         if (adjusted && adjusted.subtasks && adjusted.subtasks.length > 0) {
           analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
-          for (const adjSubtasks of adjusted.subtasks) {
-            if (!results.find(r => r.seq === adjSubtasks.seq)) {
-              const idx = sorted.findIndex(s => s.seq === adjSubtasks.seq);
-              if (idx >= 0) sorted[idx] = adjSubtasks;
-              else sorted.push(adjSubtasks);
-            }
-          }
+          // 调整后的规划是权威全集：剔除已执行，重新拓扑排序。
+          // 被丢弃的子任务从待执行列表消失（B2 不再执行）；新依赖关系重新生效（B1 不再误阻断）。
+          const executedSeqs = new Set(results.map(r => r.seq));
+          pending = this.topologicalSort(adjusted.subtasks.filter(st => !executedSeqs.has(st.seq)));
         }
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
       } else {
@@ -425,8 +406,9 @@ ${result.summary}
     const instruction = this.buildInstruction(subTask, meta);
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child' });
     let lastError = '';
-    // 记录最近一次工具执行是否报错（isError），用于双信号判定子任务成败
-    let lastToolError = false;
+    // 记录本次子任务期间【任意一次】工具执行是否报错（isError）。
+    // 用累积而非"最近一次"：子任务可能多次调工具，中间失败后最后成功也会被判失败。
+    let anyToolError = false;
 
     // 复用同一个子 Agent 实例做重试：失败原因、工具结果保留在上下文中，LLM 能自纠
     const childAgent = await this.agentFactory.createChildAgent(context);
@@ -436,19 +418,19 @@ ${result.summary}
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child' });
       } else if (event.type === 'tool_execution_end') {
         const text = toolResultToText(event.result?.content);
-        lastToolError = !!event.isError;
+        if (event.isError) anyToolError = true;
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: event.toolName, status: 'done', result: text, source: 'child' });
       }
     });
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      lastToolError = false; // 每次重试重置工具错误信号
+      anyToolError = false; // 每次重试重置工具错误信号
       try {
         // 首次传入完整指令；重试时指令已在上下文中，只需让 LLM 参考上次过程自纠
         await childAgent.prompt(attempt === 0
           ? instruction
           : `你上一次执行失败了（${lastError}）。\n请参考上一次的执行过程和工具结果，分析失败原因，修正参数或执行方式后重新执行，并输出最终结果。`);
-        const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, lastToolError);
+        const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, anyToolError);
         if (result.success) return result;
         lastError = result.error || (result.summary ? result.summary.slice(0, 200) : '') || '执行失败';
       } catch (e: any) {
@@ -533,15 +515,15 @@ ${result.summary}
     const last = [...messages].reverse().find((m: any) => m.role === 'assistant' && !m.errorMessage);
     const content = last ? contentToText(last.content) : '';
     // 双信号判定：
-    //   ① 文字标记明确写【状态】失败 → 失败
-    //   ② 文字未写失败，但最近一次工具调用真实报错 → 失败（堵住 LLM 幻觉 / 漏写标记）
-    const statusMatch = content.match(/【状态】(成功|失败)/);
-    const statusFailed = statusMatch ? statusMatch[1] === '失败' : false;
+    //   ① 取【状态】标记的【最后一个】为准（子 Agent 回复可能多次出现，最后一个是最终结论）
+    //   ② 本次子任务期间任意一次工具调用真实报错（isError）→ 失败（堵住 LLM 幻觉 / 漏写标记）
+    const statusMatches = content.match(/【状态】(成功|失败)/g) || [];
+    const statusFailed = statusMatches.length > 0 && statusMatches[statusMatches.length - 1] === '【状态】失败';
     const success = !statusFailed && !toolErrored;
     return {
       seq, behavior,
       success,
-      summary: content.replace(/【状态】(成功|失败)/, '').trim().slice(0, 2000),
+      summary: content.replace(/【状态】(成功|失败)/g, '').trim().slice(0, 2000),
     };
   }
 

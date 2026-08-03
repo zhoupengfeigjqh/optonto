@@ -21,6 +21,17 @@ const CHILD_MCP_TOOL_NAMES = [
 ];
 
 /**
+ * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
+ * 避免 NaN 作为参数静默传给后端 / 在拓扑排序里被跳过。
+ */
+function toFiniteNum(value: any, label: string): number {
+  if (value === '' || value === null || value === undefined) throw new Error(`${label} 为空`);
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error(`${label} 不是有效数字: ${value}`);
+  return n;
+}
+
+/**
  * 解析 DeepSeek 模型：优先用 config.yaml 的 modelName（此前模型被硬编码且配置不生效），
  * 无效时回退默认 flash，避免 getModel 对未知模型名静默返回 undefined。
  */
@@ -120,15 +131,44 @@ export class AgentFactory {
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
-    // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文
+    // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文。
+    // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰。
     const mcpTools = allMcp
       .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
-      .map(({ tool }) => tool);
+      .map(({ tool }) => this.scopeToOntology(tool, ontologyId));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
     });
     return agent;
+  }
+
+  /**
+   * 将执行类工具限定到指定本体：
+   * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
+   * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
+   * 无 ontology_id 的工具（如公共函数）原样返回。
+   */
+  private scopeToOntology(tool: AgentTool, ontologyId: number): AgentTool {
+    const schema = tool.parameters as any;
+    const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
+    if (!props || !('ontology_id' in props)) {
+      return tool;
+    }
+    const nextProps = { ...props };
+    delete nextProps.ontology_id;
+    const required = Array.isArray(schema.required)
+      ? (schema.required as string[]).filter(k => k !== 'ontology_id')
+      : undefined;
+    const originalExecute = tool.execute;
+    return {
+      ...tool,
+      parameters: { ...schema, properties: nextProps, ...(required ? { required } : {}) },
+      execute: async (toolCallId, params) => {
+        const p = { ...(params as any), ontology_id: ontologyId }; // 强制锁定
+        return originalExecute(toolCallId, p);
+      },
+    };
   }
 
   /**
@@ -190,12 +230,13 @@ export class AgentFactory {
       }),
       execute: async (toolCallId, params) => {
         const plan = params as { subtasks: Array<Record<string, any>> };
-        // 规整数值字段：LLM 可能输出字符串数字，统一转 number 供拓扑排序/seq 匹配使用
+        // 规整数值字段：LLM 可能输出字符串数字，统一转 number 供拓扑排序/seq 匹配使用。
+        // 非法值直接抛错 → submit_plan 工具报错，父 Agent 看到后可自纠，避免 NaN 静默跳过。
         for (const st of plan.subtasks) {
-          st.seq = Number(st.seq);
-          st.scenario_id = st.scenario_id != null && st.scenario_id !== '' ? Number(st.scenario_id) : undefined;
-          st.ontology_id = Number(st.ontology_id);
-          if (Array.isArray(st.depends_on)) st.depends_on = st.depends_on.map((d: any) => Number(d));
+          st.seq = toFiniteNum(st.seq, '子任务 seq');
+          st.scenario_id = st.scenario_id != null && st.scenario_id !== '' ? toFiniteNum(st.scenario_id, `子任务 ${st.seq} 的 scenario_id`) : undefined;
+          st.ontology_id = toFiniteNum(st.ontology_id, `子任务 ${st.seq} 的 ontology_id`);
+          if (Array.isArray(st.depends_on)) st.depends_on = st.depends_on.map(d => toFiniteNum(d, `子任务 ${st.seq} 的 depends_on`));
         }
         if (onPlanSubmitted) onPlanSubmitted(plan as unknown as SubTaskPlan);
         return {
@@ -247,9 +288,9 @@ export class AgentFactory {
               execute: async (toolCallId, params) => {
                 if (!client) throw new Error('MCP 未连接');
                 const p = params as any;
-                // LLM 可能传字符串类型，强制转数字
-                if (p.ontology_id !== undefined) p.ontology_id = Number(p.ontology_id);
-                if (p.scenario_id !== undefined) p.scenario_id = Number(p.scenario_id);
+                // LLM 可能传字符串类型，强制转数字；非法值抛错置工具失败，子 Agent 可自纠
+                if (p.ontology_id !== undefined) p.ontology_id = toFiniteNum(p.ontology_id, 'ontology_id');
+                if (p.scenario_id !== undefined) p.scenario_id = toFiniteNum(p.scenario_id, 'scenario_id');
                 const result = await client.callTool(toolName, p);
                 const text = toolResultToText(result.content);
                 if (result.isError) {

@@ -261,9 +261,10 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                     err = resp.json()
                 except Exception:
                     err = {"detail": resp.text}
-                result = {"error": True, "status_code": resp.status_code, "detail": err}
-            else:
-                result = resp.json()
+                # 抛异常让 MCP 返回 isError=true，agent 侧才能判定工具执行失败，
+                # 而不是把 {"error": true} 当成功文本返回、成败全靠 LLM 读 JSON。
+                raise RuntimeError(f"函数 {fname} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
+            result = resp.json()
 
     elif name == "executeOntoBehavior":
         oid = arguments["ontology_id"]
@@ -279,9 +280,9 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                     err = resp.json()
                 except Exception:
                     err = {"detail": resp.text}
-                result = {"error": True, "status_code": resp.status_code, "detail": err}
-            else:
-                result = resp.json()
+                # 同 executeOntoFunction：执行失败必须置 isError，交由 agent 判定失败
+                raise RuntimeError(f"行为 {bname} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
+            result = resp.json()
 
     # ─── Common function execution (proxied to backend) ────────────────
     if result is None and name in COMMON_TOOL_NAMES:
