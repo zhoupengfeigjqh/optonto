@@ -21,7 +21,7 @@ const mcpConfigStore = new MCPConfigStore(pac);
 
 const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
 const ontologyGateway = new OntologyGateway(pac);
-const orchestrator = new Orchestrator(agentFactory, ontologyGateway, skillLoader);
+const orchestrator = new Orchestrator(agentFactory, ontologyGateway);
 
 // ─── Express 应用 ────────────────────────────────
 

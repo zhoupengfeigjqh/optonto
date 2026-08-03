@@ -14,7 +14,6 @@
 import { randomUUID } from 'node:crypto';
 import { AgentFactory } from './agent-factory.js';
 import { OntologyGateway } from '../services/ontology-gateway.js';
-import { SkillLoader } from '../services/skill-loader.js';
 import { contentToText, toolResultToText } from './text-utils.js';
 import type {
   ThreadMessage, SubTaskPlan, SubTaskResult, BehaviorMeta, SubTask, SSEEvent, ExecutionEntry, SkillContext,
@@ -93,7 +92,6 @@ export class Orchestrator {
   constructor(
     private agentFactory: AgentFactory,
     private ontologyGateway: OntologyGateway,
-    private skillLoader: SkillLoader,
   ) {}
 
   getConfirmManager(): ConfirmManager { return this.confirmManager; }
@@ -156,33 +154,33 @@ export class Orchestrator {
 
     // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
     await parentAgent.prompt(`用户: ${message}
-
-先判断是否需要加载技能，然后直接回答用户问题。如果是业务操作（即要调用工具执行），请调用 submit_plan 工具提交子任务规划。`);
-    // 优先取 submit_plan 工具提交的规划；模型未调用工具时退回从文本提取
-    plan = submittedPlan.value ?? this.extractPlan(parentAgent.state.messages);
+先判断需求类型：
+- 问候/寒暄 → 直接文字回复；
+- 本体/场景结构查询 → 直接调用相关 MCP 工具回答，不要提交规划；
+- 业务数据查询或执行操作 → 先调用 load_skill，再调用 submit_plan 提交子任务规划。`);
+    // 规划只来自 submit_plan 工具（schema 校验），不再用正则从文本抓取，避免误判
+    plan = submittedPlan.value;
     if (plan && (!plan.subtasks || plan.subtasks.length === 0)) {
       plan = null;
     }
 
     if (!plan || !plan.subtasks || plan.subtasks.length === 0) {
       const lastMsg = this.getLastAssistantMessage(parentAgent.state.messages);
-      if (lastMsg && !plan) {
+      // 保护：模型若违反约束把规划写成 JSON 文本，不当作回答返回。
+      // 正则只认 "subtasks" key（不锚定 {），避免嵌套 JSON 导致漏判。
+      // 注意：error 需先于 done 发送（前端遇到 done 即 break，同批到达时会跳过 error）
+      if (lastMsg && /"subtasks"\s*:/.test(lastMsg)) {
+        sendEvent({ type: 'error', message: '规划格式异常，请重新描述需求或重试。' });
+        sendEvent({ type: 'done' });
+        return '无法生成执行计划，请重新描述需求或重试。';
+      }
+      if (lastMsg) {
         sendEvent({ type: 'done' });
         return lastMsg;
       }
-      sendEvent({ type: 'error', message: '无法生成执行计划' });
-      return '无法生成执行计划，请重新描述需求。';
-    }
-
-    // 如果加载了技能，从 SKILL.md frontmatter 提取上下文
-    let skillContext: SkillContext | null = null;
-    if (loadedSkillNames.length > 0) {
-      try {
-        skillContext = this.skillLoader.extractSkillContext(scenario, ontology, loadedSkillNames);
-      } catch (e: any) {
-        sendEvent({ type: 'error', message: `技能上下文提取失败: ${e.message}` });
-        return `技能上下文提取失败: ${e.message}`;
-      }
+      sendEvent({ type: 'error', message: '无法生成执行计划，请重新描述需求或重试。' });
+      sendEvent({ type: 'done' });
+      return '无法生成执行计划，请重新描述需求或重试。';
     }
 
     // 校验 behavior 名称合法性（最多修正 1 次）
@@ -197,7 +195,8 @@ export class Orchestrator {
       const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
       submittedPlan.value = null; // 只认本次修正后的新提交
       await parentAgent.prompt(`以下子任务的 behavior 名称不在其所属场景/本体的行为集合中：${invalidNames}。\n合法行为有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`);
-      const corrected = submittedPlan.value ?? this.extractPlan(parentAgent.state.messages);
+      // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
+      const corrected = submittedPlan.value as SubTaskPlan | null;
       if (corrected && corrected.subtasks && corrected.subtasks.length > 0) {
         const stillInvalid: { sub: SubTask; valid: string[] }[] = [];
         for (const st of corrected.subtasks) {
@@ -275,8 +274,9 @@ export class Orchestrator {
       // 提取元信息
       const meta = this.ontologyGateway.getBehaviorMeta(subTask.scenario_name, subTask.ontology_name, subTask.behavior);
 
-      // 子 Agent 上下文：优先用 SKILL.md 提取的；父 Agent 未加载技能时从子任务自身字段推导，避免空指针
-      const childContext = skillContext ?? {
+      // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体，
+      // 不能用"合并的 SKILL.md 上下文"（那会强制所有子任务同本体）
+      const childContext: SkillContext = {
         scenario_name: subTask.scenario_name,
         scenario_id: subTask.scenario_id ?? 0,
         ontology_name: subTask.ontology_name,
@@ -350,18 +350,6 @@ ${result.summary}
     sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
     sendEvent({ type: 'done' });
     return finalSummary;
-  }
-
-  /** 从 messages 提取 JSON 规划 */
-  private extractPlan(messages: any[]): SubTaskPlan | null {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const text = contentToText(messages[i]?.content);
-      const jsonMatch = text.match(/\{[\s\S]*"subtasks"[\s\S]*\}/);
-      if (jsonMatch) {
-        try { return JSON.parse(jsonMatch[0]); } catch { continue; }
-      }
-    }
-    return null;
   }
 
   /** 按 depends_on 拓扑排序 */
