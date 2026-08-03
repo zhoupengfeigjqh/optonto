@@ -411,7 +411,9 @@ ${result.summary}
     let anyToolError = false;
 
     // 复用同一个子 Agent 实例做重试：失败原因、工具结果保留在上下文中，LLM 能自纠
-    const childAgent = await this.agentFactory.createChildAgent(context);
+    // opId 每子任务一个、跨重试稳定：主行为写操作带 op_key 走后端幂等，重试不重复执行
+    const opId = randomUUID();
+    const childAgent = await this.agentFactory.createChildAgent(context, subTask.behavior, opId);
     this.currentChildAgent = childAgent;
     childAgent.subscribe((event: any) => {
       if (event.type === 'tool_execution_start') {

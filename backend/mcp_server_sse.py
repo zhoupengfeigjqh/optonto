@@ -270,10 +270,13 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         oid = arguments["ontology_id"]
         bname = arguments["behavior_name"]
         params = arguments.get("params", {})
+        body = {"params": params}
+        if arguments.get("op_key"):
+            body["op_key"] = arguments["op_key"]  # 幂等键，顶层字段不混入业务 params
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{API_BASE}/api/ontologies/{oid}/behaviors/{bname}/call",
-                json={"params": params},
+                json=body,
             )
             if resp.status_code >= 400:
                 try:

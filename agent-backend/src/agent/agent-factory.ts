@@ -126,16 +126,17 @@ export class AgentFactory {
    * 只注册 MCP 执行/时间工具（CHILD_MCP_TOOL_NAMES），不挂 load_skill。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
-  async createChildAgent(context: SkillContext): Promise<Agent> {
+  async createChildAgent(context: SkillContext, primaryBehavior?: string, opId?: string): Promise<Agent> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
     // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰。
+    // 主行为注入 op_key：写操作后端幂等去重，重试不重复执行。
     const mcpTools = allMcp
       .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
-      .map(({ tool }) => this.scopeToOntology(tool, ontologyId));
+      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, opId));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
@@ -147,9 +148,11 @@ export class AgentFactory {
    * 将执行类工具限定到指定本体：
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
+   * - 主行为（subTask.behavior）额外注入 op_key：写操作由后端幂等去重（重试不重复执行）；
+   *   规则查询行为不带 key（否则会被误判为同一写操作去重），读操作后端也忽略 op_key。
    * 无 ontology_id 的工具（如公共函数）原样返回。
    */
-  private scopeToOntology(tool: AgentTool, ontologyId: number): AgentTool {
+  private scopeToOntology(tool: AgentTool, ontologyId: number, primaryBehavior?: string, opId?: string): AgentTool {
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     if (!props || !('ontology_id' in props)) {
@@ -166,6 +169,9 @@ export class AgentFactory {
       parameters: { ...schema, properties: nextProps, ...(required ? { required } : {}) },
       execute: async (toolCallId, params) => {
         const p = { ...(params as any), ontology_id: ontologyId }; // 强制锁定
+        if (primaryBehavior && opId && p.behavior_name === primaryBehavior) {
+          p.op_key = opId; // 幂等键，跨重试稳定
+        }
         return originalExecute(toolCallId, p);
       },
     };
