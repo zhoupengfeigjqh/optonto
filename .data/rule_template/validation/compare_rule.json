@@ -1,0 +1,55 @@
+{
+  "ruleName": "验证规则",
+  "type": "object",
+  "properties": {
+    "if": {
+      "type": "object",
+      "properties": {
+        "logic": {
+          "type": "string",
+          "enum": ["and", "or"],
+          "description": "条件组合逻辑：and=且, or=或"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "enum": ["concept", "function"] },
+                  "concept": { "type": "string", "description": "概念名称" },
+                  "attribute": { "type": "string", "description": "属性名称" },
+                  "function": { "type": "string", "description": "函数名称" },
+                  "returnField": { "type": "string", "description": "函数返回字段" }
+                },
+                "required": ["type"]
+              },
+              "operator": {
+                "type": "string",
+                "enum": ["eq", "ne", "in", "not in", "like", "lt", "gt", "le", "ge"],
+                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如单位一致、名称匹配）应使用 eq，不要使用 ne"
+              },
+              "right": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "enum": ["value", "concept", "set", "function"] },
+                  "value": { "description": "字面值" },
+                  "concept": { "type": "string", "description": "概念名称" },
+                  "attribute": { "type": "string", "description": "属性名称" },
+                  "function": { "type": "string", "description": "函数名称" },
+                  "returnField": { "type": "string", "description": "函数返回字段" }
+                },
+                "required": ["type"]
+              }
+            },
+            "required": ["left", "operator", "right"]
+          }
+        }
+      },
+      "required": ["logic", "conditions"]
+    }
+  },
+  "required": ["if"]
+}
