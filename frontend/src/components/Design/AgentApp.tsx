@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { flushSync } from 'react-dom';
-import { Button, Input, Modal, message, Space, Spin, Select, Table, Tooltip, Drawer } from 'antd';
+import { Button, Input, Modal, message, Space, Spin, Select, Table, Tooltip, Drawer, Dropdown } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ArrowLeftOutlined,
   SendOutlined, RobotOutlined, UserOutlined,
@@ -48,6 +48,12 @@ function AgentConversation({
     params: Record<string, any>;
     editedParams: Record<string, any>;
   } | null>(null);
+  // 规划确认弹窗：倒计时 / 调整建议 / 结构校验错误
+  const [planCountdown, setPlanCountdown] = useState<number | null>(null);
+  const [planSuggestion, setPlanSuggestion] = useState('');
+  const [planError, setPlanError] = useState('');
+  // 安全管控确认弹窗：倒计时
+  const [confirmCountdown, setConfirmCountdown] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -79,6 +85,108 @@ function AgentConversation({
       return () => clearTimeout(timer);
     }
   }, [subtaskDoneTimer]);
+
+  // ─── 确认弹窗倒计时（60s，随 confirmId 重置；编辑参数不重置倒计时） ───
+  useEffect(() => {
+    if (!planConfirmModal) { setPlanCountdown(null); return; }
+    setPlanCountdown(60);
+    const timer = setInterval(() => {
+      setPlanCountdown(prev => (prev !== null && prev > 1) ? prev - 1 : 0);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [planConfirmModal?.confirmId]);
+  useEffect(() => {
+    // 倒计时归零 → 自动关闭；后端 60s 超时兜底拒绝
+    if (planCountdown === 0 && planConfirmModal) setPlanConfirmModal(null);
+  }, [planCountdown, planConfirmModal]);
+
+  useEffect(() => {
+    if (!confirmModal) { setConfirmCountdown(null); return; }
+    setConfirmCountdown(60);
+    const timer = setInterval(() => {
+      setConfirmCountdown(prev => (prev !== null && prev > 1) ? prev - 1 : 0);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [confirmModal?.confirmId]);
+  useEffect(() => {
+    if (confirmCountdown === 0 && confirmModal) setConfirmModal(null);
+  }, [confirmCountdown, confirmModal]);
+
+  // ─── 规划确认弹窗编辑助手 ─────────────────────────
+  const onUpdateSubtaskParam = (seq: number, key: string, value: string) => {
+    setPlanConfirmModal(prev => {
+      if (!prev) return prev;
+      const newPlan = JSON.parse(JSON.stringify(prev.editedPlan));
+      const target = newPlan.subtasks?.find((s: any) => s.seq === seq);
+      if (target?.params?.[key]) target.params[key].value = value;
+      return { ...prev, editedPlan: newPlan };
+    });
+  };
+
+  const onDeleteSubtask = (seq: number) => {
+    setPlanConfirmModal(prev => {
+      if (!prev) return prev;
+      const newPlan = JSON.parse(JSON.stringify(prev.editedPlan));
+      newPlan.subtasks = (newPlan.subtasks || []).filter((s: any) => s.seq !== seq);
+      // 级联清理：其他子任务对已删子任务的依赖一并移除
+      newPlan.subtasks.forEach((s: any) => {
+        if (s.depends_on) s.depends_on = s.depends_on.filter((d: number) => d !== seq);
+      });
+      return { ...prev, editedPlan: newPlan };
+    });
+  };
+
+  const onUpdateSubtaskDeps = (seq: number, deps: number[]) => {
+    setPlanConfirmModal(prev => {
+      if (!prev) return prev;
+      const newPlan = JSON.parse(JSON.stringify(prev.editedPlan));
+      const target = newPlan.subtasks?.find((s: any) => s.seq === seq);
+      if (target) target.depends_on = deps;
+      return { ...prev, editedPlan: newPlan };
+    });
+  };
+
+  /** 前端结构校验：依赖存在性 / 无自引用 / 无环。返回错误列表（空 = 通过）。 */
+  const validatePlan = (plan: any): string[] => {
+    const errors: string[] = [];
+    const subs: any[] = plan?.subtasks || [];
+    const seqs = new Set<number>(subs.map((s: any) => s.seq));
+    for (const st of subs) {
+      if (!st.depends_on || !st.depends_on.length) continue;
+      for (const d of st.depends_on) {
+        if (d === st.seq) errors.push(`子任务 ${st.seq} 不能依赖自身`);
+        else if (!seqs.has(d)) errors.push(`子任务 ${st.seq} 依赖的子任务 ${d} 已被删除`);
+      }
+    }
+    // 环检测（DFS 三色标记）
+    const color = new Map<number, number>();
+    const visit = (seq: number): boolean => {
+      const c = color.get(seq) ?? 0;
+      if (c === 1) return true;
+      if (c === 2) return false;
+      color.set(seq, 1);
+      const st = subs.find((s: any) => s.seq === seq);
+      if (st?.depends_on) for (const d of st.depends_on) if (visit(d)) return true;
+      color.set(seq, 2);
+      return false;
+    };
+    for (const st of subs) {
+      if (visit(st.seq)) { errors.push('子任务依赖关系存在循环'); break; }
+    }
+    return errors;
+  };
+
+  const onConfirmExecute = () => {
+    const m = planConfirmModal; if (!m) return;
+    const errs = validatePlan(m.editedPlan);
+    if (errs.length > 0) { setPlanError(errs.join('；')); return; } // 校验失败：留在弹窗内提示
+    setPlanError('');
+    fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: true, plan: m.editedPlan }),
+    }).catch(() => {});
+    setPlanConfirmModal(null);
+  };
 
   const handleSend = async () => {
     const text = input.trim();
@@ -123,7 +231,7 @@ function AgentConversation({
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'done') { setSubtaskDoneTimer(true); break; }
+            if (data.type === 'done') { setSubtaskDoneTimer(true); setPlanConfirmModal(null); setConfirmModal(null); break; }
             if (data.type === 'error') {
               setMessages(prev => {
                 const updated = [...prev];
@@ -150,6 +258,8 @@ function AgentConversation({
                 plan: data.plan,
                 editedPlan: JSON.parse(JSON.stringify(data.plan)),
               });
+              setPlanSuggestion('');
+              setPlanError('');
             }
             if (data.type === 'exec_entry') {
               const entry = data.entry;
@@ -392,46 +502,69 @@ function AgentConversation({
 
       {/* 规划确认弹窗 */}
       <Modal
-        title={<span style={{ color: '#fff' }}>📋 规划确认</span>}
+        title={
+          <span style={{ color: '#fff' }}>
+            📋 规划确认
+            {planCountdown !== null && planCountdown > 0 && (
+              <span className="text-text-muted text-xs ml-2">（{planCountdown} 秒后自动取消）</span>
+            )}
+          </span>
+        }
         open={!!planConfirmModal}
-        width={520}
+        width={560}
         onCancel={() => {
+            // 关闭（X/遮罩）= 拒绝并退出
             const m = planConfirmModal; if (!m) return;
             fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ approved: false }),
+              body: JSON.stringify({ approved: false, rejectAction: 'exit' }),
             }).catch(() => {});
             setPlanConfirmModal(null);
           }}
           footer={
-            <div className="flex justify-end gap-2">
-              <Button danger onClick={() => {
-                const m = planConfirmModal; if (!m) return;
-                fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: false }),
-                }).catch(() => {});
-                setPlanConfirmModal(null);
-              }}>拒绝执行</Button>
-              <Button type="primary" onClick={() => {
-                const m = planConfirmModal; if (!m) return;
-                fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: true, plan: m.editedPlan }),
-                }).catch(() => {});
-                setPlanConfirmModal(null);
-              }}>确认执行</Button>
+            <div className="flex items-center justify-between gap-2">
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'exit', label: '拒绝并退出' },
+                    { key: 'replan', label: '拒绝并重规划' },
+                  ],
+                  onClick: ({ key }) => {
+                    const m = planConfirmModal; if (!m) return;
+                    fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        approved: false,
+                        rejectAction: key === 'replan' ? 'replan' : 'exit',
+                        suggestion: planSuggestion.trim(),
+                      }),
+                    }).catch(() => {});
+                    setPlanConfirmModal(null);
+                  },
+                }}
+              >
+                <Button danger>拒绝</Button>
+              </Dropdown>
+              <Button type="primary" onClick={onConfirmExecute}>确认执行</Button>
             </div>
           }
         >
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            <div className="text-text-muted text-xs mb-2">若你清楚这些参数，可以补充或修改；若留空则 AI 会根据上下文自动补充。</div>
-            {planConfirmModal?.plan?.subtasks?.map((st: any, idx: number) => (
+            <div className="text-text-muted text-xs mb-2">可编辑参数、删除子任务或调整依赖；参数留空则由 AI 自动补充。拒绝后可选择「退出」或填写下方建议重新规划。</div>
+            {planError && (
+              <div className="text-red-400 text-xs border border-red-500/30 rounded px-3 py-2">{planError}</div>
+            )}
+            {planConfirmModal?.editedPlan?.subtasks?.map((st: any, idx: number) => (
               <div key={st.seq} className="border border-dark-border rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-accent-blue text-xs font-mono">{idx + 1}.</span>
                   <span className="text-text-primary text-sm font-medium">{st.behavior}</span>
                   <span className="text-text-muted text-xs">— {st.description}</span>
+                  <Button
+                    size="small" type="text" danger icon={<DeleteOutlined />}
+                    className="ml-auto shrink-0"
+                    onClick={() => onDeleteSubtask(st.seq)}
+                  />
                 </div>
                 {st.params && Object.keys(st.params).length > 0 && (
                   <div className="space-y-1.5 ml-4">
@@ -443,18 +576,8 @@ function AgentConversation({
                           <span className="text-text-muted text-xs w-24 shrink-0">{key}{pReq}</span>
                           <Input
                             size="small"
-                            value={planConfirmModal?.editedPlan?.subtasks?.find((s: any) => s.seq === st.seq)?.params?.[key]?.value ?? pVal}
-                            onChange={(e) => {
-                              setPlanConfirmModal(prev => {
-                                if (!prev) return prev;
-                                const newPlan = JSON.parse(JSON.stringify(prev.editedPlan));
-                                const target = newPlan.subtasks?.find((s: any) => s.seq === st.seq);
-                                if (target?.params?.[key]) {
-                                  target.params[key].value = e.target.value;
-                                }
-                                return { ...prev, editedPlan: newPlan };
-                              });
-                            }}
+                            value={pVal}
+                            onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
                             className="bg-dark-bg border-dark-border text-text-primary flex-1"
                           />
                         </div>
@@ -462,15 +585,47 @@ function AgentConversation({
                     })}
                   </div>
                 )}
+                <div className="flex items-center gap-2 ml-4 mt-2">
+                  <span className="text-text-muted text-xs w-24 shrink-0">依赖</span>
+                  <Select
+                    size="small"
+                    mode="multiple"
+                    allowClear
+                    placeholder="选择前置子任务"
+                    value={st.depends_on ?? []}
+                    options={planConfirmModal?.editedPlan?.subtasks
+                      ?.filter((o: any) => o.seq !== st.seq)
+                      ?.map((o: any) => ({ value: o.seq, label: `子任务 ${o.seq}` })) ?? []}
+                    onChange={(v) => onUpdateSubtaskDeps(st.seq, v)}
+                    className="flex-1"
+                  />
+                </div>
               </div>
             ))}
+            <div className="border border-dark-border rounded-lg p-3">
+              <div className="text-text-muted text-xs mb-1.5">调整建议（拒绝并重规划时填写）</div>
+              <Input.TextArea
+                value={planSuggestion}
+                onChange={e => setPlanSuggestion(e.target.value)}
+                placeholder="例如：去掉第 2 个操作、把参数 XXX 改为 YYY…"
+                rows={2}
+                className="bg-dark-bg border-dark-border text-text-primary"
+              />
+            </div>
           </div>
         </Modal>
 
       {/* 安全管控确认弹窗 */}
       {confirmModal && (
       <Modal
-        title={<span style={{ color: '#fff' }}>🔒 安全管控确认 — {confirmModal.behavior}</span>}
+        title={
+          <span style={{ color: '#fff' }}>
+            🔒 安全管控确认 — {confirmModal.behavior}
+            {confirmCountdown !== null && confirmCountdown > 0 && (
+              <span className="text-text-muted text-xs ml-2">（{confirmCountdown} 秒后自动取消）</span>
+            )}
+          </span>
+        }
         open={true}
         destroyOnClose
         onCancel={() => {

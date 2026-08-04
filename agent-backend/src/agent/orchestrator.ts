@@ -22,6 +22,7 @@ import type {
 const MAX_RETRIES = 3;
 const MAX_ROUNDS = 20;
 const CONFIRM_TIMEOUT = 60000;
+const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，防止无限循环
 
 // ─── ConfirmManager ──────────────────────────
 
@@ -35,6 +36,10 @@ export interface ConfirmResult {
 export interface PlanConfirmResult {
   approved: boolean;
   plan?: SubTaskPlan;
+  /** 拒绝时的动作：退出 or 让父Agent重规划 */
+  rejectAction?: 'exit' | 'replan';
+  /** 拒绝并重规划时用户附带的具体建议 */
+  suggestion?: string;
   reason?: 'user' | 'timeout';
 }
 
@@ -74,12 +79,12 @@ export class ConfirmManager {
     });
   }
 
-  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan): void {
+  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): void {
     const entry = this.planPending.get(confirmId);
     if (!entry) return;
     clearTimeout(entry.timer);
     this.planPending.delete(confirmId);
-    entry.resolve({ approved, plan, reason: 'user' });
+    entry.resolve({ approved, plan, ...opts, reason: 'user' });
   }
 }
 
@@ -181,70 +186,93 @@ export class Orchestrator {
       return '无法生成执行计划，请重新描述需求或重试。';
     }
 
-    // 校验 behavior 名称合法性（最多修正 1 次）
-    const invalid: { sub: SubTask; valid: string[] }[] = [];
-    for (const st of plan.subtasks) {
-      const names = this.ontologyGateway.getBehaviorNames(st.scenario_name, st.ontology_name);
-      if (!names.includes(st.behavior)) invalid.push({ sub: st, valid: names });
-    }
-    if (invalid.length > 0) {
-      const invalidNames = invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、');
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名校验', status: 'failed', detail: `不存在的 behavior: ${invalidNames}`, source: 'parent' });
-      const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
-      submittedPlan.value = null; // 只认本次修正后的新提交
-      await parentAgent.prompt(`以下子任务的 behavior 名称不在其所属场景/本体的行为集合中：${invalidNames}。\n合法行为有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`);
-      // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
-      const corrected = submittedPlan.value as SubTaskPlan | null;
-      if (corrected && corrected.subtasks && corrected.subtasks.length > 0) {
-        const stillInvalid: { sub: SubTask; valid: string[] }[] = [];
-        for (const st of corrected.subtasks) {
-          const names = this.ontologyGateway.getBehaviorNames(st.scenario_name, st.ontology_name);
-          if (!names.includes(st.behavior)) stillInvalid.push({ sub: st, valid: names });
-        }
-        if (stillInvalid.length === 0) {
-          plan = corrected;
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名已修正', status: 'done', source: 'parent' });
-        } else {
-          const stillNames = stillInvalid.map(iv => `${iv.sub.behavior}(${iv.sub.scenario_name}/${iv.sub.ontology_name})`).join('、');
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名修正失败', status: 'failed', detail: `仍有非法行为: ${stillNames}`, source: 'parent' });
-          sendEvent({ type: 'error', message: '无法生成有效的执行计划' });
-          return '无法生成有效的执行计划，请重新描述需求。';
-        }
-      } else if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) {
-        sendEvent({ type: 'error', message: '行为名修正失败，无法继续执行' });
-        return '行为名修正失败，无法继续执行';
+    // ── 规划确认循环（支持"拒绝并重规划"） ──
+    // 每轮：行为名校验（静默修正一次）→ 弹窗确认；用户可确认 / 拒绝并重规划 / 拒绝并退出。
+    // 重规划产生的新规划同样要过行为名校验与用户确认，避免"二次规划绕过确认"。
+    let confirmedPlan: SubTaskPlan | null = null;
+    let planModified = false;
+    let exitReason = '用户拒绝执行规划';
+
+    for (let round = 0; round < MAX_PLAN_ROUNDS; round++) {
+      // 校验 behavior 名称合法性（每轮都做；非法时提示父Agent 自动修正，最多修正 1 次）
+      const validated = await this.validateBehaviors(plan, parentAgent, submittedPlan, pushEntry);
+      if (!validated) {
+        sendEvent({ type: 'error', message: '无法生成有效的执行计划' });
+        return '无法生成有效的执行计划，请重新描述需求。';
       }
+      plan = validated;
+
+      if (round === 0) {
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+      } else {
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: `已按建议重新规划（第 ${round + 1} 轮）`, status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+      }
+      sendEvent({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
+
+      const planConfirm = await this.confirmManager.requestPlanConfirm(plan, sendEvent);
+
+      if (planConfirm.approved) {
+        if (planConfirm.plan) { plan = planConfirm.plan; planModified = true; }
+        confirmedPlan = plan;
+        break;
+      }
+
+      // 拒绝并重规划：把用户建议带给父Agent，重新生成规划后回到下一轮确认
+      if (planConfirm.rejectAction === 'replan') {
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划审核', status: 'failed', detail: '用户拒绝并要求重新规划', source: 'parent' });
+        if (round >= MAX_PLAN_ROUNDS - 1) {
+          exitReason = '重规划次数已达上限';
+          break;
+        }
+        submittedPlan.value = null; // 只认本次重规划的新提交
+        await parentAgent.prompt(`用户拒绝了本次执行计划，并给出调整建议：\n${planConfirm.suggestion || '（用户未提供具体建议，请结合用户意图自行判断需要调整的地方）'}\n请重新调用 submit_plan 工具提交调整后的规划。`);
+        const replanned = submittedPlan.value as SubTaskPlan | null;
+        if (replanned && replanned.subtasks && replanned.subtasks.length > 0) {
+          plan = replanned;
+          continue;
+        }
+        exitReason = '重规划未生成有效规划';
+        break;
+      }
+
+      // 拒绝并退出 / 超时
+      exitReason = planConfirm.reason === 'timeout' ? '规划确认超时' : '用户拒绝执行规划';
+      break;
     }
 
-    sendEvent({ type: 'plan_received', plan } as any);
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
-    sendEvent({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
+    if (!confirmedPlan) {
+      // 用户拒绝/超时/重规划失败 → 父Agent 一两句极简收尾（emitTokens 仍为 true，回复会流式显示）
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划审核', status: 'failed', detail: exitReason, source: 'parent' });
+      await parentAgent.prompt(`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
+      const reply = this.getLastAssistantMessage(parentAgent.state.messages)
+        || (exitReason === '规划确认超时' ? '规划确认超时，已取消执行' : '用户已拒绝执行规划');
+      sendEvent({ type: 'done' });
+      return reply;
+    }
 
-    // 聊天区显示简洁规划摘要
+    plan = confirmedPlan;
+
+    // 确认通过后，用【最终规划】输出执行记录与聊天区摘要（用户编辑过则展示编辑后的版本）
+    if (planModified) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+    }
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
+    sendEvent({ type: 'plan_received', plan } as any);
     const planSummary = plan.subtasks
       .sort((a, b) => a.seq - b.seq)
       .map(st => `${st.seq}. ${st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
       .join('\n');
     sendEvent({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
 
-    // ── 规划确认（弹窗让用户审核规划） ──
-    const planConfirm = await this.confirmManager.requestPlanConfirm(plan, sendEvent);
-    if (!planConfirm.approved) {
-      const reasonText = planConfirm.reason === 'timeout' ? '规划确认超时' : '用户拒绝执行规划';
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划审核', status: 'failed', detail: reasonText, source: 'parent' });
-      // 用户拒绝/超时 → 父Agent 给一两句极简收尾说明（emitTokens 仍为 true，回复会流式显示）
-      await parentAgent.prompt(`用户拒绝了本次执行计划（${reasonText}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
-      const reply = this.getLastAssistantMessage(parentAgent.state.messages)
-        || (planConfirm.reason === 'timeout' ? '规划确认超时，已取消执行' : '用户已拒绝执行规划');
+    // 结构校验：依赖存在性 / 无自引用 / 无环（纯代码，不弹窗，兜底前端已做的校验）
+    const structureErrors = this.validatePlanStructure(plan);
+    if (structureErrors.length > 0) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划结构校验', status: 'failed', detail: structureErrors.join('；'), source: 'parent' });
+      sendEvent({ type: 'error', message: `规划结构不合法：${structureErrors.join('；')}` });
       sendEvent({ type: 'done' });
-      return reply;
+      return '规划结构不合法，请重新发起。';
     }
-    if (planConfirm.plan) {
-      plan = planConfirm.plan;
-      sendEvent({ type: 'plan_received', plan } as any);
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
-    }
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划结构校验', status: 'done', detail: '依赖关系合法', source: 'parent' });
 
     // ── 阶段2：按依赖顺序执行子任务，每完成一个反馈父Agent ──
     emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
@@ -369,6 +397,83 @@ ${result.summary}
     return sorted;
   }
 
+  /** 校验子任务行为名合法性；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validateBehaviors(
+    plan: SubTaskPlan,
+    parentAgent: any,
+    submittedPlan: { value: SubTaskPlan | null },
+    pushEntry: (e: ExecutionEntry) => void,
+  ): Promise<SubTaskPlan | null> {
+    const invalid: { sub: SubTask; valid: string[] }[] = [];
+    for (const st of plan.subtasks) {
+      const names = this.ontologyGateway.getBehaviorNames(st.scenario_name, st.ontology_name);
+      if (!names.includes(st.behavior)) invalid.push({ sub: st, valid: names });
+    }
+    if (invalid.length === 0) return plan;
+
+    const invalidNames = invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、');
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名校验', status: 'failed', detail: `不存在的 behavior: ${invalidNames}`, source: 'parent' });
+    const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
+    submittedPlan.value = null; // 只认本次修正后的新提交
+    await parentAgent.prompt(`以下子任务的 behavior 名称不在其所属场景/本体的行为集合中：${invalidNames}。\n合法行为有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`);
+    // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
+    const corrected = submittedPlan.value as SubTaskPlan | null;
+    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;
+
+    const stillInvalid: { sub: SubTask; valid: string[] }[] = [];
+    for (const st of corrected.subtasks) {
+      const names = this.ontologyGateway.getBehaviorNames(st.scenario_name, st.ontology_name);
+      if (!names.includes(st.behavior)) stillInvalid.push({ sub: st, valid: names });
+    }
+    if (stillInvalid.length > 0) return null;
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名已修正', status: 'done', source: 'parent' });
+    return corrected;
+  }
+
+  /** 校验规划结构：依赖存在性 / 无自引用 / 无环。返回错误列表（空数组 = 通过）。 */
+  private validatePlanStructure(plan: SubTaskPlan): string[] {
+    const errors: string[] = [];
+    const seqs = new Set(plan.subtasks.map(st => st.seq));
+    for (const st of plan.subtasks) {
+      if (!st.depends_on || st.depends_on.length === 0) continue;
+      for (const dep of st.depends_on) {
+        if (dep === st.seq) errors.push(`子任务 ${st.seq} 不能依赖自身`);
+        else if (!seqs.has(dep)) errors.push(`子任务 ${st.seq} 依赖的子任务 ${dep} 不存在（可能已被删除）`);
+      }
+    }
+    // 环检测（DFS 三色标记：0 未访问 / 1 访问中 / 2 已访问）
+    const color = new Map<number, 0 | 1 | 2>();
+    const visit = (seq: number): boolean => {
+      const c = color.get(seq) ?? 0;
+      if (c === 1) return true;
+      if (c === 2) return false;
+      color.set(seq, 1);
+      const st = plan.subtasks.find(s => s.seq === seq);
+      if (st?.depends_on) {
+        for (const d of st.depends_on) if (visit(d)) return true;
+      }
+      color.set(seq, 2);
+      return false;
+    };
+    for (const st of plan.subtasks) {
+      if (visit(st.seq)) { errors.push('子任务依赖关系存在循环，请调整依赖设置'); break; }
+    }
+    return errors;
+  }
+
+  /**
+   * 检测子 Agent 是否被用户中断。
+   * pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve：
+   * 最后一条 assistant 消息 stopReason='aborted'，且 state.errorMessage 含 'abort'。
+   */
+  private isChildAborted(agent: any): boolean {
+    const err = agent.state?.errorMessage;
+    if (err && /abort/i.test(err)) return true;
+    const msgs: any[] = agent.state?.messages ?? [];
+    const last = msgs[msgs.length - 1];
+    return !!(last && last.role === 'assistant' && last.stopReason === 'aborted');
+  }
+
   private getLastAssistantMessage(messages: any[]): string {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
@@ -415,7 +520,11 @@ ${result.summary}
     const opId = randomUUID();
     const childAgent = await this.agentFactory.createChildAgent(context, subTask.behavior, opId);
     this.currentChildAgent = childAgent;
-    childAgent.subscribe((event: any) => {
+    // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
+    // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
+    let userAborted = false;
+    childAgent.subscribe((event: any, signal: AbortSignal) => {
+      if (signal?.aborted) userAborted = true;
       if (event.type === 'tool_execution_start') {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child' });
       } else if (event.type === 'tool_execution_end') {
@@ -432,8 +541,23 @@ ${result.summary}
         await childAgent.prompt(attempt === 0
           ? instruction
           : `你上一次执行失败了（${lastError}）。\n请参考上一次的执行过程和工具结果，分析失败原因，修正参数或执行方式后重新执行，并输出最终结果。`);
+        // pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve（最后一条消息 stopReason='aborted'）。
+        // 必须显式检测，否则中断会被 extractResult 误判为成功、或走重试逻辑重新执行。
+        if (userAborted || this.isChildAborted(childAgent)) {
+          this.currentChildAgent = null;
+          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '' };
+        }
         const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, anyToolError);
         if (result.success) return result;
+        // 仅工具调用真实失败才重试（瞬态错误，配合 op_key 幂等安全）；
+        // LLM 自报失败（如查询结果为空、结果不符合预期）不重试，直接按失败返回，避免"换着法子空转"。
+        if (!anyToolError) {
+          this.currentChildAgent = null;
+          return {
+            seq: subTask.seq, behavior: subTask.behavior, success: false,
+            error: (result.summary || '执行未成功').slice(0, 200), summary: result.summary,
+          };
+        }
         lastError = result.error || (result.summary ? result.summary.slice(0, 200) : '') || '执行失败';
       } catch (e: any) {
         if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {

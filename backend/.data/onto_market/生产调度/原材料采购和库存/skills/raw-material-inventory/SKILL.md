@@ -99,8 +99,8 @@ ontology_id: 1
 ### QueryInventory（查询原材料库存信息）
 - **描述**: 根据原材料ID或名称查询其最新的库存快照。
 - **输入参数**:
-  - `rawMaterialId` (string, 必填): 原材料编号，例如 "RM-001"
-  - `rawMaterialName` (string, 必填): 原材料名称，例如 "高强度钢板"
+  - `rawMaterialId` (string, 选填): 原材料编号，例如 "RM-001"
+  - `rawMaterialName` (string, 选填): 原材料名称，例如 "高强度钢板"
 - **输出结构**: 返回库存信息列表，每个元素包含 `inventoryId`, `rawMaterialId`, `rawMaterialName`, `materialType`, `pendingReceiptQuantity`, `cumulativeStockQuantity`, `availableStock`, `unit`。
 - **相关概念**: 原材料库存 (RawMaterialInventory)
 - **调用接口**: 使用 `executeOntoBehavior` 工具，行为名为 `QueryInventory`，参数为上述输入参数。
