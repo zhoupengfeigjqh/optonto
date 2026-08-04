@@ -77,21 +77,25 @@ export class SubtaskRunner {
     // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
     // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
     let userAborted = false;
-    // toolCallId → 显示名（如 executeOntoBehavior(CreatePurchaseRecord)）。
-    // start 事件带 args 可推导行为名，end 事件不带 args，靠 toolCallId 桥接，
-    // 保证 start/end 同名，前端 running→done 去重匹配不破。
-    const toolDisplayNames = new Map<string, string>();
+    // toolCallId → { 显示名, 展示参数 }。
+    // start 事件带 args 可推导行为名/参数，end 事件不带 args，靠 toolCallId 桥接，
+    // 保证 start/end 同名、同参数，前端 running→done 去重匹配不破、参数不被覆盖成空。
+    const toolDisplayNames = new Map<string, { name: string; params: any }>();
     childAgent.subscribe((event: any, signal: AbortSignal) => {
       if (signal?.aborted) userAborted = true;
       if (event.type === 'tool_execution_start') {
         const displayName = this.describeToolCall(event.toolName, event.args);
-        toolDisplayNames.set(event.toolCallId, displayName);
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: event.args, source: 'child' });
+        // 行为/函数调用只展示传入的 params（去掉 behavior_name/function_name 包装层）
+        const displayParams = (event.toolName === 'executeOntoBehavior' || event.toolName === 'executeOntoFunction')
+          ? (event.args?.params ?? event.args)
+          : event.args;
+        toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child' });
       } else if (event.type === 'tool_execution_end') {
         const text = toolResultToText(event.result?.content);
         if (event.isError) anyToolError = true;
-        const displayName = toolDisplayNames.get(event.toolCallId) || event.toolName;
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'done', result: text, source: 'child' });
+        const display = toolDisplayNames.get(event.toolCallId);
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child' });
       }
     });
 
@@ -137,10 +141,10 @@ export class SubtaskRunner {
     return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: `重试 ${MAX_RETRIES} 次后失败: ${lastError}`, summary: '' };
   }
 
-  /** 工具调用的可读显示名：executeOntoBehavior 附上实际行为名、executeOntoFunction 附上函数名。 */
+  /** 工具调用的显示名：行为/函数调用直接显示其名称（如 QueryInventory），其余工具显示工具名。 */
   private describeToolCall(toolName: string, args: any): string {
-    if (toolName === 'executeOntoBehavior' && args?.behavior_name) return `executeOntoBehavior(${args.behavior_name})`;
-    if (toolName === 'executeOntoFunction' && args?.function_name) return `executeOntoFunction(${args.function_name})`;
+    if (toolName === 'executeOntoBehavior' && args?.behavior_name) return args.behavior_name;
+    if (toolName === 'executeOntoFunction' && args?.function_name) return args.function_name;
     return toolName;
   }
 

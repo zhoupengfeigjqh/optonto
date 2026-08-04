@@ -251,6 +251,16 @@ export class Orchestrator {
     // 确认通过且结构合法后，用【最终规划】输出执行记录与聊天区摘要（用户编辑过则展示编辑后的版本）
     if (planModified) {
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+      // 用户编辑只同步给前端，父Agent 不知道。把最终规划注入其上下文，
+      // 否则父Agent 会基于过期规划生成总结/分析，脑补被删除的子任务。
+      const finalPlanText = plan.subtasks
+        .map(st => `${st.seq}. ${st.behavior}（${st.scenario_name}/${st.ontology_name}）`)
+        .join('\n');
+      parentAgent.state.messages.push({
+        role: 'user',
+        content: `用户在确认时修改了执行计划，以下为最终规划，请以此为准（被删除的子任务不再执行、总结中不要提及）：\n${finalPlanText}`,
+        timestamp: Date.now(),
+      });
     }
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
     sendEvent({ type: 'plan_received', plan });
