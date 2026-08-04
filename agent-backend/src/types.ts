@@ -120,6 +120,8 @@ export interface SubTaskResult {
   behavior: string;
   success: boolean;
   error?: string;
+  /** 是否因用户中断/拒绝而终止（区别于常规失败） */
+  aborted?: boolean;
   summary: string;
 }
 

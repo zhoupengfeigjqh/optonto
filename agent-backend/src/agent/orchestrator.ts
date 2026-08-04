@@ -26,11 +26,11 @@ const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，
 
 // ─── ConfirmManager ──────────────────────────
 
-/** 确认结果来源：用户主动操作 or 超时 */
+/** 确认结果来源：用户主动操作 / 超时 / 中断 */
 export interface ConfirmResult {
   approved: boolean;
   params?: Record<string, any>;
-  reason?: 'user' | 'timeout';
+  reason?: 'user' | 'timeout' | 'abort';
 }
 
 export interface PlanConfirmResult {
@@ -40,7 +40,7 @@ export interface PlanConfirmResult {
   rejectAction?: 'exit' | 'replan';
   /** 拒绝并重规划时用户附带的具体建议 */
   suggestion?: string;
-  reason?: 'user' | 'timeout';
+  reason?: 'user' | 'timeout' | 'abort';
 }
 
 export class ConfirmManager {
@@ -86,6 +86,23 @@ export class ConfirmManager {
     this.planPending.delete(confirmId);
     entry.resolve({ approved, plan, ...opts, reason: 'user' });
   }
+
+  /**
+   * 中断：立即拒绝所有待确认的规划/安全管控弹窗（reason='abort'）。
+   * 注：ConfirmManager 与 Orchestrator 同属单例，假定同一时刻只有一个活动对话。
+   */
+  abortAll(): void {
+    for (const [id, entry] of this.pending) {
+      clearTimeout(entry.timer);
+      this.pending.delete(id);
+      entry.resolve({ approved: false, reason: 'abort' });
+    }
+    for (const [id, entry] of this.planPending) {
+      clearTimeout(entry.timer);
+      this.planPending.delete(id);
+      entry.resolve({ approved: false, reason: 'abort' });
+    }
+  }
 }
 
 // ─── Orchestrator ────────────────────────────
@@ -93,6 +110,9 @@ export class ConfirmManager {
 export class Orchestrator {
   private confirmManager = new ConfirmManager();
   private currentChildAgent: any = null;
+  private currentParentAgent: any = null;
+  /** 当前 run 的中断标记（单例假定时序，同 execute 的生命周期内有效） */
+  private activeAbortHolder: { aborted: boolean } | null = null;
 
   constructor(
     private agentFactory: AgentFactory,
@@ -101,12 +121,21 @@ export class Orchestrator {
 
   getConfirmManager(): ConfirmManager { return this.confirmManager; }
 
-  /** 中断当前子 Agent 执行 */
+  /**
+   * 中断当前执行：置位 run 级 abort 标记 + 中断在途的子/父 Agent + 拒绝所有待确认弹窗。
+   * 覆盖：子任务执行、安全管控弹窗、规划确认弹窗、父Agent 规划/反馈阶段。
+   */
   abort(): void {
+    if (this.activeAbortHolder) this.activeAbortHolder.aborted = true;
     if (this.currentChildAgent) {
       try { this.currentChildAgent.abort(); } catch {}
       this.currentChildAgent = null;
     }
+    if (this.currentParentAgent) {
+      try { this.currentParentAgent.abort(); } catch {}
+      this.currentParentAgent = null;
+    }
+    this.confirmManager.abortAll();
   }
 
   async execute(
@@ -115,10 +144,14 @@ export class Orchestrator {
     history: ThreadMessage[],
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
+    const abortHolder = { aborted: false };
+    this.activeAbortHolder = abortHolder;
     try {
       return await this.runExecute(message, skills, history, sendEvent);
     } finally {
       // 编排结束（无论成功/失败/中断）释放 MCP 连接，避免跨子任务累积泄漏
+      if (this.activeAbortHolder === abortHolder) this.activeAbortHolder = null;
+      this.currentParentAgent = null;
       await this.agentFactory.closeAll();
     }
   }
@@ -145,6 +178,7 @@ export class Orchestrator {
       },
       (plan) => { submittedPlan.value = plan; },
     );
+    this.currentParentAgent = parentAgent;
     parentAgent.subscribe((event: any) => {
       if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && emitTokens) {
         sendEvent({ type: 'token', token: event.assistantMessageEvent.delta });
@@ -155,12 +189,12 @@ export class Orchestrator {
 
     // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
     await parentAgent.prompt(`${message}`);
-
-//     await parentAgent.prompt(`用户: ${message}
-// 先判断需求类型：
-// - 问候/寒暄 → 直接文字回复；
-// - 本体/场景结构查询 → 直接调用相关 MCP 工具回答，不要提交规划；
-// - 业务数据查询或执行操作 → 先调用 load_skill加载好需要的技能（可能是多个），再调用 submit_plan 提交子任务规划。`);
+    // 规划阶段被中断 → 干净退出（父Agent 已中断，无规划可言）
+    if (this.activeAbortHolder?.aborted || this.isChildAborted(parentAgent)) {
+      sendEvent({ type: 'token', token: '\n⏹ 已中断\n' });
+      sendEvent({ type: 'done' });
+      return '已中断';
+    }
     // 规划只来自 submit_plan 工具（schema 校验），不再用正则从文本抓取，避免误判
     plan = submittedPlan.value;
     if (plan && (!plan.subtasks || plan.subtasks.length === 0)) {
@@ -204,10 +238,10 @@ export class Orchestrator {
 
       if (round === 0) {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+        sendEvent({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
       } else {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: `已按建议重新规划（第 ${round + 1} 轮）`, status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
       }
-      sendEvent({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
 
       const planConfirm = await this.confirmManager.requestPlanConfirm(plan, sendEvent);
 
@@ -235,34 +269,39 @@ export class Orchestrator {
         break;
       }
 
-      // 拒绝并退出 / 超时
-      exitReason = planConfirm.reason === 'timeout' ? '规划确认超时' : '用户拒绝执行规划';
+      // 拒绝并退出 / 超时 / 中断
+      exitReason = planConfirm.reason === 'timeout' ? '规划确认超时'
+        : planConfirm.reason === 'abort' ? '用户中断'
+        : '用户拒绝执行规划';
       break;
     }
 
     if (!confirmedPlan) {
       // 用户拒绝/超时/重规划失败 → 父Agent 一两句极简收尾（emitTokens 仍为 true，回复会流式显示）
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划审核', status: 'failed', detail: exitReason, source: 'parent' });
-      await parentAgent.prompt(`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
+      const parentAborted = this.isChildAborted(parentAgent);
+      if (!parentAborted) {
+        await parentAgent.prompt(`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
+      }
       const reply = this.getLastAssistantMessage(parentAgent.state.messages)
-        || (exitReason === '规划确认超时' ? '规划确认超时，已取消执行' : '用户已拒绝执行规划');
+        || (exitReason === '规划确认超时' ? '规划确认超时，已取消执行'
+          : exitReason === '用户中断' ? '已中断'
+          : '用户已拒绝执行规划');
       sendEvent({ type: 'done' });
       return reply;
     }
 
     plan = confirmedPlan;
-
-    // 确认通过后，用【最终规划】输出执行记录与聊天区摘要（用户编辑过则展示编辑后的版本）
-    if (planModified) {
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+    // L1: 用户把规划删空后确认 → 视同取消，避免"执行完成"但零执行
+    if (!plan.subtasks || plan.subtasks.length === 0) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划为空', status: 'failed', detail: '用户确认的规划中没有任何子任务，已取消执行', source: 'parent' });
+      if (!this.isChildAborted(parentAgent)) {
+        await parentAgent.prompt(`用户确认的规划中没有任何子任务（可能已在确认时全部删除），尚未执行任何子任务。请用一两句话简短确认已取消。`);
+      }
+      const reply = this.getLastAssistantMessage(parentAgent.state.messages) || '规划为空，已取消执行';
+      sendEvent({ type: 'done' });
+      return reply;
     }
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
-    sendEvent({ type: 'plan_received', plan } as any);
-    const planSummary = plan.subtasks
-      .sort((a, b) => a.seq - b.seq)
-      .map(st => `${st.seq}. ${st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
-      .join('\n');
-    sendEvent({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
 
     // 结构校验：依赖存在性 / 无自引用 / 无环（纯代码，不弹窗，兜底前端已做的校验）
     const structureErrors = this.validatePlanStructure(plan);
@@ -274,6 +313,18 @@ export class Orchestrator {
     }
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划结构校验', status: 'done', detail: '依赖关系合法', source: 'parent' });
 
+    // 确认通过且结构合法后，用【最终规划】输出执行记录与聊天区摘要（用户编辑过则展示编辑后的版本）
+    if (planModified) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
+    }
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
+    sendEvent({ type: 'plan_received', plan } as any);
+    const planSummary = plan.subtasks
+      .sort((a, b) => a.seq - b.seq)
+      .map(st => `${st.seq}. ${st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
+      .join('\n');
+    sendEvent({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
+
     // ── 阶段2：按依赖顺序执行子任务，每完成一个反馈父Agent ──
     emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
     let pending = this.topologicalSort(plan.subtasks);
@@ -282,6 +333,7 @@ export class Orchestrator {
     let blocked = false; // 依赖未满足导致执行终止
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (this.activeAbortHolder?.aborted) { aborted = true; break; }
       if (pending.length === 0) break;
       const subTask = pending[0];
 
@@ -309,7 +361,7 @@ export class Orchestrator {
         ontology_id: subTask.ontology_id,
       };
 
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: subTask.description, params: subTask.params, source: 'child' });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child' });
       // 聊天区域显示"正在执行"
       sendEvent({ type: 'token', token: `\n**子任务 ${subTask.seq}：${subTask.behavior} 正在执行...**\n` });
 
@@ -318,16 +370,17 @@ export class Orchestrator {
       // 已执行的子任务从待执行列表移除，下一轮直接消费 pending[0]
       pending = pending.filter(st => st.seq !== subTask.seq);
 
-      const shortStatus = result.success ? '✅ 执行完成' : '❌ 执行失败';
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${shortStatus} — ${result.summary.slice(0, 80)}`, result: result.summary, source: 'child' });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child' });
 
       if (result.success) {
         sendEvent({ type: 'token', token: `\n${result.summary}\n` });
         sendEvent({ type: 'token', token: `✅ **子任务 ${subTask.seq} ${subTask.behavior}**\n` });
 
-        // 反馈父Agent 深入分析结果并决定后续计划
-        submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
-        await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。
+        const isLast = pending.length === 0; // 本子任务是最后一个（无后续子任务可调整，跳过中间分析）
+        if (!isLast) {
+          // 反馈父Agent 深入分析结果并决定后续计划
+          submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
+          await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。
 
 【执行结果】
 ${result.summary}
@@ -338,22 +391,32 @@ ${result.summary}
 
 若结果正常、无需调整，直接简要说明"继续执行原计划"即可，不要调用 submit_plan。
 仅当结果出现异常、需要修改后续子任务时，才调用 submit_plan 提交调整后的规划。`);
-        // 提取父Agent的分析结果推送到前端执行记录
-        const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
-        // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
-        // TS 闭包窄化无法感知，需还原为可空类型
-        const adjusted = submittedPlan.value as SubTaskPlan | null;
-        let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
-        if (adjusted && adjusted.subtasks && adjusted.subtasks.length > 0) {
-          analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
-          // 调整后的规划是权威全集：剔除已执行，重新拓扑排序。
-          // 被丢弃的子任务从待执行列表消失（B2 不再执行）；新依赖关系重新生效（B1 不再误阻断）。
-          const executedSeqs = new Set(results.map(r => r.seq));
-          pending = this.topologicalSort(adjusted.subtasks.filter(st => !executedSeqs.has(st.seq)));
+          if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
+          // 提取父Agent的分析结果推送到前端执行记录
+          const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
+          // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
+          // TS 闭包窄化无法感知，需还原为可空类型
+          const adjusted = submittedPlan.value as SubTaskPlan | null;
+          let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
+          if (adjusted && adjusted.subtasks && adjusted.subtasks.length > 0) {
+            // L3: 执行中调整规划 → 行为名校验（静默修正一次，不再弹窗用户确认）
+            const validated = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
+            if (validated) {
+              analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
+              // 调整后的规划是权威全集：剔除已执行，重新拓扑排序。
+              // 被丢弃的子任务从待执行列表消失；新依赖关系重新生效。
+              const executedSeqs = new Set(results.map(r => r.seq));
+              pending = this.topologicalSort(validated.subtasks.filter(st => !executedSeqs.has(st.seq)));
+            } else {
+              analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划无效，沿用原计划`;
+            }
+          }
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
+        } else {
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: '最后一个子任务，直接进入最终总结', source: 'parent' });
         }
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
       } else {
-        aborted = !!(result.error?.includes('中断') || result.error?.includes('拒绝'));
+        aborted = result.aborted === true; // L5: 结构化标志替代字符串匹配
         sendEvent({ type: 'token', token: `\r📋 **子任务 ${subTask.seq} ${subTask.behavior}** ❌ ${result.error}\n` });
         break;
       }
@@ -363,8 +426,14 @@ ${result.summary}
     let finalSummary = '执行完成';
     if (results.length > 0 || aborted || blocked) {
       const allSuccess = results.length > 0 && results.every(r => r.success);
-      if (allSuccess && !aborted && !blocked) {
-        await parentAgent.prompt(`所有子任务已执行完毕。请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
+      if (this.isChildAborted(parentAgent)) {
+        // 父Agent 在反馈/调整阶段被打断，不能再复用其生成总结
+        finalSummary = '任务已被用户中断。';
+      } else if (allSuccess && !aborted && !blocked) {
+        // 带上全量结果：末子任务跳过了中间分析，总结必须自包含
+        const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
+        await parentAgent.prompt(`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
+        finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
       } else {
         const outcomeSummary = results.length > 0
           ? results.map(r =>
@@ -373,8 +442,8 @@ ${result.summary}
           : '（无子任务成功执行）';
         const reason = aborted ? '任务被用户中断或拒绝' : (blocked ? '存在前置依赖未完成' : '存在子任务执行失败');
         await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明：总结已完成的操作与结果、说明终止/失败的原因，并给出后续建议。`);
+        finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
       }
-      finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || (allSuccess ? '执行完成' : '执行未完成');
     }
     sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
     sendEvent({ type: 'done' });
@@ -495,10 +564,14 @@ ${result.summary}
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: meta.security.audit_content, params: subTask.params });
       const confirmResult = await this.confirmManager.requestConfirm(subTask.behavior, meta.security.audit_content, subTask.params, sendEvent);
       if (!confirmResult.approved) {
+        const aborted = confirmResult.reason !== 'timeout'; // 用户拒绝/中断 → aborted；超时 → 常规失败
         return {
           seq: subTask.seq, behavior: subTask.behavior, success: false,
-          error: confirmResult.reason === 'timeout' ? '安全管控确认超时' : '用户拒绝安全管控',
+          error: confirmResult.reason === 'timeout' ? '安全管控确认超时'
+            : confirmResult.reason === 'abort' ? '用户中断'
+            : '用户拒绝安全管控',
           summary: '',
+          aborted,
         };
       }
       if (confirmResult.params) {
@@ -545,24 +618,24 @@ ${result.summary}
         // 必须显式检测，否则中断会被 extractResult 误判为成功、或走重试逻辑重新执行。
         if (userAborted || this.isChildAborted(childAgent)) {
           this.currentChildAgent = null;
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '' };
+          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '', aborted: true };
         }
         const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, anyToolError);
-        if (result.success) return result;
+        if (result.success) { this.currentChildAgent = null; return result; }
         // 仅工具调用真实失败才重试（瞬态错误，配合 op_key 幂等安全）；
         // LLM 自报失败（如查询结果为空、结果不符合预期）不重试，直接按失败返回，避免"换着法子空转"。
         if (!anyToolError) {
           this.currentChildAgent = null;
           return {
             seq: subTask.seq, behavior: subTask.behavior, success: false,
-            error: (result.summary || '执行未成功').slice(0, 200), summary: result.summary,
+            error: result.summary || '执行未成功', summary: result.summary,
           };
         }
-        lastError = result.error || (result.summary ? result.summary.slice(0, 200) : '') || '执行失败';
+        lastError = result.error || result.summary || '执行失败';
       } catch (e: any) {
         if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
           this.currentChildAgent = null;
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '' };
+          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '', aborted: true };
         }
         lastError = e.message;
       }
@@ -649,7 +722,7 @@ ${result.summary}
     return {
       seq, behavior,
       success,
-      summary: content.replace(/【状态】(成功|失败)/g, '').trim().slice(0, 2000),
+      summary: content.replace(/【状态】(成功|失败)/g, '').trim(),
     };
   }
 

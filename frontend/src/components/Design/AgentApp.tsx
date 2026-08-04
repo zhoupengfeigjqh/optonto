@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom';
 import { Button, Input, Modal, message, Space, Spin, Select, Table, Tooltip, Drawer, Dropdown } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ArrowLeftOutlined,
-  SendOutlined, RobotOutlined, UserOutlined,
+  SendOutlined, StopOutlined, RobotOutlined, UserOutlined,
   MessageOutlined, CopyOutlined, CodeOutlined,
 } from '@ant-design/icons';
 import {
@@ -181,11 +181,20 @@ function AgentConversation({
     const errs = validatePlan(m.editedPlan);
     if (errs.length > 0) { setPlanError(errs.join('；')); return; } // 校验失败：留在弹窗内提示
     setPlanError('');
+    // 仅当用户确实改过（参数/删子任务/依赖有变化）才回传 editedPlan，否则后端会误判"规划已修改"
+    const unchanged = JSON.stringify(m.editedPlan) === JSON.stringify(m.plan);
     fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved: true, plan: m.editedPlan }),
+      body: JSON.stringify(unchanged ? { approved: true } : { approved: true, plan: m.editedPlan }),
     }).catch(() => {});
     setPlanConfirmModal(null);
+  };
+
+  const handleAbort = async () => {
+    // 中断执行：立即关掉弹窗（后端 abortAll 会解锁待确认弹窗），并请求中断在途 Agent
+    setPlanConfirmModal(null);
+    setConfirmModal(null);
+    try { await fetch('/agent-api/abort', { method: 'POST' }); } catch {}
   };
 
   const handleSend = async () => {
@@ -456,25 +465,8 @@ function AgentConversation({
               <div className={`${l.failed ? 'text-red-400' : l.done ? 'text-green-400' : 'text-yellow-400'} ${l.done && !l.failed ? 'opacity-70' : ''}`}>
                 {l.failed ? '✗' : l.done ? '✓' : '⟳'} {l.text}
               </div>
-              {l.params && !l.done && Object.keys(l.params).length > 0 && (
-                <div className="mt-0.5 ml-3 text-text-muted text-xxs">
-                  {Object.entries(l.params).slice(0, 4).map(([k, v]: any) => {
-                    const val = typeof v === 'object' ? (v.value !== undefined && v.value !== '' ? v.value : '?') : v;
-                    return <span key={k} className="mr-2">{k}={val}</span>;
-                  })}
-                  {Object.keys(l.params).length > 4 && <span>...</span>}
-                </div>
-              )}
             </div>
           ))}
-          {subtaskBox.childRunning && (
-            <button
-              className="mt-1 text-xs text-red-400 hover:text-red-300 border border-red-500/30 rounded px-2 py-0.5"
-              onClick={async () => { await fetch('/agent-api/abort', { method: 'POST' }); }}
-            >
-              中断执行
-            </button>
-          )}
         </div>
       )}
 
@@ -489,15 +481,15 @@ function AgentConversation({
           className="bg-dark-bg border-dark-border text-text-primary"
           disabled={sending}
         />
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={handleSend}
-          loading={sending}
-          disabled={!input.trim()}
-        >
-          发送
-        </Button>
+        {sending ? (
+          <Button danger icon={<StopOutlined />} onClick={handleAbort}>
+            中断
+          </Button>
+        ) : (
+          <Button type="primary" icon={<SendOutlined />} onClick={handleSend} disabled={!input.trim()}>
+            发送
+          </Button>
+        )}
       </div>
 
       {/* 规划确认弹窗 */}
