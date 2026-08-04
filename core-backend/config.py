@@ -4,8 +4,8 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# 统一数据目录
-DATA_DIR = BASE_DIR / "backend" / ".data"
+# 统一数据目录（项目根目录 .data，与 backend 同级）
+DATA_DIR = BASE_DIR / ".data"
 ONTO_MARKET_DIR = DATA_DIR / "onto_market"
 CONFIG_DIR = BASE_DIR / "config"
 

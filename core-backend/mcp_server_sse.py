@@ -21,8 +21,8 @@ from starlette.routing import Route
 # FastAPI backend URL (configurable via env)
 API_BASE = os.getenv("API_BASE_URL", "http://optonto_backend:8001")
 
-# Common functions directory (inside container)
-COMMON_DIR = Path("/app/backend/.data/common_functions")
+# Common functions directory (inside container, mounted from project .data)
+COMMON_DIR = Path("/app/.data/common_functions")
 MANIFEST_PATH = COMMON_DIR / "functions.json"
 
 

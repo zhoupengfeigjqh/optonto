@@ -52,7 +52,7 @@ function loadConfig() {
     deepseekApiKey: process.env['DEEPSEEK_API_KEY'] || '',
     deepseekBaseUrl: process.env['DEEPSEEK_BASE_URL'] || 'https://api.deepseek.com',
     modelName,
-    dataDir: process.env['DATA_DIR'] || resolve(__dirname, '../../backend/.data'),
+    dataDir: process.env['DATA_DIR'] || resolve(__dirname, '../../.data'),
     port: parseInt(process.env['PORT'] || '8003', 10),
     // 全局 MCP 配置路径（./config/mcp-config.json，src/ 与 dist/ 均向上两级到项目根；Docker 为 /app/config）
     mcpConfigPath: process.env['MCP_CONFIG_PATH'] || resolve(__dirname, '../../config/mcp-config.json'),

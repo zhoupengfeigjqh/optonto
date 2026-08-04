@@ -51,7 +51,7 @@ export class OntologyGateway {
   getBehaviorMeta(scenario: string, ontology: string, behaviorName: string): BehaviorMeta {
     const data = this.loadOntologyData(scenario, ontology);
     if (!data) {
-      return { params: {}, preRules: [], postRules: [], concepts: [] };
+      return { params: {}, preRules: [], postRules: [], concepts: [], isWrite: false };
     }
 
 
@@ -101,6 +101,12 @@ export class OntologyGateway {
       (rule.data_supplements || []).forEach((api: string) => neededApis.add(api));
     }
 
+    // 写操作判定：API 引擎且 method 为 POST/PATCH/DELETE（SQL 引擎只读，SELECT only）
+    const writeMethods = new Set(['POST', 'PATCH', 'DELETE']);
+    const dataEngine = (data?.data_engines || []).find((d: any) => d.behavior_name === behaviorName);
+    const isWrite = !!dataEngine && dataEngine.engine_type !== 'SQL'
+      && writeMethods.has((dataEngine.target?.method || '').toUpperCase());
+
     return {
       params: behavior?.params || {},
       preRules: preRules.map(r => ({ ...r, data_supplements: [...neededApis].filter(a => !a.startsWith('_')) })),
@@ -109,6 +115,7 @@ export class OntologyGateway {
         ? { audit_node: security.audit_node || '前置', audit_content: security.audit_content || '' }
         : undefined,
       concepts,
+      isWrite,
     };
   }
 

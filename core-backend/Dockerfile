@@ -8,11 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies (use Tsinghua mirror for China)
-COPY backend/requirements.txt .
+COPY core-backend/requirements.txt .
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
-# Copy backend source (maintains backend/ structure so config.py paths work)
-COPY backend/ ./backend/
+# Copy backend source (container 内仍保持 /app/backend 结构，PYTHONPATH/config.py 路径不变)
+COPY core-backend/ ./backend/
 
 # Create data directories
 RUN mkdir -p onto_market config

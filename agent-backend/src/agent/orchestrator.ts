@@ -236,6 +236,15 @@ export class Orchestrator {
       }
       plan = validated;
 
+      // 参数结构校验（必填字段齐全 + 类型匹配）：拦在规划阶段，避免子Agent 撞墙重试
+      const paramErrors = this.validateParamsStructure(plan);
+      if (paramErrors.length > 0) {
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构校验', status: 'failed', detail: paramErrors.join('；'), source: 'parent' });
+        sendEvent({ type: 'error', message: `规划参数结构不合法：${paramErrors.join('；')}` });
+        sendEvent({ type: 'done' });
+        return `参数结构不合法，无法生成有效规划，请重试。${paramErrors.join('；')}`;
+      }
+
       if (round === 0) {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
         sendEvent({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
@@ -380,6 +389,7 @@ export class Orchestrator {
         if (!isLast) {
           // 反馈父Agent 深入分析结果并决定后续计划
           submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
+          const feedbackStart = parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
           await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。
 
 【执行结果】
@@ -410,6 +420,11 @@ ${result.summary}
             } else {
               analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划无效，沿用原计划`;
             }
+          }
+          // 方案B：本轮反馈未产生调整 → prompt + 回复 是上下文垃圾，整体剔除，
+          // 避免父Agent 上下文被 N 个"继续执行原计划"撑爆。有调整则保留（分析有价值）。
+          if (!adjusted || !adjusted.subtasks || adjusted.subtasks.length === 0) {
+            parentAgent.state.messages = parentAgent.state.messages.slice(0, feedbackStart);
           }
           pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
         } else {
@@ -531,6 +546,42 @@ ${result.summary}
   }
 
   /**
+   * 工具调用的可读显示名：executeOntoBehavior 附上实际行为名、executeOntoFunction 附上函数名，
+   * 让执行记录能看到"调用了什么行为"，而不只是工具名。
+   */
+  private describeToolCall(toolName: string, args: any): string {
+    if (toolName === 'executeOntoBehavior' && args?.behavior_name) return `executeOntoBehavior(${args.behavior_name})`;
+    if (toolName === 'executeOntoFunction' && args?.function_name) return `executeOntoFunction(${args.function_name})`;
+    return toolName;
+  }
+
+  /**
+   * 参数结构校验：用行为在 ontology.yaml 声明的 params 结构，检查子任务 params 的
+   * 必填字段是否齐全、类型是否匹配。纯代码比对，拦在规划阶段，避免子Agent 撞墙重试。
+   * 只查"结构"（key 存在、类型对），不查 value 是否填了——缺失值由子Agent 按 SKILL.md 补。
+   */
+  private validateParamsStructure(plan: SubTaskPlan): string[] {
+    const errors: string[] = [];
+    for (const st of plan.subtasks) {
+      const meta = this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
+      const declared = meta.params || {};
+      const provided = st.params || {};
+      for (const [key, spec] of Object.entries(declared)) {
+        const s = spec as any;
+        const p = provided[key];
+        if (!p || typeof p !== 'object') {
+          if (s.required) errors.push(`子任务${st.seq}(${st.behavior}) 缺少必填参数 ${key}`);
+          continue;
+        }
+        if (s.required && s.type && p.type && p.type !== s.type) {
+          errors.push(`子任务${st.seq}(${st.behavior}) 参数 ${key} 类型应为 ${s.type}，实际 ${p.type}`);
+        }
+      }
+    }
+    return errors;
+  }
+
+  /**
    * 检测子 Agent 是否被用户中断。
    * pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve：
    * 最后一条 assistant 消息 stopReason='aborted'，且 state.errorMessage 含 'abort'。
@@ -559,10 +610,11 @@ ${result.summary}
     context: SkillContext,
     sendEvent: (e: SSEEvent) => void, pushEntry: (e: ExecutionEntry) => void,
   ): Promise<SubTaskResult> {
-    // 安全管控（含参数审核）
-    if (meta.security) {
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: meta.security.audit_content, params: subTask.params });
-      const confirmResult = await this.confirmManager.requestConfirm(subTask.behavior, meta.security.audit_content, subTask.params, sendEvent);
+    // 安全管控（含参数审核）。写操作一律强制确认：有 securities 登记用登记内容，未登记用通用提示。
+    const auditContent = meta.security?.audit_content || '此行为是写操作，请确认执行';
+    if (meta.security || meta.isWrite) {
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: auditContent, params: subTask.params });
+      const confirmResult = await this.confirmManager.requestConfirm(subTask.behavior, auditContent, subTask.params, sendEvent);
       if (!confirmResult.approved) {
         const aborted = confirmResult.reason !== 'timeout'; // 用户拒绝/中断 → aborted；超时 → 常规失败
         return {
@@ -596,14 +648,21 @@ ${result.summary}
     // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
     // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
     let userAborted = false;
+    // toolCallId → 显示名（如 executeOntoBehavior(CreatePurchaseRecord)）。
+    // start 事件带 args 可推导行为名，end 事件不带 args，靠 toolCallId 桥接，
+    // 保证 start/end 同名，前端 running→done 去重匹配不破。
+    const toolDisplayNames = new Map<string, string>();
     childAgent.subscribe((event: any, signal: AbortSignal) => {
       if (signal?.aborted) userAborted = true;
       if (event.type === 'tool_execution_start') {
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child' });
+        const displayName = this.describeToolCall(event.toolName, event.args);
+        toolDisplayNames.set(event.toolCallId, displayName);
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: event.args, source: 'child' });
       } else if (event.type === 'tool_execution_end') {
         const text = toolResultToText(event.result?.content);
         if (event.isError) anyToolError = true;
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: event.toolName, status: 'done', result: text, source: 'child' });
+        const displayName = toolDisplayNames.get(event.toolCallId) || event.toolName;
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'done', result: text, source: 'child' });
       }
     });
 
@@ -686,8 +745,8 @@ ${result.summary}
       });
     }
 
-    if (meta.security) {
-      text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n审核内容: ${meta.security.audit_content}\n`;
+    if (meta.security || meta.isWrite) {
+      text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n审核内容: ${meta.security?.audit_content || '写操作确认'}\n`;
     }
 
     if (meta.postRules.length > 0) {

@@ -112,6 +112,8 @@ export interface BehaviorMeta {
   postRules: RuleDetail[];
   security?: { audit_node: string; audit_content: string };
   concepts: ConceptInfo[];
+  /** 是否写操作（API + POST/PATCH/DELETE）。写操作无论有无 security 登记都强制人工确认。 */
+  isWrite: boolean;
 }
 
 /** 子任务执行结果 */

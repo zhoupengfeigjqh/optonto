@@ -74,7 +74,7 @@
 
 2.1 技术栈：Python3.12，FastAPI，SQLITE，大语言模型Agent采用langchain==1.2.10和langgraph==1.0.8开发，其余用最新版本库开发，注意版本适配问题。
 
-2.2 代码保存在./backend/ 
+2.2 代码保存在./core-backend/ 
 
 2.3 大语言模型相关：
 
@@ -96,15 +96,15 @@
 
 2.4 数据保存：
 
-1）本体设计的数据存储在yaml文件中，保存的文件夹为./onto_market/场景名/本体名/xxx.yaml
+1）本体设计的数据存储在yaml文件中，保存的文件夹为./.data/onto_market/场景名/本体名/xxx.yaml
 
-2）通过行为接口的读写数据存入到SQLITE数据库中，保存的文件夹为./onto_market/场景名/本体名/xxx.db
+2）通过行为接口的读写数据存入到数据库中（行为为 SQL 类型时查 MySQL）
 
 3）大语言模型等相关配置文件保存在 ./config/xxx.yaml
 
 4）.env保存环境变量，数据放在./config/.env文件中
 
-5）大语言模型的对话数据保存在./backend/threads/xxx.json，按thread_id区分，每个thread_id为一个{thread_id}.json文件
+5）大语言模型的对话数据保存在./.data/onto_market/场景名/本体名/threads/xxx.json，按thread_id区分，每个thread_id为一个{thread_id}.json文件
 
 3 项目目录结构
 
@@ -113,13 +113,15 @@ optonoto/
 ├── frontend/                  # 前端（React/Next.js/TypeScript）
 │   ├── nginx/                 # Nginx 路由配置
 │   └── ...                    # 页面组件、路由、状态管理
-├── backend/                   # 后端（FastAPI/Python）
-│   └── threads/               # LLM 对话历史 JSON 文件
-├── onto_market/               # 本体数据存储
-│   └── {场景名}/
-│       └── {本体名}/
-│           ├── xxx.yaml       # 本体设计定义（概念/关系/行为/规则/事件）
-│           └── xxx.db         # 行为接口读写数据（SQLite）
+├── core-backend/              # 本体核心 API（FastAPI/Python + MCP Server）
+├── business-backend/          # 业务数据源 API（Java/Spring Boot）
+├── agent-backend/             # 多 Agent 编排服务（Node/pi-agent-core）
+├── .data/                     # 运行时数据（挂载进容器）
+│   └── onto_market/           # 本体数据存储
+│       └── {场景名}/
+│           └── {本体名}/
+│               ├── xxx.yaml   # 本体设计定义（概念/关系/行为/规则/事件）
+│               └── threads/   # 对话历史 JSON 文件
 ├── config/                    # 配置文件
 │   ├── xxx.yaml               # 大语言模型等配置
 │   └── .env                   # 环境变量
