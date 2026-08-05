@@ -137,6 +137,8 @@ export interface ExecutionEntry {
   params?: any;
   result?: string;
   source?: 'parent' | 'child';
+  /** 所属子任务编号（仅子任务相关条目），前端据此分组展示 */
+  seq?: number;
 }
 
 // ─── SSE 事件类型 ──────────────────────────────

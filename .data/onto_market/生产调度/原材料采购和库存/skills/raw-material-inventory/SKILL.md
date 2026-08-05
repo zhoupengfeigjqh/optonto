@@ -375,7 +375,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 ## 4函数
 【重点：函数的计算为实例化对象或对象集合，用于属性的计算和处理】
 
-### 4.1 sumRawNotArrivalQty（原材料未到位数）
+### 4.1 sumRawNotArrivalQty
 - **计算逻辑**: 根据传入的数据包指定的原材料，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和。
 - **关联概念属性**: 原材料采购记录（PurchaseRecord）的 rawMaterialName/原材料名称、arrivalTime/到位时间、arrivalQuantity/到位数量
 - **输入参数**:
@@ -415,7 +415,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 ## 5规则
 【重点：规则主要用于对执行行为的前置和后置进行把控，每次智能体执行行为的时候，若有规则则必须判断，以确保整个行为的执行是合法可控的。例如：在行为执行前对输入参数进行校验，或者在行为执行后对输出结果进行校验以及推理等】
 
-### 5.1 V01_UnitConsistency_Purchase（采购-原料存在且单位一致）
+### 5.1 V01_UnitConsistency_Purchase
 - **规则类型**: 验证规则
 - **规则描述**: 创建采购单时，提供的 rawMaterialId 必须与RawMaterial 概念中的rawMaterialId一致，并且unit也必须一致。
 - **规则介入位置**: 前置
@@ -426,7 +426,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 {"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "rawMaterialId"}, "operator": "in", "right": {"type": "set", "concept": "RawMaterial", "attribute": "rawMaterialId"}}, {"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "unit"}, "operator": "eq", "right": {"type": "concept", "concept": "RawMaterial", "attribute": "unit"}}]}}
 ```
 
-### 5.2 V03_ArrivalTimeValidity（采购-到位时间合理性）
+### 5.2 V03_ArrivalTimeValidity
 - **规则类型**: 验证规则
 - **规则描述**: 创建采购单时，输入的 arrivalTime 必须晚于 purchaseTime。
 - **规则介入位置**: 前置
@@ -437,7 +437,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 {"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "arrivalTime"}, "operator": "gt", "right": {"type": "concept", "concept": "PurchaseRecord", "attribute": "purchaseTime"}}]}}
 ```
 
-### 5.3 V05_SupplierExistence（采购-供应商名称一致）
+### 5.3 V05_SupplierExistence
 - **规则类型**: 验证规则
 - **规则描述**: 创建采购单时，提供的 supplierName 必须与 Supplier 概念中supplierName的一致。
 - **规则介入位置**: 前置
@@ -448,7 +448,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 {"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "supplierName"}, "operator": "in", "right": {"type": "set", "concept": "Supplier", "attribute": "supplierName"}}]}}
 ```
 
-### 5.4 I01_SafetyStockAlert（安全库存预警）
+### 5.4 I01_SafetyStockAlert
 - **规则类型**: 推理规则
 - **规则描述**: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
 - **规则介入位置**: 后置
@@ -459,7 +459,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 {"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "RawMaterialInventory", "attribute": "availableStock"}, "operator": "lt", "right": {"type": "concept", "concept": "RawMaterial", "attribute": "safetyStock"}}]}, "then": "可用库存低于安全库存，建议创建采购单或关注库存", "else": "库存正常，无需操作"}
 ```
 
-### 5.5 I02_ArrivalOverdueAlert（采购到位超期预警）
+### 5.5 I02_ArrivalOverdueAlert
 - **规则类型**: 推理规则
 - **规则描述**: IF 当前日期 >= 采购单arrivalTime THEN 提示用户是否启动入库操作。
 - **规则介入位置**: 后置
@@ -470,7 +470,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 {"if": {"logic": "and", "conditions": [{"left": {"type": "function", "function": "getCurrentDate", "returnField": "date"}, "operator": "ge", "right": {"type": "concept", "concept": "PurchaseRecord", "attribute": "arrivalTime"}}]}, "then": "采购单已到位，建议启动入库操作", "else": "采购单尚未到位，无需操作"}
 ```
 
-### 5.6 I03_PurchasePurposeInference（采购目的推理）
+### 5.6 I03_PurchasePurposeInference
 - **规则类型**: 推理规则
 - **规则描述**: IF 采购单relatedOrderId 为空 THEN 该采购目的可视为"补充库存"。
 - **规则介入位置**: 后置
@@ -481,7 +481,7 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 {"if": {"logic": "and", "conditions": [{"left": {"type": "concept", "concept": "PurchaseRecord", "attribute": "relatedOrderId"}, "operator": "eq", "right": {"type": "value", "value": "\"\""}}]}, "then": "该采购单的采购目的可视为“补充库存”", "else": "该采购单有关联订单，采购目的可能为生产订单备料"}
 ```
 
-### 5.7 I04_RelatedOrderValidation（采购-关联订单存在性）
+### 5.7 I04_RelatedOrderValidation
 - **规则类型**: 推理规则
 - **规则描述**: 创建采购单时，如果客户订单relatedOrderId不为空，则必须存在于客户订单中。
 - **规则介入位置**: 前置
@@ -495,14 +495,14 @@ description: 原材料库存和采购本体技能，用于生产调度场景下�
 ## 6安全管控
 【重点：安全管控的目的是对危险行为引入人工确认，介入位置可以在行为的执行前或执行后。介入时，智能体应该临时暂停后续操作，让用户对当前任务内容进行审核（具体内容请参考审核内容）】
 
-### 6.1 CreatePurchaseRecord（创建原材料采购单）
+### 6.1 CreatePurchaseRecord
 - **介入位置**: 前置
 - **审核内容**: 审核采购的必要性：检查库存是否确实需要补货，关联的客户订单是否真实有效，采购数量和到位时间是否合理。
 
-### 6.2 CancelPurchaseRecord（取消原材料采购单）
+### 6.2 CancelPurchaseRecord
 - **介入位置**: 前置
 - **审核内容**: 审核取消的原因：确认取消采购单是否合理，是否已与供应商沟通，是否存在违约风险。
 
-### 6.3 ReceiveRawMaterial（入库原材料）
+### 6.3 ReceiveRawMaterial
 - **介入位置**: 前置
 - **审核内容**: 审核入库的准确性：确认到货的原材料、数量、供应商是否与采购单一致，质检是否已通过（如适用）。

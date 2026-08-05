@@ -41,16 +41,18 @@ export class SubtaskRunner {
   ): Promise<SubTaskResult> {
     // 安全管控（含参数审核）。写操作一律强制确认：有 securities 登记用登记内容，未登记用通用提示。
     const auditContent = meta.security?.audit_content || '此行为是写操作，请确认执行';
+    // 中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值），避免只给 id 等无语义内容
+    const confirmContent = this.buildSecurityContent(subTask, auditContent);
     if (meta.security || meta.isWrite) {
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: auditContent, params: subTask.params });
-      const confirmResult = await this.deps.confirmManager.requestConfirm(subTask.behavior, auditContent, subTask.params, sendEvent);
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: confirmContent, params: subTask.params, source: 'child', seq: subTask.seq });
+      const confirmResult = await this.deps.confirmManager.requestConfirm(subTask.behavior, confirmContent, subTask.params, sendEvent);
       if (!confirmResult.approved) {
         const aborted = confirmResult.reason !== 'timeout'; // 用户拒绝/中断 → aborted；超时 → 常规失败
         return {
           seq: subTask.seq, behavior: subTask.behavior, success: false,
-          error: confirmResult.reason === 'timeout' ? '安全管控确认超时'
-            : confirmResult.reason === 'abort' ? '用户中断'
-            : '用户拒绝安全管控',
+          error: confirmResult.reason === 'timeout' ? '⏱ 安全确认超时'
+            : confirmResult.reason === 'abort' ? '⏹ 用户中断'
+            : '🔒 安全确认被拒绝',
           summary: '',
           aborted,
         };
@@ -58,12 +60,12 @@ export class SubtaskRunner {
       if (confirmResult.params) {
         subTask.params = confirmResult.params;
       }
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params, source: 'child', seq: subTask.seq });
     }
 
     // 组装指令（subTask.params 可能已被用户确认时修改）
     const instruction = this.buildInstruction(subTask, meta);
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child' });
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq });
     let lastError = '';
     // 记录本次子任务期间【任意一次】工具执行是否报错（isError）。
     // 用累积而非"最近一次"：子任务可能多次调工具，中间失败后最后成功也会被判失败。
@@ -94,12 +96,12 @@ export class SubtaskRunner {
           ? (event.args?.params ?? event.args)
           : event.args;
         toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child' });
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq });
       } else if (event.type === 'tool_execution_end') {
         const text = toolResultToText(event.result?.content);
         if (event.isError) anyToolError = true;
         const display = toolDisplayNames.get(event.toolCallId);
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child' });
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq });
       }
     });
 
@@ -114,7 +116,7 @@ export class SubtaskRunner {
         // 必须显式检测，否则中断会被 extractResult 误判为成功、或走重试逻辑重新执行。
         if (userAborted || isChildAborted(childAgent)) {
           this.deps.childAgentRef.current = null;
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '', aborted: true };
+          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
         }
         const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, anyToolError);
         if (result.success) { this.deps.childAgentRef.current = null; return result; }
@@ -124,25 +126,46 @@ export class SubtaskRunner {
           this.deps.childAgentRef.current = null;
           return {
             seq: subTask.seq, behavior: subTask.behavior, success: false,
-            error: result.summary || '执行未成功', summary: result.summary,
+            error: result.summary || '❌ 执行未成功', summary: result.summary,
           };
         }
         lastError = result.error || result.summary || '执行失败';
       } catch (e: any) {
         if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
           this.deps.childAgentRef.current = null;
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '用户中断执行', summary: '', aborted: true };
+          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
         }
         lastError = e.message;
       }
 
       if (attempt < MAX_RETRIES - 1) {
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `重试 ${attempt + 1}/${MAX_RETRIES}`, status: 'running', detail: lastError });
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `重试 ${attempt + 1}/${MAX_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq });
       }
     }
 
     this.deps.childAgentRef.current = null;
-    return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: `重试 ${MAX_RETRIES} 次后失败: ${lastError}`, summary: '' };
+    return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: `❌ 执行失败（重试${MAX_RETRIES}次后）: ${lastError}`, summary: '' };
+  }
+
+  /** 组装安全确认弹窗的中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值）。 */
+  private buildSecurityContent(subTask: SubTask, auditContent: string): string {
+    const lines: string[] = [];
+    lines.push(`【行为】${subTask.behavior}`);
+    if (subTask.description) lines.push(`【说明】${subTask.description}`);
+    if (auditContent && auditContent !== '此行为是写操作，请确认执行') lines.push(`【审核要求】${auditContent}`);
+    const rawParams = subTask.params || {};
+    const keys = Object.keys(rawParams);
+    if (keys.length > 0) {
+      lines.push(`【本次将写入/修改/删除的数据】`);
+      keys.forEach(k => {
+        const p = rawParams[k];
+        const spec = p !== null && typeof p === 'object' ? p : null;
+        const name = spec?.description || k;
+        const val = spec ? (spec.value ?? '') : String(p ?? '');
+        lines.push(`  - ${name}（${k}）: ${val === '' ? '（待补充）' : val}`);
+      });
+    }
+    return lines.join('\n');
   }
 
   /** 工具调用的显示名：行为/函数调用直接显示其名称（如 QueryInventory），其余工具显示工具名。 */

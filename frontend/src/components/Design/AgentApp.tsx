@@ -18,6 +18,59 @@ import { renderMarkdown } from '@/lib/markdown';
 
 // ─── Agent Conversation 子组件（聊天界面） ─────────────────
 
+/** 执行记录单条条目卡片 */
+function EntryCard({ entry }: { entry: any }) {
+  return (
+    <div className="bg-dark-card border border-dark-border rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-1">
+        {entry.status === 'running' ? (
+          <Spin size="small" />
+        ) : (
+          <span className="text-green-500 text-xs">✓</span>
+        )}
+        {entry.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
+        {entry.source === 'parent' && <span className="text-yellow-500 text-xs mr-1">父</span>}
+        {entry.source === 'child' && <span className="text-blue-400 text-xs mr-1">子</span>}
+        <span className="text-accent-blue text-xs font-mono">{entry.name}</span>
+        <span className="text-text-muted text-xs ml-auto">{entry.time}</span>
+      </div>
+      {entry.detail && <div className="text-text-muted text-xs mt-1">{entry.detail}</div>}
+      {(entry.params && Object.keys(entry.params).length > 0) || entry.result ? (
+        entry.name === 'load_skill' ? (
+          <div className="mt-1 text-xs">
+            <div className="text-text-muted">技能名称: <span className="text-text-secondary">{entry.params?.skill_name || '-'}</span></div>
+            <div className="text-text-muted">描述: <span className="text-text-secondary">{(entry.result || '').match(/^---[\s\S]*?description:\s*(.+?)[\s\S]*?^---/m)?.[1]?.trim() || '已加载'}</span></div>
+          </div>
+        ) : (
+          <div className="mt-1">
+            <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
+              onClick={(e) => {
+                const panel = e.currentTarget.nextElementSibling as HTMLElement;
+                if (panel) panel.classList.toggle('hidden');
+              }}>
+              <span className="text-accent-blue text-xs">▼ 查看详情</span>
+            </div>
+            <div className="hidden mt-1 space-y-1">
+              {entry.params && Object.keys(entry.params).length > 0 && (
+                <div>
+                  <span className="text-text-muted text-xs">输入参数</span>
+                  <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
+                </div>
+              )}
+              {entry.result && (
+                <div>
+                  <span className="text-text-muted text-xs">返回数据</span>
+                  <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 function AgentConversation({
   threadId, scenarioName, ontologyName, onBack,
 }: {
@@ -32,7 +85,7 @@ function AgentConversation({
   const [sending, setSending] = useState(false);
   const [executionLog, setExecutionLog] = useState<{
     time: string; type: string;
-    name: string; description?: string; params?: any; result?: string; status: string; detail?: string; source?: string;
+    name: string; description?: string; params?: any; result?: string; status: string; detail?: string; source?: string; seq?: number;
   }[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [subtaskBox, setSubtaskBox] = useState<{lines: {text: string; done: boolean; failed?: boolean; params?: any}[]; childRunning?: boolean} | null>(null);
@@ -273,12 +326,12 @@ function AgentConversation({
             if (data.type === 'exec_entry') {
               const entry = data.entry;
               setExecutionLog(prev => {
-                const exists = prev.findIndex(e => e.name === entry.name && e.status === 'running');
+                const exists = prev.findIndex(e => e.name === entry.name && e.status === 'running' && e.seq === entry.seq);
                 if (exists >= 0 && entry.status !== 'running') {
-                  const n = [...prev]; n[exists] = { ...n[exists], status: entry.status, detail: entry.detail, params: entry.params, result: entry.result }; return n;
+                  const n = [...prev]; n[exists] = { ...n[exists], status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, seq: entry.seq }; return n;
                 }
                 if (exists >= 0) return prev;
-                return [...prev, { time: entry.time, type: entry.type, name: entry.name, status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, source: entry.source }];
+                return [...prev, { time: entry.time, type: entry.type, name: entry.name, status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, source: entry.source, seq: entry.seq }];
               });
               // 子任务框实时更新
               if (entry.source === 'child' || entry.source === 'parent') {
@@ -325,6 +378,33 @@ function AgentConversation({
       setSending(false);
       abortRef.current = null;
     }
+  };
+
+  // 执行记录按子任务分组 + 折叠状态
+  const [collapsedSubtasks, setCollapsedSubtasks] = useState<Set<number>>(new Set());
+  const groupedLog = useMemo(() => {
+    // 按原始事件顺序生成渲染节点：顶层条目（父/全局）在时间位置出现，子任务条目归入其组。
+    const nodes: any[] = [];
+    for (const e of executionLog) {
+      if (e.source === 'child' && e.seq != null) {
+        const last = nodes[nodes.length - 1];
+        if (last && last.kind === 'subtask' && last.seq === e.seq) {
+          last.entries.push(e);
+        } else {
+          nodes.push({ kind: 'subtask', seq: e.seq, entries: [e] });
+        }
+      } else {
+        nodes.push({ kind: 'top', entry: e });
+      }
+    }
+    return nodes;
+  }, [executionLog]);
+  const toggleSubtask = (seq: number) => {
+    setCollapsedSubtasks(prev => {
+      const n = new Set(prev);
+      if (n.has(seq)) n.delete(seq); else n.add(seq);
+      return n;
+    });
   };
 
   // 消息列表用 useMemo 缓存，仅 messages/sending/toolCalls 变化时重新渲染
@@ -637,9 +717,10 @@ function AgentConversation({
                 setConfirmModal(null);
               }}>拒绝</Button>
               <Button type="primary" onClick={() => {
+                // 安全弹窗只做批准/拒绝，不改参数（参数已在规划确认/数据传播时定好）
                 fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: true, params: confirmModal.editedParams }),
+                  body: JSON.stringify({ approved: true }),
                 }).catch(() => {});
                 setConfirmModal(null);
               }}>批准执行</Button>
@@ -648,37 +729,6 @@ function AgentConversation({
         >
           <div className="space-y-3">
             <div className="text-text-secondary text-sm whitespace-pre-wrap">{confirmModal.content}</div>
-            {Object.keys(confirmModal.params).length > 0 && (
-              <div>
-                <div className="text-text-secondary text-xs font-semibold mb-2">参数（可修改）</div>
-                {Object.entries(confirmModal.params).map(([key, val]: [string, any]) => {
-                  const displayVal = typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
-                  return (
-                    <div key={key} className="flex items-center gap-2 mb-1.5">
-                      <span className="text-text-muted text-xs w-28 shrink-0">{key}</span>
-                      <Input
-                        size="small"
-                        value={confirmModal.editedParams[key]?.value ?? confirmModal.editedParams[key] ?? displayVal}
-                        onChange={(e) => {
-                          const newVal = e.target.value;
-                          setConfirmModal(prev => {
-                            if (!prev) return prev;
-                            const newEdited = { ...prev.editedParams };
-                            if (typeof prev.params[key] === 'object' && prev.params[key] !== null) {
-                              newEdited[key] = { ...prev.params[key], value: newVal };
-                            } else {
-                              newEdited[key] = newVal;
-                            }
-                            return { ...prev, editedParams: newEdited };
-                          });
-                        }}
-                        className="bg-dark-bg border-dark-border text-text-primary flex-1"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </Modal>
       )}
@@ -695,54 +745,41 @@ function AgentConversation({
           <p className="text-text-muted text-sm">暂无执行记录</p>
         ) : (
           <div className="space-y-2">
-            {executionLog.map((entry, idx) => (
-              <div key={idx} className="bg-dark-card border border-dark-border rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  {entry.status === 'running' ? (
-                    <Spin size="small" />
-                  ) : (
-                    <span className="text-green-500 text-xs">✓</span>
-                  )}
-                  {entry.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
-                  {entry.source === 'parent' && <span className="text-yellow-500 text-xs mr-1">父</span>}
-                  {entry.source === 'child' && <span className="text-blue-400 text-xs mr-1">子</span>}
-                  <span className="text-accent-blue text-xs font-mono">{entry.name}</span>
-                  <span className="text-text-muted text-xs ml-auto">{entry.time}</span>
+            {/* 按原始顺序：顶层条目在时间位置出现，子任务条目归入其组（可折叠+缩进） */}
+            {groupedLog.map((node, ni) => (
+              node.kind === 'top' ? (
+                <div key={`t-${ni}`}><EntryCard entry={node.entry} /></div>
+              ) : (
+                <div key={`st-${node.seq}`} className="border border-dark-border rounded-lg overflow-hidden">
+                  {(() => {
+                    const collapsed = collapsedSubtasks.has(node.seq);
+                    const header = node.entries.find((e: any) => e.type === 'subtask_start');
+                    const title = header ? `子任务 ${node.seq}: ${header.name}` : `子任务 ${node.seq}`;
+                    const st = header?.status;
+                    return (
+                      <>
+                        <div
+                          className={`flex items-center gap-2 px-3 py-2 cursor-pointer ${st === 'failed' ? 'bg-red-500/10' : 'bg-dark-card'}`}
+                          onClick={() => toggleSubtask(node.seq)}
+                        >
+                          <span className="text-text-muted text-xs">{collapsed ? '▶' : '▼'}</span>
+                          <span className="text-accent-blue text-xs font-semibold">{title}</span>
+                          {st === 'done' && <span className="text-green-500 text-xs">✓</span>}
+                          {st === 'failed' && <span className="text-red-500 text-xs">✗</span>}
+                          <span className="text-text-muted text-xs ml-auto">{node.entries.length} 项</span>
+                        </div>
+                        {!collapsed && (
+                          <div className="pl-4 pr-2 py-2 space-y-2 bg-dark-bg/40">
+                            {(node.entries as any[]).map((entry: any, ei: number) => (
+                              <div key={`s-${node.seq}-${ei}`}><EntryCard entry={entry} /></div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
-                {entry.detail && <div className="text-text-muted text-xs mt-1">{entry.detail}</div>}
-                {(entry.params && Object.keys(entry.params).length > 0) || entry.result ? (
-                  entry.name === 'load_skill' ? (
-                    <div className="mt-1 text-xs">
-                      <div className="text-text-muted">技能名称: <span className="text-text-secondary">{entry.params?.skill_name || '-'}</span></div>
-                      <div className="text-text-muted">描述: <span className="text-text-secondary">{(entry.result || '').match(/^---[\s\S]*?description:\s*(.+?)[\s\S]*?^---/m)?.[1]?.trim() || '已加载'}</span></div>
-                    </div>
-                  ) : (
-                    <div className="mt-1">
-                      <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
-                        onClick={(e) => {
-                          const panel = e.currentTarget.nextElementSibling as HTMLElement;
-                          if (panel) panel.classList.toggle('hidden');
-                        }}>
-                        <span className="text-accent-blue text-xs">▼ 查看详情</span>
-                      </div>
-                      <div className="hidden mt-1 space-y-1">
-                        {entry.params && Object.keys(entry.params).length > 0 && (
-                          <div>
-                            <span className="text-text-muted text-xs">输入参数</span>
-                            <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
-                          </div>
-                        )}
-                        {entry.result && (
-                          <div>
-                            <span className="text-text-muted text-xs">返回数据</span>
-                            <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                ) : null}
-              </div>
+              )
             ))}
           </div>
         )}

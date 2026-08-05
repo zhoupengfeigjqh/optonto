@@ -133,17 +133,17 @@ export class Orchestrator {
       // 正则只认 "subtasks" key（不锚定 {），避免嵌套 JSON 导致漏判。
       // 注意：error 需先于 done 发送（前端遇到 done 即 break，同批到达时会跳过 error）
       if (lastMsg && /"subtasks"\s*:/.test(lastMsg)) {
-        sendEvent({ type: 'error', message: '规划格式异常，请重新描述需求或重试。' });
+        sendEvent({ type: 'error', message: '⚠️ 无法生成执行计划：规划格式异常，请重新描述需求。' });
         sendEvent({ type: 'done' });
-        return '无法生成执行计划，请重新描述需求或重试。';
+        return '⚠️ 无法生成执行计划：规划格式异常，请重新描述需求。';
       }
       if (lastMsg) {
         sendEvent({ type: 'done' });
         return lastMsg;
       }
-      sendEvent({ type: 'error', message: '无法生成执行计划，请重新描述需求或重试。' });
+      sendEvent({ type: 'error', message: '⚠️ 无法生成执行计划，请重新描述需求。' });
       sendEvent({ type: 'done' });
-      return '无法生成执行计划，请重新描述需求或重试。';
+      return '⚠️ 无法生成执行计划，请重新描述需求。';
     }
 
     // ── 规划确认循环（支持"拒绝并重规划"） ──
@@ -157,8 +157,8 @@ export class Orchestrator {
       // 校验 behavior 名称合法性（每轮都做；非法时提示父Agent 自动修正，最多修正 1 次）
       const validated = await this.validateBehaviors(plan, parentAgent, submittedPlan, pushEntry);
       if (!validated) {
-        sendEvent({ type: 'error', message: '无法生成有效的执行计划' });
-        return '无法生成有效的执行计划，请重新描述需求。';
+        sendEvent({ type: 'error', message: '⚠️ 规划校验失败：无法生成有效的执行计划' });
+        return '⚠️ 规划校验失败：无法生成有效的执行计划，请重新描述需求。';
       }
       plan = validated;
 
@@ -166,9 +166,9 @@ export class Orchestrator {
       const paramValidated = await this.validateParams(plan, parentAgent, submittedPlan, pushEntry);
       if (!paramValidated) {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构修正失败', status: 'failed', source: 'parent' });
-        sendEvent({ type: 'error', message: '规划参数结构不合法，且修正失败' });
+        sendEvent({ type: 'error', message: '⚠️ 规划校验失败：参数结构不合法，修正失败' });
         sendEvent({ type: 'done' });
-        return '参数结构不合法，无法生成有效规划，请重新描述需求。';
+        return '⚠️ 规划校验失败：参数结构不合法，修正失败，请重新描述需求。';
       }
       plan = paramValidated;
 
@@ -243,7 +243,7 @@ export class Orchestrator {
     const structureErrors = validatePlanStructure(plan);
     if (structureErrors.length > 0) {
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划结构校验', status: 'failed', detail: structureErrors.join('；'), source: 'parent' });
-      sendEvent({ type: 'error', message: `规划结构不合法：${structureErrors.join('；')}` });
+      sendEvent({ type: 'error', message: `⚠️ 规划校验失败：规划结构不合法（${structureErrors.join('；')}）` });
       sendEvent({ type: 'done' });
       return '规划结构不合法，请重新发起。';
     }
@@ -290,7 +290,7 @@ export class Orchestrator {
           if (!results.find(r => r.seq === dep && r.success)) { depFailed = true; break; }
         }
         if (depFailed) {
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: `依赖子任务${subTask.depends_on}未成功执行`, status: 'failed', detail: '前置依赖失败，任务终止', source: 'child' });
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: `依赖子任务${subTask.depends_on}未成功执行`, status: 'failed', detail: '前置依赖失败，任务终止', source: 'child', seq: subTask.seq });
           blocked = true;
           break;
         }
@@ -307,7 +307,7 @@ export class Orchestrator {
         ontology_id: subTask.ontology_id,
       };
 
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child' });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq });
       // 聊天区域显示"正在执行"
       sendEvent({ type: 'token', token: `\n**子任务 ${subTask.seq}：${subTask.behavior} 正在执行...**\n` });
 
@@ -316,7 +316,7 @@ export class Orchestrator {
       // 已执行的子任务从待执行列表移除，下一轮直接消费 pending[0]
       pending = pending.filter(st => st.seq !== subTask.seq);
 
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child' });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq });
 
       if (result.success) {
         sendEvent({ type: 'token', token: `\n${result.summary}\n` });
@@ -335,6 +335,7 @@ ${result.summary}
 请分析：
 1. 结果是否符合预期？有无异常或风险？
 2. 后续子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态等）？
+3. 【提前终止判断】后续子任务是否仍有必要执行？若当前结果已使某些或全部后续子任务失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请在调整规划中删除这些失去意义的子任务（只保留仍有必要的），让流程提前结束，避免执行无意义的操作。
 
 【数据传播（必须）】
 若后续某个子任务的 params 或 guidance 依赖本次结果中产生的新数据（例：子任务 A 生成订单号、子任务 B 需要该订单号），即使本次结果完全正常，也**必须调用 submit_plan** 提交调整后的规划，把数据填入对应子任务的 params / guidance。此类新数据后续子任务无法自行查询到，只能靠你中继。
@@ -347,14 +348,25 @@ ${result.summary}
           const adjusted = submittedPlan.value as SubTaskPlan | null;
           let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
           if (adjusted && adjusted.subtasks && adjusted.subtasks.length > 0) {
-            // L3: 执行中调整规划 → 行为名校验（静默修正一次，不再弹窗用户确认）
-            const validated = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
-            if (validated) {
-              analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
-              // 调整后的规划是权威全集：剔除已执行，重新拓扑排序。
-              // 被丢弃的子任务从待执行列表消失；新依赖关系重新生效。
-              const executedSeqs = new Set(results.map(r => r.seq));
-              pending = this.topologicalSort(validated.subtasks.filter(st => !executedSeqs.has(st.seq)));
+            // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认
+            const validatedB = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
+            if (validatedB) {
+              const validatedP = await this.validateParams(validatedB, parentAgent, submittedPlan, pushEntry);
+              if (validatedP) {
+                // 依赖校验也带 nudge（与行为名/参数一致）
+                const validatedD = await this.validatePlanDeps(validatedP, parentAgent, submittedPlan, pushEntry);
+                if (validatedD) {
+                  analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
+                  // 调整后的规划是权威全集：剔除已执行，重新拓扑排序。
+                  // 被丢弃的子任务从待执行列表消失；新依赖关系重新生效。
+                  const executedSeqs = new Set(results.map(r => r.seq));
+                  pending = this.topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
+                } else {
+                  analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划依赖不合法，沿用原计划`;
+                }
+              } else {
+                analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划参数不合法，沿用原计划`;
+              }
             } else {
               analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划无效，沿用原计划`;
             }
@@ -393,7 +405,7 @@ ${result.summary}
               `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
             ).join('\n')
           : '（无子任务成功执行）';
-        const reason = aborted ? '任务被用户中断或拒绝' : (blocked ? '存在前置依赖未完成' : '存在子任务执行失败');
+        const reason = aborted ? '任务已被用户中断' : (blocked ? '因前置依赖未完成而终止' : '存在子任务执行失败');
         await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
         finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
       }
@@ -461,6 +473,27 @@ ${result.summary}
 
     if (validateParamsStructure(this.ontologyGateway, corrected).length > 0) return null;
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构已修正', status: 'done', source: 'parent' });
+    return corrected;
+  }
+
+  /** 依赖结构校验（无自引用/无悬空依赖/无环）：非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validatePlanDeps(
+    plan: SubTaskPlan,
+    parentAgent: any,
+    submittedPlan: { value: SubTaskPlan | null },
+    pushEntry: (e: ExecutionEntry) => void,
+  ): Promise<SubTaskPlan | null> {
+    const firstErrors = validatePlanStructure(plan);
+    if (firstErrors.length === 0) return plan;
+
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '依赖结构校验', status: 'failed', detail: firstErrors.join('；'), source: 'parent' });
+    submittedPlan.value = null; // 只认本次修正后的新提交
+    await parentAgent.prompt(`以下子任务的依赖关系不合法：\n${firstErrors.join('；')}\n\n请重新检查 depends_on（不能依赖自身、不能引用不存在的子任务、不能形成循环依赖），保持行为与参数不变，然后重新调用 submit_plan 提交修正后的规划。`);
+    const corrected = submittedPlan.value as SubTaskPlan | null;
+    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;
+
+    if (validatePlanStructure(corrected).length > 0) return null;
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '依赖结构已修正', status: 'done', source: 'parent' });
     return corrected;
   }
 
