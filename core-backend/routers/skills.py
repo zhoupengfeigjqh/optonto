@@ -179,6 +179,30 @@ def _build_ontology_summary(data) -> str:
     return "\n".join(lines)
 
 
+def _validate_generated_skill(content: str) -> str:
+    """生成结果硬校验。返回错误信息；空字符串 = 通过。
+    要求：① 头部必须是 YAML frontmatter（--- 包裹）；② 必须含 name（英文）和 description；
+    ③ 正文不得有额外 frontmatter 块或对话性残留（如"好的/以下是/我将…"开头）。
+    """
+    import re
+    if not content.startswith("---\n"):
+        return "文件头部缺少 --- frontmatter"
+    fm_end = content.find("\n---", 4)
+    if fm_end < 0:
+        return "frontmatter 缺少结束标记 ---"
+    fm = content[4:fm_end]
+    if not re.search(r"^\s*name:\s*[a-zA-Z]", fm, re.M):
+        return "frontmatter 缺少 name 字段（必须为英文）"
+    if not re.search(r"^\s*description:\s*\S", fm, re.M):
+        return "frontmatter 缺少 description 字段"
+    body = content[fm_end + 4:].lstrip()
+    if body.startswith("---"):
+        return "正文包含多余的 frontmatter 块（应只有头部一个）"
+    if re.match(r"^(好的|好的，|好的,|以下是|作为一名|我将|我来|好的，我)", body):
+        return "正文包含对话性开头内容（应直接从 Markdown 内容开始）"
+    return ""
+
+
 @router.post("/{skill_name}/generate")
 async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(default={})):
     import re
@@ -207,8 +231,8 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
     scenario_id = scenario.get("id", "") if scenario else ""
 
     prompt = SKILL_GENERATE_PROMPT.format(
-        onto_name=on_name,
-        onto_id=str(ontology_id),
+        ontology_name=on_name,
+        ontology_id=str(ontology_id),
         scenario_name=sc_name,
         scenario_id=str(scenario_id),
         ontology_yaml=ontology_summary,
@@ -237,6 +261,12 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
                 first_h1 = content.find("\n# ")
                 if first_h1 > 0 and content[:first_h1].count('\n') < 5 and not content.startswith("#"):
                     content = content[first_h1 + 1:].strip()
+
+        # 硬校验：frontmatter 必须含 name/description，正文无多余内容。不合格则不落盘，报错让前端重试。
+        check_error = _validate_generated_skill(content)
+        if check_error:
+            logger.warning("技能 %s 生成结果校验失败: %s", skill_name, check_error)
+            raise HTTPException(status_code=400, detail=f"生成结果不符合模板要求：{check_error}，请重新生成")
 
         sdir = _skill_dir(sc_name, on_name, skill_name)
         sdir.mkdir(parents=True, exist_ok=True)

@@ -437,8 +437,8 @@ SKILL_GENERATE_SYSTEM_PROMPT = "你是一个专业的智能体技能（SKILL）�
 SKILL_GENERATE_PROMPT = """根据以下本体数据和技能模板，生成智能体技能文件（SKILL.md）。
 
 <本体基本信息>
-onto_name: {onto_name}
-onto_id: {onto_id}
+ontology_name: {ontology_name}
+ontology_id: {ontology_id}
 scenario_name: {scenario_name}
 scenario_id: {scenario_id}
 </本体基本信息>
@@ -462,7 +462,7 @@ description: 技能文件的描述
 1. 严格按照 <技能模板> 的格式生成内容
 2. SKILL.md头部格式必须与 <技能文件头部格式>的一致，不要随意修改格式
 3. 所有内容必须严格基于 <本体YAML数据> 生成，不要随意增加字段或注释。
-4. 行为和函数需明确提供输入和输出参数，能够为智能体的行为执行提供清晰的参数组装指引；其中executeOntoBehavior调用行为执行，executeOntoFunction调用函数
+4. 行为和函数的【输入参数】与【输出参数】必须提供**完整结构**，以json格式展示，并且每个字段同时注明英文名与中文名。任何行为/函数都不得省略输入或输出参数说明，不得漏标必填字段。其中executeOntoBehavior调用行为执行，executeOntoFunction调用函数
 5. 【技能模板】里，【重点: xxxx】圈起来的是额外提示内容，请保持不变，不要改内容，不要做额外补充或解释。
 6. 直接从 Markdown 内容开始输出，不要添加任何对话性开头（如"好的"、"作为一名"等）
 7. 输出格式为完整 Markdown 文件内容"""

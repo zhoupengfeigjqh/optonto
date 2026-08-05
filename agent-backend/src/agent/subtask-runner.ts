@@ -12,7 +12,7 @@ const MAX_RETRIES = 3;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmManager;
-  createChildAgent: (context: SkillContext, primaryBehavior: string, opId: string) => Promise<any>;
+  createChildAgent: (context: SkillContext, primaryBehavior: string, opId: string, requiredParams?: string[]) => Promise<any>;
   /** 当前子 Agent 引用（供外层 abort() 中断在途子 Agent） */
   childAgentRef: { current: any | null };
 }
@@ -72,7 +72,11 @@ export class SubtaskRunner {
     // 复用同一个子 Agent 实例做重试：失败原因、工具结果保留在上下文中，LLM 能自纠
     // opId 每子任务一个、跨重试稳定：主行为写操作带 op_key 走后端幂等，重试不重复执行
     const opId = randomUUID();
-    const childAgent = await this.deps.createChildAgent(context, subTask.behavior, opId);
+    // 主行为必填参数名（来自行为元信息）：工具层硬检查用，缺失则拒绝执行
+    const requiredParams = Object.entries(meta.params || {})
+      .filter(([, s]) => (s as any)?.required)
+      .map(([k]) => k);
+    const childAgent = await this.deps.createChildAgent(context, subTask.behavior, opId, requiredParams);
     this.deps.childAgentRef.current = childAgent;
     // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
     // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。

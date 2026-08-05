@@ -40,7 +40,7 @@ export class Orchestrator {
   ) {
     this.subtaskRunner = new SubtaskRunner({
       confirmManager: this.confirmManager,
-      createChildAgent: (ctx, pb, oid) => this.agentFactory.createChildAgent(ctx, pb, oid),
+      createChildAgent: (ctx, pb, oid, rp) => this.agentFactory.createChildAgent(ctx, pb, oid, rp),
       childAgentRef: this.childAgentRef,
     });
   }
@@ -162,14 +162,15 @@ export class Orchestrator {
       }
       plan = validated;
 
-      // 参数结构校验（必填字段齐全 + 类型匹配）：拦在规划阶段，避免子Agent 撞墙重试
-      const paramErrors = validateParamsStructure(this.ontologyGateway, plan);
-      if (paramErrors.length > 0) {
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构校验', status: 'failed', detail: paramErrors.join('；'), source: 'parent' });
-        sendEvent({ type: 'error', message: `规划参数结构不合法：${paramErrors.join('；')}` });
+      // 参数结构校验（必填参数 key 齐全 + 类型匹配）：非法时 nudge 父Agent 修正一次，不再直接失败
+      const paramValidated = await this.validateParams(plan, parentAgent, submittedPlan, pushEntry);
+      if (!paramValidated) {
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构修正失败', status: 'failed', source: 'parent' });
+        sendEvent({ type: 'error', message: '规划参数结构不合法，且修正失败' });
         sendEvent({ type: 'done' });
-        return `参数结构不合法，无法生成有效规划，请重试。${paramErrors.join('；')}`;
+        return '参数结构不合法，无法生成有效规划，请重新描述需求。';
       }
+      plan = paramValidated;
 
       if (round === 0) {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
@@ -331,12 +332,13 @@ export class Orchestrator {
 【执行结果】
 ${result.summary}
 
-请简要分析：
+请分析：
 1. 结果是否符合预期？有无异常或风险？
-2. 对后续子任务有何影响？
+2. 后续子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态等）？
 
-若结果正常、无需调整，直接简要说明"继续执行原计划"即可，不要调用 submit_plan。
-仅当结果出现异常、需要修改后续子任务时，才调用 submit_plan 提交调整后的规划。`);
+【数据传播（必须）】
+若后续某个子任务的 params 或 guidance 依赖本次结果中产生的新数据（例：子任务 A 生成订单号、子任务 B 需要该订单号），即使本次结果完全正常，也**必须调用 submit_plan** 提交调整后的规划，把数据填入对应子任务的 params / guidance。此类新数据后续子任务无法自行查询到，只能靠你中继。
+只有当所有后续子任务都不依赖本次结果、且无需任何调整时，才直接简要说明"继续执行原计划"，不要调用 submit_plan。`);
           if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
           // 提取父Agent的分析结果推送到前端执行记录
           const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
@@ -392,7 +394,7 @@ ${result.summary}
             ).join('\n')
           : '（无子任务成功执行）';
         const reason = aborted ? '任务被用户中断或拒绝' : (blocked ? '存在前置依赖未完成' : '存在子任务执行失败');
-        await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明：总结已完成的操作与结果、说明终止/失败的原因，并给出后续建议。`);
+        await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
         finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
       }
     }
@@ -438,6 +440,27 @@ ${result.summary}
 
     if (validateBehaviorNames(this.ontologyGateway, corrected).length > 0) return null;
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名已修正', status: 'done', source: 'parent' });
+    return corrected;
+  }
+
+  /** 参数结构校验：必填参数 key 齐全 + 类型匹配；非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validateParams(
+    plan: SubTaskPlan,
+    parentAgent: any,
+    submittedPlan: { value: SubTaskPlan | null },
+    pushEntry: (e: ExecutionEntry) => void,
+  ): Promise<SubTaskPlan | null> {
+    const firstErrors = validateParamsStructure(this.ontologyGateway, plan);
+    if (firstErrors.length === 0) return plan;
+
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构校验', status: 'failed', detail: firstErrors.join('；'), source: 'parent' });
+    submittedPlan.value = null; // 只认本次修正后的新提交
+    await parentAgent.prompt(`以下子任务的参数结构不合法，缺少必填参数：\n${firstErrors.join('；')}\n\n请先重新加载相关技能（load_skill）获取每个行为的完整参数结构，确保每个子任务的 params 包含该行为声明的【全部必填参数】（type/required/description/value 齐全，用户已提供的填入 value，缺失的留空字符串），保持行为与整体规划不变，然后重新调用 submit_plan 提交修正后的规划。`);
+    const corrected = submittedPlan.value as SubTaskPlan | null;
+    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;
+
+    if (validateParamsStructure(this.ontologyGateway, corrected).length > 0) return null;
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构已修正', status: 'done', source: 'parent' });
     return corrected;
   }
 

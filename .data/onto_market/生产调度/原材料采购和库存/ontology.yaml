@@ -327,43 +327,43 @@ behaviors:
     rawMaterialId:
       type: string
       required: true
+      description: ''
       example: RM-001
-      display_name: 原材料编号
     rawMaterialName:
       type: string
       required: true
+      description: ''
       example: 高强度钢板
-      display_name: 原材料名称
     arrivalQuantity:
       type: number
       required: true
+      description: ''
       example: 50
-      display_name: 到位数量
     supplierName:
       type: string
       required: true
+      description: ''
       example: XX钢铁集团
-      display_name: 供应商名称
     arrivalTime:
       type: string
       required: true
+      description: ''
       example: '2023-11-10'
-      display_name: 到位时间
     relatedOrderId:
       type: string
       required: false
+      description: ''
       example: SO-20231025-001
-      display_name: 关联订单编号
     relatedOrderName:
       type: string
       required: false
+      description: ''
       example: 客户A-项目X订单
-      display_name: 关联订单名称
     unit:
       type: string
       required: true
+      description: ''
       example: 吨
-      display_name: 单位
   response:
     code:
       type: number

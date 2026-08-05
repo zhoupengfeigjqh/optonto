@@ -51,6 +51,8 @@ function resolveDeepSeekModel() {
 export class AgentFactory {
   /** 按 MCP server URL 缓存连接，避免每个 Agent/子任务新建连接造成传输资源泄漏 */
   private clientCache = new Map<string, MCPClient>();
+  /** 按 run 作用域缓存的工具发现结果（closeAll 时清空）。一次 run 内工具列表不变，避免父/子 Agent 每次创建都重复 listTools */
+  private toolsCache: { tool: AgentTool; builtin: boolean }[] | null = null;
 
   constructor(
     private mcpConfigStore: MCPConfigStore,
@@ -73,6 +75,7 @@ export class AgentFactory {
    * 关闭所有缓存的 MCP 连接并清空缓存。编排结束（无论成功/失败/中断）时调用。
    */
   async closeAll(): Promise<void> {
+    this.toolsCache = null; // run 结束，清工具缓存
     const clients = [...this.clientCache.values()];
     this.clientCache.clear();
     await Promise.allSettled(clients.map(c => c.close().catch(() => {})));
@@ -126,7 +129,7 @@ export class AgentFactory {
    * 只注册 MCP 执行/时间工具（CHILD_MCP_TOOL_NAMES），不挂 load_skill。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
-  async createChildAgent(context: SkillContext, primaryBehavior?: string, opId?: string): Promise<Agent> {
+  async createChildAgent(context: SkillContext, primaryBehavior?: string, opId?: string, requiredParams?: string[]): Promise<Agent> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
@@ -134,9 +137,10 @@ export class AgentFactory {
     // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰。
     // 主行为注入 op_key：写操作后端幂等去重，重试不重复执行。
+    // requiredParams：主行为执行前的硬检查——必填参数必须有值，缺失拒绝执行。
     const mcpTools = allMcp
       .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
-      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, opId));
+      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, opId, requiredParams));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
@@ -152,7 +156,7 @@ export class AgentFactory {
    *   规则查询行为不带 key（否则会被误判为同一写操作去重），读操作后端也忽略 op_key。
    * 无 ontology_id 的工具（如公共函数）原样返回。
    */
-  private scopeToOntology(tool: AgentTool, ontologyId: number, primaryBehavior?: string, opId?: string): AgentTool {
+  private scopeToOntology(tool: AgentTool, ontologyId: number, primaryBehavior?: string, opId?: string, requiredParams?: string[]): AgentTool {
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     if (!props || !('ontology_id' in props)) {
@@ -169,8 +173,22 @@ export class AgentFactory {
       parameters: { ...schema, properties: nextProps, ...(required ? { required } : {}) },
       execute: async (toolCallId, params) => {
         const p = { ...(params as any), ontology_id: ontologyId }; // 强制锁定
-        if (primaryBehavior && opId && p.behavior_name === primaryBehavior) {
-          p.op_key = opId; // 幂等键，跨重试稳定
+        if (primaryBehavior && p.behavior_name === primaryBehavior) {
+          if (opId) p.op_key = opId; // 幂等键，跨重试稳定
+          // 硬检查：主行为执行前，必填参数必须已有值。缺失则拒绝执行（isError），
+          // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
+          const missing = (requiredParams || []).filter(key => {
+            const entry = (p.params ?? {})[key];
+            const val = entry !== null && typeof entry === 'object' ? entry.value : entry;
+            return val === undefined || val === null || String(val).trim() === '';
+          });
+          if (missing.length > 0) {
+            return {
+              content: [{ type: 'text', text: `禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。` }],
+              details: {},
+              isError: true,
+            };
+          }
         }
         return originalExecute(toolCallId, p);
       },
@@ -258,6 +276,9 @@ export class AgentFactory {
    * 返回带归属标记（是否内置本体MCP）的工具，供父/子 Agent 分流。
    */
   private async discoverTools(): Promise<{ tool: AgentTool; builtin: boolean }[]> {
+    // 一次 run 内工具列表不变：缓存发现结果，避免父/子 Agent 每次创建都重复 listTools。
+    // 缓存生命周期与连接缓存一致，由 closeAll() 在 run 结束时清空。
+    if (this.toolsCache) return this.toolsCache;
     // MCP 配置全局唯一（./config/mcp-config.json），不区分场景/本体
     const mcpConfig = this.mcpConfigStore.getConfig();
     const tools: { tool: AgentTool; builtin: boolean }[] = [];
@@ -315,6 +336,7 @@ export class AgentFactory {
       }
     }
 
+    this.toolsCache = tools;
     return tools;
   }
 }

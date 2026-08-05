@@ -70,7 +70,9 @@ export class SkillLoader {
       try {
         const content = this.loadSkill(s.scenario, s.ontology, s.name);
         const fm = this.parseFrontmatter(content);
-        const required = ['scenario_name', 'scenario_id', 'ontology_name', 'ontology_id'] as const;
+        // 技能模板 frontmatter 仅定义 name + description；技能按路径（onto_market/{场景}/{本体}/skills/）定位，
+        // 不强制 frontmatter 带场景/本体字段。
+        const required = ['name', 'description'] as const;
         for (const field of required) {
           if (!fm[field] || !String(fm[field]).trim()) {
             errors.push(`技能 "${s.name}" 缺少 ${field}`);
