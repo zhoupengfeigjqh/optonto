@@ -308,8 +308,6 @@ export class Orchestrator {
       };
 
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq });
-      // 聊天区域显示"正在执行"
-      sendEvent({ type: 'token', token: `\n**子任务 ${subTask.seq}：${subTask.behavior} 正在执行...**\n` });
 
       const result = await this.subtaskRunner.run(subTask, meta, childContext, sendEvent, pushEntry);
       results.push(result);
@@ -319,9 +317,6 @@ export class Orchestrator {
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq });
 
       if (result.success) {
-        sendEvent({ type: 'token', token: `\n${result.summary}\n` });
-        sendEvent({ type: 'token', token: `✅ **子任务 ${subTask.seq} ${subTask.behavior}**\n` });
-
         const isLast = pending.length === 0; // 本子任务是最后一个（无后续子任务可调整，跳过中间分析）
         if (!isLast) {
           // 反馈父Agent 深入分析结果并决定后续计划

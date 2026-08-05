@@ -18,6 +18,51 @@ import { renderMarkdown } from '@/lib/markdown';
 
 // ─── Agent Conversation 子组件（聊天界面） ─────────────────
 
+/** 聊天内嵌的子任务执行块（由 exec_entry 事件构建） */
+interface SubtaskChatItem {
+  role: 'subtask';
+  seq: number;
+  behavior: string;
+  status: 'running' | 'done' | 'failed';
+  details: any[];
+}
+
+/** 聊天里的子任务执行块：显示状态 + 可展开的执行动作明细（与原子任务执行框一致：✓/⟳/✗ + 动作名） */
+function SubtaskBlock({ item }: { item: SubtaskChatItem }) {
+  const [open, setOpen] = useState(false);
+  // 只取执行动作（工具调用 / 安全确认），按动作名去重、保留最终状态（等同原执行框的展示）
+  const actionMap = new Map<string, any>();
+  for (const d of (item.details as any[]) || []) {
+    if (d.type === 'tool_call' || d.type === 'security_confirm') actionMap.set(d.name, d);
+  }
+  const actions = [...actionMap.values()];
+  const done = (item.details as any[]).find(d => d.type === 'subtask_done');
+  return (
+    <div className="bg-dark-card border border-dark-border rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-dark-hover" onClick={() => setOpen(!open)}>
+        <span className="text-text-muted text-xs">{open ? '▼' : '▶'}</span>
+        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.behavior}</span>
+        {item.status === 'running' && <Spin size="small" />}
+        {item.status === 'done' && <span className="text-green-500 text-xs">✓</span>}
+        {item.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
+        <span className="text-text-muted text-xs ml-auto">{open ? '收起' : '展开'}</span>
+      </div>
+      {open && (
+        <div className="pl-4 pr-2 py-2 bg-dark-bg/40">
+          {actions.map((d: any, i: number) => (
+            <div key={i} className={`text-xs font-mono py-0.5 ${d.status === 'failed' ? 'text-red-400' : d.status === 'done' ? 'text-green-400' : 'text-yellow-400'}`}>
+              {d.type === 'security_confirm' ? '🔒 安全确认' : (d.status === 'failed' ? '✗' : d.status === 'done' ? '✓' : '⟳')} {d.name}
+            </div>
+          ))}
+          {done && done.result && (
+            <div className="mt-1 pt-1 border-t border-dark-border text-xs text-text-secondary whitespace-pre-wrap max-h-32 overflow-y-auto">{String(done.result)}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 执行记录单条条目卡片 */
 function EntryCard({ entry }: { entry: any }) {
   return (
@@ -79,7 +124,8 @@ function AgentConversation({
   ontologyName: string;
   onBack: () => void;
 }) {
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  // 聊天消息：除 user/assistant/toolResult 外，含运行时的子任务执行块（role='subtask'）
+  const [messages, setMessages] = useState<(AgentMessage | SubtaskChatItem)[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -88,7 +134,6 @@ function AgentConversation({
     name: string; description?: string; params?: any; result?: string; status: string; detail?: string; source?: string; seq?: number;
   }[]>([]);
   const [logOpen, setLogOpen] = useState(false);
-  const [subtaskBox, setSubtaskBox] = useState<{lines: {text: string; done: boolean; failed?: boolean; params?: any}[]; childRunning?: boolean} | null>(null);
   const [planConfirmModal, setPlanConfirmModal] = useState<{
     confirmId: string;
     plan: any;
@@ -128,16 +173,10 @@ function AgentConversation({
   // 自动滚动
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [messages, subtaskBox]);
+  }, [messages]);
 
-  // received `done` event from orchestrator → 4s后隐藏执行框
-  const [subtaskDoneTimer, setSubtaskDoneTimer] = useState<boolean>(false);
-  useEffect(() => {
-    if (subtaskDoneTimer) {
-      const timer = setTimeout(() => { setSubtaskBox(null); setSubtaskDoneTimer(false); }, 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [subtaskDoneTimer]);
+  // 聊天内子任务块的分阶段路由：planning(规划文本) → subtask(子任务块) → summary(最终总结新开消息)
+  const phaseRef = useRef<'planning' | 'subtask' | 'summary'>('planning');
 
   // ─── 确认弹窗倒计时（60s，随 confirmId 重置；编辑参数不重置倒计时） ───
   useEffect(() => {
@@ -265,7 +304,7 @@ function AgentConversation({
     setMessages(prev => [...prev, assistantMsg]);
 
     // 重置执行状态
-    setSubtaskBox(null);
+    phaseRef.current = 'planning';
     setExecutionLog([]);
     setPlanConfirmModal(null);
     setConfirmModal(null);
@@ -293,13 +332,17 @@ function AgentConversation({
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'done') { setSubtaskDoneTimer(true); setPlanConfirmModal(null); setConfirmModal(null); break; }
+            if (data.type === 'done') { setPlanConfirmModal(null); setConfirmModal(null); break; }
             if (data.type === 'error') {
+              if (phaseRef.current === 'subtask') {
+                phaseRef.current = 'summary';
+                setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: '' }]);
+              }
               setMessages(prev => {
                 const updated = [...prev];
                 const last = updated[updated.length - 1];
-                if (last.role === 'assistant' && !last.content) {
-                  updated[updated.length - 1] = { ...last, content: `\n\n[错误: ${data.message}]` };
+                if ((last as any).role === 'assistant' && !(last as any).content) {
+                  updated[updated.length - 1] = { ...(last as any), content: `\n\n[错误: ${data.message}]` };
                 }
                 return updated;
               });
@@ -333,28 +376,41 @@ function AgentConversation({
                 if (exists >= 0) return prev;
                 return [...prev, { time: entry.time, type: entry.type, name: entry.name, status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, source: entry.source, seq: entry.seq }];
               });
-              // 子任务框实时更新
-              if (entry.source === 'child' || entry.source === 'parent') {
-                setSubtaskBox(prev => {
-                  if (!prev) return { lines: [{ text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed' }], childRunning: entry.source === 'child' && entry.status === 'running' };
-                  const key = entry.name;
-                  const idx = prev.lines.findIndex(l => l.text.startsWith(key));
-                  if (idx >= 0) {
-                    const n = [...prev.lines]; n[idx] = { text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed', params: entry.params };
-                    return { ...prev, lines: n, childRunning: entry.source === 'child' && entry.status === 'running' };
+              // 聊天内子任务执行块
+              if (entry.source === 'child' && entry.seq != null) {
+                if (entry.type === 'subtask_start') phaseRef.current = 'subtask';
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const idx = updated.findIndex(m => (m as any).role === 'subtask' && (m as any).seq === entry.seq);
+                  if (entry.type === 'subtask_start') {
+                    if (idx >= 0) {
+                      const it = updated[idx] as any;
+                      updated[idx] = { ...it, status: entry.status, details: [...it.details, entry] };
+                    } else {
+                      updated.push({ role: 'subtask', seq: entry.seq, behavior: entry.name, status: entry.status, details: [entry] });
+                    }
+                  } else if (idx >= 0) {
+                    const it = updated[idx] as any;
+                    const status = entry.type === 'subtask_done' ? entry.status : it.status;
+                    updated[idx] = { ...it, status, details: [...it.details, entry] };
                   }
-                  return { ...prev, lines: [...prev.lines, { text: entry.detail || entry.name, done: entry.status !== 'running', failed: entry.status === 'failed', params: entry.params }], childRunning: entry.source === 'child' && entry.status === 'running' };
+                  return updated;
                 });
               }
             }
             if (data.type === 'token') {
               const tokenText = data.token || '';
+              // 子任务阶段后的第一个 token = 最终总结 → 新开一条 assistant 消息（排在子任务块之后）
+              if (phaseRef.current === 'subtask') {
+                phaseRef.current = 'summary';
+                setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: '' }]);
+              }
               flushSync(() => {
                 setMessages(prev => {
                   const updated = [...prev];
                   const last = updated[updated.length - 1];
-                  if (last.role === 'assistant') {
-                    updated[updated.length - 1] = { ...last, content: last.content + tokenText };
+                  if ((last as any).role === 'assistant') {
+                    updated[updated.length - 1] = { ...(last as any), content: (last as any).content + tokenText };
                   }
                   return updated;
                 });
@@ -413,6 +469,17 @@ function AgentConversation({
     const isAssistant = msg.role === 'assistant';
     const isToolResult = msg.role === 'toolResult';
     const isLast = idx === messages.length - 1;
+    // 聊天内嵌的子任务执行块：无头像，占位对齐到 assistant 气泡下方，保持对话整体感
+    if ((msg as any).role === 'subtask') {
+      return (
+        <div key={idx} className="flex gap-3 justify-start mb-1">
+          <div className="w-8 h-8 shrink-0" />
+          <div className="flex-1 max-w-[75%]">
+            <SubtaskBlock item={msg as any} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div key={idx}>
         {/* User message */}
@@ -536,19 +603,6 @@ function AgentConversation({
         ) : messagesContent}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* 子任务实时执行框 */}
-      {subtaskBox && (
-        <div className="mb-2 p-3 rounded-lg bg-dark-card/60 border border-yellow-500/20 font-mono text-xs space-y-1">
-          {subtaskBox.lines.map((l, i) => (
-            <div key={i}>
-              <div className={`${l.failed ? 'text-red-400' : l.done ? 'text-green-400' : 'text-yellow-400'} ${l.done && !l.failed ? 'opacity-70' : ''}`}>
-                {l.failed ? '✗' : l.done ? '✓' : '⟳'} {l.text}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Input */}
       <div className="flex gap-2 items-end border-t border-dark-border pt-3">
