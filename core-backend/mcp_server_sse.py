@@ -152,6 +152,7 @@ async def _list_tools() -> list[Tool]:
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
                     "behavior_name": {"type": "string", "description": "行为名称"},
                     "params": {"type": "object", "description": "行为输入参数，按 behavior.params 结构传入"},
+                    "op_key": {"type": "string", "description": "幂等键（写操作重试去重），可选"},
                 },
                 "required": ["ontology_id", "behavior_name", "params"],
             },
@@ -299,9 +300,10 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                     err = resp.json()
                 except Exception:
                     err = {"detail": resp.text}
-                result = {"error": True, "status_code": resp.status_code, "detail": err}
-            else:
-                result = resp.json()
+                # 与 executeOntoBehavior/Function 一致：失败必须置 isError（抛异常），
+                # 而非返回 {"error": true} 文本——否则 agent 侧把失败当成功文本，成败全靠 LLM 读 JSON。
+                raise RuntimeError(f"公共函数 {name} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
+            result = resp.json()
 
     if result is None:
         raise ValueError(f"未知工具: {name}")

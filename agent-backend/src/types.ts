@@ -141,8 +141,12 @@ export interface ExecutionEntry {
   source?: 'parent' | 'child';
   /** 所属子任务编号（仅子任务相关条目），前端据此分组展示 */
   seq?: number;
-  /** 子任务展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord） */
+  /** 子任务展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord）。执行记录侧面板用 */
   displayName?: string;
+  /** 纯中文展示名（行为 display_name 或子任务描述），聊天区用 */
+  displayLabel?: string;
+  /** 子任务描述（父 Agent 生成），聊天区标题副行用 */
+  description?: string;
 }
 
 // ─── SSE 事件类型 ──────────────────────────────

@@ -1519,15 +1519,9 @@ data_engines:
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
-    rawMaterialId: rawMaterialId
-    rawMaterialName: rawMaterialName
+    a: a
   output_mapping:
-    code: code
-    data: data
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].unit: data[*].unit
-    data[*].safetyStock: data[*].safetyStock
+    b: b
   sql: ''
   sql_vars: {}
   datasource: ''

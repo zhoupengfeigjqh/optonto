@@ -8,7 +8,8 @@ from config import DATA_DIR
 from dependencies import get_ontology_names
 from schemas import RuleItem
 from services import load_ontology_data, save_ontology_data
-from llm_utils import load_env, build_llm
+from services.entity_crud import ensure_unique, find_index
+from llm_utils import load_env, llm_json
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/rules", tags=["规则"])
 
@@ -32,8 +33,7 @@ async def create_rule(ontology_id: int, item: RuleItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    if any(r.name == item.name for r in data.rules):
-        raise HTTPException(status_code=400, detail="规则名称已存在")
+    ensure_unique(data.rules, item.name, "规则")
 
     data.rules.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -46,12 +46,8 @@ async def update_rule(ontology_id: int, rule_name: str, item: RuleItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, r in enumerate(data.rules) if r.name == rule_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="规则不存在")
-
-    if item.name != rule_name and any(r.name == item.name for r in data.rules):
-        raise HTTPException(status_code=400, detail="规则名称已存在")
+    idx = find_index(data.rules, rule_name, "规则")
+    ensure_unique(data.rules, item.name, "规则", exclude_name=rule_name)
 
     data.rules[idx] = item
     save_ontology_data(sc_name, on_name, data)
@@ -63,9 +59,7 @@ async def delete_rule(ontology_id: int, rule_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, r in enumerate(data.rules) if r.name == rule_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="规则不存在")
+    idx = find_index(data.rules, rule_name, "规则")
 
     data.rules.pop(idx)
     save_ontology_data(sc_name, on_name, data)
@@ -153,11 +147,6 @@ async def generate_rule(ontology_id: int, body: dict):
         raise HTTPException(status_code=400, detail=f"未找到规则类型 '{rule_type}' 的模板")
 
     # 4. Call LLM
-    llm = build_llm(temperature=0.3, streaming=False)
-    if llm is None:
-        raise HTTPException(status_code=400, detail="未配置 LLM API Key")
-
-    from langchain_core.messages import HumanMessage, SystemMessage
     from config import RULE_GENERATE_SYSTEM_PROMPT, RULE_GENERATE_PROMPT
 
     prompt = RULE_GENERATE_PROMPT.format(
@@ -171,17 +160,13 @@ async def generate_rule(ontology_id: int, body: dict):
     )
 
     try:
-        response = await llm.ainvoke([
-            SystemMessage(content=RULE_GENERATE_SYSTEM_PROMPT),
-            HumanMessage(content=prompt),
-        ])
-        text = response.content.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            text = text.rsplit("```", 1)[0].strip()
-        rule_detail = json.loads(text)
+        rule_detail, stripped = await llm_json(RULE_GENERATE_SYSTEM_PROMPT, prompt, 0.3)
+        if rule_detail is None:
+            if stripped is None:
+                raise HTTPException(status_code=400, detail="未配置 LLM API Key")
+            raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {stripped[:200]}")
         return {"rule_detail": rule_detail}
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {text[:200]}")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")

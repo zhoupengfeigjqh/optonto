@@ -6,6 +6,8 @@ from fastapi import APIRouter, HTTPException
 from dependencies import get_ontology_names
 from schemas import BehaviorItem
 from services import load_ontology_data, save_ontology_data
+from services.entity_crud import ensure_unique, find_index
+from services.data_engine import is_business_failure
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/behaviors", tags=["行为"])
 
@@ -34,8 +36,7 @@ async def create_behavior(ontology_id: int, item: BehaviorItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    if any(b.name == item.name for b in data.behaviors):
-        raise HTTPException(status_code=400, detail="行为名称已存在")
+    ensure_unique(data.behaviors, item.name, "行为")
 
     data.behaviors.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -48,12 +49,8 @@ async def update_behavior(ontology_id: int, behavior_name: str, item: BehaviorIt
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, b in enumerate(data.behaviors) if b.name == behavior_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="行为不存在")
-
-    if item.name != behavior_name and any(b.name == item.name for b in data.behaviors):
-        raise HTTPException(status_code=400, detail="行为名称已存在")
+    idx = find_index(data.behaviors, behavior_name, "行为")
+    ensure_unique(data.behaviors, item.name, "行为", exclude_name=behavior_name)
 
     data.behaviors[idx] = item
     save_ontology_data(sc_name, on_name, data)
@@ -65,9 +62,7 @@ async def delete_behavior(ontology_id: int, behavior_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, b in enumerate(data.behaviors) if b.name == behavior_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="行为不存在")
+    idx = find_index(data.behaviors, behavior_name, "行为")
 
     data.behaviors.pop(idx)
     save_ontology_data(sc_name, on_name, data)
@@ -94,8 +89,8 @@ async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dic
     de = next((d for d in data.data_engines if d.behavior_name == behavior_name), None)
     if de and de.engine_type == "SQL":
         # SQL 只读（SELECT only），天然幂等，无需去重
-        from routers.data_engines import _execute_sql
-        return await _execute_sql(sc_name, on_name, de, params)
+        from services.data_engine import execute_sql
+        return await execute_sql(sc_name, on_name, de, params)
 
     is_write = de is not None and de.engine_type != "SQL" and de.target.method in _WRITE_METHODS
     if is_write and op_key:
@@ -116,6 +111,7 @@ async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dic
         raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
 
     if is_write and op_key:
-        ok = result.get("status_code", 200) < 400
+        # 信封解析：Java ApiResponse code≠0 的业务失败（HTTP 仍 200）不得缓存为 ok，否则重试拿到失败缓存
+        ok = result.get("status_code", 200) < 400 and not is_business_failure(result)
         _cache_op(op_key, "ok" if ok else "error", result)
     return result

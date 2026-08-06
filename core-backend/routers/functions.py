@@ -13,7 +13,8 @@ from services import (
     load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir,
     build_restricted_globals,
 )
-from llm_utils import load_env, build_llm
+from services.entity_crud import ensure_unique, find_index
+from llm_utils import load_env, llm_text
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/functions", tags=["函数"])
 
@@ -39,8 +40,7 @@ async def create_function(ontology_id: int, item: FunctionItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    if any(g.name == item.name for g in data.functions):
-        raise HTTPException(status_code=400, detail="函数名称已存在")
+    ensure_unique(data.functions, item.name, "函数")
 
     data.functions.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -52,12 +52,8 @@ async def update_function(ontology_id: int, function_name: str, item: FunctionIt
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, g in enumerate(data.functions) if g.name == function_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="函数不存在")
-
-    if item.name != function_name and any(g.name == item.name for g in data.functions):
-        raise HTTPException(status_code=400, detail="函数名称已存在")
+    idx = find_index(data.functions, function_name, "函数")
+    ensure_unique(data.functions, item.name, "函数", exclude_name=function_name)
 
     data.functions[idx] = item
     save_ontology_data(sc_name, on_name, data)
@@ -69,9 +65,7 @@ async def delete_function(ontology_id: int, function_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, g in enumerate(data.functions) if g.name == function_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="函数不存在")
+    idx = find_index(data.functions, function_name, "函数")
 
     # Remove code file if exists
     code_path = _code_path(sc_name, on_name, function_name)
@@ -135,11 +129,6 @@ async def generate_function_code(ontology_id: int, function_name: str):
     if fn is None:
         raise HTTPException(status_code=404, detail="函数不存在")
 
-    llm = build_llm(temperature=0.3, streaming=False)
-    if llm is None:
-        raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法智能生成代码")
-
-    from langchain_core.messages import HumanMessage, SystemMessage
     from config import FUNCTION_CODE_SYSTEM_PROMPT, FUNCTION_CODE_PROMPT
 
     prompt = FUNCTION_CODE_PROMPT.format(
@@ -150,14 +139,9 @@ async def generate_function_code(ontology_id: int, function_name: str):
     )
 
     try:
-        response = await llm.ainvoke([
-            SystemMessage(content=FUNCTION_CODE_SYSTEM_PROMPT),
-            HumanMessage(content=prompt),
-        ])
-        code = response.content.strip()
-        if code.startswith("```"):
-            code = code.split("\n", 1)[1] if "\n" in code else code[3:]
-            code = code.rsplit("```", 1)[0].strip()
+        code, _ = await llm_text(FUNCTION_CODE_SYSTEM_PROMPT, prompt, 0.3)
+        if code is None:
+            raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法智能生成代码")
 
         # Save to file
         ensure_functions_dir(sc_name, on_name)
@@ -169,6 +153,8 @@ async def generate_function_code(ontology_id: int, function_name: str):
         save_ontology_data(sc_name, on_name, data)
 
         return {"code": code, "code_file": f"functions/{function_name}.py"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"代码生成失败: {str(e)}")
 

@@ -10,7 +10,7 @@ from config import DATA_DIR
 from dependencies import get_ontology_names
 from metadata import get_scenario_by_name
 from services import load_ontology_data, _get_ontology_dir
-from llm_utils import load_env, build_llm
+from llm_utils import load_env, llm_text
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/skills", tags=["技能"])
 logger = logging.getLogger(__name__)
@@ -220,11 +220,6 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
     skill_template = SKILL_TEMPLATE_PATH.read_text(encoding="utf-8")
     ontology_summary = _build_ontology_summary(data)
 
-    llm = build_llm(temperature=0.3, streaming=False)
-    if llm is None:
-        raise HTTPException(status_code=400, detail="未配置 LLM API Key")
-
-    from langchain_core.messages import HumanMessage, SystemMessage
     from config import SKILL_GENERATE_SYSTEM_PROMPT, SKILL_GENERATE_PROMPT
 
     scenario = get_scenario_by_name(sc_name)
@@ -241,16 +236,9 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
     )
 
     try:
-        response = await llm.ainvoke([
-            SystemMessage(content=SKILL_GENERATE_SYSTEM_PROMPT),
-            HumanMessage(content=prompt),
-        ])
-        content = response.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-            if content.startswith("markdown"):
-                content = content[8:].strip()
-            content = content.rsplit("```", 1)[0].strip()
+        content, _ = await llm_text(SKILL_GENERATE_SYSTEM_PROMPT, prompt, 0.3)
+        if content is None:
+            raise HTTPException(status_code=400, detail="未配置 LLM API Key")
 
         # Strip leading conversational text only if content doesn't start with --- (YAML frontmatter)
         if not content.startswith("---"):
@@ -279,5 +267,7 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
         md_path.write_text(content, encoding="utf-8")
 
         return {"message": "技能已生成", "skill_name": skill_name, "content": content}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"技能生成失败: {str(e)}")

@@ -3,7 +3,7 @@
  * 输入 plan（+ 只读的 OntologyGateway），输出错误/非法项列表，不做任何编排副作用。
  */
 import type { SubTask, SubTaskPlan } from '../types.js';
-import type { OntologyGateway } from '../services/ontology-gateway.js';
+import type { OntologyGatewayPort } from './agent-ports.js';
 import { validateParamStructure } from './param-contract.js';
 
 export interface InvalidBehavior {
@@ -12,7 +12,7 @@ export interface InvalidBehavior {
 }
 
 /** 行为名合法性：枚举比对行为是否存在于所属本体。返回非法子任务及该本体的合法名列表。 */
-export function validateBehaviorNames(gateway: OntologyGateway, plan: SubTaskPlan): InvalidBehavior[] {
+export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidBehavior[] {
   const invalid: InvalidBehavior[] = [];
   for (const st of plan.subtasks) {
     const names = gateway.getBehaviorNames(st.scenario_name, st.ontology_name);
@@ -22,7 +22,7 @@ export function validateBehaviorNames(gateway: OntologyGateway, plan: SubTaskPla
 }
 
 /** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。 */
-export function validateParamsStructure(gateway: OntologyGateway, plan: SubTaskPlan): string[] {
+export function validateParamsStructure(gateway: OntologyGatewayPort, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
     const meta = gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);

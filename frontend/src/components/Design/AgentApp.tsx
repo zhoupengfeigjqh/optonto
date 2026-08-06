@@ -27,6 +27,10 @@ interface SubtaskChatItem {
   behavior: string;
   /** 展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord） */
   displayName?: string;
+  /** 纯中文展示名（行为中文名或子任务描述），聊天区标题用 */
+  displayLabel?: string;
+  /** 子任务描述（父 Agent 生成），标题副行用 */
+  description?: string;
   status: 'running' | 'done' | 'failed';
   details: any[];
 }
@@ -45,17 +49,20 @@ function SubtaskBlock({ item }: { item: SubtaskChatItem }) {
     <div className="bg-dark-card border border-dark-border rounded-lg overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-dark-hover" onClick={() => setOpen(!open)}>
         <span className="text-text-muted text-xs">{open ? '▼' : '▶'}</span>
-        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.displayName || item.behavior}</span>
+        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.displayLabel || item.displayName || item.behavior}</span>
         {item.status === 'running' && <Spin size="small" />}
         {item.status === 'done' && <span className="text-green-500 text-xs">✓</span>}
         {item.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
         <span className="text-text-muted text-xs ml-auto">{open ? '收起' : '展开'}</span>
       </div>
+      {item.description && (
+        <div className="px-3 pb-2 -mt-1 text-xs text-text-primary truncate" title={item.description}>{item.description}</div>
+      )}
       {open && (
         <div className="pl-4 pr-2 py-2 bg-dark-bg/40">
           {actions.map((d: any, i: number) => (
             <div key={i} className={`text-xs font-mono py-0.5 ${d.status === 'failed' ? 'text-red-400' : d.status === 'done' ? 'text-green-400' : 'text-yellow-400'}`}>
-              {d.type === 'security_confirm' ? '🔒 安全确认' : (d.status === 'failed' ? '✗' : d.status === 'done' ? '✓' : '⟳')} {d.displayName || d.name}
+              {d.type === 'security_confirm' ? '🔒 安全确认' : (d.status === 'failed' ? '✗' : d.status === 'done' ? '✓' : '⟳')} {d.name}
             </div>
           ))}
           {done && done.result && (
@@ -416,9 +423,9 @@ function AgentConversation({
                   if (entry.type === 'subtask_start') {
                     if (idx >= 0) {
                       const it = updated[idx] as any;
-                      updated[idx] = { ...it, status: entry.status, displayName: entry.displayName, details: [...it.details, entry] };
+                      updated[idx] = { ...it, status: entry.status, displayName: entry.displayName, displayLabel: entry.displayLabel ?? it.displayLabel, description: entry.description ?? it.description, details: [...it.details, entry] };
                     } else {
-                      updated.push({ role: 'subtask', runId, seq: entry.seq, behavior: entry.name, displayName: entry.displayName, status: entry.status, details: [entry] });
+                      updated.push({ role: 'subtask', runId, seq: entry.seq, behavior: entry.name, displayName: entry.displayName, displayLabel: entry.displayLabel, description: entry.description, status: entry.status, details: [entry] });
                     }
                   } else if (idx >= 0) {
                     const it = updated[idx] as any;

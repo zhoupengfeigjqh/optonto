@@ -1,12 +1,23 @@
 """Data engine — translate and forward ontology API calls to target APIs.
 
 Callable by both HTTP endpoints and agents.
+行为执行路径的统一适配器：API 转发（含映射/信封判定）+ SQL 执行。
+SQL 原在 routers/data_engines.py，迁移至此消除 cross-router 私有 import。
 """
 
+import logging
+import os
 import re
-import httpx
 
-from schemas import OntologyData
+import httpx
+from fastapi import HTTPException
+
+from schemas import DataEngineItem, OntologyData
+
+logger = logging.getLogger(__name__)
+
+# MySQL 连接池（懒初始化）—— SQL 型数据引擎共用
+_sql_pools: dict = {}
 
 
 def _translate_input(params: dict, input_mapping: dict) -> dict:
@@ -111,4 +122,92 @@ async def call_behavior(
     de = next((d for d in data.data_engines if d.behavior_name == behavior_name), None)
     if de is None:
         raise ValueError("该行为未绑定数据引擎，请先配置数据引擎")
+    if de.engine_type != "SQL":
+        check_param_contract(data, de, behavior_name)  # warn-only：暴露参数契约漂移
     return await _call_engine(de, params)
+
+
+def is_business_failure(result: dict) -> bool:
+    """Java ApiResponse 信封判定：data 为 {code≠0, message} 视为业务失败（HTTP 可能仍为 200）。
+
+    修复幂等缓存 bug：behaviors 曾以 status_code<400 判成功，把 HTTP 200 + code≠0 的业务失败缓存在 ok。
+    判定要求 code 为 int 且非 0、message 为非空 str，避免误伤普通业务数据里的 code 字段。
+    """
+    data = result.get("data")
+    if isinstance(data, dict) and isinstance(data.get("code"), int) and data.get("code") != 0:
+        if isinstance(data.get("message"), str) and data.get("message"):
+            return True
+    return False
+
+
+def check_param_contract(data: OntologyData, de, behavior_name: str) -> list[str]:
+    """参数契约一致性检查（warn-only，不阻断执行）。
+
+    behaviors[].params / data_engines[].target.params / input_mapping 三份手工对齐，
+    任一边改字段不会自动同步到其余两份。调用前跑一遍，把"必填参数未被目标接口或映射覆盖"
+    的静默漂移记录成警告，便于建模期发现，而非等执行时报错。
+    返回未覆盖的必填参数名。
+    """
+    beh = next((b for b in data.behaviors if b.name == behavior_name), None)
+    if beh is None or de is None:
+        return []
+    required = [k for k, spec in (beh.params or {}).items() if isinstance(spec, dict) and spec.get("required")]
+    covered = set(de.target.params or {})
+    covered.update(de.input_mapping or {})
+    missing = [k for k in required if k not in covered]
+    if missing:
+        logger.warning(
+            "参数契约漂移：行为 %s 的必填参数 %s 未被 data_engine 的 target.params 或 input_mapping 覆盖",
+            behavior_name, missing,
+        )
+    return missing
+
+
+async def execute_sql(sc_name: str, on_name: str, de: DataEngineItem, params: dict, ontology_id: int = 0) -> dict:
+    """Execute a SQL query from a data engine definition. Shared by data_engines and behaviors routers.
+
+    迁移自 routers/data_engines.py 的 _execute_sql，行为逐字一致。
+    """
+    if not de.sql:
+        raise HTTPException(status_code=400, detail="SQL 语句为空")
+    try:
+        sql = de.sql
+        for k, v in params.items():
+            var_name = de.sql_vars.get(k, k)
+            placeholder = f":{var_name}"
+            if isinstance(v, str):
+                sql = sql.replace(placeholder, f"'{v}'")
+            else:
+                sql = sql.replace(placeholder, str(v))
+        sql = re.sub(r":[a-zA-Z_]+", "NULL", sql)
+
+        stripped = sql.strip().upper()
+        if not stripped.startswith("SELECT"):
+            raise HTTPException(status_code=400, detail="只允许执行 SELECT 查询")
+
+        import mysql.connector.pooling
+        db_host = os.environ.get("DB_HOST", "mysql")
+        db_port = int(os.environ.get("DB_PORT", 3306))
+        db_user = os.environ.get("DB_USERNAME", "root")
+        db_pass = os.environ.get("DB_PASSWORD", "")
+        db_name = os.environ.get("DB_NAME", "onto_material")
+
+        pool_key = f"sql_pool_{ontology_id}"
+        if pool_key not in _sql_pools:
+            _sql_pools[pool_key] = mysql.connector.pooling.MySQLConnectionPool(
+                pool_name=pool_key, pool_size=3,
+                host=db_host, port=db_port,
+                user=db_user, password=db_pass,
+                database=db_name,
+            )
+        conn = _sql_pools[pool_key].get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql)
+        rows = cursor.fetchmany(100)
+        cursor.close()
+        conn.close()
+        return {"result": {"data": rows, "row_count": len(rows)}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQL 执行失败: {str(e)}")

@@ -1,10 +1,11 @@
 """CRUD API for relations within an ontology."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from dependencies import get_ontology_names
 from schemas import RelationItem
 from services import load_ontology_data, save_ontology_data
+from services.entity_crud import ensure_unique, find_index
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/relations", tags=["关系"])
 
@@ -21,8 +22,7 @@ async def create_relation(ontology_id: int, item: RelationItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    if any(r.name == item.name for r in data.relations):
-        raise HTTPException(status_code=400, detail="关系名称已存在")
+    ensure_unique(data.relations, item.name, "关系")
 
     data.relations.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -35,12 +35,8 @@ async def update_relation(ontology_id: int, relation_name: str, item: RelationIt
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, r in enumerate(data.relations) if r.name == relation_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="关系不存在")
-
-    if item.name != relation_name and any(r.name == item.name for r in data.relations):
-        raise HTTPException(status_code=400, detail="关系名称已存在")
+    idx = find_index(data.relations, relation_name, "关系")
+    ensure_unique(data.relations, item.name, "关系", exclude_name=relation_name)
 
     data.relations[idx] = item
     save_ontology_data(sc_name, on_name, data)
@@ -52,9 +48,7 @@ async def delete_relation(ontology_id: int, relation_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
-    idx = next((i for i, r in enumerate(data.relations) if r.name == relation_name), -1)
-    if idx == -1:
-        raise HTTPException(status_code=404, detail="关系不存在")
+    idx = find_index(data.relations, relation_name, "关系")
 
     data.relations.pop(idx)
     save_ontology_data(sc_name, on_name, data)

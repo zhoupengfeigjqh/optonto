@@ -11,8 +11,7 @@
  *  ⑦ 无论成功/失败/中断，父Agent 统一生成最终总结
  */
 
-import { AgentFactory } from './agent-factory.js';
-import { OntologyGateway } from '../services/ontology-gateway.js';
+import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import { contentToText } from './text-utils.js';
 import { validateBehaviorNames, validateParamsStructure, validatePlanStructure } from './plan-validation.js';
 import type { InvalidBehavior } from './plan-validation.js';
@@ -26,6 +25,7 @@ import type {
 const MAX_ROUNDS = 20;
 const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，防止无限循环
 const MAX_PARALLEL = 4; // 波内并行子任务上限：避免就绪任务过多时并发打爆 LLM/MCP
+const PARENT_PROMPT_TIMEOUT = 180_000; // 父Agent 单次 LLM 调用超时（规划/反馈/总结），防 API 挂起拖死整个 run
 
 /** 事件通道：SSE 直发 + 执行记录推送的统一出口（二者同源于 sendEvent，避免双通道各自穿线） */
 interface EventChannel {
@@ -52,9 +52,10 @@ export class Orchestrator {
   private subtaskRunner: SubtaskRunner;
 
   constructor(
-    private agentFactory: AgentFactory,
-    private ontologyGateway: OntologyGateway,
+    private agentFactory: AgentFactoryPort,
+    private ontologyGateway: OntologyGatewayPort,
     confirmManager?: ConfirmManager, // 注入缝：测试可传 fake 确认器验证拒绝/超时分支
+    private parentPromptTimeoutMs = PARENT_PROMPT_TIMEOUT, // 注入缝：测试可缩短超时验证挂起兜底（默认 180s 不变）
   ) {
     this.confirmManager = confirmManager ?? new ConfirmManager();
     this.subtaskRunner = new SubtaskRunner({
@@ -63,10 +64,34 @@ export class Orchestrator {
       childAgents: this.childAgentSet,
       getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
+      getFunctionDisplayName: (scenario, ontology, functionName) =>
+        this.ontologyGateway.getFunctionMeta(scenario, ontology, functionName).display_name || '',
     });
   }
 
   getConfirmManager(): ConfirmManager { return this.confirmManager; }
+
+  /**
+   * 带超时的父Agent prompt（守卫改进点2）。
+   * 超时即中断父Agent（abort 幂等）并抛错，由 runExecute 的统一 catch 兜底，
+   * 避免：① LLM API 挂起时整个 run 无限等待；② 裸异常穿透 runExecute 丢失"残留副作用点破"。
+   */
+  private async parentPrompt(agent: AgentPort, text: string): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        agent.prompt(text),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            try { agent.abort(); } catch {}
+            reject(new Error('父Agent 响应超时'));
+          }, this.parentPromptTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 
   /**
    * 中断当前执行：置位 run 级 abort 标记 + 中断在途的子/父 Agent + 拒绝所有待确认弹窗。
@@ -137,8 +162,13 @@ export class Orchestrator {
 
     let plan: SubTaskPlan | null = null;
 
+    // 全流程异常守卫（改进点2）：父Agent 不可用 / LLM 异常 / 超时 → 统一 catch 兜底，
+    // 必须走到终结事件并点破"已生效的写操作不会被自动回滚"，不把裸异常抛给 SSE 路由。
+    const results: SubTaskResult[] = [];
+    try {
+
     // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
-    await parentAgent.prompt(`${message}`);
+    await this.parentPrompt(parentAgent,`${message}`);
     // 规划阶段被中断 → 干净退出（父Agent 已中断，无规划可言）
     if (this.activeAbortHolder?.aborted || isChildAborted(parentAgent)) {
       sendEvent({ type: 'token', token: '\n⏹ 已中断\n' });
@@ -219,7 +249,7 @@ export class Orchestrator {
           break;
         }
         submittedPlan.value = null; // 只认本次重规划的新提交
-        await parentAgent.prompt(`用户拒绝了本次执行计划，并给出调整建议：\n${planConfirm.suggestion || '（用户未提供具体建议，请结合用户意图自行判断需要调整的地方）'}\n请重新调用 submit_plan 工具提交调整后的规划。`);
+        await this.parentPrompt(parentAgent,`用户拒绝了本次执行计划，并给出调整建议：\n${planConfirm.suggestion || '（用户未提供具体建议，请结合用户意图自行判断需要调整的地方）'}\n请重新调用 submit_plan 工具提交调整后的规划。`);
         const replanned = submittedPlan.value as SubTaskPlan | null;
         if (replanned && replanned.subtasks && replanned.subtasks.length > 0) {
           plan = replanned;
@@ -241,7 +271,7 @@ export class Orchestrator {
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划审核', status: 'failed', detail: exitReason, source: 'parent' });
       const parentAborted = isChildAborted(parentAgent);
       if (!parentAborted) {
-        await parentAgent.prompt(`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
+        await this.parentPrompt(parentAgent,`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
       }
       const reply = this.getLastAssistantMessage(parentAgent.state.messages)
         || (exitReason === '规划确认超时' ? '规划确认超时，已取消执行'
@@ -256,7 +286,7 @@ export class Orchestrator {
     if (!plan.subtasks || plan.subtasks.length === 0) {
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划为空', status: 'failed', detail: '用户确认的规划中没有任何子任务，已取消执行', source: 'parent' });
       if (!isChildAborted(parentAgent)) {
-        await parentAgent.prompt(`用户确认的规划中没有任何子任务（可能已在确认时全部删除），尚未执行任何子任务。请用一两句话简短确认已取消。`);
+        await this.parentPrompt(parentAgent,`用户确认的规划中没有任何子任务（可能已在确认时全部删除），尚未执行任何子任务。请用一两句话简短确认已取消。`);
       }
       const reply = this.getLastAssistantMessage(parentAgent.state.messages) || '规划为空，已取消执行';
       sendEvent({ type: 'done' });
@@ -298,9 +328,9 @@ export class Orchestrator {
     // ── 阶段2：按依赖拓扑分波并行执行子任务，每波完成后一次反馈父Agent ──
     emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
     let pending = this.topologicalSort(plan.subtasks);
-    const results: SubTaskResult[] = [];
     let aborted = false;
     let blocked = false; // 依赖未满足导致执行终止
+    let waveCapped = false; // 波数上限触顶，仍有未执行子任务
 
     for (let wave = 0; wave < MAX_ROUNDS; wave++) {
       if (this.activeAbortHolder?.aborted) { aborted = true; break; }
@@ -343,9 +373,15 @@ export class Orchestrator {
       }
     }
 
+    // 波数上限触顶：循环自然退出但仍有未执行子任务 → 视同未完成（改进点1），
+    // 杜绝"报全部成功却静默吞掉末尾子任务"。
+    if (pending.length > 0 && !aborted && !blocked) {
+      waveCapped = true;
+    }
+
     // 无论成功/失败/中断，父Agent 统一生成最终总结
     let finalSummary = '执行完成';
-    if (results.length > 0 || aborted || blocked) {
+    if (results.length > 0 || aborted || blocked || waveCapped) {
       const allSuccess = results.length > 0 && results.every(r => r.success);
       if (isChildAborted(parentAgent)) {
         // 父Agent 在反馈/调整阶段被打断，不能再复用其生成总结 → 罐头文案，无流式，显式发送
@@ -354,10 +390,10 @@ export class Orchestrator {
       } else {
         // 恢复流式：让父Agent 生成的最终总结逐字输出（emitTokens 在执行阶段被置 false）
         emitTokens = true;
-        if (allSuccess && !aborted && !blocked) {
+        if (allSuccess && !aborted && !blocked && !waveCapped) {
           // 带上全量结果：末子任务跳过了中间分析，总结必须自包含
           const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
-          await parentAgent.prompt(`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
+          await this.parentPrompt(parentAgent,`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
           finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
         } else {
           const outcomeSummary = results.length > 0
@@ -365,8 +401,11 @@ export class Orchestrator {
                 `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
               ).join('\n')
             : '（无子任务成功执行）';
-          const reason = aborted ? '任务已被用户中断' : (blocked ? '因前置依赖未完成而终止' : '存在子任务执行失败');
-          await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
+          const reason = aborted ? '任务已被用户中断'
+            : (blocked ? '因前置依赖未完成而终止'
+            : (waveCapped ? `执行波数已达上限，仍有 ${pending.length} 个子任务未执行`
+            : '存在子任务执行失败'));
+          await this.parentPrompt(parentAgent,`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
           finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
         }
       }
@@ -374,8 +413,27 @@ export class Orchestrator {
       // 无子任务执行（罕见）：直接显式发送默认文案
       sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
     }
+    // 最终总结同时写入执行记录：单波任务（最后一波不跑 runWaveFeedback）执行记录里也能看到父Agent总结
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '父Agent执行总结', status: 'done', result: finalSummary, source: 'parent' });
     sendEvent({ type: 'done' });
     return finalSummary;
+    } catch (e: any) {
+      // 守卫兜底：父Agent 处理异常（LLM 错误 / 超时 / 不可用）。
+      // 不复用父Agent 生成总结，用罐头文案点破残留副作用后正常收尾：
+      // 返回字符串 → SSE 路由会把本轮对话写回 thread 历史（此前异常路径会丢历史）。
+      console.error(`[orchestrator] 执行异常: ${e?.stack || e}`);
+      const executedList = results.length > 0
+        ? results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`).join('\n')
+        : '（无子任务执行完成）';
+      const successCount = results.filter(r => r.success).length;
+      const residualNote = successCount > 0
+        ? `\n注意：已成功的 ${successCount} 个子任务产生的写入（如有）仍然生效、不会被自动回滚，请手动核查。`
+        : '';
+      const msg = `⚠️ 执行中断：处理异常（${e?.message || '未知错误'}）。\n已执行的子任务：\n${executedList}${residualNote}`;
+      sendEvent({ type: 'error', message: msg });
+      sendEvent({ type: 'done' });
+      return msg;
+    }
   }
 
   /**
@@ -422,11 +480,11 @@ export class Orchestrator {
       ontology_id: subTask.ontology_id,
     };
 
-    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）`, displayLabel: meta.display_name || subTask.description, description: subTask.description });
 
     const result = await this.subtaskRunner.run(subTask, meta, childContext, emit.raw, emit.entry);
 
-    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）`, displayLabel: meta.display_name || subTask.description, description: subTask.description });
     return result;
   }
 
@@ -444,7 +502,7 @@ export class Orchestrator {
     ctx.submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
     const feedbackStart = ctx.parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
     const waveList = waveResults.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
-    await ctx.parentAgent.prompt(`本波次已执行完毕，共 ${waveResults.length} 个子任务。
+    await this.parentPrompt(ctx.parentAgent,`本波次已执行完毕，共 ${waveResults.length} 个子任务。
 
 【执行结果】
 ${waveList}
@@ -582,7 +640,7 @@ ${waveList}
 
     ctx.emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: opts.label, status: 'failed', detail: opts.detailOf(plan), source: 'parent' });
     ctx.submittedPlan.value = null; // 只认本次修正后的新提交
-    await ctx.parentAgent.prompt(opts.nudge(plan));
+    await this.parentPrompt(ctx.parentAgent,opts.nudge(plan));
     // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
     const corrected = ctx.submittedPlan.value as SubTaskPlan | null;
     if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;

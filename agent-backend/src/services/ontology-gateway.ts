@@ -121,6 +121,19 @@ export class OntologyGateway {
   }
 
   /**
+   * 按函数名提取展示元信息（中文显示名 + 描述），工具调用展示用。
+   * 不 fallback 到英文函数名：无中文名时返回空，让上层用子任务描述兜底。
+   */
+  getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string } {
+    const data = this.loadOntologyData(scenario, ontology);
+    const fn = (data?.functions || []).find((f: any) => f.name === functionName);
+    return {
+      display_name: fn?.display_name || fn?.description || '',
+      description: fn?.description,
+    };
+  }
+
+  /**
    * 从 rule_detail 中递归扫描 type:concept 节点，
    * 通过 related_concepts 反推需要调用的查询行为。
    */
