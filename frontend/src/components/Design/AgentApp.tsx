@@ -196,8 +196,15 @@ function AgentConversation({
     return () => clearInterval(timer);
   }, [planConfirmModal?.confirmId]);
   useEffect(() => {
-    // 倒计时归零 → 自动关闭；后端 60s 超时兜底拒绝
-    if (planCountdown === 0 && planConfirmModal) setPlanConfirmModal(null);
+    // 倒计时归零 → 回执拒绝（让后端即时解析；超时唯一权威在后端），再关闭弹窗
+    if (planCountdown === 0 && planConfirmModal) {
+      const m = planConfirmModal;
+      fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: false, rejectAction: 'exit' }),
+      }).catch(() => {});
+      setPlanConfirmModal(null);
+    }
   }, [planCountdown, planConfirmModal]);
 
   useEffect(() => {
@@ -209,7 +216,14 @@ function AgentConversation({
     return () => clearInterval(timer);
   }, [confirmModal?.confirmId]);
   useEffect(() => {
-    if (confirmCountdown === 0 && confirmModal) setConfirmModal(null);
+    // 倒计时归零 → 回执拒绝（让后端即时解析；超时唯一权威在后端），再关闭弹窗
+    if (confirmCountdown === 0 && confirmModal) {
+      fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: false }),
+      }).catch(() => {});
+      setConfirmModal(null);
+    }
   }, [confirmCountdown, confirmModal]);
 
   // ─── 规划确认弹窗编辑助手 ─────────────────────────

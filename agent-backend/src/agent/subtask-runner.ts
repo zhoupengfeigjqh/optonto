@@ -5,6 +5,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import { contentToText, toolResultToText } from './text-utils.js';
+import { parseResultStatus, stripResultStatus } from './result-protocol.js';
+import { requiredParamNames, renderParam } from './param-contract.js';
+import type { AgentPort } from './agent-port.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult, ExecutionEntry, SSEEvent } from '../types.js';
 import type { ConfirmManager } from './confirm-manager.js';
 
@@ -12,9 +15,9 @@ const MAX_RETRIES = 3;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmManager;
-  createChildAgent: (context: SkillContext, primaryBehavior: string, opId: string, requiredParams?: string[]) => Promise<any>;
+  createChildAgent: (context: SkillContext, primaryBehavior: string, opId: string, requiredParams?: string[]) => Promise<AgentPort>;
   /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
-  childAgents: Set<any>;
+  childAgents: Set<AgentPort>;
   /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
   getBehaviorDisplayName: (scenario: string, ontology: string, behaviorName: string) => string;
 }
@@ -24,7 +27,7 @@ export interface SubtaskRunnerDeps {
  * pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve：
  * 最后一条 assistant 消息 stopReason='aborted'，且 state.errorMessage 含 'abort'。
  */
-export function isChildAborted(agent: any): boolean {
+export function isChildAborted(agent: AgentPort): boolean {
   const err = agent.state?.errorMessage;
   if (err && /abort/i.test(err)) return true;
   const msgs: any[] = agent.state?.messages ?? [];
@@ -77,9 +80,7 @@ export class SubtaskRunner {
     // opId 每子任务一个、跨重试稳定：主行为写操作带 op_key 走后端幂等，重试不重复执行
     const opId = randomUUID();
     // 主行为必填参数名（来自行为元信息）：工具层硬检查用，缺失则拒绝执行
-    const requiredParams = Object.entries(meta.params || {})
-      .filter(([, s]) => (s as any)?.required)
-      .map(([k]) => k);
+    const requiredParams = requiredParamNames(meta);
     const childAgent = await this.deps.createChildAgent(context, subTask.behavior, opId, requiredParams);
     this.deps.childAgents.add(childAgent);
     try {
@@ -204,14 +205,7 @@ export class SubtaskRunner {
     const rawParams = subTask.params || {};
     const paramKeys = Object.keys(rawParams);
     if (paramKeys.length > 0) {
-      paramKeys.forEach(k => {
-        const p = rawParams[k] || {};
-        const pType = typeof p === 'object' ? (p.type || 'any') : 'any';
-        const pRequired = typeof p === 'object' && p.required ? '* ' : '  ';
-        const pDesc = typeof p === 'object' ? (p.description || '') : '';
-        const pVal = typeof p === 'object' ? (p.value !== undefined && p.value !== '' ? `✅ ${p.value}` : '← 待补充') : `✅ ${p}`;
-        text += `  ${pRequired}${k}: ${pType} — ${pDesc} ${pVal}\n`;
-      });
+      paramKeys.forEach(k => { text += `${renderParam(k, rawParams[k])}\n`; });
     } else {
       text += `  （父 Agent 未提供详细参数）\n`;
     }
@@ -252,13 +246,12 @@ export class SubtaskRunner {
   private extractResult(messages: any[], seq: number, behavior: string, toolErrored = false): SubTaskResult {
     const last = [...messages].reverse().find((m: any) => m.role === 'assistant' && !m.errorMessage);
     const content = last ? contentToText(last.content) : '';
-    const statusMatches = content.match(/【状态】(成功|失败)/g) || [];
-    const statusFailed = statusMatches.length > 0 && statusMatches[statusMatches.length - 1] === '【状态】失败';
-    const success = !statusFailed && !toolErrored;
+    const { failed } = parseResultStatus(content);
+    const success = !failed && !toolErrored;
     return {
       seq, behavior,
       success,
-      summary: content.replace(/【状态】(成功|失败)/g, '').trim(),
+      summary: stripResultStatus(content),
     };
   }
 }

@@ -15,8 +15,10 @@ import { AgentFactory } from './agent-factory.js';
 import { OntologyGateway } from '../services/ontology-gateway.js';
 import { contentToText } from './text-utils.js';
 import { validateBehaviorNames, validateParamsStructure, validatePlanStructure } from './plan-validation.js';
+import type { InvalidBehavior } from './plan-validation.js';
 import { ConfirmManager } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
+import type { AgentPort } from './agent-port.js';
 import type {
   ThreadMessage, SubTaskPlan, SubTaskResult, BehaviorMeta, SubTask, SSEEvent, ExecutionEntry, SkillContext, SkillSelection,
 } from '../types.js';
@@ -25,13 +27,26 @@ const MAX_ROUNDS = 20;
 const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，防止无限循环
 const MAX_PARALLEL = 4; // 波内并行子任务上限：避免就绪任务过多时并发打爆 LLM/MCP
 
+/** 事件通道：SSE 直发 + 执行记录推送的统一出口（二者同源于 sendEvent，避免双通道各自穿线） */
+interface EventChannel {
+  raw: (e: SSEEvent) => void;
+  entry: (e: ExecutionEntry) => void;
+}
+
+/** 规划修复上下文：nudge 父Agent 所需三件套打包，替代 4-5 参穿透 */
+interface PlanRepairCtx {
+  parentAgent: AgentPort;
+  submittedPlan: { value: SubTaskPlan | null };
+  emit: EventChannel;
+}
+
 // ─── Orchestrator ────────────────────────────
 
 export class Orchestrator {
-  private confirmManager = new ConfirmManager();
+  private confirmManager: ConfirmManager;
   /** 在途子 Agent 集合：并行子任务各自创建子 Agent，abort 时需逐个中断 */
-  private childAgentSet = new Set<any>();
-  private currentParentAgent: any = null;
+  private childAgentSet = new Set<AgentPort>();
+  private currentParentAgent: AgentPort | null = null;
   /** 当前 run 的中断标记（单例假定时序，同 execute 的生命周期内有效） */
   private activeAbortHolder: { aborted: boolean } | null = null;
   private subtaskRunner: SubtaskRunner;
@@ -39,7 +54,9 @@ export class Orchestrator {
   constructor(
     private agentFactory: AgentFactory,
     private ontologyGateway: OntologyGateway,
+    confirmManager?: ConfirmManager, // 注入缝：测试可传 fake 确认器验证拒绝/超时分支
   ) {
+    this.confirmManager = confirmManager ?? new ConfirmManager();
     this.subtaskRunner = new SubtaskRunner({
       confirmManager: this.confirmManager,
       createChildAgent: (ctx, pb, oid, rp) => this.agentFactory.createChildAgent(ctx, pb, oid, rp),
@@ -93,6 +110,7 @@ export class Orchestrator {
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
     const pushEntry = (entry: ExecutionEntry) => sendEvent({ type: 'exec_entry', entry });
+    const emit: EventChannel = { raw: sendEvent, entry: pushEntry };
 
     // ── 阶段1：父Agent 规划 ──
     const loadedSkillNames: string[] = [];
@@ -114,6 +132,8 @@ export class Orchestrator {
         sendEvent({ type: 'token', token: event.assistantMessageEvent.delta });
       }
     });
+    // 规划修复上下文：nudge 父Agent/波次反馈共用的三件套
+    const planCtx: PlanRepairCtx = { parentAgent, submittedPlan, emit };
 
     let plan: SubTaskPlan | null = null;
 
@@ -159,7 +179,7 @@ export class Orchestrator {
 
     for (let round = 0; round < MAX_PLAN_ROUNDS; round++) {
       // 校验 behavior 名称合法性（每轮都做；非法时提示父Agent 自动修正，最多修正 1 次）
-      const validated = await this.validateBehaviors(plan, parentAgent, submittedPlan, pushEntry);
+      const validated = await this.validateBehaviors(plan, planCtx);
       if (!validated) {
         sendEvent({ type: 'error', message: '⚠️ 规划校验失败：无法生成有效的执行计划' });
         return '⚠️ 规划校验失败：无法生成有效的执行计划，请重新描述需求。';
@@ -167,7 +187,7 @@ export class Orchestrator {
       plan = validated;
 
       // 参数结构校验（必填参数 key 齐全 + 类型匹配）：非法时 nudge 父Agent 修正一次，不再直接失败
-      const paramValidated = await this.validateParams(plan, parentAgent, submittedPlan, pushEntry);
+      const paramValidated = await this.validateParams(plan, planCtx);
       if (!paramValidated) {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构修正失败', status: 'failed', source: 'parent' });
         sendEvent({ type: 'error', message: '⚠️ 规划校验失败：参数结构不合法，修正失败' });
@@ -297,7 +317,7 @@ export class Orchestrator {
       if (ready.length === 0) { blocked = true; break; }
 
       // 执行本波：无确认子任务并行（MAX_PARALLEL 限流分块），需确认子任务逐个串行（前端单弹窗）
-      const waveResults = await this.runBatch(ready, sendEvent, pushEntry);
+      const waveResults = await this.runBatch(ready, emit);
       results.push(...waveResults);
 
       // 已执行子任务移出待执行列表
@@ -317,7 +337,7 @@ export class Orchestrator {
 
       // 每波完成后一次反馈父Agent（本波非最后一批才反馈）：数据传播/调整/提前终止以波为单位
       if (pending.length > 0) {
-        const adjusted = await this.runWaveFeedback(waveResults, results, parentAgent, submittedPlan, pushEntry, sendEvent);
+        const adjusted = await this.runWaveFeedback(waveResults, results, planCtx);
         if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
         if (adjusted) pending = adjusted;
       }
@@ -365,8 +385,7 @@ export class Orchestrator {
    */
   private async runBatch(
     batch: SubTask[],
-    sendEvent: (e: SSEEvent) => void,
-    pushEntry: (e: ExecutionEntry) => void,
+    emit: EventChannel,
   ): Promise<SubTaskResult[]> {
     const secured: { st: SubTask; meta: BehaviorMeta }[] = [];
     const plain: { st: SubTask; meta: BehaviorMeta }[] = [];
@@ -379,12 +398,12 @@ export class Orchestrator {
     // 并行分块：每块内 Promise.all 并发执行
     for (let i = 0; i < plain.length; i += MAX_PARALLEL) {
       const chunk = plain.slice(i, i + MAX_PARALLEL);
-      const chunkResults = await Promise.all(chunk.map(({ st, meta }) => this.runSubtaskEntry(st, meta, sendEvent, pushEntry)));
+      const chunkResults = await Promise.all(chunk.map(({ st, meta }) => this.runSubtaskEntry(st, meta, emit)));
       results.push(...chunkResults);
     }
     // 需确认子任务串行执行
     for (const { st, meta } of secured) {
-      results.push(await this.runSubtaskEntry(st, meta, sendEvent, pushEntry));
+      results.push(await this.runSubtaskEntry(st, meta, emit));
     }
     return results;
   }
@@ -393,8 +412,7 @@ export class Orchestrator {
   private async runSubtaskEntry(
     subTask: SubTask,
     meta: BehaviorMeta,
-    sendEvent: (e: SSEEvent) => void,
-    pushEntry: (e: ExecutionEntry) => void,
+    emit: EventChannel,
   ): Promise<SubTaskResult> {
     // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体
     const childContext: SkillContext = {
@@ -404,11 +422,11 @@ export class Orchestrator {
       ontology_id: subTask.ontology_id,
     };
 
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
 
-    const result = await this.subtaskRunner.run(subTask, meta, childContext, sendEvent, pushEntry);
+    const result = await this.subtaskRunner.run(subTask, meta, childContext, emit.raw, emit.entry);
 
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
     return result;
   }
 
@@ -419,17 +437,14 @@ export class Orchestrator {
   private async runWaveFeedback(
     waveResults: SubTaskResult[],
     allResults: SubTaskResult[],
-    parentAgent: any,
-    submittedPlan: { value: SubTaskPlan | null },
-    pushEntry: (e: ExecutionEntry) => void,
-    sendEvent: (e: SSEEvent) => void,
+    ctx: PlanRepairCtx,
   ): Promise<SubTask[] | null> {
     // 反馈父Agent 深入分析整波结果并决定后续计划（此 LLM 调用耗时秒级，先发分析中提示，避免用户以为已结束）
-    sendEvent({ type: 'feedback', status: 'running' } as any);
-    submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
-    const feedbackStart = parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
+    ctx.emit.raw({ type: 'feedback', status: 'running' });
+    ctx.submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
+    const feedbackStart = ctx.parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
     const waveList = waveResults.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
-    await parentAgent.prompt(`本波次已执行完毕，共 ${waveResults.length} 个子任务。
+    await ctx.parentAgent.prompt(`本波次已执行完毕，共 ${waveResults.length} 个子任务。
 
 【执行结果】
 ${waveList}
@@ -442,26 +457,26 @@ ${waveList}
 【数据传播（必须）】
 若后续未开始的某个子任务的 params 或 guidance 依赖本次结果中产生的新数据（例：子任务 A 生成订单号、子任务 B 需要该订单号），即使本次结果完全正常，也**必须调用 submit_plan** 提交调整后的规划，把数据填入对应子任务的 params / guidance。此类新数据后续子任务无法自行查询到，只能靠你中继。
 只有当所有后续子任务都不依赖本次结果、且无需任何调整时，才直接简要说明"继续执行原计划"，不要调用 submit_plan。`);
-    sendEvent({ type: 'feedback', status: 'done' } as any);
+    ctx.emit.raw({ type: 'feedback', status: 'done' });
     if (this.activeAbortHolder?.aborted) return null; // 反馈期间被中断 → 外层终止执行
 
     // 提取父Agent的分析结果推送到前端执行记录
-    const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
+    const analysisText = this.getLastAssistantMessage(ctx.parentAgent.state.messages);
     // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
     // TS 闭包窄化无法感知，需还原为可空类型
-    const adjusted = submittedPlan.value as SubTaskPlan | null;
+    const adjusted = ctx.submittedPlan.value as SubTaskPlan | null;
     let analysisDetail = `本波次子任务 ${waveResults.map(r => r.seq).join('、')} 分析完成`;
 
     let nextPending: SubTask[] | null = null;
     if (adjusted && Array.isArray(adjusted.subtasks)) {
       // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认。
       // 父 Agent 提交空规划或"只含已执行子任务"的规划 = 提前终止后续流程（nextPending 会被置空）。
-      const validatedB = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
+      const validatedB = await this.validateBehaviors(adjusted, ctx);
       if (validatedB) {
-        const validatedP = await this.validateParams(validatedB, parentAgent, submittedPlan, pushEntry);
+        const validatedP = await this.validateParams(validatedB, ctx);
         if (validatedP) {
           // 依赖校验也带 nudge（与行为名/参数一致）
-          const validatedD = await this.validatePlanDeps(validatedP, parentAgent, submittedPlan, pushEntry);
+          const validatedD = await this.validatePlanDeps(validatedP, ctx);
           if (validatedD) {
             // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
             const executedSeqs = new Set(allResults.map(r => r.seq));
@@ -483,9 +498,9 @@ ${waveList}
     // 方案B：本轮反馈未产生调整 → prompt + 回复 是上下文垃圾，整体剔除，
     // 避免父Agent 上下文被 N 个"继续执行原计划"撑爆。有调整则保留（分析有价值）。
     if (!adjusted || !adjusted.subtasks || adjusted.subtasks.length === 0) {
-      parentAgent.state.messages = parentAgent.state.messages.slice(0, feedbackStart);
+      ctx.parentAgent.state.messages = ctx.parentAgent.state.messages.slice(0, feedbackStart);
     }
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
+    ctx.emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
     return nextPending;
   }
 
@@ -506,68 +521,74 @@ ${waveList}
   }
 
   /** 校验子任务行为名合法性；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  private async validateBehaviors(
-    plan: SubTaskPlan,
-    parentAgent: any,
-    submittedPlan: { value: SubTaskPlan | null },
-    pushEntry: (e: ExecutionEntry) => void,
-  ): Promise<SubTaskPlan | null> {
-    const invalid = validateBehaviorNames(this.ontologyGateway, plan);
-    if (invalid.length === 0) return plan;
-
-    const invalidNames = invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、');
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名校验', status: 'failed', detail: `不存在的 behavior: ${invalidNames}`, source: 'parent' });
-    const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
-    submittedPlan.value = null; // 只认本次修正后的新提交
-    await parentAgent.prompt(`以下子任务的 behavior 名称不在其所属场景/本体的行为集合中：${invalidNames}。\n合法行为有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`);
-    // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
-    const corrected = submittedPlan.value as SubTaskPlan | null;
-    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;
-
-    if (validateBehaviorNames(this.ontologyGateway, corrected).length > 0) return null;
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '行为名已修正', status: 'done', source: 'parent' });
-    return corrected;
+  private async validateBehaviors(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    return this.repairPlan(plan, ctx, {
+      label: '行为名校验',
+      doneLabel: '行为名已修正',
+      detailOf: (p) => `不存在的 behavior: ${this.behaviorInvalid(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
+      isClean: (p) => this.behaviorInvalid(p).length === 0,
+      nudge: (p) => {
+        const invalid = this.behaviorInvalid(p);
+        const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
+        return `以下子任务的 behavior 名称不在其所属场景/本体的行为集合中：${invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}。\n合法行为有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`;
+      },
+    });
   }
 
   /** 参数结构校验：必填参数 key 齐全 + 类型匹配；非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  private async validateParams(
-    plan: SubTaskPlan,
-    parentAgent: any,
-    submittedPlan: { value: SubTaskPlan | null },
-    pushEntry: (e: ExecutionEntry) => void,
-  ): Promise<SubTaskPlan | null> {
-    const firstErrors = validateParamsStructure(this.ontologyGateway, plan);
-    if (firstErrors.length === 0) return plan;
-
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构校验', status: 'failed', detail: firstErrors.join('；'), source: 'parent' });
-    submittedPlan.value = null; // 只认本次修正后的新提交
-    await parentAgent.prompt(`以下子任务的参数结构不合法，缺少必填参数：\n${firstErrors.join('；')}\n\n请先重新加载相关技能（load_skill）获取每个行为的完整参数结构，确保每个子任务的 params 包含该行为声明的【全部必填参数】（type/required/description/value 齐全，用户已提供的填入 value，缺失的留空字符串），保持行为与整体规划不变，然后重新调用 submit_plan 提交修正后的规划。`);
-    const corrected = submittedPlan.value as SubTaskPlan | null;
-    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;
-
-    if (validateParamsStructure(this.ontologyGateway, corrected).length > 0) return null;
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '参数结构已修正', status: 'done', source: 'parent' });
-    return corrected;
+  private async validateParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    return this.repairPlan(plan, ctx, {
+      label: '参数结构校验',
+      doneLabel: '参数结构已修正',
+      detailOf: (p) => validateParamsStructure(this.ontologyGateway, p).join('；'),
+      isClean: (p) => validateParamsStructure(this.ontologyGateway, p).length === 0,
+      nudge: (p) => `以下子任务的参数结构不合法，缺少必填参数：\n${validateParamsStructure(this.ontologyGateway, p).join('；')}\n\n请先重新加载相关技能（load_skill）获取每个行为的完整参数结构，确保每个子任务的 params 包含该行为声明的【全部必填参数】（type/required/description/value 齐全，用户已提供的填入 value，缺失的留空字符串），保持行为与整体规划不变，然后重新调用 submit_plan 提交修正后的规划。`,
+    });
   }
 
   /** 依赖结构校验（无自引用/无悬空依赖/无环）：非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  private async validatePlanDeps(
-    plan: SubTaskPlan,
-    parentAgent: any,
-    submittedPlan: { value: SubTaskPlan | null },
-    pushEntry: (e: ExecutionEntry) => void,
-  ): Promise<SubTaskPlan | null> {
-    const firstErrors = validatePlanStructure(plan);
-    if (firstErrors.length === 0) return plan;
+  private async validatePlanDeps(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    return this.repairPlan(plan, ctx, {
+      label: '依赖结构校验',
+      doneLabel: '依赖结构已修正',
+      detailOf: (p) => validatePlanStructure(p).join('；'),
+      isClean: (p) => validatePlanStructure(p).length === 0,
+      nudge: (p) => `以下子任务的依赖关系不合法：\n${validatePlanStructure(p).join('；')}\n\n请重新检查 depends_on（不能依赖自身、不能引用不存在的子任务、不能形成循环依赖），保持行为与参数不变，然后重新调用 submit_plan 提交修正后的规划。`,
+    });
+  }
 
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '依赖结构校验', status: 'failed', detail: firstErrors.join('；'), source: 'parent' });
-    submittedPlan.value = null; // 只认本次修正后的新提交
-    await parentAgent.prompt(`以下子任务的依赖关系不合法：\n${firstErrors.join('；')}\n\n请重新检查 depends_on（不能依赖自身、不能引用不存在的子任务、不能形成循环依赖），保持行为与参数不变，然后重新调用 submit_plan 提交修正后的规划。`);
-    const corrected = submittedPlan.value as SubTaskPlan | null;
+  /** 非法 behavior 列表（子任务 + 合法名提示），供行为名校验的 detail/nudge 共用。 */
+  private behaviorInvalid(plan: SubTaskPlan): InvalidBehavior[] {
+    return validateBehaviorNames(this.ontologyGateway, plan);
+  }
+
+  /**
+   * 规划修复循环：跑校验器 → 有错则 pushEntry + 复位 holder + nudge 父Agent（最多1次）→ 复验。
+   * 三个 nudge（行为名/参数/依赖）共用此骨架，只差校验器与提示文案。
+   * 返回修正后的规划；无法修正（复验仍有错 / 父Agent 未重提）返回 null。
+   */
+  private async repairPlan(
+    plan: SubTaskPlan,
+    ctx: PlanRepairCtx,
+    opts: {
+      label: string;
+      doneLabel: string;
+      detailOf: (p: SubTaskPlan) => string;
+      isClean: (p: SubTaskPlan) => boolean;
+      nudge: (p: SubTaskPlan) => string;
+    },
+  ): Promise<SubTaskPlan | null> {
+    if (opts.isClean(plan)) return plan;
+
+    ctx.emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: opts.label, status: 'failed', detail: opts.detailOf(plan), source: 'parent' });
+    ctx.submittedPlan.value = null; // 只认本次修正后的新提交
+    await ctx.parentAgent.prompt(opts.nudge(plan));
+    // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
+    const corrected = ctx.submittedPlan.value as SubTaskPlan | null;
     if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return null;
 
-    if (validatePlanStructure(corrected).length > 0) return null;
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '依赖结构已修正', status: 'done', source: 'parent' });
+    if (!opts.isClean(corrected)) return null;
+    ctx.emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: opts.doneLabel, status: 'done', source: 'parent' });
     return corrected;
   }
 

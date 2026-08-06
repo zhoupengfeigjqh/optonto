@@ -8,6 +8,8 @@ import { SkillLoader } from '../services/skill-loader.js';
 import { config } from '../config.js';
 import { buildParentPrompt, CHILD_SYSTEM_PROMPT } from './prompts.js';
 import { toolResultToText } from './text-utils.js';
+import { isParamValueEmpty } from './param-contract.js';
+import type { AgentPort } from './agent-port.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
@@ -92,7 +94,7 @@ export class AgentFactory {
     history: ThreadMessage[],
     onSkillLoaded: (skillName: string) => void,
     onPlanSubmitted?: (plan: SubTaskPlan) => void,
-  ): Promise<Agent> {
+  ): Promise<AgentPort> {
     // 合并所有选中技能（可跨本体）的 name+description 进 system prompt
     const descriptions = this.skillLoader.getSkillDescriptions(skills);
     const systemPrompt = buildParentPrompt(descriptions);
@@ -129,7 +131,7 @@ export class AgentFactory {
    * 只注册 MCP 执行/时间工具（CHILD_MCP_TOOL_NAMES），不挂 load_skill。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
-  async createChildAgent(context: SkillContext, primaryBehavior?: string, opId?: string, requiredParams?: string[]): Promise<Agent> {
+  async createChildAgent(context: SkillContext, primaryBehavior?: string, opId?: string, requiredParams?: string[]): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
@@ -177,11 +179,7 @@ export class AgentFactory {
           if (opId) p.op_key = opId; // 幂等键，跨重试稳定
           // 硬检查：主行为执行前，必填参数必须已有值。缺失则拒绝执行（isError），
           // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
-          const missing = (requiredParams || []).filter(key => {
-            const entry = (p.params ?? {})[key];
-            const val = entry !== null && typeof entry === 'object' ? entry.value : entry;
-            return val === undefined || val === null || String(val).trim() === '';
-          });
+          const missing = (requiredParams || []).filter(key => isParamValueEmpty((p.params ?? {})[key]));
           if (missing.length > 0) {
             return {
               content: [{ type: 'text', text: `禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。` }],

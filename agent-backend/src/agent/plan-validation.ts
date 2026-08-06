@@ -4,6 +4,7 @@
  */
 import type { SubTask, SubTaskPlan } from '../types.js';
 import type { OntologyGateway } from '../services/ontology-gateway.js';
+import { validateParamStructure } from './param-contract.js';
 
 export interface InvalidBehavior {
   sub: SubTask;
@@ -20,24 +21,12 @@ export function validateBehaviorNames(gateway: OntologyGateway, plan: SubTaskPla
   return invalid;
 }
 
-/** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。 */
+/** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。 */
 export function validateParamsStructure(gateway: OntologyGateway, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
     const meta = gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
-    const declared = meta.params || {};
-    const provided = st.params || {};
-    for (const [key, spec] of Object.entries(declared)) {
-      const s = spec as any;
-      const p = provided[key];
-      if (!p || typeof p !== 'object') {
-        if (s.required) errors.push(`子任务${st.seq}(${st.behavior}) 缺少必填参数 ${key}`);
-        continue;
-      }
-      if (s.required && s.type && p.type && p.type !== s.type) {
-        errors.push(`子任务${st.seq}(${st.behavior}) 参数 ${key} 类型应为 ${s.type}，实际 ${p.type}`);
-      }
-    }
+    errors.push(...validateParamStructure(meta, st.params || {}, st.seq, st.behavior));
   }
   return errors;
 }
