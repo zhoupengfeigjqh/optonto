@@ -13,8 +13,8 @@ const MAX_RETRIES = 3;
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmManager;
   createChildAgent: (context: SkillContext, primaryBehavior: string, opId: string, requiredParams?: string[]) => Promise<any>;
-  /** 当前子 Agent 引用（供外层 abort() 中断在途子 Agent） */
-  childAgentRef: { current: any | null };
+  /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
+  childAgents: Set<any>;
   /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
   getBehaviorDisplayName: (scenario: string, ontology: string, behaviorName: string) => string;
 }
@@ -81,83 +81,83 @@ export class SubtaskRunner {
       .filter(([, s]) => (s as any)?.required)
       .map(([k]) => k);
     const childAgent = await this.deps.createChildAgent(context, subTask.behavior, opId, requiredParams);
-    this.deps.childAgentRef.current = childAgent;
-    // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
-    // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
-    let userAborted = false;
-    // toolCallId → { 显示名, 展示参数 }。
-    // start 事件带 args 可推导行为名/参数，end 事件不带 args，靠 toolCallId 桥接，
-    // 保证 start/end 同名、同参数，前端 running→done 去重匹配不破、参数不被覆盖成空。
-    const toolDisplayNames = new Map<string, { name: string; params: any }>();
-    childAgent.subscribe((event: any, signal: AbortSignal) => {
-      if (signal?.aborted) userAborted = true;
-      if (event.type === 'tool_execution_start') {
-        const displayName = this.describeToolCall(event.toolName, event.args);
-        // 行为/函数调用只展示传入的 params（去掉 behavior_name/function_name 包装层）
-        const displayParams = (event.toolName === 'executeOntoBehavior' || event.toolName === 'executeOntoFunction')
-          ? (event.args?.params ?? event.args)
-          : event.args;
-        // 所有 executeOntoBehavior 调用（主行为+辅助行为）都显示 被调行为的中文（英文）；函数/其他工具保留原名
-        const calledName = event.args?.behavior_name;
-        const calledDisplay = (event.toolName === 'executeOntoBehavior' && calledName)
-          ? this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, calledName)
-          : '';
-        const entryDisplay = calledDisplay ? `${calledDisplay}（${calledName}）` : undefined;
-        toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: entryDisplay });
-      } else if (event.type === 'tool_execution_end') {
-        const text = toolResultToText(event.result?.content);
-        if (event.isError) anyToolError = true;
-        const display = toolDisplayNames.get(event.toolCallId);
-        const calledName = event.args?.behavior_name;
-        const calledDisplay = (event.toolName === 'executeOntoBehavior' && calledName)
-          ? this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, calledName)
-          : '';
-        const entryDisplay = calledDisplay ? `${calledDisplay}（${calledName}）` : undefined;
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: entryDisplay });
-      }
-    });
+    this.deps.childAgents.add(childAgent);
+    try {
+      // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
+      // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
+      let userAborted = false;
+      // toolCallId → { 显示名, 展示参数 }。
+      // start 事件带 args 可推导行为名/参数，end 事件不带 args，靠 toolCallId 桥接，
+      // 保证 start/end 同名、同参数，前端 running→done 去重匹配不破、参数不被覆盖成空。
+      const toolDisplayNames = new Map<string, { name: string; params: any }>();
+      childAgent.subscribe((event: any, signal: AbortSignal) => {
+        if (signal?.aborted) userAborted = true;
+        if (event.type === 'tool_execution_start') {
+          const displayName = this.describeToolCall(event.toolName, event.args);
+          // 行为/函数调用只展示传入的 params（去掉 behavior_name/function_name 包装层）
+          const displayParams = (event.toolName === 'executeOntoBehavior' || event.toolName === 'executeOntoFunction')
+            ? (event.args?.params ?? event.args)
+            : event.args;
+          // 所有 executeOntoBehavior 调用（主行为+辅助行为）都显示 被调行为的中文（英文）；函数/其他工具保留原名
+          const calledName = event.args?.behavior_name;
+          const calledDisplay = (event.toolName === 'executeOntoBehavior' && calledName)
+            ? this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, calledName)
+            : '';
+          const entryDisplay = calledDisplay ? `${calledDisplay}（${calledName}）` : undefined;
+          toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: entryDisplay });
+        } else if (event.type === 'tool_execution_end') {
+          const text = toolResultToText(event.result?.content);
+          if (event.isError) anyToolError = true;
+          const display = toolDisplayNames.get(event.toolCallId);
+          const calledName = event.args?.behavior_name;
+          const calledDisplay = (event.toolName === 'executeOntoBehavior' && calledName)
+            ? this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, calledName)
+            : '';
+          const entryDisplay = calledDisplay ? `${calledDisplay}（${calledName}）` : undefined;
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: entryDisplay });
+        }
+      });
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      anyToolError = false; // 每次重试重置工具错误信号
-      try {
-        // 首次传入完整指令；重试时指令已在上下文中，只需让 LLM 参考上次过程自纠
-        await childAgent.prompt(attempt === 0
-          ? instruction
-          : `你上一次执行失败了（${lastError}）。\n请参考上一次的执行过程和工具结果，分析失败原因，修正参数或执行方式后重新执行，并输出最终结果。`);
-        // pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve（最后一条消息 stopReason='aborted'）。
-        // 必须显式检测，否则中断会被 extractResult 误判为成功、或走重试逻辑重新执行。
-        if (userAborted || isChildAborted(childAgent)) {
-          this.deps.childAgentRef.current = null;
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        anyToolError = false; // 每次重试重置工具错误信号
+        try {
+          // 首次传入完整指令；重试时指令已在上下文中，只需让 LLM 参考上次过程自纠
+          await childAgent.prompt(attempt === 0
+            ? instruction
+            : `你上一次执行失败了（${lastError}）。\n请参考上一次的执行过程和工具结果，分析失败原因，修正参数或执行方式后重新执行，并输出最终结果。`);
+          // pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve（最后一条消息 stopReason='aborted'）。
+          // 必须显式检测，否则中断会被 extractResult 误判为成功、或走重试逻辑重新执行。
+          if (userAborted || isChildAborted(childAgent)) {
+            return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
+          }
+          const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, anyToolError);
+          if (result.success) { return result; }
+          // 仅工具调用真实失败才重试（瞬态错误，配合 op_key 幂等安全）；
+          // LLM 自报失败（如查询结果为空、结果不符合预期）不重试，直接按失败返回，避免"换着法子空转"。
+          if (!anyToolError) {
+            return {
+              seq: subTask.seq, behavior: subTask.behavior, success: false,
+              error: result.summary || '❌ 执行未成功', summary: result.summary,
+            };
+          }
+          lastError = result.error || result.summary || '执行失败';
+        } catch (e: any) {
+          if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
+            return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
+          }
+          lastError = e.message;
         }
-        const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior, anyToolError);
-        if (result.success) { this.deps.childAgentRef.current = null; return result; }
-        // 仅工具调用真实失败才重试（瞬态错误，配合 op_key 幂等安全）；
-        // LLM 自报失败（如查询结果为空、结果不符合预期）不重试，直接按失败返回，避免"换着法子空转"。
-        if (!anyToolError) {
-          this.deps.childAgentRef.current = null;
-          return {
-            seq: subTask.seq, behavior: subTask.behavior, success: false,
-            error: result.summary || '❌ 执行未成功', summary: result.summary,
-          };
+
+        if (attempt < MAX_RETRIES - 1) {
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `重试 ${attempt + 1}/${MAX_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
         }
-        lastError = result.error || result.summary || '执行失败';
-      } catch (e: any) {
-        if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
-          this.deps.childAgentRef.current = null;
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
-        }
-        lastError = e.message;
       }
 
-      if (attempt < MAX_RETRIES - 1) {
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `重试 ${attempt + 1}/${MAX_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
-      }
+      return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: `❌ 执行失败（重试${MAX_RETRIES}次后）: ${lastError}`, summary: '' };
+    } finally {
+      this.deps.childAgents.delete(childAgent);
     }
-
-    this.deps.childAgentRef.current = null;
-    return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: `❌ 执行失败（重试${MAX_RETRIES}次后）: ${lastError}`, summary: '' };
   }
 
   /** 组装安全确认弹窗的中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值）。 */

@@ -3,11 +3,11 @@
  *
  * 流程:
  *  ① 父Agent 规划 → submit_plan 提交子任务列表
- *  ② 按依赖排序 → 逐任务执行
+ *  ② 按依赖拓扑分波 → 波内无确认子任务并行、需确认子任务串行
  *  ③ 每个子任务: OntologyGateway → 组装指令 → 子Agent 执行
- *  ④ 安全管控弹窗 → 用户确认
+ *  ④ 安全管控弹窗 → 用户确认（波内串行，避免单弹窗冲突）
  *  ⑤ 工具调用失败重试 3 次（复用实例自纠）
- *  ⑥ 结果反馈父Agent → 继续/调整
+ *  ⑥ 每波结果一次反馈父Agent → 继续/调整/提前终止
  *  ⑦ 无论成功/失败/中断，父Agent 统一生成最终总结
  */
 
@@ -23,12 +23,14 @@ import type {
 
 const MAX_ROUNDS = 20;
 const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，防止无限循环
+const MAX_PARALLEL = 4; // 波内并行子任务上限：避免就绪任务过多时并发打爆 LLM/MCP
 
 // ─── Orchestrator ────────────────────────────
 
 export class Orchestrator {
   private confirmManager = new ConfirmManager();
-  private childAgentRef: { current: any | null } = { current: null };
+  /** 在途子 Agent 集合：并行子任务各自创建子 Agent，abort 时需逐个中断 */
+  private childAgentSet = new Set<any>();
   private currentParentAgent: any = null;
   /** 当前 run 的中断标记（单例假定时序，同 execute 的生命周期内有效） */
   private activeAbortHolder: { aborted: boolean } | null = null;
@@ -41,7 +43,7 @@ export class Orchestrator {
     this.subtaskRunner = new SubtaskRunner({
       confirmManager: this.confirmManager,
       createChildAgent: (ctx, pb, oid, rp) => this.agentFactory.createChildAgent(ctx, pb, oid, rp),
-      childAgentRef: this.childAgentRef,
+      childAgents: this.childAgentSet,
       getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
     });
@@ -55,10 +57,10 @@ export class Orchestrator {
    */
   abort(): void {
     if (this.activeAbortHolder) this.activeAbortHolder.aborted = true;
-    if (this.childAgentRef.current) {
-      try { this.childAgentRef.current.abort(); } catch {}
-      this.childAgentRef.current = null;
+    for (const agent of this.childAgentSet) {
+      try { agent.abort(); } catch {}
     }
+    this.childAgentSet.clear();
     if (this.currentParentAgent) {
       try { this.currentParentAgent.abort(); } catch {}
       this.currentParentAgent = null;
@@ -273,118 +275,51 @@ export class Orchestrator {
       .join('\n');
     sendEvent({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
 
-    // ── 阶段2：按依赖顺序执行子任务，每完成一个反馈父Agent ──
+    // ── 阶段2：按依赖拓扑分波并行执行子任务，每波完成后一次反馈父Agent ──
     emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
     let pending = this.topologicalSort(plan.subtasks);
     const results: SubTaskResult[] = [];
     let aborted = false;
     let blocked = false; // 依赖未满足导致执行终止
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
+    for (let wave = 0; wave < MAX_ROUNDS; wave++) {
       if (this.activeAbortHolder?.aborted) { aborted = true; break; }
       if (pending.length === 0) break;
-      const subTask = pending[0];
 
-      // 检查依赖：前置依赖未成功则终止执行（依赖已失败，不存在"等待完成"的可能）
-      if (subTask.depends_on) {
-        let depFailed = false;
-        for (const dep of subTask.depends_on) {
-          if (!results.find(r => r.seq === dep && r.success)) { depFailed = true; break; }
+      // 本波可并行子任务 = 依赖已全部成功执行（或无依赖）的就绪集
+      const ready: SubTask[] = [];
+      for (const st of pending) {
+        const depFailed = (st.depends_on || []).some(dep => !results.find(r => r.seq === dep && r.success));
+        if (depFailed) continue; // 依赖已失败，其后继永不满足
+        ready.push(st);
+      }
+      // 无可执行子任务（其余全部依赖已失败）→ 依赖链断裂，终止
+      if (ready.length === 0) { blocked = true; break; }
+
+      // 执行本波：无确认子任务并行（MAX_PARALLEL 限流分块），需确认子任务逐个串行（前端单弹窗）
+      const waveResults = await this.runBatch(ready, sendEvent, pushEntry);
+      results.push(...waveResults);
+
+      // 已执行子任务移出待执行列表
+      const executedSeqs = new Set(waveResults.map(r => r.seq));
+      pending = pending.filter(st => !executedSeqs.has(st.seq));
+
+      // 波内任一子任务失败/被中断 → 终止（同波其余子任务已随 Promise.all 完成，结果保留）
+      if (this.activeAbortHolder?.aborted) { aborted = true; break; }
+      const waveFailed = waveResults.find(r => !r.success);
+      if (waveFailed) {
+        for (const r of waveResults) {
+          if (!r.success) sendEvent({ type: 'token', token: `\r📋 **子任务 ${r.seq} ${r.behavior}** ❌ ${r.error}\n` });
         }
-        if (depFailed) {
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: `依赖子任务${subTask.depends_on}未成功执行`, status: 'failed', detail: '前置依赖失败，任务终止', source: 'child', seq: subTask.seq });
-          blocked = true;
-          break;
-        }
+        aborted = waveResults.some(r => !r.success && r.aborted); // 波内任一中止（拒确/中断）都视为用户中止
+        break;
       }
 
-      // 提取元信息
-      const meta = this.ontologyGateway.getBehaviorMeta(subTask.scenario_name, subTask.ontology_name, subTask.behavior);
-
-      // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体，
-      const childContext: SkillContext = {
-        scenario_name: subTask.scenario_name,
-        scenario_id: subTask.scenario_id ?? 0,
-        ontology_name: subTask.ontology_name,
-        ontology_id: subTask.ontology_id,
-      };
-
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
-
-      const result = await this.subtaskRunner.run(subTask, meta, childContext, sendEvent, pushEntry);
-      results.push(result);
-      // 已执行的子任务从待执行列表移除，下一轮直接消费 pending[0]
-      pending = pending.filter(st => st.seq !== subTask.seq);
-
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
-
-      if (result.success) {
-        const isLast = pending.length === 0; // 本子任务是最后一个（无后续子任务可调整，跳过中间分析）
-        if (!isLast) {
-          // 反馈父Agent 深入分析结果并决定后续计划（此 LLM 调用耗时秒级，先发分析中提示，避免用户以为已结束）
-          sendEvent({ type: 'feedback', status: 'running' } as any);
-          submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
-          const feedbackStart = parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
-          await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。
-
-【执行结果】
-${result.summary}
-
-请分析：
-1. 结果是否符合预期？有无异常或风险？
-2. 后续子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态等）？
-3. 【提前终止判断】后续子任务是否仍有必要执行？若某些或全部后续子任务已失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请调用 submit_plan 提交【剔除这些子任务】的调整规划；若要结束整个流程，可提交只包含【已执行子任务】的规划或空 subtasks，让流程提前结束，避免执行无意义的操作。
-
-【数据传播（必须）】
-若后续某个子任务的 params 或 guidance 依赖本次结果中产生的新数据（例：子任务 A 生成订单号、子任务 B 需要该订单号），即使本次结果完全正常，也**必须调用 submit_plan** 提交调整后的规划，把数据填入对应子任务的 params / guidance。此类新数据后续子任务无法自行查询到，只能靠你中继。
-只有当所有后续子任务都不依赖本次结果、且无需任何调整时，才直接简要说明"继续执行原计划"，不要调用 submit_plan。`);
-          sendEvent({ type: 'feedback', status: 'done' } as any);
-          if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
-          // 提取父Agent的分析结果推送到前端执行记录
-          const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
-          // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
-          // TS 闭包窄化无法感知，需还原为可空类型
-          const adjusted = submittedPlan.value as SubTaskPlan | null;
-          let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
-          if (adjusted && Array.isArray(adjusted.subtasks)) {
-            // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认。
-            // 父 Agent 提交空规划或"只含已执行子任务"的规划 = 提前终止后续流程（pending 会被置空）。
-            const validatedB = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
-            if (validatedB) {
-              const validatedP = await this.validateParams(validatedB, parentAgent, submittedPlan, pushEntry);
-              if (validatedP) {
-                // 依赖校验也带 nudge（与行为名/参数一致）
-                const validatedD = await this.validatePlanDeps(validatedP, parentAgent, submittedPlan, pushEntry);
-                if (validatedD) {
-                  // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
-                  const executedSeqs = new Set(results.map(r => r.seq));
-                  pending = this.topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
-                  analysisDetail = pending.length === 0
-                    ? `子任务 ${subTask.seq} ${subTask.behavior} 已提前终止后续流程`
-                    : `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
-                } else {
-                  analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划依赖不合法，沿用原计划`;
-                }
-              } else {
-                analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划参数不合法，沿用原计划`;
-              }
-            } else {
-              analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划无效，沿用原计划`;
-            }
-          }
-          // 方案B：本轮反馈未产生调整 → prompt + 回复 是上下文垃圾，整体剔除，
-          // 避免父Agent 上下文被 N 个"继续执行原计划"撑爆。有调整则保留（分析有价值）。
-          if (!adjusted || !adjusted.subtasks || adjusted.subtasks.length === 0) {
-            parentAgent.state.messages = parentAgent.state.messages.slice(0, feedbackStart);
-          }
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
-        } else {
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: '最后一个子任务，直接进入最终总结', source: 'parent' });
-        }
-      } else {
-        aborted = result.aborted === true; // L5: 结构化标志替代字符串匹配
-        sendEvent({ type: 'token', token: `\r📋 **子任务 ${subTask.seq} ${subTask.behavior}** ❌ ${result.error}\n` });
-        break;
+      // 每波完成后一次反馈父Agent（本波非最后一批才反馈）：数据传播/调整/提前终止以波为单位
+      if (pending.length > 0) {
+        const adjusted = await this.runWaveFeedback(waveResults, results, parentAgent, submittedPlan, pushEntry, sendEvent);
+        if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
+        if (adjusted) pending = adjusted;
       }
     }
 
@@ -421,6 +356,137 @@ ${result.summary}
     }
     sendEvent({ type: 'done' });
     return finalSummary;
+  }
+
+  /**
+   * 执行一波子任务。
+   * 无确认子任务（读操作）并行，按 MAX_PARALLEL 限流分块避免并发打爆 LLM/MCP；
+   * 需确认子任务（写操作/security）逐个串行——前端 confirmModal 是单状态，并行弹多个确认窗会互相覆盖。
+   */
+  private async runBatch(
+    batch: SubTask[],
+    sendEvent: (e: SSEEvent) => void,
+    pushEntry: (e: ExecutionEntry) => void,
+  ): Promise<SubTaskResult[]> {
+    const secured: { st: SubTask; meta: BehaviorMeta }[] = [];
+    const plain: { st: SubTask; meta: BehaviorMeta }[] = [];
+    for (const st of batch) {
+      const meta = this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
+      (meta.security || meta.isWrite ? secured : plain).push({ st, meta });
+    }
+
+    const results: SubTaskResult[] = [];
+    // 并行分块：每块内 Promise.all 并发执行
+    for (let i = 0; i < plain.length; i += MAX_PARALLEL) {
+      const chunk = plain.slice(i, i + MAX_PARALLEL);
+      const chunkResults = await Promise.all(chunk.map(({ st, meta }) => this.runSubtaskEntry(st, meta, sendEvent, pushEntry)));
+      results.push(...chunkResults);
+    }
+    // 需确认子任务串行执行
+    for (const { st, meta } of secured) {
+      results.push(await this.runSubtaskEntry(st, meta, sendEvent, pushEntry));
+    }
+    return results;
+  }
+
+  /** 执行单个子任务：组装上下文 → 记录起止执行记录 → 交给 SubtaskRunner。 */
+  private async runSubtaskEntry(
+    subTask: SubTask,
+    meta: BehaviorMeta,
+    sendEvent: (e: SSEEvent) => void,
+    pushEntry: (e: ExecutionEntry) => void,
+  ): Promise<SubTaskResult> {
+    // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体
+    const childContext: SkillContext = {
+      scenario_name: subTask.scenario_name,
+      scenario_id: subTask.scenario_id ?? 0,
+      ontology_name: subTask.ontology_name,
+      ontology_id: subTask.ontology_id,
+    };
+
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
+
+    const result = await this.subtaskRunner.run(subTask, meta, childContext, sendEvent, pushEntry);
+
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
+    return result;
+  }
+
+  /**
+   * 每波完成后的父Agent 反馈：喂整波结果，做数据传播/规划调整/提前终止。
+   * 返回调整后的待执行列表；null = 未产生调整，沿用当前 pending。
+   */
+  private async runWaveFeedback(
+    waveResults: SubTaskResult[],
+    allResults: SubTaskResult[],
+    parentAgent: any,
+    submittedPlan: { value: SubTaskPlan | null },
+    pushEntry: (e: ExecutionEntry) => void,
+    sendEvent: (e: SSEEvent) => void,
+  ): Promise<SubTask[] | null> {
+    // 反馈父Agent 深入分析整波结果并决定后续计划（此 LLM 调用耗时秒级，先发分析中提示，避免用户以为已结束）
+    sendEvent({ type: 'feedback', status: 'running' } as any);
+    submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
+    const feedbackStart = parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
+    const waveList = waveResults.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
+    await parentAgent.prompt(`本波次已执行完毕，共 ${waveResults.length} 个子任务。
+
+【执行结果】
+${waveList}
+
+请分析：
+1. 各结果是否符合预期？有无异常或风险？
+2. 后续未开始的子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态等）？
+3. 【提前终止判断】后续未开始的子任务是否仍有必要执行？若某些或全部子任务已失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请调用 submit_plan 提交【剔除这些子任务】的调整规划；若要结束整个流程，可提交只包含【已执行子任务】的规划或空 subtasks，让流程提前结束，避免执行无意义的操作。
+
+【数据传播（必须）】
+若后续未开始的某个子任务的 params 或 guidance 依赖本次结果中产生的新数据（例：子任务 A 生成订单号、子任务 B 需要该订单号），即使本次结果完全正常，也**必须调用 submit_plan** 提交调整后的规划，把数据填入对应子任务的 params / guidance。此类新数据后续子任务无法自行查询到，只能靠你中继。
+只有当所有后续子任务都不依赖本次结果、且无需任何调整时，才直接简要说明"继续执行原计划"，不要调用 submit_plan。`);
+    sendEvent({ type: 'feedback', status: 'done' } as any);
+    if (this.activeAbortHolder?.aborted) return null; // 反馈期间被中断 → 外层终止执行
+
+    // 提取父Agent的分析结果推送到前端执行记录
+    const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
+    // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
+    // TS 闭包窄化无法感知，需还原为可空类型
+    const adjusted = submittedPlan.value as SubTaskPlan | null;
+    let analysisDetail = `本波次子任务 ${waveResults.map(r => r.seq).join('、')} 分析完成`;
+
+    let nextPending: SubTask[] | null = null;
+    if (adjusted && Array.isArray(adjusted.subtasks)) {
+      // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认。
+      // 父 Agent 提交空规划或"只含已执行子任务"的规划 = 提前终止后续流程（nextPending 会被置空）。
+      const validatedB = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
+      if (validatedB) {
+        const validatedP = await this.validateParams(validatedB, parentAgent, submittedPlan, pushEntry);
+        if (validatedP) {
+          // 依赖校验也带 nudge（与行为名/参数一致）
+          const validatedD = await this.validatePlanDeps(validatedP, parentAgent, submittedPlan, pushEntry);
+          if (validatedD) {
+            // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
+            const executedSeqs = new Set(allResults.map(r => r.seq));
+            nextPending = this.topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
+            analysisDetail = nextPending.length === 0
+              ? `本波次已提前终止后续流程`
+              : `本波次已调整后续计划`;
+          } else {
+            analysisDetail = `本波次调整规划依赖不合法，沿用原计划`;
+          }
+        } else {
+          analysisDetail = `本波次调整规划参数不合法，沿用原计划`;
+        }
+      } else {
+        analysisDetail = `本波次调整规划无效，沿用原计划`;
+      }
+    }
+
+    // 方案B：本轮反馈未产生调整 → prompt + 回复 是上下文垃圾，整体剔除，
+    // 避免父Agent 上下文被 N 个"继续执行原计划"撑爆。有调整则保留（分析有价值）。
+    if (!adjusted || !adjusted.subtasks || adjusted.subtasks.length === 0) {
+      parentAgent.state.messages = parentAgent.state.messages.slice(0, feedbackStart);
+    }
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
+    return nextPending;
   }
 
   /** 按 depends_on 拓扑排序 */

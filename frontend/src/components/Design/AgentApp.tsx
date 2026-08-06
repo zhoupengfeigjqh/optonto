@@ -456,16 +456,19 @@ function AgentConversation({
   // 执行记录按子任务分组 + 折叠状态
   const [collapsedSubtasks, setCollapsedSubtasks] = useState<Set<number>>(new Set());
   const groupedLog = useMemo(() => {
-    // 按原始事件顺序生成渲染节点：顶层条目（父/全局）在时间位置出现，子任务条目归入其组。
+    // 按原始事件顺序生成渲染节点：顶层条目（父/全局）在时间位置出现。
+    // 子任务条目按 seq 归入同一组（并行子任务事件交错到达，不能用"相邻才合并"）。
     const nodes: any[] = [];
+    const seqNodes = new Map<number, any>();
     for (const e of executionLog) {
       if (e.source === 'child' && e.seq != null) {
-        const last = nodes[nodes.length - 1];
-        if (last && last.kind === 'subtask' && last.seq === e.seq) {
-          last.entries.push(e);
-        } else {
-          nodes.push({ kind: 'subtask', seq: e.seq, entries: [e] });
+        let node = seqNodes.get(e.seq);
+        if (!node) {
+          node = { kind: 'subtask', seq: e.seq, entries: [] };
+          seqNodes.set(e.seq, node);
+          nodes.push(node);
         }
+        node.entries.push(e);
       } else {
         nodes.push({ kind: 'top', entry: e });
       }
