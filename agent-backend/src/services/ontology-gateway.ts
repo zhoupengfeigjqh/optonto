@@ -108,6 +108,7 @@ export class OntologyGateway {
       && writeMethods.has((dataEngine.target?.method || '').toUpperCase());
 
     return {
+      display_name: behavior?.display_name || behavior?.name || '',
       params: behavior?.params || {},
       preRules: preRules.map(r => ({ ...r, data_supplements: [...neededApis].filter(a => !a.startsWith('_')) })),
       postRules: postRules.map(r => ({ ...r, data_supplements: [...neededApis].filter(a => !a.startsWith('_')) })),

@@ -15,6 +15,8 @@ export interface SubtaskRunnerDeps {
   createChildAgent: (context: SkillContext, primaryBehavior: string, opId: string, requiredParams?: string[]) => Promise<any>;
   /** 当前子 Agent 引用（供外层 abort() 中断在途子 Agent） */
   childAgentRef: { current: any | null };
+  /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
+  getBehaviorDisplayName: (scenario: string, ontology: string, behaviorName: string) => string;
 }
 
 /**
@@ -44,7 +46,7 @@ export class SubtaskRunner {
     // 中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值），避免只给 id 等无语义内容
     const confirmContent = this.buildSecurityContent(subTask, auditContent);
     if (meta.security || meta.isWrite) {
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: confirmContent, params: subTask.params, source: 'child', seq: subTask.seq });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: confirmContent, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
       const confirmResult = await this.deps.confirmManager.requestConfirm(subTask.behavior, confirmContent, subTask.params, sendEvent);
       if (!confirmResult.approved) {
         const aborted = confirmResult.reason !== 'timeout'; // 用户拒绝/中断 → aborted；超时 → 常规失败
@@ -60,12 +62,12 @@ export class SubtaskRunner {
       if (confirmResult.params) {
         subTask.params = confirmResult.params;
       }
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params, source: 'child', seq: subTask.seq });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
     }
 
     // 组装指令（subTask.params 可能已被用户确认时修改）
     const instruction = this.buildInstruction(subTask, meta);
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq });
+    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
     let lastError = '';
     // 记录本次子任务期间【任意一次】工具执行是否报错（isError）。
     // 用累积而非"最近一次"：子任务可能多次调工具，中间失败后最后成功也会被判失败。
@@ -95,13 +97,24 @@ export class SubtaskRunner {
         const displayParams = (event.toolName === 'executeOntoBehavior' || event.toolName === 'executeOntoFunction')
           ? (event.args?.params ?? event.args)
           : event.args;
+        // 所有 executeOntoBehavior 调用（主行为+辅助行为）都显示 被调行为的中文（英文）；函数/其他工具保留原名
+        const calledName = event.args?.behavior_name;
+        const calledDisplay = (event.toolName === 'executeOntoBehavior' && calledName)
+          ? this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, calledName)
+          : '';
+        const entryDisplay = calledDisplay ? `${calledDisplay}（${calledName}）` : undefined;
         toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq });
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: entryDisplay });
       } else if (event.type === 'tool_execution_end') {
         const text = toolResultToText(event.result?.content);
         if (event.isError) anyToolError = true;
         const display = toolDisplayNames.get(event.toolCallId);
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq });
+        const calledName = event.args?.behavior_name;
+        const calledDisplay = (event.toolName === 'executeOntoBehavior' && calledName)
+          ? this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, calledName)
+          : '';
+        const entryDisplay = calledDisplay ? `${calledDisplay}（${calledName}）` : undefined;
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: entryDisplay });
       }
     });
 
@@ -139,7 +152,7 @@ export class SubtaskRunner {
       }
 
       if (attempt < MAX_RETRIES - 1) {
-        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `重试 ${attempt + 1}/${MAX_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq });
+        pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `重试 ${attempt + 1}/${MAX_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
       }
     }
 

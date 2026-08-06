@@ -42,6 +42,8 @@ export class Orchestrator {
       confirmManager: this.confirmManager,
       createChildAgent: (ctx, pb, oid, rp) => this.agentFactory.createChildAgent(ctx, pb, oid, rp),
       childAgentRef: this.childAgentRef,
+      getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
+        this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
     });
   }
 
@@ -307,19 +309,20 @@ export class Orchestrator {
         ontology_id: subTask.ontology_id,
       };
 
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
 
       const result = await this.subtaskRunner.run(subTask, meta, childContext, sendEvent, pushEntry);
       results.push(result);
       // 已执行的子任务从待执行列表移除，下一轮直接消费 pending[0]
       pending = pending.filter(st => st.seq !== subTask.seq);
 
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq });
+      pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）` });
 
       if (result.success) {
         const isLast = pending.length === 0; // 本子任务是最后一个（无后续子任务可调整，跳过中间分析）
         if (!isLast) {
-          // 反馈父Agent 深入分析结果并决定后续计划
+          // 反馈父Agent 深入分析结果并决定后续计划（此 LLM 调用耗时秒级，先发分析中提示，避免用户以为已结束）
+          sendEvent({ type: 'feedback', status: 'running' } as any);
           submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
           const feedbackStart = parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
           await parentAgent.prompt(`子任务 ${subTask.seq}（${subTask.behavior}）执行完毕。
@@ -330,11 +333,12 @@ ${result.summary}
 请分析：
 1. 结果是否符合预期？有无异常或风险？
 2. 后续子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态等）？
-3. 【提前终止判断】后续子任务是否仍有必要执行？若当前结果已使某些或全部后续子任务失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请在调整规划中删除这些失去意义的子任务（只保留仍有必要的），让流程提前结束，避免执行无意义的操作。
+3. 【提前终止判断】后续子任务是否仍有必要执行？若某些或全部后续子任务已失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请调用 submit_plan 提交【剔除这些子任务】的调整规划；若要结束整个流程，可提交只包含【已执行子任务】的规划或空 subtasks，让流程提前结束，避免执行无意义的操作。
 
 【数据传播（必须）】
 若后续某个子任务的 params 或 guidance 依赖本次结果中产生的新数据（例：子任务 A 生成订单号、子任务 B 需要该订单号），即使本次结果完全正常，也**必须调用 submit_plan** 提交调整后的规划，把数据填入对应子任务的 params / guidance。此类新数据后续子任务无法自行查询到，只能靠你中继。
 只有当所有后续子任务都不依赖本次结果、且无需任何调整时，才直接简要说明"继续执行原计划"，不要调用 submit_plan。`);
+          sendEvent({ type: 'feedback', status: 'done' } as any);
           if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
           // 提取父Agent的分析结果推送到前端执行记录
           const analysisText = this.getLastAssistantMessage(parentAgent.state.messages);
@@ -342,8 +346,9 @@ ${result.summary}
           // TS 闭包窄化无法感知，需还原为可空类型
           const adjusted = submittedPlan.value as SubTaskPlan | null;
           let analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 分析完成`;
-          if (adjusted && adjusted.subtasks && adjusted.subtasks.length > 0) {
-            // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认
+          if (adjusted && Array.isArray(adjusted.subtasks)) {
+            // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认。
+            // 父 Agent 提交空规划或"只含已执行子任务"的规划 = 提前终止后续流程（pending 会被置空）。
             const validatedB = await this.validateBehaviors(adjusted, parentAgent, submittedPlan, pushEntry);
             if (validatedB) {
               const validatedP = await this.validateParams(validatedB, parentAgent, submittedPlan, pushEntry);
@@ -351,11 +356,12 @@ ${result.summary}
                 // 依赖校验也带 nudge（与行为名/参数一致）
                 const validatedD = await this.validatePlanDeps(validatedP, parentAgent, submittedPlan, pushEntry);
                 if (validatedD) {
-                  analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
-                  // 调整后的规划是权威全集：剔除已执行，重新拓扑排序。
-                  // 被丢弃的子任务从待执行列表消失；新依赖关系重新生效。
+                  // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
                   const executedSeqs = new Set(results.map(r => r.seq));
                   pending = this.topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
+                  analysisDetail = pending.length === 0
+                    ? `子任务 ${subTask.seq} ${subTask.behavior} 已提前终止后续流程`
+                    : `子任务 ${subTask.seq} ${subTask.behavior} 已调整后续计划`;
                 } else {
                   analysisDetail = `子任务 ${subTask.seq} ${subTask.behavior} 调整规划依赖不合法，沿用原计划`;
                 }
@@ -387,25 +393,32 @@ ${result.summary}
     if (results.length > 0 || aborted || blocked) {
       const allSuccess = results.length > 0 && results.every(r => r.success);
       if (isChildAborted(parentAgent)) {
-        // 父Agent 在反馈/调整阶段被打断，不能再复用其生成总结
+        // 父Agent 在反馈/调整阶段被打断，不能再复用其生成总结 → 罐头文案，无流式，显式发送
         finalSummary = '任务已被用户中断。';
-      } else if (allSuccess && !aborted && !blocked) {
-        // 带上全量结果：末子任务跳过了中间分析，总结必须自包含
-        const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
-        await parentAgent.prompt(`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
-        finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
+        sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
       } else {
-        const outcomeSummary = results.length > 0
-          ? results.map(r =>
-              `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
-            ).join('\n')
-          : '（无子任务成功执行）';
-        const reason = aborted ? '任务已被用户中断' : (blocked ? '因前置依赖未完成而终止' : '存在子任务执行失败');
-        await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
-        finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
+        // 恢复流式：让父Agent 生成的最终总结逐字输出（emitTokens 在执行阶段被置 false）
+        emitTokens = true;
+        if (allSuccess && !aborted && !blocked) {
+          // 带上全量结果：末子任务跳过了中间分析，总结必须自包含
+          const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
+          await parentAgent.prompt(`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
+          finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
+        } else {
+          const outcomeSummary = results.length > 0
+            ? results.map(r =>
+                `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
+              ).join('\n')
+            : '（无子任务成功执行）';
+          const reason = aborted ? '任务已被用户中断' : (blocked ? '因前置依赖未完成而终止' : '存在子任务执行失败');
+          await parentAgent.prompt(`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
+          finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
+        }
       }
+    } else {
+      // 无子任务执行（罕见）：直接显式发送默认文案
+      sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
     }
-    sendEvent({ type: 'token', token: `\n\n${finalSummary}` });
     sendEvent({ type: 'done' });
     return finalSummary;
   }

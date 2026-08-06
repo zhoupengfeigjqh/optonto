@@ -21,8 +21,12 @@ import { renderMarkdown } from '@/lib/markdown';
 /** 聊天内嵌的子任务执行块（由 exec_entry 事件构建） */
 interface SubtaskChatItem {
   role: 'subtask';
+  /** 所属对话轮次 id（每次发消息自增），避免多轮对话的 seq 冲突 */
+  runId: number;
   seq: number;
   behavior: string;
+  /** 展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord） */
+  displayName?: string;
   status: 'running' | 'done' | 'failed';
   details: any[];
 }
@@ -41,7 +45,7 @@ function SubtaskBlock({ item }: { item: SubtaskChatItem }) {
     <div className="bg-dark-card border border-dark-border rounded-lg overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-dark-hover" onClick={() => setOpen(!open)}>
         <span className="text-text-muted text-xs">{open ? '▼' : '▶'}</span>
-        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.behavior}</span>
+        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.displayName || item.behavior}</span>
         {item.status === 'running' && <Spin size="small" />}
         {item.status === 'done' && <span className="text-green-500 text-xs">✓</span>}
         {item.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
@@ -51,7 +55,7 @@ function SubtaskBlock({ item }: { item: SubtaskChatItem }) {
         <div className="pl-4 pr-2 py-2 bg-dark-bg/40">
           {actions.map((d: any, i: number) => (
             <div key={i} className={`text-xs font-mono py-0.5 ${d.status === 'failed' ? 'text-red-400' : d.status === 'done' ? 'text-green-400' : 'text-yellow-400'}`}>
-              {d.type === 'security_confirm' ? '🔒 安全确认' : (d.status === 'failed' ? '✗' : d.status === 'done' ? '✓' : '⟳')} {d.name}
+              {d.type === 'security_confirm' ? '🔒 安全确认' : (d.status === 'failed' ? '✗' : d.status === 'done' ? '✓' : '⟳')} {d.displayName || d.name}
             </div>
           ))}
           {done && done.result && (
@@ -76,7 +80,7 @@ function EntryCard({ entry }: { entry: any }) {
         {entry.status === 'failed' && <span className="text-red-500 text-xs">✗</span>}
         {entry.source === 'parent' && <span className="text-yellow-500 text-xs mr-1">父</span>}
         {entry.source === 'child' && <span className="text-blue-400 text-xs mr-1">子</span>}
-        <span className="text-accent-blue text-xs font-mono">{entry.name}</span>
+        <span className="text-accent-blue text-xs font-mono">{entry.displayName || entry.name}</span>
         <span className="text-text-muted text-xs ml-auto">{entry.time}</span>
       </div>
       {entry.detail && <div className="text-text-muted text-xs mt-1">{entry.detail}</div>}
@@ -131,7 +135,7 @@ function AgentConversation({
   const [sending, setSending] = useState(false);
   const [executionLog, setExecutionLog] = useState<{
     time: string; type: string;
-    name: string; description?: string; params?: any; result?: string; status: string; detail?: string; source?: string; seq?: number;
+    name: string; description?: string; params?: any; result?: string; status: string; detail?: string; source?: string; seq?: number; displayName?: string;
   }[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [planConfirmModal, setPlanConfirmModal] = useState<{
@@ -177,6 +181,10 @@ function AgentConversation({
 
   // 聊天内子任务块的分阶段路由：planning(规划文本) → subtask(子任务块) → summary(最终总结新开消息)
   const phaseRef = useRef<'planning' | 'subtask' | 'summary'>('planning');
+  // 当前对话轮次 id（每次发消息自增），用于区分多轮对话的子任务块
+  const runIdRef = useRef(0);
+  // 父Agent 分析中（子任务间空窗提示）
+  const [analyzing, setAnalyzing] = useState(false);
 
   // ─── 确认弹窗倒计时（60s，随 confirmId 重置；编辑参数不重置倒计时） ───
   useEffect(() => {
@@ -305,6 +313,7 @@ function AgentConversation({
 
     // 重置执行状态
     phaseRef.current = 'planning';
+    runIdRef.current += 1;
     setExecutionLog([]);
     setPlanConfirmModal(null);
     setConfirmModal(null);
@@ -366,28 +375,36 @@ function AgentConversation({
               setPlanSuggestion('');
               setPlanError('');
             }
+            if (data.type === 'feedback') {
+              // 父Agent 分析子任务结果期间的空窗提示（子任务间切换）
+              setAnalyzing(data.status === 'running');
+            }
             if (data.type === 'exec_entry') {
               const entry = data.entry;
               setExecutionLog(prev => {
-                const exists = prev.findIndex(e => e.name === entry.name && e.status === 'running' && e.seq === entry.seq);
+                // 去重键含 type：不同条目类型（subtask_start/subtask_input/tool_call/security）即使 name 相同也不互相覆盖
+                const exists = prev.findIndex(e => e.type === entry.type && e.name === entry.name && e.status === 'running' && e.seq === entry.seq);
                 if (exists >= 0 && entry.status !== 'running') {
-                  const n = [...prev]; n[exists] = { ...n[exists], status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, seq: entry.seq }; return n;
+                  const n = [...prev];
+                  n[exists] = { ...n[exists], status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, seq: entry.seq, displayName: entry.displayName ?? n[exists].displayName };
+                  return n;
                 }
                 if (exists >= 0) return prev;
-                return [...prev, { time: entry.time, type: entry.type, name: entry.name, status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, source: entry.source, seq: entry.seq }];
+                return [...prev, { time: entry.time, type: entry.type, name: entry.name, status: entry.status, detail: entry.detail, params: entry.params, result: entry.result, source: entry.source, seq: entry.seq, displayName: entry.displayName }];
               });
-              // 聊天内子任务执行块
+              // 聊天内子任务执行块（用 runId+seq 定位，避免多轮对话 seq 冲突）
               if (entry.source === 'child' && entry.seq != null) {
                 if (entry.type === 'subtask_start') phaseRef.current = 'subtask';
+                const runId = runIdRef.current;
                 setMessages(prev => {
                   const updated = [...prev];
-                  const idx = updated.findIndex(m => (m as any).role === 'subtask' && (m as any).seq === entry.seq);
+                  const idx = updated.findIndex(m => (m as any).role === 'subtask' && (m as any).runId === runId && (m as any).seq === entry.seq);
                   if (entry.type === 'subtask_start') {
                     if (idx >= 0) {
                       const it = updated[idx] as any;
-                      updated[idx] = { ...it, status: entry.status, details: [...it.details, entry] };
+                      updated[idx] = { ...it, status: entry.status, displayName: entry.displayName, details: [...it.details, entry] };
                     } else {
-                      updated.push({ role: 'subtask', seq: entry.seq, behavior: entry.name, status: entry.status, details: [entry] });
+                      updated.push({ role: 'subtask', runId, seq: entry.seq, behavior: entry.name, displayName: entry.displayName, status: entry.status, details: [entry] });
                     }
                   } else if (idx >= 0) {
                     const it = updated[idx] as any;
@@ -513,23 +530,6 @@ function AgentConversation({
           </div>
         )}
 
-        {/* Tool calls (only for the last assistant turn when sending) */}
-        {isAssistant && isLast && sending && executionLog.filter(e => e.status === 'running').length > 0 && (
-          <div className="flex gap-3 mb-2">
-            <div className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
-              <RobotOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
-            </div>
-            <div className="flex flex-col gap-1">
-              {executionLog.filter(e => e.status === 'running').map((entry, ti) => (
-                <div key={ti} className="flex items-center gap-2 text-xs text-text-muted bg-dark-card border border-dark-border rounded px-3 py-1.5">
-                  <Spin size="small" />
-                  <span>调用了 <code className="text-accent-blue">{entry.name}</code></span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Assistant message */}
         {isAssistant && (
           <div className="flex gap-3 justify-start mb-2">
@@ -592,8 +592,8 @@ function AgentConversation({
         </Button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2" style={{ maxHeight: 'calc(100vh - 380px)' }}>
+      {/* Messages：flex-1 撑满，顶满可用高度；输入框贴底 */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 mb-3 pr-2">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
@@ -601,6 +601,14 @@ function AgentConversation({
             <p className="text-xs mt-1">输入您的问题，AI Agent 将基于加载的技能为您解答</p>
           </div>
         ) : messagesContent}
+        {analyzing && (
+          <div className="flex gap-3 justify-start mb-2">
+            <div className="w-8 h-8 shrink-0" />
+            <div className="text-text-muted text-xs flex items-center gap-2">
+              <Spin size="small" /> 父Agent 正在分析子任务结果...
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -807,9 +815,11 @@ function AgentConversation({
                 <div key={`st-${node.seq}`} className="border border-dark-border rounded-lg overflow-hidden">
                   {(() => {
                     const collapsed = collapsedSubtasks.has(node.seq);
-                    const header = node.entries.find((e: any) => e.type === 'subtask_start');
-                    const title = header ? `子任务 ${node.seq}: ${header.name}` : `子任务 ${node.seq}`;
-                    const st = header?.status;
+                    const start = node.entries.find((e: any) => e.type === 'subtask_start');
+                    const done = node.entries.find((e: any) => e.type === 'subtask_done');
+                    const title = start ? `子任务 ${node.seq}: ${start.displayName || start.name}` : `子任务 ${node.seq}`;
+                    // 标题状态取 subtask_done（type 键去重后 start 不再被 done 覆盖）
+                    const st = done?.status || start?.status || 'running';
                     return (
                       <>
                         <div
@@ -820,11 +830,12 @@ function AgentConversation({
                           <span className="text-accent-blue text-xs font-semibold">{title}</span>
                           {st === 'done' && <span className="text-green-500 text-xs">✓</span>}
                           {st === 'failed' && <span className="text-red-500 text-xs">✗</span>}
-                          <span className="text-text-muted text-xs ml-auto">{node.entries.length} 项</span>
+                          <span className="text-text-muted text-xs ml-auto">{node.entries.filter((e: any) => e.type !== 'subtask_start' && e.type !== 'subtask_done' && e.type !== 'subtask_input').length} 步</span>
                         </div>
                         {!collapsed && (
                           <div className="pl-4 pr-2 py-2 space-y-2 bg-dark-bg/40">
-                            {(node.entries as any[]).map((entry: any, ei: number) => (
+                            {/* 只留执行动作（安全确认/工具调用）；start/done 由标题覆盖，input 是指令不是步骤 */}
+                            {(node.entries as any[]).filter((e: any) => e.type !== 'subtask_start' && e.type !== 'subtask_done' && e.type !== 'subtask_input').map((entry: any, ei: number) => (
                               <div key={`s-${node.seq}-${ei}`}><EntryCard entry={entry} /></div>
                             ))}
                           </div>

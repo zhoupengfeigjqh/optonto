@@ -107,6 +107,8 @@ export interface ConceptInfo {
 
 /** 行为元信息（OntologyGateway 提取结果） */
 export interface BehaviorMeta {
+  /** 行为中文名（display_name），用于展示 */
+  display_name?: string;
   params: Record<string, any>;
   preRules: RuleDetail[];
   postRules: RuleDetail[];
@@ -139,6 +141,8 @@ export interface ExecutionEntry {
   source?: 'parent' | 'child';
   /** 所属子任务编号（仅子任务相关条目），前端据此分组展示 */
   seq?: number;
+  /** 子任务展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord） */
+  displayName?: string;
 }
 
 // ─── SSE 事件类型 ──────────────────────────────

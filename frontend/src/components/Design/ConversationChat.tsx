@@ -245,7 +245,8 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+      {/* Messages：flex-1 撑满，顶满可用高度；输入框贴底 */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 mb-3 pr-2">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
