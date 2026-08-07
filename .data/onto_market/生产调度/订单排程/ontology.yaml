@@ -1,410 +1,346 @@
+metadata:
+  scenario_name: 生产调度
+  scenario_id: 1
+  ontology_name: 订单排程
+  ontology_id: 2
 concepts:
 - name: Order
   description: 客户销售订单或询单，包含订单头信息
   attributes:
   - name: 订单编号
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单批次号
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单缓冲周期
     type: int
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单类型
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   display_name: 订单
-  classification: ''
 - name: OrderDetail
   description: 订单的具体行项，记录需要交付的货品、数量和交期
   attributes:
   - name: 订单编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 起排日期
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 截止日期
     type: date
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 交付数量
     type: int
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 优先级
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   display_name: 订单明细
-  classification: ''
 - name: Product
   description: 企业生产输出的物料，包含成品和半成品
   attributes:
   - name: 货品编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品大类
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 物料类型
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 主单位
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 副单位
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 主副单位换算比
     type: float
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 管理部门
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 生产部门
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 预设仓库
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 规格
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   display_name: 货品
-  classification: ''
 - name: BOMInfo
   description: 生产该货品所需的物料清单
   attributes:
   - name: BOM编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: BOM名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 货品名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: BOM版本
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   display_name: BOM基本信息
-  classification: ''
 - name: SchedTask
   description: 根据订单创建的生产排程任务
   attributes:
   - name: 订单编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产任务编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产任务名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产任务描述
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产场景
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 任务状态
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   display_name: 排产任务
-  classification: ''
 - name: SchedResult
   description: 排产任务执行后产出的调度方案及关键指标
   attributes:
   - name: 排产任务编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产任务名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产场景
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 方案名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 方案状态
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 总产品数量
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 总工序数量
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 平均生产周期
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 延期工件数量
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 延期率
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 总加工成本
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 总利润
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 设备平均利用率
     type: number
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   display_name: 排产结果
-  classification: ''
 - name: ShortageDetail
   description: 下发排产结果与当前库存对比后得出的缺料清单
   attributes:
   - name: 排产任务编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产任务名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产场景
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 原材料编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 原材料名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   display_name: 欠料明细
-  classification: ''
 - name: AlgoParams
   description: 排产任务的优化目标参数，定义排产策略和约束
   attributes:
   - name: 排产任务编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产任务名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 排产方式
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 设备利用率目标
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 订单交期目标
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 加工成本最低
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 使用剩余产能
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   - name: 附件转换率最低
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
   display_name: 算法参数
-  classification: ''
 relations:
 - name: hasDetail
   source: Order
@@ -454,9 +390,11 @@ relations:
   cardinality: 1:N
   description: 排产任务的版本派生关系
   display_name: 版本派生
+functions: []
 behaviors:
 - name: CreateOrder
   description: 用户或智能体创建新的订单及其明细
+  behavior_type: API
   params:
     orderName:
       type: string
@@ -470,108 +408,134 @@ behaviors:
     orderDetails:
       type: array
       required: true
+  response: {}
   related_concepts:
   - Order
   - OrderDetail
   display_name: 创建订单
 - name: UpdateOrder
   description: 用户或智能体更新已有订单信息及明细
+  behavior_type: API
   params:
     orderId: string
     orderName: string
+  response: {}
   related_concepts:
   - Order
   - OrderDetail
   display_name: 更新订单
 - name: DeleteOrder
   description: 用户或智能体删除已有订单及明细
+  behavior_type: API
   params:
     orderId: string
+  response: {}
   related_concepts:
   - Order
   display_name: 删除订单
 - name: QueryOrder
   description: 用户或智能体查询订单及明细
+  behavior_type: API
   params:
     orderId: string
     orderName: string
+  response: {}
   related_concepts:
   - Order
   - OrderDetail
   display_name: 查询订单
 - name: CreateSchedTask
   description: 用户或智能体根据订单信息创建排产任务
+  behavior_type: API
   params:
     orderId: string
+  response: {}
   related_concepts:
   - Order
   - SchedTask
   display_name: 创建排产任务
 - name: AddSchedTask
   description: 基于已有排产任务创建新场景下的排产任务
+  behavior_type: API
   params:
     scheduleId: string
     scenario: string
+  response: {}
   related_concepts:
   - SchedTask
   display_name: 新增排产任务
 - name: CreateAlgoParams
   description: 用户或智能体为排产任务创建算法参数
+  behavior_type: API
   params:
     scheduleId: string
+  response: {}
   related_concepts:
   - SchedTask
   - AlgoParams
   display_name: 创建算法参数
 - name: StartSchedTask
   description: 用户或智能体选择排产任务并执行
+  behavior_type: API
   params:
     scheduleId: string
+  response: {}
   related_concepts:
   - SchedTask
   display_name: 启动排产任务
 - name: QuerySchedTask
   description: 用户或智能体查询排产任务的当前状态
+  behavior_type: API
   params:
     scheduleId: string
     orderId: string
+  response: {}
   related_concepts:
   - SchedTask
   display_name: 查询排产任务
 - name: QuerySchedResult
   description: 用户或智能体查询排产任务结果
+  behavior_type: API
   params:
     scheduleId: string
     orderId: string
+  response: {}
   related_concepts:
   - SchedResult
   display_name: 查询排产结果
 - name: DeploySchedResult
   description: 用户或智能体将已成功执行的排产任务下发
+  behavior_type: API
   params:
     scheduleId: string
+  response: {}
   related_concepts:
   - SchedTask
   - SchedResult
   display_name: 排产结果下发
 - name: RecallSchedResult
   description: 用户或智能体取消已下发的排产结果
+  behavior_type: API
   params:
     scheduleId: string
+  response: {}
   related_concepts:
   - SchedTask
   - SchedResult
   display_name: 排产结果撤回
 - name: QueryShortage
   description: 用户或智能体查询订单下发后的齐套欠料信息
+  behavior_type: API
   params:
     scheduleId: string
     orderId: string
+  response: {}
   related_concepts:
   - ShortageDetail
   display_name: 查询欠料明细
 - name: StartPollingTask
   description: 后台启动定时任务轮询排产任务状态
+  behavior_type: API
   params:
     scheduleId:
       type: string
@@ -582,6 +546,7 @@ behaviors:
     checkCnt:
       type: number
       required: true
+  response: {}
   related_concepts:
   - SchedTask
   display_name: 启动定时查询
@@ -590,107 +555,137 @@ rules:
   description: 订单明细.类型 只能是询单或销售二选一
   related_behaviors:
   - CreateOrder
+  related_functions: []
   display_name: 订单类型校验
   rule_type: 验证规则
   position: 前置
+  data_supplements: []
 - name: ProductExistsValid
   description: 订单明细.货品编号和货品名称 必须存在于 货品
   related_behaviors:
   - CreateOrder
+  related_functions: []
   display_name: 货品存在性校验
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: DueDateValid
   description: 订单明细.截止日期 > 订单明细.起排日期
   related_behaviors:
   - CreateOrder
+  related_functions: []
   display_name: 截止日期约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: QtyValid
   description: 订单明细.交付数量 > 0
   related_behaviors:
   - CreateOrder
+  related_functions: []
   display_name: 交付数量约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: PriorityValid
   description: 订单明细.优先级 只能是按期交付或可延期交付
   related_behaviors:
   - CreateOrder
+  related_functions: []
   display_name: 优先级约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: NoSchedOnUpdate
   description: 订单更新时，该订单必须未创建排产任务，否则拒绝
   related_behaviors:
   - UpdateOrder
+  related_functions: []
   display_name: 未排产约束（更新）
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: NoSchedOnDelete
   description: 订单删除时，该订单必须未创建排产任务，否则拒绝
   related_behaviors:
   - DeleteOrder
+  related_functions: []
   display_name: 未排产约束（删除）
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: SchedUniqueValid
   description: 创建排产任务时，该订单只能创建一次排产任务
   related_behaviors:
   - CreateSchedTask
+  related_functions: []
   display_name: 排产唯一性约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: AddSchedStateValid
   description: 新增排产任务时，排产任务状态需为已排产
   related_behaviors:
   - AddSchedTask
+  related_functions: []
   display_name: 新增任务状态约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: StartSchedStateValid
   description: 启动排产任务时，该任务还未开启过排产
   related_behaviors:
   - StartSchedTask
+  related_functions: []
   display_name: 启动任务状态约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: DeployStateValid
   description: 排产结果下发时，排产任务为已排产，方案状态为未锁定
   related_behaviors:
   - DeploySchedResult
+  related_functions: []
   display_name: 下发状态约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: RecallStateValid
   description: 排产结果撤回时，方案状态为已下发
   related_behaviors:
   - RecallSchedResult
+  related_functions: []
   display_name: 撤回状态约束
   rule_type: 验证规则
   position: ''
+  data_supplements: []
 - name: CanAddAfterSched
   description: 排产任务.任务状态=已排产 -> 可新增场景任务
   related_behaviors:
   - QuerySchedTask
+  related_functions: []
   display_name: 已排产可新增任务
   rule_type: 推理规则
   position: ''
+  data_supplements: []
 - name: PromptSchedAfterOrder
   description: 订单创建成功 -> 提示可对该订单创建排产任务
   related_behaviors:
   - CreateOrder
+  related_functions: []
   display_name: 创建后提示排产
   rule_type: 推理规则
   position: ''
+  data_supplements: []
 - name: PromptWaitAfterStart
   description: 排产任务启动 -> 提示等待结果
   related_behaviors:
   - StartSchedTask
+  related_functions: []
   display_name: 启动后提示等待
   rule_type: 推理规则
   position: ''
+  data_supplements: []
 events:
 - name: OrderCreated
   event_type: 输入事件
@@ -755,3 +750,6 @@ events:
   related_behavior: CreateAlgoParams
   trigger_behaviors: []
   display_name: 算法参数创建事件
+processes: []
+securities: []
+data_engines: []

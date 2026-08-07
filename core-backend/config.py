@@ -12,9 +12,16 @@ DATA_DIR = BASE_DIR / ".data"
 ONTO_MARKET_DIR = DATA_DIR / "onto_market"
 CONFIG_DIR = BASE_DIR / "config"
 
+# 会话线程统一存放（.data/threads，与本体目录解耦）
+THREADS_DIR = DATA_DIR / "threads"
+DEMAND_THREADS_DIR = THREADS_DIR / "demand"
+AGENT_THREADS_DIR = THREADS_DIR / "agent"
+
 # Ensure directories exist
 ONTO_MARKET_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+DEMAND_THREADS_DIR.mkdir(parents=True, exist_ok=True)
+AGENT_THREADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # SQLite 已移除，元数据改用 meta.json 文件存储
 

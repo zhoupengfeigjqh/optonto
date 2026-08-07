@@ -14,7 +14,7 @@ import { createMCPConfigRouter } from './routes/mcp-config.js';
 
 // ─── 初始化核心组件 ──────────────────────────────
 
-const pac = new PathAccessController(config.dataDir);
+const pac = new PathAccessController(config.dataDir, config.threadsDir);
 const threadStore = new ThreadStore(pac);
 const skillLoader = new SkillLoader(pac);
 const mcpConfigStore = new MCPConfigStore(config.mcpConfigPath);

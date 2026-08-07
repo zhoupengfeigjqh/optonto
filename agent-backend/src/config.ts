@@ -54,6 +54,8 @@ function loadConfig() {
     modelName,
     dataDir: process.env['DATA_DIR'] || resolve(__dirname, '../../.data'),
     port: parseInt(process.env['PORT'] || '8003', 10),
+    // 会话线程统一存放（.data/threads，与本体目录解耦；Docker 为 /app/.data/threads）
+    threadsDir: process.env['THREADS_DIR'] || resolve(__dirname, '../../.data/threads'),
     // 全局 MCP 配置路径（./config/mcp-config.json，src/ 与 dist/ 均向上两级到项目根；Docker 为 /app/config）
     mcpConfigPath: process.env['MCP_CONFIG_PATH'] || resolve(__dirname, '../../config/mcp-config.json'),
   };

@@ -7,12 +7,13 @@ import type { Thread, ThreadSummary, ThreadMessage, SkillSelection } from '../ty
 /**
  * ThreadStore — 对话线程数据的读写。
  * 所有操作都经过 PathAccessController 权限校验，
- * 严格限制在 threads/agent/ 目录下。
+ * 严格限制在 {threadsDir}/agent/ 目录下（平铺按线程ID存放）。
+ * 线程文件内记录 scenario_name/ontology_name，用于归属校验。
  */
 export class ThreadStore {
   constructor(private pac: PathAccessController) {}
 
-  /** 列出某本体下所有 agent 线程 */
+  /** 列出某本体下所有 agent 线程（平铺扫描，按线程 json 内记录的场景/本体过滤） */
   list(scenario: string, ontology: string): ThreadSummary[] {
     const baseDir = this.pac.listThreadDirs(scenario, ontology);
     if (!existsSync(baseDir)) return [];
@@ -28,6 +29,7 @@ export class ThreadStore {
       try {
         const raw = readFileSync(dataPath, 'utf-8');
         const thread = JSON.parse(raw) as Thread;
+        if (thread.scenario_name !== scenario || thread.ontology_name !== ontology) continue;
         threads.push({
           id: thread.id,
           title: thread.title || '新对话',
@@ -73,14 +75,10 @@ export class ThreadStore {
     return thread;
   }
 
-  /** 获取单个线程 */
+  /** 获取单个线程（校验线程归属的场景/本体） */
   get(scenario: string, ontology: string, threadId: string): Thread {
-    const dataPath = this.pac.resolveThreadReadPath(scenario, ontology, threadId);
-    if (!existsSync(dataPath)) {
-      throw new ForbiddenError('对话不存在');
-    }
-    const raw = readFileSync(dataPath, 'utf-8');
-    return JSON.parse(raw) as Thread;
+    const thread = this.readThread(scenario, ontology, threadId);
+    return thread;
   }
 
   /** 删除线程及其目录 */
@@ -93,7 +91,7 @@ export class ThreadStore {
 
   /** 追加消息到线程 */
   appendMessages(scenario: string, ontology: string, threadId: string, messages: ThreadMessage[]): void {
-    const thread = this.get(scenario, ontology, threadId);
+    const thread = this.readThread(scenario, ontology, threadId);
     thread.messages.push(...messages);
     thread.updated_at = new Date().toISOString();
 
@@ -102,13 +100,27 @@ export class ThreadStore {
     writeFileSync(dataPath, JSON.stringify(thread, null, 2), 'utf-8');
   }
 
-  /** 检查线程是否存在 */
+  /** 检查线程是否存在且属于指定场景/本体 */
   exists(scenario: string, ontology: string, threadId: string): boolean {
     try {
-      const dataPath = this.pac.resolveThreadReadPath(scenario, ontology, threadId);
-      return existsSync(dataPath);
+      this.readThread(scenario, ontology, threadId);
+      return true;
     } catch {
       return false;
     }
+  }
+
+  /** 读取线程并校验归属（场景/本体必须与请求一致，防跨本体访问） */
+  private readThread(scenario: string, ontology: string, threadId: string): Thread {
+    const dataPath = this.pac.resolveThreadReadPath(scenario, ontology, threadId);
+    if (!existsSync(dataPath)) {
+      throw new ForbiddenError('对话不存在');
+    }
+    const raw = readFileSync(dataPath, 'utf-8');
+    const thread = JSON.parse(raw) as Thread;
+    if (thread.scenario_name !== scenario || thread.ontology_name !== ontology) {
+      throw new ForbiddenError('对话不属于当前场景/本体');
+    }
+    return thread;
   }
 }

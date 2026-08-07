@@ -1,10 +1,14 @@
+metadata:
+  scenario_name: 生产调度
+  scenario_id: 1
+  ontology_name: 货品BOM及工艺
+  ontology_id: 4
 concepts:
 - name: Product
   description: 企业生产输出的物料，包含成品和半成品
   attributes:
   - name: cc
     type: string
-    required: true
     display_name: ccc
     example: ''
     constraint: ''
@@ -30,19 +34,16 @@ concepts:
   attributes:
   - name: BOM编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 设备组编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 设备组名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
@@ -52,19 +53,16 @@ concepts:
   attributes:
   - name: BOM编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 人员组编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 人员组名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
@@ -74,25 +72,21 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 工艺路径名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 类型
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 工艺版本号
     type: string
-    required: false
     display_name: ''
     example: ''
     constraint: ''
@@ -102,25 +96,21 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 原料名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 原料编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 需求量
     type: number
-    required: true
     display_name: ''
     example: ''
     constraint: ''
@@ -130,19 +120,16 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 设备组编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 设备组名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
@@ -152,19 +139,16 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 人员组编号
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
   - name: 人员组名称
     type: string
-    required: true
     display_name: ''
     example: ''
     constraint: ''
@@ -236,9 +220,11 @@ relations:
   cardinality: 1:N
   description: 1条工艺路径可关联多个人组需求
   display_name: 需要人员组
+functions: []
 behaviors:
 - name: QueryProduct
   description: 用户或智能体查询货品基本信息
+  behavior_type: API
   params:
     productId:
       type: string
@@ -246,79 +232,100 @@ behaviors:
     productName:
       type: string
       required: true
+  response: {}
   related_concepts:
   - Product
   display_name: 查询货品信息
 - name: QueryProductInv
   description: 用户或智能体查询货品库存
+  behavior_type: API
   params:
     productId: string
     productName: string
+  response: {}
   related_concepts:
   - ProductInv
   display_name: 查询货品库存
 - name: QueryBOMInfo
   description: 用户或智能体查询BOM基本信息
+  behavior_type: API
   params:
     bomId: string
     productId: string
+  response: {}
   related_concepts:
   - BOMInfo
   display_name: 查询BOM信息
 - name: QueryBOMMaterialReq
   description: 用户或智能体查询BOM的原料汇总需求
+  behavior_type: API
   params:
     bomId: string
+  response: {}
   related_concepts:
   - BOMMaterialReq
   display_name: 查询BOM原料需求
 - name: QueryBOMEquipReq
   description: 用户或智能体查询BOM的设备组汇总需求
+  behavior_type: API
   params:
     bomId: string
+  response: {}
   related_concepts:
   - BOMEquipReq
   display_name: 查询BOM设备需求
 - name: QueryBOMPersonReq
   description: 用户或智能体查询BOM的人员组汇总需求
+  behavior_type: API
   params:
     bomId: string
+  response: {}
   related_concepts:
   - BOMPersonReq
   display_name: 查询BOM人员需求
 - name: QueryBOMDetail
   description: 用户或智能体查询BOM及其明细和工艺路径
+  behavior_type: API
   params:
     bomId: string
+  response: {}
   related_concepts:
   - BOMDetail
   display_name: 查询BOM明细
 - name: QueryProcessRoute
   description: 用户或智能体查询工艺路径及其关联资源需求
+  behavior_type: API
   params:
     routeId: string
     routeName: string
+  response: {}
   related_concepts:
   - ProcessRoute
   display_name: 查询工艺路径
 - name: QueryRouteMatReq
   description: 用户或智能体查询工艺路径关联的原料需求
+  behavior_type: API
   params:
     routeId: string
+  response: {}
   related_concepts:
   - RouteMaterialReq
   display_name: 查询工艺原料需求
 - name: QueryRouteEquipReq
   description: 用户或智能体查询工艺路径关联的设备组需求
+  behavior_type: API
   params:
     routeId: string
+  response: {}
   related_concepts:
   - RouteEquipReq
   display_name: 查询工艺设备需求
 - name: QueryRoutePersonReq
   description: 用户或智能体查询工艺路径关联的人员组需求
+  behavior_type: API
   params:
     routeId: string
+  response: {}
   related_concepts:
   - RoutePersonReq
   display_name: 查询工艺人员需求
@@ -327,14 +334,21 @@ rules:
   description: 查询BOM基本信息后，提示可进一步查询原料/设备组/人员组需求
   related_behaviors:
   - QueryBOMInfo
+  related_functions: []
   display_name: 查询BOM后引导
   rule_type: 推理规则
   position: 后置
+  data_supplements: []
 - name: PromptAfterBOMDetailQuery
   description: 查询BOM明细后，提示可查询对应工艺路径的资源需求
   related_behaviors:
   - QueryBOMDetail
+  related_functions: []
   display_name: 查询BOM明细后引导
   rule_type: 推理规则
   position: 后置
+  data_supplements: []
 events: []
+processes: []
+securities: []
+data_engines: []

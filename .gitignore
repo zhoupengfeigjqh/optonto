@@ -22,8 +22,8 @@ config/
 .agents/
 skills-lock.json
 
-# Agent 运行时对话线程（不入库）
-**/threads/agent/
+# 会话线程统一存放目录（.data/threads，运行时对话不入库）
+.data/threads/
 
 # OS
 .DS_Store

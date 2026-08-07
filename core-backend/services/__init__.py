@@ -55,6 +55,23 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     yaml_path = _get_yaml_path(scenario_name, ontology_name)
     ensure_ontology_dir(scenario_name, ontology_name)
 
+    # 在 metadata 中固化场景/本体名称与 id（权威来源：meta.json）
+    from metadata import get_scenario_by_name, list_ontologies_by_scenario
+    scenario = get_scenario_by_name(scenario_name)
+    scenario_id = scenario.get("id") if scenario else None
+    ontology_id = None
+    if scenario_id is not None:
+        for o in list_ontologies_by_scenario(scenario_name):
+            if o.get("name") == ontology_name:
+                ontology_id = o.get("id")
+                break
+    if not isinstance(data.metadata, dict):
+        data.metadata = {}
+    data.metadata["scenario_name"] = scenario_name
+    data.metadata["scenario_id"] = scenario_id
+    data.metadata["ontology_name"] = ontology_name
+    data.metadata["ontology_id"] = ontology_id
+
     with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.dump(
             data.model_dump(exclude_none=True),

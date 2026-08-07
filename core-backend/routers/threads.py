@@ -5,77 +5,70 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Body, HTTPException
 
-from config import ONTO_MARKET_DIR
+from config import DEMAND_THREADS_DIR, ONTO_MARKET_DIR
+from metadata import get_scenario_by_name, list_ontologies_by_scenario
 from services import load_ontology_data
 
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
 
 
-def _thread_subdir() -> str:
-    return "threads/demand"
-
 def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path, str, str]]:
-    """Scan onto_market/*/*/threads/demand/ directories. If scenario+ontology given, scan only that path."""
+    """Scan data/threads/demand/ for threads. If scenario+ontology given, filter by thread json fields."""
     results: list[tuple[Path, str, str]] = []
-    if not ONTO_MARKET_DIR.exists():
+    if not DEMAND_THREADS_DIR.exists():
         return results
 
-    sub = _thread_subdir()
-    if scenario and ontology:
-        threads_dir = ONTO_MARKET_DIR / scenario / ontology / sub
-        if threads_dir.exists():
-            for thread_dir in sorted(threads_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-                if thread_dir.is_dir():
-                    results.append((thread_dir, scenario, ontology))
-        return results
-
-    for scenario_dir in sorted(ONTO_MARKET_DIR.iterdir()):
-        if not scenario_dir.is_dir():
+    for thread_dir in sorted(DEMAND_THREADS_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not thread_dir.is_dir():
             continue
-        for ontology_dir in sorted(scenario_dir.iterdir()):
-            if not ontology_dir.is_dir():
-                continue
-            threads_dir = ontology_dir / sub
-            if not threads_dir.exists():
-                continue
-            for thread_dir in sorted(threads_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-                if thread_dir.is_dir():
-                    results.append((thread_dir, scenario_dir.name, ontology_dir.name))
+        data_path = thread_dir / ".data.json"
+        if not data_path.exists():
+            continue
+        try:
+            with open(data_path, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+        except (json.JSONDecodeError, KeyError):
+            continue
+        sc = data.get("scenario_name", "")
+        onto = data.get("ontology_name", "")
+        if scenario and sc != scenario:
+            continue
+        if ontology and onto != ontology:
+            continue
+        results.append((thread_dir, sc, onto))
     return results
 
 
-def _thread_dir(scenario_name: str, ontology_name: str, thread_id: str) -> Path:
-    """Get the directory for a specific thread under its ontology."""
-    return ONTO_MARKET_DIR / scenario_name / ontology_name / _thread_subdir() / thread_id
+def _thread_dir(thread_id: str) -> Path:
+    """Get the directory for a demand thread (flat under data/threads/demand/)."""
+    return DEMAND_THREADS_DIR / thread_id
 
 
-def _thread_path(scenario_name: str, ontology_name: str, thread_id: str) -> Path:
-    return _thread_dir(scenario_name, ontology_name, thread_id) / ".data.json"
+def _thread_path(thread_id: str) -> Path:
+    return _thread_dir(thread_id) / ".data.json"
 
 
 def _find_thread(thread_id: str) -> tuple[Path, str, str]:
-    """Find a thread directory by ID across all ontologies. Returns (thread_dir, scenario, ontology)."""
-    for scenario_dir in ONTO_MARKET_DIR.iterdir():
-        if not scenario_dir.is_dir():
-            continue
-        for ontology_dir in scenario_dir.iterdir():
-            if not ontology_dir.is_dir():
-                continue
-            tdir = ontology_dir / _thread_subdir() / thread_id
-            if tdir.exists():
-                return tdir, scenario_dir.name, ontology_dir.name
-    raise HTTPException(status_code=404, detail="对话不存在")
+    """Find a demand thread by ID. Returns (thread_dir, scenario, ontology)."""
+    tdir = _thread_dir(thread_id)
+    if not tdir.exists():
+        raise HTTPException(status_code=404, detail="对话不存在")
+    path = tdir / ".data.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="对话不存在")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return tdir, data.get("scenario_name", ""), data.get("ontology_name", "")
 
 
 def _load_thread(thread_id: str) -> tuple[dict, str, str]:
     """Load thread data. Returns (data, scenario_name, ontology_name)."""
     tdir, sc, onto = _find_thread(thread_id)
     path = tdir / ".data.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="对话不存在")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f), sc, onto
 
@@ -86,11 +79,27 @@ def _save_thread(data: dict) -> None:
     onto = data.get("ontology_name", "")
     if not sc or not onto:
         raise HTTPException(status_code=400, detail="缺少场景或本体名称")
-    dir_path = _thread_dir(sc, onto, data["id"])
+    dir_path = _thread_dir(data["id"])
     dir_path.mkdir(parents=True, exist_ok=True)
     path = dir_path / ".data.json"
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[int], Optional[int]]:
+    """Resolve scenario_id and ontology_id from meta.json. Returns (scenario_id, ontology_id), None when not found."""
+    try:
+        scenario = get_scenario_by_name(scenario_name)
+        scenario_id = scenario.get("id") if scenario else None
+        ontology_id = None
+        if scenario_id is not None:
+            for o in list_ontologies_by_scenario(scenario_name):
+                if o.get("name") == ontology_name:
+                    ontology_id = o.get("id")
+                    break
+        return scenario_id, ontology_id
+    except Exception:
+        return None, None
 
 
 # ─── API Endpoints ─────────────────────────────────────────────────────────────
@@ -107,6 +116,13 @@ async def list_threads(scenario: str = "", ontology: str = ""):
         try:
             with open(data_path, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
+            scenario_id = data.get("scenario_id")
+            ontology_id = data.get("ontology_id")
+            if scenario_id is None or ontology_id is None:
+                # 旧线程未落盘 id，按名称从 meta.json 解析兜底
+                sid, oid = _resolve_ids(sc_name, onto_name)
+                scenario_id = scenario_id if scenario_id is not None else sid
+                ontology_id = ontology_id if ontology_id is not None else oid
             threads.append({
                 "id": data["id"],
                 "title": data.get("title", ""),
@@ -114,7 +130,9 @@ async def list_threads(scenario: str = "", ontology: str = ""):
                 "created_at": data.get("created_at", ""),
                 "updated_at": data.get("updated_at", ""),
                 "scenario_name": sc_name,
+                "scenario_id": scenario_id,
                 "ontology_name": onto_name,
+                "ontology_id": ontology_id,
             })
         except (json.JSONDecodeError, KeyError):
             continue
@@ -133,6 +151,7 @@ async def create_thread(body: dict):
         raise HTTPException(status_code=400, detail="请提供场景名称(scenario_name)和本体名称(ontology_name)")
 
     now = datetime.now(timezone.utc).isoformat()
+    scenario_id, ontology_id = _resolve_ids(scenario_name, ontology_name)
     thread = {
         "id": str(uuid.uuid4()),
         "title": title,
@@ -141,7 +160,9 @@ async def create_thread(body: dict):
         "updated_at": now,
         "messages": [],
         "scenario_name": scenario_name,
+        "scenario_id": scenario_id,
         "ontology_name": ontology_name,
+        "ontology_id": ontology_id,
     }
     _save_thread(thread)
     return thread
@@ -149,22 +170,18 @@ async def create_thread(body: dict):
 
 @router.get("/{thread_id}")
 async def get_thread(thread_id: str, scenario: str = "", ontology: str = ""):
-    """Get a thread with all its messages."""
-    if scenario and ontology:
-        tdir = ONTO_MARKET_DIR / scenario / ontology / _thread_subdir() / thread_id
-        if not tdir.exists():
-            raise HTTPException(status_code=404, detail="对话不存在")
-        path = tdir / ".data.json"
-        if not path.exists():
-            raise HTTPException(status_code=404, detail="对话不存在")
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data["scenario_name"] = scenario
-        data["ontology_name"] = ontology
-        return data
+    """Get a thread with all its messages. If scenario/ontology given, verify the thread belongs to them."""
     data, sc, onto = _load_thread(thread_id)
+    if scenario and sc != scenario:
+        raise HTTPException(status_code=404, detail="对话不存在")
+    if ontology and onto != ontology:
+        raise HTTPException(status_code=404, detail="对话不存在")
     data["scenario_name"] = sc
     data["ontology_name"] = onto
+    if "scenario_id" not in data or "ontology_id" not in data:
+        sid, oid = _resolve_ids(sc, onto)
+        data["scenario_id"] = data.get("scenario_id", sid)
+        data["ontology_id"] = data.get("ontology_id", oid)
     return data
 
 
@@ -242,10 +259,7 @@ async def list_requirements(scenario: str = "", ontology: str = ""):
 @router.get("/{thread_id}/requirements/{filename}")
 async def get_requirement_file(thread_id: str, filename: str, scenario: str = "", ontology: str = ""):
     """Read a requirement markdown file content."""
-    if scenario and ontology:
-        tdir = ONTO_MARKET_DIR / scenario / ontology / _thread_subdir() / thread_id
-    else:
-        tdir, _, _ = _find_thread(thread_id)
+    tdir, _, _ = _find_thread(thread_id)
     file_path = tdir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")

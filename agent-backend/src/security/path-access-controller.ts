@@ -6,12 +6,12 @@ import { existsSync } from 'node:fs';
  *
  * 所有文件 IO 必须经过此控制器，严格限制为：
  *   - 只读：{dataDir}/onto_market/{scenario}/{ontology}/skills/**   (技能文件)
- *   - 读写：{dataDir}/onto_market/{scenario}/{ontology}/threads/agent/** (对话线程)
+ *   - 读写：{threadsDir}/agent/**                                    (对话线程，平铺按线程ID存放)
  *
  * 任何路径穿越（..）或越权操作都会被拒绝。
  */
 export class PathAccessController {
-  constructor(private readonly dataDir: string) {}
+  constructor(private readonly dataDir: string, private readonly threadsDir: string) {}
 
   /**
    * 解析可读路径，仅允许读取 skills/ 目录下的文件。
@@ -31,7 +31,7 @@ export class PathAccessController {
   }
 
   /**
-   * 解析可读写路径，仅允许 threads/agent/ 目录下的操作。
+   * 解析可读写路径，仅允许 threads/agent/ 目录下的操作（平铺按线程ID存放）。
    * @throws {ForbiddenError} 如果路径越权
    */
   resolveWritePath(type: 'thread', scenario: string, ontology: string, threadId: string, ...rest: string[]): string {
@@ -39,7 +39,7 @@ export class PathAccessController {
     this.assertValidPathComponent(ontology, '本体');
     this.assertValidPathComponent(threadId, '线程 ID');
 
-    const base = resolve(this.dataDir, 'onto_market', scenario, ontology, 'threads', 'agent', threadId);
+    const base = resolve(this.threadsDir, 'agent', threadId);
     const finalPath = rest.length > 0 ? resolve(base, ...rest) : base;
 
     this.assertWithinBase(finalPath, base);
@@ -54,7 +54,7 @@ export class PathAccessController {
     this.assertValidPathComponent(ontology, '本体');
     this.assertValidPathComponent(threadId, '线程 ID');
 
-    const base = resolve(this.dataDir, 'onto_market', scenario, ontology, 'threads', 'agent', threadId);
+    const base = resolve(this.threadsDir, 'agent', threadId);
     const finalPath = resolve(base, '.data.json');
 
     this.assertWithinBase(finalPath, base);
@@ -72,12 +72,12 @@ export class PathAccessController {
   }
 
   /**
-   * 列出某本体下的 agent 线程目录
+   * 列出 agent 线程根目录（平铺，不再按场景/本体分目录）
    */
   listThreadDirs(scenario: string, ontology: string): string {
     this.assertValidPathComponent(scenario, '场景');
     this.assertValidPathComponent(ontology, '本体');
-    const dir = resolve(this.dataDir, 'onto_market', scenario, ontology, 'threads', 'agent');
+    const dir = resolve(this.threadsDir, 'agent');
     return dir;
   }
 

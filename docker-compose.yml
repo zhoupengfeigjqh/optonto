@@ -23,6 +23,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - DATA_DIR=/app/.data
+      - THREADS_DIR=/app/.data/threads
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
     networks:

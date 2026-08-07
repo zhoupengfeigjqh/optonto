@@ -195,7 +195,7 @@ async def export_thread(thread_id: str, body: dict):
     markdown_content = "\n".join(lines)
 
     # Save to thread directory
-    dir_path = _thread_dir(sc, onto, thread_id)
+    dir_path = _thread_dir(thread_id)
     dir_path.mkdir(parents=True, exist_ok=True)
     filename = f"{doc_title}.md"
     file_path = dir_path / filename
@@ -228,7 +228,7 @@ async def generate_ontology(thread_id: str, body: dict):
     filename = body.get("filename", "")
     if not filename:
         raise HTTPException(status_code=400, detail="请提供需求文件名")
-    file_path = _thread_dir(sc, onto, thread_id) / filename
+    file_path = _thread_dir(thread_id) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="需求文件不存在")
     markdown_content = file_path.read_text(encoding="utf-8")
