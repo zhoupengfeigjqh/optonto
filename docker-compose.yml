@@ -8,11 +8,12 @@ services:
     build:
       context: ./agent-backend
       dockerfile: Dockerfile
-    container_name: optonto_agent_backend
+    image: optonto-agent-backend
+    container_name: optonto-agent-backend
     ports:
       - "8003:8003"
     depends_on:
-      - optonto-backend
+      - optonto-core-backend
     volumes:
       # .data 目录（读写，权限由 PathAccessController 代码层控制）
       - ./.data:/app/.data
@@ -24,6 +25,7 @@ services:
       - TZ=Asia/Shanghai
       - DATA_DIR=/app/.data
       - THREADS_DIR=/app/.data/threads
+      - MEMORY_DIR=/app/.data/memory
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
     networks:
@@ -32,7 +34,7 @@ services:
   # ─── MySQL 数据库 ────────────────────────────────────────────
   optonto-mysql:
     image: mysql:8.0
-    container_name: optonto_mysql
+    container_name: optonto-mysql
     ports:
       - "3307:3306"
     env_file:
@@ -51,11 +53,12 @@ services:
       retries: 5
 
   # ─── Java 后端 (Spring Boot) ─────────────────────────────────
-  optonto-java-backend:
+  optonto-business-backend:
     build:
       context: ./business-backend
       dockerfile: Dockerfile
-    container_name: optonto_java_backend
+    image: optonto-business-backend
+    container_name: optonto-business-backend
     ports:
       - "8080:8080"
     depends_on:
@@ -73,20 +76,22 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    container_name: optonto_frontend
+    image: optonto-frontend
+    container_name: optonto-frontend
     ports:
       - "81:81"
     depends_on:
-      - optonto-backend
+      - optonto-core-backend
     networks:
       - optonto-net
 
   # ─── 后端 API (FastAPI) ────────────────────────────────────────
-  optonto-backend:
+  optonto-core-backend:
     build:
       context: .
       dockerfile: core-backend/Dockerfile
-    container_name: optonto_backend
+    image: optonto-core-backend
+    container_name: optonto-core-backend
     ports:
       - "8001:8001"
     volumes:
@@ -104,15 +109,16 @@ services:
     build:
       context: .
       dockerfile: core-backend/Dockerfile.mcp
-    container_name: optonto_mcp
+    image: optonto-mcp
+    container_name: optonto-mcp
     ports:
       - "8002:8002"
     depends_on:
-      - optonto-backend
+      - optonto-core-backend
     volumes:
       - ./.data:/app/.data
     environment:
-      - API_BASE_URL=http://optonto_backend:8001
+      - API_BASE_URL=http://optonto-core-backend:8001
       - TZ=Asia/Shanghai
     command: >
       sh -c "python -m uvicorn mcp_server_sse:starlette_app --host 0.0.0.0 --port 8002"

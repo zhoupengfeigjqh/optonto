@@ -93,8 +93,19 @@ export class ThreadStore {
   appendMessages(scenario: string, ontology: string, threadId: string, messages: ThreadMessage[]): void {
     const thread = this.readThread(scenario, ontology, threadId);
     thread.messages.push(...messages);
-    thread.updated_at = new Date().toISOString();
+    this.persist(thread, scenario, ontology, threadId);
+  }
 
+  /** 整体替换线程消息（短期记忆压缩后写回：摘要 + 保留原文尾部） */
+  replaceMessages(scenario: string, ontology: string, threadId: string, messages: ThreadMessage[]): void {
+    const thread = this.readThread(scenario, ontology, threadId);
+    thread.messages = messages;
+    this.persist(thread, scenario, ontology, threadId);
+  }
+
+  /** 写回线程 json（更新 updated_at） */
+  private persist(thread: Thread, scenario: string, ontology: string, threadId: string): void {
+    thread.updated_at = new Date().toISOString();
     const dirPath = this.pac.resolveWritePath('thread', scenario, ontology, threadId);
     const dataPath = join(dirPath, '.data.json');
     writeFileSync(dataPath, JSON.stringify(thread, null, 2), 'utf-8');

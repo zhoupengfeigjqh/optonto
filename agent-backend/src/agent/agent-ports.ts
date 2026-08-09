@@ -4,6 +4,7 @@
  * 结构化满足这些接口，测试可用 fake 替换，主循环（分波/终止/反馈/总结）可脱离真实 SDK 单测。
  */
 import type { AgentPort } from './agent-port.js';
+import type { ToolErrorBudget } from './error-budget.js';
 import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta } from '../types.js';
 
 /** AgentFactory 门面 —— Orchestrator 需要的工厂能力（创建父/子 Agent + run 级资源释放） */
@@ -17,8 +18,8 @@ export interface AgentFactoryPort {
   createChildAgent(
     context: SkillContext,
     primaryBehavior?: string,
-    opId?: string,
     requiredParams?: string[],
+    errorBudget?: ToolErrorBudget,
   ): Promise<AgentPort>;
   closeAll(): Promise<void>;
 }
@@ -29,4 +30,6 @@ export interface OntologyGatewayPort {
   getBehaviorNames(scenario: string, ontology: string): string[];
   /** 函数元信息（中文显示名），工具调用展示用 */
   getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string };
+  /** 本体函数参数结构（渲染指令用）；共享函数返回 null（参数在工具 schema 可见） */
+  getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null;
 }

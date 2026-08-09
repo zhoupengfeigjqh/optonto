@@ -127,19 +127,6 @@ async def call_behavior(
     return await _call_engine(de, params)
 
 
-def is_business_failure(result: dict) -> bool:
-    """Java ApiResponse 信封判定：data 为 {code≠0, message} 视为业务失败（HTTP 可能仍为 200）。
-
-    修复幂等缓存 bug：behaviors 曾以 status_code<400 判成功，把 HTTP 200 + code≠0 的业务失败缓存在 ok。
-    判定要求 code 为 int 且非 0、message 为非空 str，避免误伤普通业务数据里的 code 字段。
-    """
-    data = result.get("data")
-    if isinstance(data, dict) and isinstance(data.get("code"), int) and data.get("code") != 0:
-        if isinstance(data.get("message"), str) and data.get("message"):
-            return True
-    return False
-
-
 def check_param_contract(data: OntologyData, de, behavior_name: str) -> list[str]:
     """参数契约一致性检查（warn-only，不阻断执行）。
 

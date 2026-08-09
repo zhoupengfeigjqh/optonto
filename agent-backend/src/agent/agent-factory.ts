@@ -1,14 +1,18 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
-import { getModel, getModels } from '@earendil-works/pi-ai';
 import { Type } from '@sinclair/typebox';
+import { config } from '../config.js';
 import { MCPClient } from '../services/mcp-client.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
-import { config } from '../config.js';
+import { resolveDeepSeekModel } from '../services/llm.js';
 import { buildParentPrompt, CHILD_SYSTEM_PROMPT } from './prompts.js';
 import { toolResultToText } from './text-utils.js';
 import { isParamValueEmpty } from './param-contract.js';
+import { wrapExecuteWithErrorBudget } from './error-budget.js';
+import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
@@ -17,10 +21,38 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '.
 /** 父 Agent 不挂的 本体MCP 工具：仅执行类。其余（浏览类 + 全部公共函数）都给父 Agent */
 const PARENT_MCP_EXCLUDED = ['executeOntoBehavior', 'executeOntoFunction'];
 
-/** 子 Agent（执行专家）的 MCP 工具：行为/函数执行 + 时间计算，不含浏览类 */
-const CHILD_MCP_TOOL_NAMES = [
-  'executeOntoBehavior', 'executeOntoFunction', 'getCurrentDate', 'dateAdd', 'dateDiff', 'getWeekday',
-];
+/**
+ * 运行时读取公共函数定义（.data/common_functions/functions.json，与 core-backend 同一份数据源）。
+ * 返回函数名数组。文件缺失/解析失败时返回空数组（此时 core-backend 也不会注册这些工具，白名单空是自洽的）。
+ */
+function loadCommonFunctionNames(): string[] {
+  const file = join(config.dataDir, 'common_functions', 'functions.json');
+  try {
+    if (!existsSync(file)) {
+      console.warn(`[CommonFunctions] 未找到 ${file}，公共函数列表为空`);
+      return [];
+    }
+    const raw: unknown = JSON.parse(readFileSync(file, 'utf-8'));
+    if (!Array.isArray(raw)) throw new Error('顶层应为数组');
+    return raw
+      .map((f: any) => (f && typeof f.name === 'string' ? f.name : ''))
+      .filter((n: string) => n.length > 0);
+  } catch (e: any) {
+    console.warn(`[CommonFunctions] 读取 ${file} 失败: ${e.message}，公共函数列表为空`);
+    return [];
+  }
+}
+
+/** 运行时读出的公共函数名（子/父 Agent 共用同一数据源，新增/改名公共函数无需改代码）。 */
+export const COMMON_FUNCTION_NAMES = loadCommonFunctionNames();
+
+/** 子 Agent（执行专家）的 MCP 工具白名单：行为/函数执行包装（写死） + 公共函数（运行时读 functions.json），不含浏览类。
+ *  注意：公共函数还需同时出现在 mcp-config 对应 server 的 allowed_tools 里，MCP 侧才会注册该工具。 */
+export const CHILD_MCP_TOOL_NAMES = ['executeOntoBehavior', 'executeOntoFunction', ...COMMON_FUNCTION_NAMES];
+
+/** 子 Agent 可直接调用的公共函数（直接 MCP 工具，不经 executeOntoFunction）。
+ *  由 CHILD_MCP_TOOL_NAMES 派生（单一来源）：排除两个执行包装后的其余工具。 */
+export const CHILD_COMMON_TOOL_NAMES = CHILD_MCP_TOOL_NAMES.filter(n => !['executeOntoBehavior', 'executeOntoFunction'].includes(n));
 
 /**
  * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
@@ -31,16 +63,6 @@ function toFiniteNum(value: any, label: string): number {
   const n = Number(value);
   if (!Number.isFinite(n)) throw new Error(`${label} 不是有效数字: ${value}`);
   return n;
-}
-
-/**
- * 解析 DeepSeek 模型：优先用 config.yaml 的 modelName（此前模型被硬编码且配置不生效），
- * 无效时回退默认 flash，避免 getModel 对未知模型名静默返回 undefined。
- */
-function resolveDeepSeekModel() {
-  const validIds = new Set(getModels('deepseek').map(m => m.id));
-  const id = validIds.has(config.modelName) ? config.modelName : 'deepseek-v4-flash';
-  return getModel('deepseek', id as 'deepseek-v4-flash' | 'deepseek-v4-pro');
 }
 
 /**
@@ -116,7 +138,9 @@ export class AgentFactory {
       if (msg.role === 'user') {
         return { role: 'user', content: msg.content, timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
       }
-      return { role: 'assistant', content: [{ type: 'text', text: msg.content }], timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
+      // summary 是短期记忆压缩生成的背景摘要：加前缀标注，避免模型把它当成助手上一轮真实发言
+      const text = msg.role === 'summary' ? `【历史摘要】${msg.content}` : msg.content;
+      return { role: 'assistant', content: [{ type: 'text', text }], timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
     });
 
     const agent = new Agent({
@@ -131,18 +155,18 @@ export class AgentFactory {
    * 只注册 MCP 执行/时间工具（CHILD_MCP_TOOL_NAMES），不挂 load_skill。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
-  async createChildAgent(context: SkillContext, primaryBehavior?: string, opId?: string, requiredParams?: string[]): Promise<AgentPort> {
+  async createChildAgent(context: SkillContext, primaryBehavior?: string, requiredParams?: string[], errorBudget?: ToolErrorBudget): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
     // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰。
-    // 主行为注入 op_key：写操作后端幂等去重，重试不重复执行。
     // requiredParams：主行为执行前的硬检查——必填参数必须有值，缺失拒绝执行。
+    // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
     const mcpTools = allMcp
       .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
-      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, opId, requiredParams));
+      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, requiredParams, errorBudget));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
@@ -154,42 +178,42 @@ export class AgentFactory {
    * 将执行类工具限定到指定本体：
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
-   * - 主行为（subTask.behavior）额外注入 op_key：写操作由后端幂等去重（重试不重复执行）；
-   *   规则查询行为不带 key（否则会被误判为同一写操作去重），读操作后端也忽略 op_key。
+   * - 主行为（subTask.behavior）额外做必填参数硬检查（见 execute 内）
    * 无 ontology_id 的工具（如公共函数）原样返回。
    */
-  private scopeToOntology(tool: AgentTool, ontologyId: number, primaryBehavior?: string, opId?: string, requiredParams?: string[]): AgentTool {
+  private scopeToOntology(tool: AgentTool, ontologyId: number, primaryBehavior?: string, requiredParams?: string[], errorBudget?: ToolErrorBudget): AgentTool {
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
-    if (!props || !('ontology_id' in props)) {
-      return tool;
+    const hasOntologyId = !!props && 'ontology_id' in props;
+    // 仅含 ontology_id 的工具才做剔除 + 强制注入；其余（如时间函数）原样透传参数
+    let nextParameters = schema;
+    if (hasOntologyId) {
+      const nextProps = { ...props };
+      delete nextProps.ontology_id;
+      const required = Array.isArray(schema.required)
+        ? (schema.required as string[]).filter(k => k !== 'ontology_id')
+        : undefined;
+      nextParameters = { ...schema, properties: nextProps, ...(required ? { required } : {}) };
     }
-    const nextProps = { ...props };
-    delete nextProps.ontology_id;
-    const required = Array.isArray(schema.required)
-      ? (schema.required as string[]).filter(k => k !== 'ontology_id')
-      : undefined;
     const originalExecute = tool.execute;
+    const execute = async (toolCallId: string, params: any) => {
+      const p = hasOntologyId ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
+      if (primaryBehavior && p?.behavior_name === primaryBehavior) {
+        // 硬检查：主行为执行前，必填参数必须已有值。缺失则抛异常（pi-agent 以抛异常识别工具错误并触发子 Agent 重试；
+        // 返回 isError 字段会被 pi-agent 吞掉——executePreparedToolCall 硬编码 isError:false，重试永不触发）。
+        // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
+        const missing = (requiredParams || []).filter(key => isParamValueEmpty((p.params ?? {})[key]));
+        if (missing.length > 0) {
+          throw new Error(`禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。`);
+        }
+      }
+      return originalExecute(toolCallId, p);
+    };
     return {
       ...tool,
-      parameters: { ...schema, properties: nextProps, ...(required ? { required } : {}) },
-      execute: async (toolCallId, params) => {
-        const p = { ...(params as any), ontology_id: ontologyId }; // 强制锁定
-        if (primaryBehavior && p.behavior_name === primaryBehavior) {
-          if (opId) p.op_key = opId; // 幂等键，跨重试稳定
-          // 硬检查：主行为执行前，必填参数必须已有值。缺失则拒绝执行（isError），
-          // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
-          const missing = (requiredParams || []).filter(key => isParamValueEmpty((p.params ?? {})[key]));
-          if (missing.length > 0) {
-            return {
-              content: [{ type: 'text', text: `禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。` }],
-              details: {},
-              isError: true,
-            };
-          }
-        }
-        return originalExecute(toolCallId, p);
-      },
+      ...(nextParameters !== schema ? { parameters: nextParameters } : {}),
+      // 有预算时包上报错计数（含主行为硬检查抛错）；无预算向后兼容，不包
+      execute: errorBudget ? wrapExecuteWithErrorBudget(execute, errorBudget) : execute,
     };
   }
 
@@ -319,7 +343,8 @@ export class AgentFactory {
                 const result = await client.callTool(toolName, p);
                 const text = toolResultToText(result.content);
                 if (result.isError) {
-                  return { content: [{ type: 'text', text }], details: {}, isError: true };
+                  // 抛异常让 pi-agent 识别为工具错误（返回 isError 字段会被吞掉，重试不触发）
+                  throw new Error(text);
                 }
                 return { content: [{ type: 'text', text }], details: {} };
               },

@@ -22,10 +22,19 @@ import type {
   ThreadMessage, SubTaskPlan, SubTaskResult, BehaviorMeta, SubTask, SSEEvent, ExecutionEntry, SkillContext, SkillSelection,
 } from '../types.js';
 
-const MAX_ROUNDS = 20;
+const MAX_ROUNDS = 50;
 const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，防止无限循环
-const MAX_PARALLEL = 4; // 波内并行子任务上限：避免就绪任务过多时并发打爆 LLM/MCP
+const MAX_PARALLEL = 5; // 波内并行子任务上限：避免就绪任务过多时并发打爆 LLM/MCP
 const PARENT_PROMPT_TIMEOUT = 180_000; // 父Agent 单次 LLM 调用超时（规划/反馈/总结），防 API 挂起拖死整个 run
+
+/**
+ * 规划是否需要确认弹窗：仅多步任务需要。
+ * 单步任务跳过规划确认——只读无副作用直接执行；写操作由子任务的安全管控弹窗兜底
+ * （避免"规划确认 + 安全确认"双弹窗，单步没有"整体执行路径"可供用户审阅）。
+ */
+export function planNeedsConfirm(plan: SubTaskPlan): boolean {
+  return plan.subtasks.length > 1;
+}
 
 /** 事件通道：SSE 直发 + 执行记录推送的统一出口（二者同源于 sendEvent，避免双通道各自穿线） */
 interface EventChannel {
@@ -60,12 +69,16 @@ export class Orchestrator {
     this.confirmManager = confirmManager ?? new ConfirmManager();
     this.subtaskRunner = new SubtaskRunner({
       confirmManager: this.confirmManager,
-      createChildAgent: (ctx, pb, oid, rp) => this.agentFactory.createChildAgent(ctx, pb, oid, rp),
+      createChildAgent: (ctx, pb, rp, budget) => this.agentFactory.createChildAgent(ctx, pb, rp, budget),
       childAgents: this.childAgentSet,
       getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
       getFunctionDisplayName: (scenario, ontology, functionName) =>
         this.ontologyGateway.getFunctionMeta(scenario, ontology, functionName).display_name || '',
+      getBehaviorParams: (scenario, ontology, behaviorName) =>
+        this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).params || {},
+      getFunctionParams: (scenario, ontology, functionName) =>
+        this.ontologyGateway.getFunctionParams(scenario, ontology, functionName),
     });
   }
 
@@ -187,17 +200,19 @@ export class Orchestrator {
       // 正则只认 "subtasks" key（不锚定 {），避免嵌套 JSON 导致漏判。
       // 注意：error 需先于 done 发送（前端遇到 done 即 break，同批到达时会跳过 error）
       if (lastMsg && /"subtasks"\s*:/.test(lastMsg)) {
-        sendEvent({ type: 'error', message: '⚠️ 无法生成执行计划：规划格式异常，请重新描述需求。' });
+        const msg = '⚠️ 无法生成执行计划：规划格式异常，请重新描述需求。';
+        sendEvent({ type: 'error', message: msg });
         sendEvent({ type: 'done' });
-        return '⚠️ 无法生成执行计划：规划格式异常，请重新描述需求。';
+        return msg;
       }
       if (lastMsg) {
         sendEvent({ type: 'done' });
         return lastMsg;
       }
-      sendEvent({ type: 'error', message: '⚠️ 无法生成执行计划，请重新描述需求。' });
+      const msg = '⚠️ 无法生成执行计划，请重新描述需求。';
+      sendEvent({ type: 'error', message: msg });
       sendEvent({ type: 'done' });
-      return '⚠️ 无法生成执行计划，请重新描述需求。';
+      return msg;
     }
 
     // ── 规划确认循环（支持"拒绝并重规划"） ──
@@ -233,7 +248,14 @@ export class Orchestrator {
         pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: `已按建议重新规划（第 ${round + 1} 轮）`, status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
       }
 
-      const planConfirm = await this.confirmManager.requestPlanConfirm(plan, sendEvent);
+      // 单步任务：跳过规划确认，直接执行。
+      // 只读无副作用；写操作由子任务的安全管控弹窗兜底（避免"规划确认+安全确认"双弹窗）。
+      if (!planNeedsConfirm(plan)) {
+        confirmedPlan = plan;
+        break;
+      }
+
+      const planConfirm = await this.confirmManager.requestPlanConfirm(this.enrichPlanDisplay(plan), sendEvent);
 
       if (planConfirm.approved) {
         if (planConfirm.plan) { plan = planConfirm.plan; planModified = true; }
@@ -297,9 +319,10 @@ export class Orchestrator {
     const structureErrors = validatePlanStructure(plan);
     if (structureErrors.length > 0) {
       pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划结构校验', status: 'failed', detail: structureErrors.join('；'), source: 'parent' });
+      const msg = '规划结构不合法，请重新发起。';
       sendEvent({ type: 'error', message: `⚠️ 规划校验失败：规划结构不合法（${structureErrors.join('；')}）` });
       sendEvent({ type: 'done' });
-      return '规划结构不合法，请重新发起。';
+      return msg;
     }
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '规划结构校验', status: 'done', detail: '依赖关系合法', source: 'parent' });
 
@@ -318,7 +341,7 @@ export class Orchestrator {
       });
     }
     pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
-    sendEvent({ type: 'plan_received', plan });
+    sendEvent({ type: 'plan_received', plan: this.enrichPlanDisplay(plan) });
     const planSummary = plan.subtasks
       .sort((a, b) => a.seq - b.seq)
       .map(st => `${st.seq}. ${st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
@@ -365,11 +388,19 @@ export class Orchestrator {
         break;
       }
 
-      // 每波完成后一次反馈父Agent（本波非最后一批才反馈）：数据传播/调整/提前终止以波为单位
+      // 每波完成后是否反馈父Agent（数据传播/调整/提前终止以波为单位）：
+      // - 本波已是最后一批（pending 空）→ 不反馈（无后续子任务可中继/调整，现状即如此）
+      // - 中间波：仅当存在后续子任务 depends_on 本波结果（需数据中继/调整）才反馈父Agent；
+      //   无跨波依赖（且能走到这里 = 本波全部成功）→ 直接进入下一波，省一次父Agent LLM 调用。
       if (pending.length > 0) {
-        const adjusted = await this.runWaveFeedback(waveResults, results, planCtx);
-        if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
-        if (adjusted) pending = adjusted;
+        const waveNeedsRelay = pending.some(st => (st.depends_on || []).some(dep => executedSeqs.has(dep)));
+        if (!waveNeedsRelay) {
+          pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '本波无数据依赖', status: 'done', detail: `子任务 ${waveResults.map(r => r.seq).join('、')} 全部成功，直接进入下一波`, source: 'parent' });
+        } else {
+          const adjusted = await this.runWaveFeedback(waveResults, results, planCtx);
+          if (this.activeAbortHolder?.aborted) { aborted = true; break; } // 反馈期间被中断 → 终止执行
+          if (adjusted) pending = adjusted;
+        }
       }
     }
 
@@ -658,6 +689,20 @@ ${waveList}
       }
     }
     return '';
+  }
+
+  /**
+   * 给规划补展示字段：每个子任务附加行为中文名 display_name，供前端弹窗可读展示。
+   * 纯展示用途，不参与结构校验；行为名已在确认前经 validateBehaviors 校验存在，getBehaviorMeta 不会抛错。
+   */
+  private enrichPlanDisplay(plan: SubTaskPlan): SubTaskPlan {
+    return {
+      ...plan,
+      subtasks: plan.subtasks.map(st => ({
+        ...st,
+        display_name: this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).display_name || '',
+      })),
+    };
   }
 
 }

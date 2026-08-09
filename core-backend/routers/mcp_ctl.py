@@ -1,10 +1,10 @@
-"""MCP service control API — start/stop/status for optonto_mcp container."""
+"""MCP service control API — start/stop/status for optonto-mcp container."""
 
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/mcp", tags=["MCP控制"])
 
-MCP_CONTAINER = "optonto_mcp"
+MCP_CONTAINER = "optonto-mcp"
 
 
 def _get_client():

@@ -40,7 +40,8 @@ export interface AgentThread {
 }
 
 export interface AgentMessage {
-  role: 'user' | 'assistant' | 'toolResult';
+  /** summary：短期记忆压缩生成的对话摘要（展示时过滤，仅后端上下文用） */
+  role: 'user' | 'assistant' | 'toolResult' | 'summary';
   content: string;
   timestamp: string;
 }

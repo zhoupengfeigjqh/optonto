@@ -19,7 +19,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 # FastAPI backend URL (configurable via env)
-API_BASE = os.getenv("API_BASE_URL", "http://optonto_backend:8001")
+API_BASE = os.getenv("API_BASE_URL", "http://optonto-core-backend:8001")
 
 # Common functions directory (inside container, mounted from project .data)
 COMMON_DIR = Path("/app/.data/common_functions")
@@ -152,7 +152,6 @@ async def _list_tools() -> list[Tool]:
                     "ontology_id": {"type": "integer", "description": "本体 ID"},
                     "behavior_name": {"type": "string", "description": "行为名称"},
                     "params": {"type": "object", "description": "行为输入参数，按 behavior.params 结构传入"},
-                    "op_key": {"type": "string", "description": "幂等键（写操作重试去重），可选"},
                 },
                 "required": ["ontology_id", "behavior_name", "params"],
             },
@@ -272,8 +271,6 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         bname = arguments["behavior_name"]
         params = arguments.get("params", {})
         body = {"params": params}
-        if arguments.get("op_key"):
-            body["op_key"] = arguments["op_key"]  # 幂等键，顶层字段不混入业务 params
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{API_BASE}/api/ontologies/{oid}/behaviors/{bname}/call",

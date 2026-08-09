@@ -243,7 +243,7 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
     # API type — use existing data engine
     try:
         from services.data_engine import call_data_engine
-        return await call_data_engine(data, engine_name, params)
+        result = await call_data_engine(data, engine_name, params)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except httpx.ConnectError:
@@ -252,6 +252,16 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
         raise HTTPException(status_code=408, detail="目标接口请求超时")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
+
+    # 同 behaviors.call_behavior_endpoint:下游 4xx/5xx 必须转成 HTTP 错误码,
+    # 否则 MCP 层(只认状态行)把失败当成功,isError 永不置位。
+    if isinstance(result, dict) and result.get("status_code", 200) >= 400:
+        detail_data = json.dumps(result.get("data", ""), ensure_ascii=False)[:500]
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=f"数据引擎 {engine_name} 调用失败 (下游 HTTP {result['status_code']}): {detail_data}",
+        )
+    return result
 
 
 # ─── Generate SQL ─────────────────────────────────────────────────────────

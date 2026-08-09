@@ -10,7 +10,6 @@ export const CONFIRM_TIMEOUT = 60000;
 /** 确认结果来源：用户主动操作 / 超时 / 中断 */
 export interface ConfirmResult {
   approved: boolean;
-  params?: Record<string, any>;
   reason?: 'user' | 'timeout' | 'abort';
 }
 
@@ -43,12 +42,12 @@ export class ConfirmManager {
     });
   }
 
-  handleConfirm(confirmId: string, approved: boolean, params?: Record<string, any>): void {
+  handleConfirm(confirmId: string, approved: boolean): void {
     const entry = this.pending.get(confirmId);
     if (!entry) return;
     clearTimeout(entry.timer);
     this.pending.delete(confirmId);
-    entry.resolve({ approved, params, reason: 'user' });
+    entry.resolve({ approved, reason: 'user' });
   }
 
   async requestPlanConfirm(plan: SubTaskPlan, sendEvent: (e: SSEEvent) => void): Promise<PlanConfirmResult> {

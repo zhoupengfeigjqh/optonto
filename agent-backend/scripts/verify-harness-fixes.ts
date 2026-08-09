@@ -62,7 +62,7 @@ class FakeFactory implements AgentFactoryPort {
     this.receivedParentPrompts = parent.receivedPrompts;
     return parent;
   }
-  async createChildAgent(_context: SkillContext, _primaryBehavior?: string, _opId?: string, _requiredParams?: string[]): Promise<AgentPort> {
+  async createChildAgent(_context: SkillContext, _primaryBehavior?: string, _requiredParams?: string[]): Promise<AgentPort> {
     return new FakeChild();
   }
   async closeAll(): Promise<void> {}
@@ -75,6 +75,9 @@ class FakeGateway implements OntologyGatewayPort {
   }
   getFunctionMeta(_scenario: string, _ontology: string, functionName: string): { display_name: string; description?: string } {
     return { display_name: `函数-${functionName}`, description: '' };
+  }
+  getFunctionParams(_scenario: string, _ontology: string, _functionName: string): Record<string, any> | null {
+    return null; // 共享函数，参数在工具 schema 可见
   }
 }
 

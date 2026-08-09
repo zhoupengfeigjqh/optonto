@@ -8,6 +8,7 @@ import { MCPConfigStore } from './services/mcp-config-store.js';
 import { AgentFactory } from './agent/agent-factory.js';
 import { Orchestrator } from './agent/orchestrator.js';
 import { OntologyGateway } from './services/ontology-gateway.js';
+import { MemoryService } from './services/memory-service.js';
 import { createThreadsRouter } from './routes/threads.js';
 import { createSkillsRouter } from './routes/skills.js';
 import { createMCPConfigRouter } from './routes/mcp-config.js';
@@ -22,6 +23,7 @@ const mcpConfigStore = new MCPConfigStore(config.mcpConfigPath);
 const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
 const ontologyGateway = new OntologyGateway(pac);
 const orchestrator = new Orchestrator(agentFactory, ontologyGateway);
+const memoryService = new MemoryService();
 
 // ─── Express 应用 ────────────────────────────────
 
@@ -43,7 +45,7 @@ const apiPrefix = '/agent-api';
 
 app.use(apiPrefix, createSkillsRouter(skillLoader));
 app.use(apiPrefix, createMCPConfigRouter(mcpConfigStore));
-app.use(apiPrefix, createThreadsRouter(threadStore, skillLoader, orchestrator));
+app.use(apiPrefix, createThreadsRouter(threadStore, skillLoader, orchestrator, memoryService));
 
 // ─── 启动服务 ────────────────────────────────────
 

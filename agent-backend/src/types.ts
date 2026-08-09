@@ -1,7 +1,8 @@
 // ─── Thread 类型（与前端 Thread 接口对齐） ─────────────────────────
 
 export interface ThreadMessage {
-  role: 'user' | 'assistant' | 'toolResult';
+  /** summary：短期记忆压缩生成的对话摘要（持久化在 messages 中，组装父Agent上下文时前置为历史背景） */
+  role: 'user' | 'assistant' | 'toolResult' | 'summary';
   content: string;
   timestamp: string;
 }

@@ -1,5 +1,7 @@
 """CRUD API for behaviors within an ontology."""
 
+import json
+
 import httpx
 from fastapi import APIRouter, HTTPException
 
@@ -7,21 +9,8 @@ from dependencies import get_ontology_names
 from schemas import BehaviorItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
-from services.data_engine import is_business_failure
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/behaviors", tags=["行为"])
-
-# 写操作幂等缓存：op_key -> {"status": "ok"|"error", "result": ...}
-# 内存缓存即可——重试窗口是秒级；超过上限按 FIFO 淘汰最旧
-_OP_CACHE: dict[str, dict] = {}
-_MAX_OP_CACHE = 1000
-_WRITE_METHODS = ("POST", "PATCH", "DELETE")
-
-
-def _cache_op(op_key: str, status: str, result: dict) -> None:
-    if len(_OP_CACHE) >= _MAX_OP_CACHE:
-        _OP_CACHE.pop(next(iter(_OP_CACHE)))
-    _OP_CACHE[op_key] = {"status": status, "result": result}
 
 
 @router.get("")
@@ -73,17 +62,10 @@ async def delete_behavior(ontology_id: int, behavior_name: str):
 
 @router.post("/{behavior_name}/call")
 async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dict):
-    """Call a behavior. API type routes through data engine, SQL type executes SQL query.
-
-    op_key 幂等：仅对写操作（API + POST/PATCH/DELETE）生效。
-    - 同一 op_key 首次执行成功（status_code<400）→ 缓存；后续同 key 直接返回缓存，不重复执行。
-    - 首次失败/抛异常 → 不缓存（或 status=error），重试重新执行。
-    - 读操作（SQL / GET）忽略 op_key，始终重新执行，避免重试拿到旧数据。
-    """
+    """Call a behavior. API type routes through data engine, SQL type executes SQL query."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     params = body.get("params", {})
-    op_key = body.get("op_key")
 
     # Check if this behavior has a SQL data engine
     de = next((d for d in data.data_engines if d.behavior_name == behavior_name), None)
@@ -91,12 +73,6 @@ async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dic
         # SQL 只读（SELECT only），天然幂等，无需去重
         from services.data_engine import execute_sql
         return await execute_sql(sc_name, on_name, de, params)
-
-    is_write = de is not None and de.engine_type != "SQL" and de.target.method in _WRITE_METHODS
-    if is_write and op_key:
-        cached = _OP_CACHE.get(op_key)
-        if cached and cached["status"] == "ok":
-            return cached["result"]  # 已成功执行过，直接返回，不重复写
 
     try:
         from services.data_engine import call_behavior
@@ -110,8 +86,13 @@ async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dic
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
 
-    if is_write and op_key:
-        # 信封解析：Java ApiResponse code≠0 的业务失败（HTTP 仍 200）不得缓存为 ok，否则重试拿到失败缓存
-        ok = result.get("status_code", 200) < 400 and not is_business_failure(result)
-        _cache_op(op_key, "ok" if ok else "error", result)
+    # 下游目标接口返回了错误状态码时,信封里的 status_code 只是数据,必须转成
+    # HTTP 错误码抛给上层 —— MCP 层只认 HTTP 状态行(>=400 才算失败),若不转码,
+    # 下游 4xx/5xx 会以 HTTP 200 返回,agent 侧 isError 永不置位,报错预算失效。
+    if isinstance(result, dict) and result.get("status_code", 200) >= 400:
+        detail_data = json.dumps(result.get("data", ""), ensure_ascii=False)[:500]
+        raise HTTPException(
+            status_code=result["status_code"],
+            detail=f"行为 {behavior_name} 执行失败 (下游 HTTP {result['status_code']}): {detail_data}",
+        )
     return result

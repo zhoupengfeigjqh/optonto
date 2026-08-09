@@ -3,7 +3,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 
 /**
  * MCP 客户端包装器。
- * 连接到 optonto_mcp 容器的 SSE 端点，
+ * 连接到 optonto-mcp 容器的 SSE 端点，
  * 通过 MCP 协议调用本体行为。
  */
 export class MCPClient {

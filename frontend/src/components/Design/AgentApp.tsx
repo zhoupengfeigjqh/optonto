@@ -16,6 +16,140 @@ import {
 } from '@/api/agent-client';
 import { renderMarkdown } from '@/lib/markdown';
 
+// ─── 安全管控确认弹窗 ───────────────────────────────
+
+/** 安全确认弹窗：从 params 构建参数行（中文名/英文key/值/必填/是否待补充） */
+function buildConfirmRows(params: Record<string, any>): {
+  key: string; name: string; value: string; required: boolean; empty: boolean;
+}[] {
+  return Object.entries(params || {}).map(([key, val]) => {
+    const spec = val !== null && typeof val === 'object' ? val : null;
+    const value = spec ? (spec.value ?? '') : String(val ?? '');
+    return {
+      key,
+      name: spec?.description || key,
+      value,
+      required: !!(spec && spec.required),
+      empty: value === '' || value === null || value === undefined,
+    };
+  });
+}
+
+/** 安全确认弹窗：从 content 文本解析出【说明】/【审核要求】区块 */
+function parseConfirmContent(content: string): { description: string; audit: string } {
+  let description = '', audit = '';
+  for (const raw of (content || '').split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('【说明】')) description = line.slice('【说明】'.length).trim();
+    else if (line.startsWith('【审核要求】')) audit = line.slice('【审核要求】'.length).trim();
+  }
+  return { description, audit };
+}
+
+/** 安全管控确认弹窗：结构化展示行为 + 说明/审核要求 + 参数表，纯知情确认（不可改参） */
+function SecurityConfirmModal({
+  confirmModal, countdown, onReject, onApprove,
+}: {
+  confirmModal: { confirmId: string; behavior: string; content: string; params: Record<string, any> };
+  countdown: number | null;
+  onReject: () => void;
+  onApprove: () => void;
+}) {
+  const rows = buildConfirmRows(confirmModal.params);
+  const emptyCount = rows.filter(r => r.empty).length;
+  const { description, audit } = parseConfirmContent(confirmModal.content);
+  return (
+    <Modal
+      title={
+        <span style={{ color: '#fff' }}>
+          🔒 安全管控确认
+          <span className="text-amber-400 text-xs border border-amber-500/40 rounded px-1.5 py-0.5 ml-2">写操作</span>
+          {countdown !== null && countdown > 0 && (
+            <span className="text-text-muted text-xs ml-2">（{countdown} 秒后自动取消）</span>
+          )}
+        </span>
+      }
+      open
+      width={620}
+      destroyOnClose
+      onCancel={onReject}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button danger onClick={onReject}>拒绝</Button>
+          <Button type="primary" onClick={onApprove}>批准执行</Button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        {/* 警示条 */}
+        <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+          <span className="text-amber-400 text-sm leading-6">⚠️</span>
+          <span className="text-amber-200 text-sm leading-6">
+            批准后该写操作将<span className="font-semibold">立即执行</span>
+            {emptyCount > 0 && `；其中 ${emptyCount} 项参数待补充，将由 AI 自动推断`}
+          </span>
+        </div>
+
+        {/* 行为 */}
+        <div className="rounded-lg border border-dark-border px-3 py-2">
+          <div className="text-text-muted text-xs mb-1">行为</div>
+          <div className="text-text-primary text-sm font-medium font-mono">{confirmModal.behavior}</div>
+        </div>
+
+        {/* 说明 */}
+        {description && (
+          <div className="rounded-lg border border-dark-border px-3 py-2">
+            <div className="text-text-muted text-xs mb-1">说明</div>
+            <div className="text-text-primary text-sm whitespace-pre-wrap">{description}</div>
+          </div>
+        )}
+
+        {/* 审核要求 */}
+        {audit && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+            <div className="text-amber-400 text-xs mb-1">审核要求</div>
+            <div className="text-amber-200/90 text-sm whitespace-pre-wrap">{audit}</div>
+          </div>
+        )}
+
+        {/* 参数表 */}
+        {rows.length > 0 ? (
+          <div className="rounded-lg border border-dark-border overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-dark-border bg-dark-bg/60">
+              <span className="text-text-muted text-xs">本次将写入/修改/删除的数据</span>
+              <span className="text-text-muted text-xs">共 {rows.length} 项</span>
+            </div>
+            <div className="divide-y divide-dark-border/60">
+              {rows.map(row => (
+                <div key={row.key} className="flex items-center gap-3 px-3 py-2">
+                  <div className="w-44 shrink-0">
+                    <div className="text-text-primary text-sm leading-5 truncate">{row.name}</div>
+                    <div className="text-text-muted text-xs font-mono leading-4">{row.key}</div>
+                  </div>
+                  <div className="w-12 shrink-0">
+                    {row.required ? (
+                      <span className="text-red-400 text-xs border border-red-500/40 rounded px-1.5 py-0.5">必填</span>
+                    ) : (
+                      <span className="text-text-muted text-xs border border-dark-border rounded px-1.5 py-0.5">选填</span>
+                    )}
+                  </div>
+                  <div className={`flex-1 text-sm truncate ${row.empty ? 'text-amber-400' : 'text-text-primary'}`}>
+                    {row.empty ? '（待补充）' : row.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-text-secondary text-sm whitespace-pre-wrap rounded-lg border border-dark-border px-3 py-2">{confirmModal.content}</div>
+        )}
+
+        <div className="text-text-muted text-xs">ℹ️ 参数已在规划阶段确定，此处仅作知情确认，不可修改</div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Agent Conversation 子组件（聊天界面） ─────────────────
 
 /** 聊天内嵌的子任务执行块（由 exec_entry 事件构建） */
@@ -157,10 +291,11 @@ function AgentConversation({
     params: Record<string, any>;
     editedParams: Record<string, any>;
   } | null>(null);
-  // 规划确认弹窗：倒计时 / 调整建议 / 结构校验错误
+  // 规划确认弹窗：倒计时 / 调整建议 / 结构校验错误 / 高级编辑折叠开关
   const [planCountdown, setPlanCountdown] = useState<number | null>(null);
   const [planSuggestion, setPlanSuggestion] = useState('');
   const [planError, setPlanError] = useState('');
+  const [showPlanAdvanced, setShowPlanAdvanced] = useState(false);
   // 安全管控确认弹窗：倒计时
   const [confirmCountdown, setConfirmCountdown] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -395,6 +530,7 @@ function AgentConversation({
               });
               setPlanSuggestion('');
               setPlanError('');
+              setShowPlanAdvanced(false); // 每次新规划默认只读展示，编辑折叠
             }
             if (data.type === 'feedback') {
               // 父Agent 分析子任务结果期间的空窗提示（子任务间切换）
@@ -510,6 +646,8 @@ function AgentConversation({
     const isAssistant = msg.role === 'assistant';
     const isToolResult = msg.role === 'toolResult';
     const isLast = idx === messages.length - 1;
+    // 短期记忆摘要：仅供后端父Agent上下文，聊天区不展示
+    if ((msg as any).role === 'summary') return null;
     // 聊天内嵌的子任务执行块：无头像，占位对齐到 assistant 气泡下方，保持对话整体感
     if ((msg as any).role === 'subtask') {
       return (
@@ -611,9 +749,11 @@ function AgentConversation({
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} className="text-text-muted hover:text-text-primary" />
           <h3 className="text-base font-semibold text-text-primary ml-2">智能体对话</h3>
         </div>
-        <Button size="small" icon={<CodeOutlined />} onClick={() => setLogOpen(true)}>
-          执行记录
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="small" icon={<CodeOutlined />} onClick={() => setLogOpen(true)}>
+            执行记录
+          </Button>
+        </div>
       </div>
 
       {/* Messages：flex-1 撑满，顶满可用高度；输入框贴底 */}
@@ -708,60 +848,114 @@ function AgentConversation({
           }
         >
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            <div className="text-text-muted text-xs mb-2">可编辑参数、删除子任务或调整依赖；参数留空则由 AI 自动补充。拒绝后可选择「退出」或填写下方建议重新规划。</div>
+            {/* 顶部信息条（info 色调，类比安全确认的警示条） */}
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-accent-blue/10 border border-accent-blue/30 px-3 py-2">
+              <div className="flex items-start gap-2 min-w-0">
+                <span className="text-accent-blue text-sm leading-6 shrink-0">📋</span>
+                <span className="text-text-primary text-sm leading-6">
+                  规划已就绪，共 {planConfirmModal?.editedPlan?.subtasks?.length ?? 0} 个操作；写操作会在执行前另行确认
+                </span>
+              </div>
+              <Button
+                size="small" type="text"
+                className="text-accent-blue hover:text-accent-blue shrink-0"
+                onClick={() => setShowPlanAdvanced(v => !v)}
+              >
+                {showPlanAdvanced ? '收起高级选项' : '⚙️ 高级选项'}
+              </Button>
+            </div>
             {planError && (
               <div className="text-red-400 text-xs border border-red-500/30 rounded px-3 py-2">{planError}</div>
             )}
+            {!showPlanAdvanced && (
+              <div className="text-text-muted text-xs">ℹ️ 默认只读预览；展开「高级选项」可编辑参数、删除子任务或调整依赖（参数留空由 AI 自动补充）。拒绝后可选择「退出」或填写下方建议重新规划。</div>
+            )}
             {planConfirmModal?.editedPlan?.subtasks?.map((st: any, idx: number) => (
-              <div key={st.seq} className="border border-dark-border rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-accent-blue text-xs font-mono">{idx + 1}.</span>
-                  <span className="text-text-primary text-sm font-medium">{st.behavior}</span>
-                  <span className="text-text-muted text-xs">— {st.description}</span>
-                  <Button
-                    size="small" type="text" danger icon={<DeleteOutlined />}
-                    className="ml-auto shrink-0"
-                    onClick={() => onDeleteSubtask(st.seq)}
-                  />
+              <div key={st.seq} className="rounded-lg border border-dark-border overflow-hidden">
+                {/* 子任务头：header 背景 + 序号/中文名/英文名/描述 */}
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dark-border bg-dark-bg/60">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-accent-blue text-xs font-mono shrink-0">{idx + 1}.</span>
+                    <span className="text-text-primary text-sm font-medium truncate">{st.display_name || st.behavior}</span>
+                    {st.display_name && (
+                      <span className="text-text-muted text-xs font-mono shrink-0">{st.behavior}</span>
+                    )}
+                    {st.description && (
+                      <span className="text-text-muted text-xs truncate">— {st.description}</span>
+                    )}
+                  </div>
+                  {showPlanAdvanced && (
+                    <Button
+                      size="small" type="text" danger icon={<DeleteOutlined />}
+                      className="shrink-0"
+                      onClick={() => onDeleteSubtask(st.seq)}
+                    />
+                  )}
                 </div>
-                {st.params && Object.keys(st.params).length > 0 && (
-                  <div className="space-y-1.5 ml-4">
-                    {Object.entries(st.params).map(([key, val]: [string, any]) => {
-                      const pVal = typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
-                      const pReq = typeof val === 'object' && val.required ? ' *' : '';
+                {/* 参数表：与安全确认弹窗一致的 divide 行 */}
+                <div className="divide-y divide-dark-border/60">
+                  {st.params && Object.keys(st.params).length > 0 && Object.entries(st.params).map(([key, val]: [string, any]) => {
+                    const pDesc = typeof val === 'object' && val?.description ? val.description : '';
+                    const label = pDesc || key;
+                    const pVal = typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
+                    const required = typeof val === 'object' && val.required;
+                    if (!showPlanAdvanced) {
                       return (
-                        <div key={key} className="flex items-center gap-2">
-                          <span className="text-text-muted text-xs w-24 shrink-0">{key}{pReq}</span>
-                          <Input
-                            size="small"
-                            value={pVal}
-                            onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
-                            className="bg-dark-bg border-dark-border text-text-primary flex-1"
-                          />
+                        <div key={key} className="flex items-center gap-3 px-3 py-2">
+                          <div className="w-40 shrink-0">
+                            <div className="text-text-primary text-sm truncate">{label}</div>
+                            <div className="text-text-muted text-xs font-mono truncate">{key}</div>
+                          </div>
+                          <div className="w-12 shrink-0">
+                            {required ? (
+                              <span className="text-red-400 text-xs border border-red-500/40 rounded px-1.5 py-0.5">必填</span>
+                            ) : (
+                              <span className="text-text-muted text-xs border border-dark-border rounded px-1.5 py-0.5">选填</span>
+                            )}
+                          </div>
+                          <div className={`flex-1 text-sm break-all ${pVal ? 'text-text-primary' : 'text-amber-400'}`}>
+                            {pVal || '（待补充）'}
+                          </div>
                         </div>
                       );
-                    })}
-                  </div>
-                )}
-                <div className="flex items-center gap-2 ml-4 mt-2">
-                  <span className="text-text-muted text-xs w-24 shrink-0">依赖</span>
-                  <Select
-                    size="small"
-                    mode="multiple"
-                    allowClear
-                    placeholder="选择前置子任务"
-                    value={st.depends_on ?? []}
-                    options={planConfirmModal?.editedPlan?.subtasks
-                      ?.filter((o: any) => o.seq !== st.seq)
-                      ?.map((o: any) => ({ value: o.seq, label: `子任务 ${o.seq}` })) ?? []}
-                    onChange={(v) => onUpdateSubtaskDeps(st.seq, v)}
-                    className="flex-1"
-                  />
+                    }
+                    return (
+                      <div key={key} className="flex items-center gap-2 px-3 py-2">
+                        <div className="w-40 shrink-0">
+                          <div className="text-text-primary text-sm truncate">{label}</div>
+                          <div className="text-text-muted text-xs font-mono truncate">{key}</div>
+                        </div>
+                        <Input
+                          size="small"
+                          value={pVal}
+                          onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
+                          className="bg-dark-bg border-dark-border text-text-primary flex-1"
+                        />
+                      </div>
+                    );
+                  })}
+                  {showPlanAdvanced && (
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <span className="text-text-muted text-xs w-40 shrink-0">依赖</span>
+                      <Select
+                        size="small"
+                        mode="multiple"
+                        allowClear
+                        placeholder="选择前置子任务"
+                        value={st.depends_on ?? []}
+                        options={planConfirmModal?.editedPlan?.subtasks
+                          ?.filter((o: any) => o.seq !== st.seq)
+                          ?.map((o: any) => ({ value: o.seq, label: `子任务 ${o.seq}` })) ?? []}
+                        onChange={(v) => onUpdateSubtaskDeps(st.seq, v)}
+                        className="flex-1"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
-            <div className="border border-dark-border rounded-lg p-3">
-              <div className="text-text-muted text-xs mb-1.5">调整建议（拒绝并重规划时填写）</div>
+            <div className="rounded-lg border border-dark-border px-3 py-2">
+              <div className="text-text-muted text-xs mb-1">调整建议（拒绝并重规划时填写）</div>
               <Input.TextArea
                 value={planSuggestion}
                 onChange={e => setPlanSuggestion(e.target.value)}
@@ -775,48 +969,25 @@ function AgentConversation({
 
       {/* 安全管控确认弹窗 */}
       {confirmModal && (
-      <Modal
-        title={
-          <span style={{ color: '#fff' }}>
-            🔒 安全管控确认 — {confirmModal.behavior}
-            {confirmCountdown !== null && confirmCountdown > 0 && (
-              <span className="text-text-muted text-xs ml-2">（{confirmCountdown} 秒后自动取消）</span>
-            )}
-          </span>
-        }
-        open={true}
-        destroyOnClose
-        onCancel={() => {
+        <SecurityConfirmModal
+          confirmModal={confirmModal}
+          countdown={confirmCountdown}
+          onReject={() => {
             fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ approved: false }),
             }).catch(() => {});
             setConfirmModal(null);
           }}
-          footer={
-            <div className="flex justify-end gap-2">
-              <Button danger onClick={() => {
-                fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: false }),
-                }).catch(() => {});
-                setConfirmModal(null);
-              }}>拒绝</Button>
-              <Button type="primary" onClick={() => {
-                // 安全弹窗只做批准/拒绝，不改参数（参数已在规划确认/数据传播时定好）
-                fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ approved: true }),
-                }).catch(() => {});
-                setConfirmModal(null);
-              }}>批准执行</Button>
-            </div>
-          }
-        >
-          <div className="space-y-3">
-            <div className="text-text-secondary text-sm whitespace-pre-wrap">{confirmModal.content}</div>
-          </div>
-        </Modal>
+          onApprove={() => {
+            // 安全弹窗只做批准/拒绝，不改参数（参数已在规划确认/数据传播时定好）
+            fetch(`/agent-api/confirm/${confirmModal.confirmId}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ approved: true }),
+            }).catch(() => {});
+            setConfirmModal(null);
+          }}
+        />
       )}
 
       {/* 执行记录侧面板 */}
@@ -1019,9 +1190,11 @@ export default function AgentApp({
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">智能体应用</h3>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowNewDialog(true)}>
-          新建对话
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowNewDialog(true)}>
+            新建对话
+          </Button>
+        </div>
       </div>
       <p className="text-text-muted text-xs mb-3">
         与 AI Agent 进行对话，它将基于加载的技能文件为您提供领域知识解答。

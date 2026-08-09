@@ -1,4 +1,4 @@
-"""测试 optonto_mcp MCP 服务的所有 15 个工具接口（全部走 HTTP 代理）"""
+"""测试 optonto-mcp MCP 服务的所有 15 个工具接口（全部走 HTTP 代理）"""
 import asyncio, json, sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 

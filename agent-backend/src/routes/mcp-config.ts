@@ -30,7 +30,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
 
   /**
    * POST — 测试 MCP 连接并列出工具
-   * body: { url: "http://mcp:8002/sse" }
+   * body: { url: "http://optonto-mcp:8002/sse" }
    * 返回: { success: true, tools: [{name, description, inputSchema}] }
    */
   router.post('/mcp-config/test', async (req: Request, res: Response) => {

@@ -66,7 +66,8 @@ export class OntologyGateway {
       related_behaviors: r.related_behaviors || [],
       rule_detail: r.rule_detail || null,
       related_functions: r.related_functions || [],
-      data_supplements: [...(r.data_supplements || []), ...this.inferNeededApis(r.rule_detail, data?.behaviors || [])],
+      // 目前只采用 yaml 手写的 data_supplements；inferNeededApis 暂不启用（函数保留，待需要时再接回）
+      data_supplements: [...(r.data_supplements || [])],
     }));
 
     const preRules = allRules.filter(
@@ -95,12 +96,6 @@ export class OntologyGateway {
         })),
       }));
 
-    // 名称约定映射（去重 data_supplements + 过滤私有接口）
-    const neededApis = new Set<string>();
-    for (const rule of [...preRules, ...postRules]) {
-      (rule.data_supplements || []).forEach((api: string) => neededApis.add(api));
-    }
-
     // 写操作判定：API 引擎且 method 为 POST/PATCH/DELETE（SQL 引擎只读，SELECT only）
     const writeMethods = new Set(['POST', 'PATCH', 'DELETE']);
     const dataEngine = (data?.data_engines || []).find((d: any) => d.behavior_name === behaviorName);
@@ -110,14 +105,27 @@ export class OntologyGateway {
     return {
       display_name: behavior?.display_name || behavior?.name || '',
       params: behavior?.params || {},
-      preRules: preRules.map(r => ({ ...r, data_supplements: [...neededApis].filter(a => !a.startsWith('_')) })),
-      postRules: postRules.map(r => ({ ...r, data_supplements: [...neededApis].filter(a => !a.startsWith('_')) })),
+      // 每条规则只保留自己声明的 data_supplements（过滤私有 _ 前缀接口），不做跨规则并集
+      preRules: preRules.map(r => ({ ...r, data_supplements: (r.data_supplements || []).filter(a => !a.startsWith('_')) })),
+      postRules: postRules.map(r => ({ ...r, data_supplements: (r.data_supplements || []).filter(a => !a.startsWith('_')) })),
       security: security
         ? { audit_node: security.audit_node || '前置', audit_content: security.audit_content || '' }
         : undefined,
       concepts,
       isWrite,
     };
+  }
+
+  /**
+   * 按函数名取本体函数的参数结构。
+   * 函数定义在 functions[] 中才有 params（本体函数，走 executeOntoFunction 包装、参数不可见，需渲染）；
+   * 不在则返回 null，表示共享函数（直接 MCP 工具，参数在工具 schema 可见，无需渲染）。
+   */
+  getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null {
+    const data = this.loadOntologyData(scenario, ontology);
+    const fn = (data?.functions || []).find((f: any) => f.name === functionName);
+    if (!fn) return null;
+    return fn?.params || {};
   }
 
   /**

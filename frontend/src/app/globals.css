@@ -114,6 +114,13 @@ html, body {
 .ant-btn-primary {
   background-color: var(--accent-blue) !important;
 }
+.ant-btn-text {
+  color: var(--text-primary) !important;
+}
+.ant-btn-text:hover {
+  color: var(--accent-blue) !important;
+  background-color: var(--bg-card-hover) !important;
+}
 .ant-table {
   background: transparent !important;
   color: var(--text-primary) !important;

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { ThreadStore } from '../services/thread-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
+import { MemoryService } from '../services/memory-service.js';
 import { Orchestrator } from '../agent/orchestrator.js';
 import type { ThreadMessage, SSEEvent } from '../types.js';
 import { ForbiddenError } from '../security/path-access-controller.js';
@@ -9,6 +10,7 @@ export function createThreadsRouter(
   threadStore: ThreadStore,
   skillLoader: SkillLoader,
   orchestrator: Orchestrator,
+  memoryService: MemoryService,
 ): Router {
   const router = Router();
 
@@ -90,11 +92,20 @@ export function createThreadsRouter(
 
     try {
       const thread = threadStore.get(scenario, ontology, tid);
-      const history: ThreadMessage[] = thread.messages || [];
+      let history: ThreadMessage[] = thread.messages || [];
 
-      const result = await orchestrator.execute(
-        message, thread.skill_names, history, sendEvent,
-      );
+      // 短期记忆：压缩历史（生成摘要则写回线程，压缩后的消息喂父Agent 上下文）
+      try {
+        const prepared = await memoryService.prepareHistory(history);
+        if (prepared.summary !== null) {
+          threadStore.replaceMessages(scenario, ontology, tid, prepared.messages);
+          history = prepared.messages;
+        }
+      } catch (e: any) {
+        console.error(`[threads] 历史压缩失败（忽略，走原始历史）: ${e?.message || e}`);
+      }
+
+      const result = await orchestrator.execute(message, thread.skill_names, history, sendEvent);
 
       const userMsg: ThreadMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };
       const asstMsg: ThreadMessage = { role: 'assistant', content: result, timestamp: new Date().toISOString() };
@@ -112,8 +123,8 @@ export function createThreadsRouter(
   });
 
   router.post('/confirm/:confirmId', (req: Request, res: Response) => {
-    const { approved, params } = req.body as { approved: boolean; params?: Record<string, any> };
-    orchestrator.getConfirmManager().handleConfirm(req.params.confirmId as string, approved, params);
+    const { approved } = req.body as { approved: boolean };
+    orchestrator.getConfirmManager().handleConfirm(req.params.confirmId as string, approved);
     res.json({ message: 'ok' });
   });
 
