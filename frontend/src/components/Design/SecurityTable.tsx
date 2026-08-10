@@ -80,7 +80,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
       if (isEditing(r) || (editingKey === '__new__' && r.action_name === '__new__')) return renderCell(v, r, 'action_name');
       return behaviors.find(b => b.name === v)?.display_name || v || '-';
     }},
-    { title: '审核内容', dataIndex: 'audit_content', key: 'audit_content', width: 200, ellipsis: true, render: (v: any, r: Security) => renderCell(v, r, 'audit_content') },
+    { title: '人工确认内容', dataIndex: 'audit_content', key: 'audit_content', width: 200, ellipsis: true, render: (v: any, r: Security) => renderCell(v, r, 'audit_content') },
     { title: '介入位置', dataIndex: 'audit_node', key: 'audit_node', width: 100, render: (v: any, r: Security) => renderCell(v, r, 'audit_node') },
     {
       title: '操作', key: 'actions', width: 100,
@@ -99,7 +99,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">安全审核</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增审核</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">设置关键操作的人工审核节点与内容</p>
+      <p className="text-text-muted text-xs mb-3">设置关键操作的人工审核确认的节点与内容</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
     </div>
   );
