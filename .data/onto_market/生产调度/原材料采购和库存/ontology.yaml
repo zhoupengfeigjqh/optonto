@@ -1526,6 +1526,12 @@ data_engines:
     a: a
   output_mapping:
     b: b
+    code: code
+    data: data
+    data[*].rawMaterialId: data[*].rawMaterialId
+    data[*].rawMaterialName: data[*].rawMaterialName
+    data[*].unit: data[*].unit
+    data[*].safetyStock: data[*].safetyStock
   sql: ''
   sql_vars: {}
   datasource: ''

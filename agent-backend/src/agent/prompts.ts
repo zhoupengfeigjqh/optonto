@@ -147,10 +147,27 @@ export const CHILD_SYSTEM_PROMPT = `## 角色
 - ${RESULT_STATUS_OK} = 操作已正确执行（含结果为空）；${RESULT_STATUS_FAIL} = 操作未完成
 - 每次回复 ≤ 1000 字，末尾单独一行输出状态标记：${RESULT_STATUS_OK} 或 ${RESULT_STATUS_FAIL}`;
 
+// ─── 当前时间注入 ────────────────────────────────
+
+/** 当前时间文本（本地时区，精确到时分秒）。在 Agent 创建时计算，注入提示词末尾，
+ *  让时间敏感参数（如函数 currentDate / 规则时间判断）以真实当前时间为准，而非模型记忆。 */
+export function currentDateTimeText(): string {
+  const d = new Date();
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** 时间注记：追加到提示词末尾。注明当前日期（YYYY-MM-DD）与时分秒，
+ *  并强制"时间相关判断一律以此为准"。父/子 Agent 各组装一份（创建时新鲜取值）。 */
+export function timeNote(): string {
+  const now = currentDateTimeText();
+  return `\n## 当前时间\n当前时间：${now}（本地时区）。\n- 所有时间相关参数（日期/时间/期限/时间比较/截止日）一律以此为准，严禁凭模型记忆猜测当前日期\n- 需要日期参数时取 YYYY-MM-DD 部分（${now.slice(0, 10)}），时分秒用于时间精度判断`;
+}
+
 // ─── 上下文构建 ────────────────────────────────
 
 /** 构建父 Agent 的完整 system prompt */
 export function buildParentPrompt(descriptions: SkillDescription[]): string {
   const skillList = descriptions.map(d => `- ${d.name}: ${d.description}`).join('\n');
-  return `${PARENT_SYSTEM_PROMPT}\n## 可用技能\n${skillList || '无'}`;
+  return `${PARENT_SYSTEM_PROMPT}\n## 可用技能\n${skillList || '无'}${timeNote()}`;
 }

@@ -8,7 +8,7 @@ import { MCPClient } from '../services/mcp-client.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
-import { buildParentPrompt, CHILD_SYSTEM_PROMPT } from './prompts.js';
+import { buildParentPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from './text-utils.js';
 import { isParamValueEmpty } from './param-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
@@ -167,7 +167,7 @@ export class AgentFactory {
     const mcpTools = allMcp
       .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
       .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, requiredParams, errorBudget));
-    const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。`;
+    const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
     });
