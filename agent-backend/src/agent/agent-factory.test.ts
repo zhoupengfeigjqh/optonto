@@ -41,6 +41,9 @@ import type { ThreadMessage } from '../types.js';
 
 const mockedAgent = vi.mocked(Agent);
 
+/** 网关桩：历史映射/子 Agent 作用域测试用空实现（父守卫走不到），守卫测试单独给定制桩 */
+const stubGateway = { getOntologyNamesById: () => null } as any;
+
 function mkHistory(): ThreadMessage[] {
   const t = (n: number) => new Date(Date.now() - (5 - n) * 60_000).toISOString();
   return [
@@ -52,7 +55,7 @@ function mkHistory(): ThreadMessage[] {
 }
 
 async function captureTransformContext() {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
   await factory.createParentAgent([], mkHistory(), () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   const config = mockedAgent.mock.calls[0][0];
@@ -85,7 +88,7 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
   });
 
   it('历史消息按原顺序置于实时消息之前', async () => {
-    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
+    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
     await factory.createParentAgent([], mkHistory(), () => {});
     const config = mockedAgent.mock.calls[0][0];
     const transformed = await config.transformContext([{ role: 'user', content: '当前问题' }]);
@@ -100,7 +103,7 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
  * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
  */
 async function captureChildTools() {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
     'CreatePurchaseRecord', ['rawMaterialId', 'qty'],
@@ -133,5 +136,61 @@ describe('AgentFactory.scopeToOntology 主行为必填参数硬检查', () => {
     const tool = tools.find(t => t.name === 'executeOntoBehavior');
     const result = await tool.execute('call-3', { behavior_name: 'QuerySupplier', params: {} });
     expect(result).toBeTruthy();
+  });
+});
+
+/**
+ * 捕获父 Agent 工具列表（createParentAgent → discoverTools → guardParentWrite）。
+ * 走公开路径，验证写守卫在真实装配链路上生效。
+ */
+async function captureParentTools(gateway: any) {
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, gateway);
+  await factory.createParentAgent([], [], () => {});
+  expect(mockedAgent).toHaveBeenCalledTimes(1);
+  return mockedAgent.mock.calls[0][0].initialState.tools as any[];
+}
+
+describe('AgentFactory 父 Agent 写操作守卫', () => {
+  beforeEach(() => mockedAgent.mockClear());
+
+  const writeGateway = {
+    getOntologyNamesById: (id: number) => ({ scenario_name: '生产调度', ontology_name: '原材料采购和库存' }),
+    getBehaviorMeta: (_s: string, _o: string, b: string) => ({ isWrite: b === 'CreatePurchaseRecord', security: undefined }),
+  } as any;
+
+  it('executeOntoBehavior 目标是写操作时抛错（硬拒，强制走 submit_plan）', async () => {
+    const tools = await captureParentTools(writeGateway);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    await expect(
+      tool.execute('call-1', { ontology_id: 1, behavior_name: 'CreatePurchaseRecord', params: {} }),
+    ).rejects.toThrow(/禁止执行：行为 CreatePurchaseRecord（写操作）/);
+  });
+
+  it('executeOntoBehavior 目标需安全管控时抛错（security 分支）', async () => {
+    const gateway = {
+      getOntologyNamesById: () => ({ scenario_name: '生产调度', ontology_name: '原材料采购和库存' }),
+      getBehaviorMeta: () => ({ isWrite: false, security: { audit_node: '前置', audit_content: '敏感操作' } }),
+    } as any;
+    const tools = await captureParentTools(gateway);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    await expect(
+      tool.execute('call-2', { ontology_id: 1, behavior_name: 'SensitiveRead', params: {} }),
+    ).rejects.toThrow(/禁止执行：行为 SensitiveRead（需安全管控）/);
+  });
+
+  it('executeOntoBehavior 目标是只读行为时放行', async () => {
+    const tools = await captureParentTools(writeGateway);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-3', { ontology_id: 1, behavior_name: 'QuerySupplier', params: {} });
+    expect(result).toBeTruthy();
+  });
+
+  it('无法解析元信息时 fail-closed 拒绝（防止绕过）', async () => {
+    const gateway = { getOntologyNamesById: () => null } as any;
+    const tools = await captureParentTools(gateway);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    await expect(
+      tool.execute('call-4', { ontology_id: 999, behavior_name: 'Anything', params: {} }),
+    ).rejects.toThrow(/禁止执行：行为 Anything/);
   });
 });

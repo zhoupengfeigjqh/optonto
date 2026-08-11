@@ -186,8 +186,10 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
         func = local_vars.get(fn.name)
         if func is None:
             raise HTTPException(status_code=500, detail=f"未找到函数 {fn.name}，请确认函数名与定义一致")
+        # 函数代码已自带 {"result": ...} 包装（与公共函数 run() 约定一致，见 common_functions.py），
+        # 故原样返回，不再包一层，避免双重嵌套（sumRawNotArrivalQty 等函数 code_file 均自带头 result）。
         result = func(**params)
-        return {"result": result}
+        return result
     except HTTPException:
         raise
     except Exception as e:

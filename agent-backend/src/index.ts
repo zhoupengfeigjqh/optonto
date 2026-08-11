@@ -20,8 +20,8 @@ const threadStore = new ThreadStore(pac);
 const skillLoader = new SkillLoader(pac);
 const mcpConfigStore = new MCPConfigStore(config.mcpConfigPath);
 
-const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
 const ontologyGateway = new OntologyGateway(pac);
+const agentFactory = new AgentFactory(mcpConfigStore, skillLoader, ontologyGateway);
 const orchestrator = new Orchestrator(agentFactory, ontologyGateway);
 const memoryService = new MemoryService();
 

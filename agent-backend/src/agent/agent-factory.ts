@@ -14,12 +14,10 @@ import { isParamValueEmpty } from './param-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
+import type { OntologyGatewayPort } from './agent-ports.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
-
-/** 父 Agent 不挂的 本体MCP 工具：仅执行类。其余（浏览类 + 全部公共函数）都给父 Agent */
-const PARENT_MCP_EXCLUDED = ['executeOntoBehavior', 'executeOntoFunction'];
 
 /**
  * 运行时读取公共函数定义（.data/common_functions/functions.json，与 core-backend 同一份数据源）。
@@ -45,14 +43,6 @@ function loadCommonFunctionNames(): string[] {
 
 /** 运行时读出的公共函数名（子/父 Agent 共用同一数据源，新增/改名公共函数无需改代码）。 */
 export const COMMON_FUNCTION_NAMES = loadCommonFunctionNames();
-
-/** 子 Agent（执行专家）的 MCP 工具白名单：行为/函数执行包装（写死） + 公共函数（运行时读 functions.json），不含浏览类。
- *  注意：公共函数还需同时出现在 mcp-config 对应 server 的 allowed_tools 里，MCP 侧才会注册该工具。 */
-export const CHILD_MCP_TOOL_NAMES = ['executeOntoBehavior', 'executeOntoFunction', ...COMMON_FUNCTION_NAMES];
-
-/** 子 Agent 可直接调用的公共函数（直接 MCP 工具，不经 executeOntoFunction）。
- *  由 CHILD_MCP_TOOL_NAMES 派生（单一来源）：排除两个执行包装后的其余工具。 */
-export const CHILD_COMMON_TOOL_NAMES = CHILD_MCP_TOOL_NAMES.filter(n => !['executeOntoBehavior', 'executeOntoFunction'].includes(n));
 
 /**
  * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
@@ -81,6 +71,7 @@ export class AgentFactory {
   constructor(
     private mcpConfigStore: MCPConfigStore,
     private skillLoader: SkillLoader,
+    private ontologyGateway: OntologyGatewayPort,
   ) {}
 
   /**
@@ -124,14 +115,10 @@ export class AgentFactory {
 
     const loadSkillTool = this.createLoadSkillTool(skills, onSkillLoaded);
     const submitPlanTool = this.createSubmitPlanTool(onPlanSubmitted);
-    // MCP 配置全局唯一，不区分场景/本体
+    // MCP 配置全局唯一，不区分场景/本体；父子 Agent 挂完全相同的工具集（本体浏览类 + 公共函数 + 执行包装 + 用户新增 MCP）
     const allMcp = await this.discoverTools();
-    // 父 Agent（规划专家）：
-    // - 内置本体MCP 挂浏览类 + 全部公共函数（仅排除执行类）
-    // - 用户新增的 MCP 工具默认全部挂到父 Agent
-    const parentMcpTools = allMcp
-      .filter(({ tool, builtin }) => builtin ? !PARENT_MCP_EXCLUDED.includes(tool.name) : true)
-      .map(({ tool }) => tool);
+    // 写操作硬守卫：父 Agent 直调 executeOntoBehavior 目标为写/需安全管控时抛错，强制走 submit_plan（子 Agent + 安全确认）
+    const parentMcpTools = allMcp.map(({ tool }) => tool.name === 'executeOntoBehavior' ? this.guardParentWrite(tool) : tool);
     const tools: AgentTool[] = [loadSkillTool, submitPlanTool, ...parentMcpTools];
 
     const historyMessages: AgentMessage[] = history.map(msg => {
@@ -152,7 +139,7 @@ export class AgentFactory {
 
   /**
    * 创建子 Agent（执行专家）。
-   * 只注册 MCP 执行/时间工具（CHILD_MCP_TOOL_NAMES），不挂 load_skill。
+   * 挂载与父 Agent 完全相同的 MCP 工具集（本体浏览类 + 公共函数 + 执行包装 + 用户新增 MCP），不挂 load_skill。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
   async createChildAgent(context: SkillContext, primaryBehavior?: string, requiredParams?: string[], errorBudget?: ToolErrorBudget): Promise<AgentPort> {
@@ -160,18 +147,45 @@ export class AgentFactory {
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
-    // 子Agent不需要浏览场景/本体/本体结构，指令已包含完整上下文。
-    // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰。
+    // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
+    // （无 ontology_id 的工具如公共函数/浏览类原样透传）。
     // requiredParams：主行为执行前的硬检查——必填参数必须有值，缺失拒绝执行。
     // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
     const mcpTools = allMcp
-      .filter(({ tool }) => CHILD_MCP_TOOL_NAMES.includes(tool.name))
       .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, requiredParams, errorBudget));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
     });
     return agent;
+  }
+
+  /**
+   * 父 Agent 写操作硬守卫：executeOntoBehavior 目标是写行为（isWrite）或需安全管控（security）时抛错，
+   * 强制父 Agent 改走 submit_plan 由子 Agent 执行（写操作会经安全确认弹窗）。
+   * fail-closed：缺 id/行为名、或无法解析元信息时一律拒绝——无法确认是读操作就不放行。
+   * 判定条件与 SubtaskRunner 安全确认一致（meta.security || meta.isWrite），不误伤只读行为。
+   */
+  private guardParentWrite(tool: AgentTool): AgentTool {
+    const originalExecute = tool.execute;
+    return {
+      ...tool,
+      execute: async (toolCallId: string, params: any) => {
+        const oid = Number(params?.ontology_id);
+        const bname = params?.behavior_name as string | undefined;
+        if (!Number.isFinite(oid) || !bname) {
+          throw new Error(`禁止执行：缺少 ontology_id/behavior_name，无法确认行为 ${bname ?? ''} 的读写类型。请通过 submit_plan 提交规划，由子 Agent 执行。`);
+        }
+        const names = this.ontologyGateway.getOntologyNamesById(oid);
+        const meta = names
+          ? this.ontologyGateway.getBehaviorMeta(names.scenario_name, names.ontology_name, bname)
+          : null;
+        if (!meta || meta.isWrite || meta.security) {
+          throw new Error(`禁止执行：行为 ${bname}（${!meta ? '无法确认读写类型' : meta.isWrite ? '写操作' : '需安全管控'}）不能由父 Agent 直接执行。请通过 submit_plan 提交规划，由子 Agent 执行（写操作会经安全确认）。`);
+        }
+        return originalExecute(toolCallId, params);
+      },
+    };
   }
 
   /**

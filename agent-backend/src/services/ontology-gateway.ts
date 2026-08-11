@@ -8,7 +8,7 @@
  *   - 关联的概念属性
  */
 
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
@@ -43,6 +43,32 @@ export class OntologyGateway {
   getBehaviorNames(scenario: string, ontology: string): string[] {
     const data = this.loadOntologyData(scenario, ontology);
     return (data?.behaviors || []).map((b: any) => b.name).filter(Boolean);
+  }
+
+  /**
+   * ontology_id → (scenario_name, ontology_name)。
+   * 扫描 onto_market 下各本体目录的 meta.json 按 id 匹配（与 core-backend metadata 同源，只扫本体层目录）。
+   * 每次现扫：meta.json 极小、父 Agent 直调行为属低频，正确性优先于缓存。
+   */
+  getOntologyNamesById(ontologyId: number): { scenario_name: string; ontology_name: string } | null {
+    const root = join(this.pac.getDataDir(), 'onto_market');
+    if (!existsSync(root)) return null;
+    for (const scenarioDir of readdirSync(root, { withFileTypes: true })) {
+      if (!scenarioDir.isDirectory()) continue;
+      const scenarioPath = join(root, scenarioDir.name);
+      for (const ontoDir of readdirSync(scenarioPath, { withFileTypes: true })) {
+        if (!ontoDir.isDirectory()) continue; // 跳过场景层 meta.json（文件非目录）
+        const metaPath = join(scenarioPath, ontoDir.name, 'meta.json');
+        if (!existsSync(metaPath)) continue;
+        try {
+          const data = JSON.parse(readFileSync(metaPath, 'utf-8'));
+          if (data && typeof data.id === 'number' && data.id === ontologyId) {
+            return { scenario_name: scenarioDir.name, ontology_name: ontoDir.name };
+          }
+        } catch { /* 跳过损坏的 meta.json */ }
+      }
+    }
+    return null;
   }
 
   /**
@@ -96,8 +122,8 @@ export class OntologyGateway {
         })),
       }));
 
-    // 写操作判定：API 引擎且 method 为 POST/PATCH/DELETE（SQL 引擎只读，SELECT only）
-    const writeMethods = new Set(['POST', 'PATCH', 'DELETE']);
+    // 写操作判定：API 引擎且 method 为 POST/PATCH/DELETE/PUT（SQL 引擎只读，SELECT only）
+    const writeMethods = new Set(['POST', 'PATCH', 'DELETE', 'PUT']);
     const dataEngine = (data?.data_engines || []).find((d: any) => d.behavior_name === behaviorName);
     const isWrite = !!dataEngine && dataEngine.engine_type !== 'SQL'
       && writeMethods.has((dataEngine.target?.method || '').toUpperCase());

@@ -28,6 +28,8 @@ export interface AgentFactoryPort {
 export interface OntologyGatewayPort {
   getBehaviorMeta(scenario: string, ontology: string, behavior: string): BehaviorMeta;
   getBehaviorNames(scenario: string, ontology: string): string[];
+  /** ontology_id → (scenario_name, ontology_name)，父 Agent 写守卫用（工具调用参数只有 id） */
+  getOntologyNamesById(ontologyId: number): { scenario_name: string; ontology_name: string } | null;
   /** 函数元信息（中文显示名），工具调用展示用 */
   getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string };
   /** 本体函数参数结构（渲染指令用）；共享函数返回 null（参数在工具 schema 可见） */

@@ -9,7 +9,7 @@ import { requiredParamNames, renderParam } from './param-contract.js';
 import { createToolErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
-import { CHILD_COMMON_TOOL_NAMES } from './agent-factory.js';
+import { COMMON_FUNCTION_NAMES } from './agent-factory.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult, ExecutionEntry, SSEEvent } from '../types.js';
 import type { ConfirmManager } from './confirm-manager.js';
 
@@ -304,12 +304,12 @@ export class SubtaskRunner {
     // 规则声明的关联函数，剔除已在公共函数行的（公共函数是直接 MCP 工具，不经 executeOntoFunction）
     const ruleFunctions = allRules
       .flatMap(r => r.related_functions || [])
-      .filter((f: string) => !CHILD_COMMON_TOOL_NAMES.includes(f));
+      .filter((f: string) => !COMMON_FUNCTION_NAMES.includes(f));
     text += `\n### 本子任务合法行为列表（只能调用以下行为/函数，严禁调用未列出的）\n`;
     text += `- 主行为: ${subTask.behavior}\n`;
     text += `- 规则关联行为: ${[...new Set(ruleBehaviors.filter(b => b !== subTask.behavior))].join('、') || '（无）'}\n`;
     text += `- 关联函数（规则声明，经 executeOntoFunction 调用）: ${[...new Set(ruleFunctions)].join('、') || '（无）'}\n`;
-    text += `- 公共函数（直接 MCP 工具，不经 executeOntoFunction）: ${CHILD_COMMON_TOOL_NAMES.join('、')}\n`;
+    text += `- 公共函数（直接 MCP 工具，不经 executeOntoFunction）: ${COMMON_FUNCTION_NAMES.join('、')}\n`;
 
     return text;
   }

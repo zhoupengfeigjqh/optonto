@@ -19,4 +19,4 @@ def sumRawNotArrivalQty(filterRawMaterialName: str, currentDate: str, purchaseRe
             arrival_time = datetime.datetime.strptime(record["arrivalTime"], "%Y-%m-%d")
             if arrival_time >= current_date:
                 total_not_arrival += record["arrivalQuantity"]
-    return {"result": {"rawMaterialName": filterRawMaterialName, "sumNotArrivalQty": total_not_arrival}}
+    return {"result":{"rawMaterialName": filterRawMaterialName, "sumNotArrivalQty": total_not_arrival}}
