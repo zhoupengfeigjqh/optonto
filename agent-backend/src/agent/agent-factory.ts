@@ -45,6 +45,16 @@ function loadCommonFunctionNames(): string[] {
 export const COMMON_FUNCTION_NAMES = loadCommonFunctionNames();
 
 /**
+ * 父 Agent 可挂载的本体查询工具（只读元数据，规划时了解场景/本体/行为/概念/关系/函数/安全）。
+ * 父 Agent 工具职责边界：load_skill + 本体查询 + 公共函数 + submit_plan，【不挂执行工具】。
+ * executeOntoBehavior / executeOntoFunction 由子 Agent 独占——父 Agent 从机制上无法执行任何业务操作。
+ */
+const PARENT_ONTOLOGY_QUERY_TOOLS = [
+  'listScenarios', 'listOntologies', 'listOntoBehaviors', 'listOntoConcepts',
+  'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities',
+];
+
+/**
  * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
  * 避免 NaN 作为参数静默传给后端 / 在拓扑排序里被跳过。
  */
@@ -98,7 +108,9 @@ export class AgentFactory {
 
   /**
    * 创建父 Agent（规划专家）。
-   * 注册 load_skill + submit_plan + MCP 只读浏览工具（PARENT_MCP_TOOL_NAMES）。
+   * 注册 load_skill + submit_plan + 本体查询工具（list*）+ 公共函数。
+   * 父 Agent 不挂执行工具（executeOntoBehavior / executeOntoFunction）——业务执行由子 Agent 独占，
+   * 从机制上杜绝父 Agent 规划阶段自执行/与子任务双重执行。
    * - onSkillLoaded：父 Agent 调用 load_skill 时触发，通知 orchestrator 记录已加载的技能名。
    * - onPlanSubmitted：父 Agent 调用 submit_plan 提交规划时触发，规划已通过 TypeBox schema 校验。
    */
@@ -115,10 +127,13 @@ export class AgentFactory {
 
     const loadSkillTool = this.createLoadSkillTool(skills, onSkillLoaded);
     const submitPlanTool = this.createSubmitPlanTool(onPlanSubmitted);
-    // MCP 配置全局唯一，不区分场景/本体；父子 Agent 挂完全相同的工具集（本体浏览类 + 公共函数 + 执行包装 + 用户新增 MCP）
+    // MCP 配置全局唯一，不区分场景/本体。父 Agent 只挂规划所需工具：
+    // 本体查询（list*，规划时了解行为/参数/概念/规则）+ 公共函数（时间计算）；
+    // 过滤掉 executeOntoBehavior / executeOntoFunction —— 父 Agent 没有执行类工具，业务执行全走 submit_plan 由子 Agent 完成。
     const allMcp = await this.discoverTools();
-    // 写操作硬守卫：父 Agent 直调 executeOntoBehavior 目标为写/需安全管控时抛错，强制走 submit_plan（子 Agent + 安全确认）
-    const parentMcpTools = allMcp.map(({ tool }) => tool.name === 'executeOntoBehavior' ? this.guardParentWrite(tool) : tool);
+    const parentMcpTools = allMcp
+      .filter(({ tool }) => PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name) || COMMON_FUNCTION_NAMES.includes(tool.name))
+      .map(({ tool }) => tool);
     const tools: AgentTool[] = [loadSkillTool, submitPlanTool, ...parentMcpTools];
 
     const historyMessages: AgentMessage[] = history.map(msg => {
@@ -139,7 +154,8 @@ export class AgentFactory {
 
   /**
    * 创建子 Agent（执行专家）。
-   * 挂载与父 Agent 完全相同的 MCP 工具集（本体浏览类 + 公共函数 + 执行包装 + 用户新增 MCP），不挂 load_skill。
+   * 挂载业务执行工具集：executeOntoBehavior + executeOntoFunction + 公共函数 + 新增 MCP 工具，
+   * 不挂 load_skill / submit_plan / list* 本体浏览工具——合法行为列表已在指令中渲染，无需自行浏览本体元数据。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
   async createChildAgent(context: SkillContext, primaryBehavior?: string, requiredParams?: string[], errorBudget?: ToolErrorBudget): Promise<AgentPort> {
@@ -147,45 +163,19 @@ export class AgentFactory {
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
+    // 剔除本体浏览工具（list*）——子 Agent 只执行业务，合法行为列表已在指令中渲染。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
-    // （无 ontology_id 的工具如公共函数/浏览类原样透传）。
+    // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
     // requiredParams：主行为执行前的硬检查——必填参数必须有值，缺失拒绝执行。
     // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
     const mcpTools = allMcp
+      .filter(({ tool }) => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name))
       .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, requiredParams, errorBudget));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
     });
     return agent;
-  }
-
-  /**
-   * 父 Agent 写操作硬守卫：executeOntoBehavior 目标是写行为（isWrite）或需安全管控（security）时抛错，
-   * 强制父 Agent 改走 submit_plan 由子 Agent 执行（写操作会经安全确认弹窗）。
-   * fail-closed：缺 id/行为名、或无法解析元信息时一律拒绝——无法确认是读操作就不放行。
-   * 判定条件与 SubtaskRunner 安全确认一致（meta.security || meta.isWrite），不误伤只读行为。
-   */
-  private guardParentWrite(tool: AgentTool): AgentTool {
-    const originalExecute = tool.execute;
-    return {
-      ...tool,
-      execute: async (toolCallId: string, params: any) => {
-        const oid = Number(params?.ontology_id);
-        const bname = params?.behavior_name as string | undefined;
-        if (!Number.isFinite(oid) || !bname) {
-          throw new Error(`禁止执行：缺少 ontology_id/behavior_name，无法确认行为 ${bname ?? ''} 的读写类型。请通过 submit_plan 提交规划，由子 Agent 执行。`);
-        }
-        const names = this.ontologyGateway.getOntologyNamesById(oid);
-        const meta = names
-          ? this.ontologyGateway.getBehaviorMeta(names.scenario_name, names.ontology_name, bname)
-          : null;
-        if (!meta || meta.isWrite || meta.security) {
-          throw new Error(`禁止执行：行为 ${bname}（${!meta ? '无法确认读写类型' : meta.isWrite ? '写操作' : '需安全管控'}）不能由父 Agent 直接执行。请通过 submit_plan 提交规划，由子 Agent 执行（写操作会经安全确认）。`);
-        }
-        return originalExecute(toolCallId, params);
-      },
-    };
   }
 
   /**

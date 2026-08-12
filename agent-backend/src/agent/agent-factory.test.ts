@@ -13,14 +13,19 @@ vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
 vi.mock('../services/mcp-config-store.js', () => ({
   MCPConfigStore: class { getConfig() { return { servers: [{ name: '本体MCP', url: 'http://mcp-test/sse', enabled: true, builtin: true }] }; } },
 }));
-// MCPClient 假实现：listTools 返回 executeOntoBehavior（inputSchema 带 ontology_id），callTool 返回成功。
+// MCPClient 假实现：listTools 返回混合工具集（本体浏览 list* + 执行 execute + 公共函数），callTool 返回成功。
 // 不连真实网络——discoverTools 会 new MCPClient(url) 并 connect/listTools。
 vi.mock('../services/mcp-client.js', () => ({
   MCPClient: class {
     async connect() {}
     async close() {}
     async listTools() {
-      return { tools: [{ name: 'executeOntoBehavior', description: '执行本体行为', inputSchema: { type: 'object', properties: { behavior_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['behavior_name', 'ontology_id'] } }] };
+      return { tools: [
+        { name: 'executeOntoBehavior', description: '执行本体行为', inputSchema: { type: 'object', properties: { behavior_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['behavior_name', 'ontology_id'] } },
+        { name: 'executeOntoFunction', description: '执行本体函数', inputSchema: { type: 'object', properties: { function_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['function_name', 'ontology_id'] } },
+        { name: 'listOntoBehaviors', description: '列出本体行为', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' } } } },
+        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {} } },
+      ] };
     }
     async callTool() { return { content: [{ type: 'text', text: '{"ok":true}' }], isError: false }; }
   },
@@ -140,57 +145,46 @@ describe('AgentFactory.scopeToOntology 主行为必填参数硬检查', () => {
 });
 
 /**
- * 捕获父 Agent 工具列表（createParentAgent → discoverTools → guardParentWrite）。
- * 走公开路径，验证写守卫在真实装配链路上生效。
+ * 捕获父 Agent 工具列表（createParentAgent → discoverTools → PARENT_ONTOLOGY_QUERY_TOOLS 白名单过滤）。
+ * 走公开路径，验证父 Agent 从机制上不挂执行工具（工具职责边界）。
  */
-async function captureParentTools(gateway: any) {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, gateway);
+async function captureParentTools() {
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
   await factory.createParentAgent([], [], () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
 }
 
-describe('AgentFactory 父 Agent 写操作守卫', () => {
+describe('AgentFactory 父 Agent 工具职责边界', () => {
   beforeEach(() => mockedAgent.mockClear());
 
-  const writeGateway = {
-    getOntologyNamesById: (id: number) => ({ scenario_name: '生产调度', ontology_name: '原材料采购和库存' }),
-    getBehaviorMeta: (_s: string, _o: string, b: string) => ({ isWrite: b === 'CreatePurchaseRecord', security: undefined }),
-  } as any;
-
-  it('executeOntoBehavior 目标是写操作时抛错（硬拒，强制走 submit_plan）', async () => {
-    const tools = await captureParentTools(writeGateway);
-    const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    await expect(
-      tool.execute('call-1', { ontology_id: 1, behavior_name: 'CreatePurchaseRecord', params: {} }),
-    ).rejects.toThrow(/禁止执行：行为 CreatePurchaseRecord（写操作）/);
+  it('父 Agent 挂 load_skill 与 submit_plan', async () => {
+    const names = (await captureParentTools()).map(t => t.name);
+    expect(names).toContain('load_skill');
+    expect(names).toContain('submit_plan');
   });
 
-  it('executeOntoBehavior 目标需安全管控时抛错（security 分支）', async () => {
-    const gateway = {
-      getOntologyNamesById: () => ({ scenario_name: '生产调度', ontology_name: '原材料采购和库存' }),
-      getBehaviorMeta: () => ({ isWrite: false, security: { audit_node: '前置', audit_content: '敏感操作' } }),
-    } as any;
-    const tools = await captureParentTools(gateway);
-    const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    await expect(
-      tool.execute('call-2', { ontology_id: 1, behavior_name: 'SensitiveRead', params: {} }),
-    ).rejects.toThrow(/禁止执行：行为 SensitiveRead（需安全管控）/);
+  it('父 Agent 挂本体查询工具（list*）与公共函数', async () => {
+    const names = (await captureParentTools()).map(t => t.name);
+    expect(names).toContain('listOntoBehaviors');
+    expect(names).toContain('getCurrentDate');
   });
 
-  it('executeOntoBehavior 目标是只读行为时放行', async () => {
-    const tools = await captureParentTools(writeGateway);
-    const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    const result = await tool.execute('call-3', { ontology_id: 1, behavior_name: 'QuerySupplier', params: {} });
-    expect(result).toBeTruthy();
+  it('父 Agent 不挂执行工具（executeOntoBehavior / executeOntoFunction）', async () => {
+    const names = (await captureParentTools()).map(t => t.name);
+    expect(names).not.toContain('executeOntoBehavior');
+    expect(names).not.toContain('executeOntoFunction');
   });
+});
 
-  it('无法解析元信息时 fail-closed 拒绝（防止绕过）', async () => {
-    const gateway = { getOntologyNamesById: () => null } as any;
-    const tools = await captureParentTools(gateway);
-    const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    await expect(
-      tool.execute('call-4', { ontology_id: 999, behavior_name: 'Anything', params: {} }),
-    ).rejects.toThrow(/禁止执行：行为 Anything/);
+describe('AgentFactory 子 Agent 工具职责边界', () => {
+  beforeEach(() => mockedAgent.mockClear());
+
+  it('子 Agent 挂执行工具 + 公共函数，不挂本体浏览工具', async () => {
+    const names = (await captureChildTools()).map(t => t.name);
+    expect(names).toContain('executeOntoBehavior');
+    expect(names).toContain('executeOntoFunction');
+    expect(names).toContain('getCurrentDate');
+    expect(names).not.toContain('listOntoBehaviors');
   });
 });
