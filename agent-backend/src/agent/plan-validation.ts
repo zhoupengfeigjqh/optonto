@@ -31,6 +31,22 @@ export function validateParamsStructure(gateway: OntologyGatewayPort, plan: SubT
   return errors;
 }
 
+/** 按 depends_on 拓扑排序（DFS 后序：依赖在前，被依赖的后继在后）。悬空依赖对应的 seq 直接跳过（已被 validatePlanStructure 兜底）。 */
+export function topologicalSort(subtasks: SubTask[]): SubTask[] {
+  const sorted: SubTask[] = [];
+  const visited = new Set<number>();
+  const visit = (seq: number) => {
+    if (visited.has(seq)) return;
+    visited.add(seq);
+    const st = subtasks.find(s => s.seq === seq);
+    if (!st) return;
+    if (st.depends_on) for (const d of st.depends_on) visit(d);
+    sorted.push(st);
+  };
+  for (const st of subtasks) visit(st.seq);
+  return sorted;
+}
+
 /** 规划结构校验：依赖存在性 / 无自引用 / 无环。返回错误列表（空数组 = 通过）。 */
 export function validatePlanStructure(plan: SubTaskPlan): string[] {
   const errors: string[] = [];

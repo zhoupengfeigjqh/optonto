@@ -176,6 +176,7 @@ export interface Behavior {
   name: string;
   description: string;
   behavior_type?: string;
+  op_type?: string;
   params: Record<string, unknown>;
   response?: Record<string, unknown>;
   related_concepts: string[];

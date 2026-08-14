@@ -226,36 +226,29 @@ function EntryCard({ entry }: { entry: any }) {
       </div>
       {entry.detail && <div className="text-text-muted text-xs mt-1">{entry.detail}</div>}
       {(entry.params && Object.keys(entry.params).length > 0) || entry.result ? (
-        entry.name === 'load_skill' ? (
-          <div className="mt-1 text-xs">
-            <div className="text-text-muted">技能名称: <span className="text-text-secondary">{entry.params?.skill_name || '-'}</span></div>
-            <div className="text-text-muted">描述: <span className="text-text-secondary">{(entry.result || '').match(/^---[\s\S]*?description:\s*(.+?)[\s\S]*?^---/m)?.[1]?.trim() || '已加载'}</span></div>
+        <div className="mt-1">
+          <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
+            onClick={(e) => {
+              const panel = e.currentTarget.nextElementSibling as HTMLElement;
+              if (panel) panel.classList.toggle('hidden');
+            }}>
+            <span className="text-accent-blue text-xs">▼ 查看详情</span>
           </div>
-        ) : (
-          <div className="mt-1">
-            <div className="flex items-center gap-1 cursor-pointer hover:bg-dark-hover rounded py-0.5"
-              onClick={(e) => {
-                const panel = e.currentTarget.nextElementSibling as HTMLElement;
-                if (panel) panel.classList.toggle('hidden');
-              }}>
-              <span className="text-accent-blue text-xs">▼ 查看详情</span>
-            </div>
-            <div className="hidden mt-1 space-y-1">
-              {entry.params && Object.keys(entry.params).length > 0 && (
-                <div>
-                  <span className="text-text-muted text-xs">输入参数</span>
-                  <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
-                </div>
-              )}
-              {entry.result && (
-                <div>
-                  <span className="text-text-muted text-xs">返回数据</span>
-                  <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
-                </div>
-              )}
-            </div>
+          <div className="hidden mt-1 space-y-1">
+            {entry.params && Object.keys(entry.params).length > 0 && (
+              <div>
+                <span className="text-text-muted text-xs">输入参数</span>
+                <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-dark-bg rounded p-2">{JSON.stringify(entry.params, null, 2)}</pre>
+              </div>
+            )}
+            {entry.result && (
+              <div>
+                <span className="text-text-muted text-xs">返回数据</span>
+                <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto bg-dark-bg rounded p-2">{entry.result}</pre>
+              </div>
+            )}
           </div>
-        )
+        </div>
       ) : null}
     </div>
   );
@@ -769,7 +762,7 @@ function AgentConversation({
           <div className="flex gap-3 justify-start mb-2">
             <div className="w-8 h-8 shrink-0" />
             <div className="text-text-muted text-xs flex items-center gap-2">
-              <Spin size="small" /> 父Agent 正在分析子任务结果...
+              <Spin size="small" /> 父Agent 正在处理...
             </div>
           </div>
         )}

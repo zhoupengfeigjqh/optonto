@@ -46,9 +46,6 @@ import type { ThreadMessage } from '../types.js';
 
 const mockedAgent = vi.mocked(Agent);
 
-/** 网关桩：历史映射/子 Agent 作用域测试用空实现（父守卫走不到），守卫测试单独给定制桩 */
-const stubGateway = { getOntologyNamesById: () => null } as any;
-
 function mkHistory(): ThreadMessage[] {
   const t = (n: number) => new Date(Date.now() - (5 - n) * 60_000).toISOString();
   return [
@@ -60,7 +57,7 @@ function mkHistory(): ThreadMessage[] {
 }
 
 async function captureTransformContext() {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createParentAgent([], mkHistory(), () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   const config = mockedAgent.mock.calls[0][0];
@@ -93,7 +90,7 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
   });
 
   it('历史消息按原顺序置于实时消息之前', async () => {
-    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
+    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
     await factory.createParentAgent([], mkHistory(), () => {});
     const config = mockedAgent.mock.calls[0][0];
     const transformed = await config.transformContext([{ role: 'user', content: '当前问题' }]);
@@ -106,12 +103,13 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
 /**
  * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → scopeToOntology）。
  * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
+ * legalCalls 默认含主行为 + 一个规则关联行为 + 一个关联函数，供白名单/硬检查测试共用。
  */
-async function captureChildTools() {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
+async function captureChildTools(legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock'] }) {
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
-    'CreatePurchaseRecord', ['rawMaterialId', 'qty'],
+    'CreatePurchaseRecord', ['rawMaterialId', 'qty'], undefined, legalCalls,
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
@@ -149,7 +147,7 @@ describe('AgentFactory.scopeToOntology 主行为必填参数硬检查', () => {
  * 走公开路径，验证父 Agent 从机制上不挂执行工具（工具职责边界）。
  */
 async function captureParentTools() {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any, stubGateway);
+  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createParentAgent([], [], () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
@@ -186,5 +184,41 @@ describe('AgentFactory 子 Agent 工具职责边界', () => {
     expect(names).toContain('executeOntoFunction');
     expect(names).toContain('getCurrentDate');
     expect(names).not.toContain('listOntoBehaviors');
+  });
+});
+
+describe('AgentFactory 子 Agent 白名单闸门', () => {
+  beforeEach(() => mockedAgent.mockClear());
+
+  it('executeOntoBehavior 调用非法 behavior_name → 抛错拒绝（不进 MCP）', async () => {
+    const tools = await captureChildTools();
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    expect(tool).toBeTruthy();
+    await expect(
+      tool.execute('call-1', { behavior_name: 'DeleteInventory', params: {} }),
+    ).rejects.toThrow(/不在本子任务合法行为列表/);
+  });
+
+  it('executeOntoBehavior 调用合法规则关联行为（data_supplements）→ 放行', async () => {
+    const tools = await captureChildTools();
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-2', { behavior_name: 'QuerySupplier', params: {} });
+    expect(result).toBeTruthy();
+  });
+
+  it('executeOntoFunction 调用非法 function_name → 抛错拒绝', async () => {
+    const tools = await captureChildTools();
+    const tool = tools.find(t => t.name === 'executeOntoFunction');
+    expect(tool).toBeTruthy();
+    await expect(
+      tool.execute('call-3', { function_name: 'arbitraryFn', params: {} }),
+    ).rejects.toThrow(/不在本子任务合法函数列表/);
+  });
+
+  it('executeOntoFunction 调用合法关联函数 → 放行', async () => {
+    const tools = await captureChildTools();
+    const tool = tools.find(t => t.name === 'executeOntoFunction');
+    const result = await tool.execute('call-4', { function_name: 'calcSafetyStock', params: {} });
+    expect(result).toBeTruthy();
   });
 });

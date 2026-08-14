@@ -10,7 +10,7 @@
  * 但 result.terminate 会透传并被 shouldTerminateToolBatch 消费 —— 所以这里只靠 terminate 停循环。
  */
 
-/** 工具报错预算：跨 prompt 重试累计（同一子 Agent 实例复用），符合"子任务执行期间报错 N 次即中断"。 */
+/** 工具报错预算：连续报错累计，任何一次成功调用即重置（同一子 Agent 实例复用）。 */
 export interface ToolErrorBudget {
   /** 已报错次数 */
   count: number;
@@ -31,6 +31,9 @@ export function createToolErrorBudget(limit: number = TOOL_ERROR_LIMIT): ToolErr
  * 包装工具 execute：捕获报错并计数，达到上限返回 terminate:true 让 pi-agent 停止内层循环。
  * 未达上限时原样 rethrow（LLM 可自纠）；达上限后返回含明确原因的终止结果，不再抛。
  *
+ * 计数语义：【连续报错】——任何一次成功调用即把 count 清零。
+ * "报错→自纠→成功"的正常探索路径不计入预算；只有连续无进展的报错循环才累积到上限。
+ *
  * 超限短路：exceeded 置位后，任何后续调用【一律不执行真实工具】，直接返回 terminate。
  * 关键动机（pi-agent 并行批）：shouldTerminateToolBatch 用 every() 要求【整批】每个调用都带
  * terminate 才停。若只在"第3次报错"那一下带 terminate，批内混入的成功调用/前两次报错会否决
@@ -47,7 +50,9 @@ export function wrapExecuteWithErrorBudget(
       return terminateResult(budget.limit);
     }
     try {
-      return await originalExecute(toolCallId, params);
+      const result = await originalExecute(toolCallId, params);
+      budget.count = 0; // 成功即重置连续报错计数：只有连续报错才累积到上限
+      return result;
     } catch (e) {
       budget.count++;
       if (budget.count >= budget.limit) {

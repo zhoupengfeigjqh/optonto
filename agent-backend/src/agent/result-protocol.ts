@@ -13,10 +13,10 @@ export function formatResultStatus(success: boolean): string {
   return success ? RESULT_STATUS_OK : RESULT_STATUS_FAIL;
 }
 
-/** 解析文本中的状态标记：以【最后一条】标记为准（与历史行为一致）；无标记视为成功。 */
+/** 解析文本中的状态标记：以【最后一条】标记为准（与历史行为一致）；无标记视为失败（保守：结果无法确认，宁可让用户多核实一次也不漏报失败副作用）。 */
 export function parseResultStatus(content: string): { failed: boolean; found: boolean } {
   const matches = content.match(RESULT_STATUS_RE) || [];
-  if (matches.length === 0) return { failed: false, found: false };
+  if (matches.length === 0) return { failed: true, found: false };
   return { failed: matches[matches.length - 1] === RESULT_STATUS_FAIL, found: true };
 }
 

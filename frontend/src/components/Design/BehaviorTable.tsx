@@ -33,7 +33,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', behavior_type: 'API', params: '{}', response: '{}', related_concepts: [] });
+    setEditData({ name: '', display_name: '', description: '', behavior_type: 'API', op_type: '', params: '{}', response: '{}', related_concepts: [] });
     setEditingKey('__new__');
   };
 
@@ -46,7 +46,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       else if (typeof v === 'object' && v !== null) normParams[k] = { type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' };
       else normParams[k] = { type: String(v), required: true, description: '', example: '' };
     }
-    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, behavior_type: b.behavior_type || 'API', params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', related_concepts: b.related_concepts });
+    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, behavior_type: b.behavior_type || 'API', op_type: b.op_type || '', params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', related_concepts: b.related_concepts });
     setEditingKey(b.name);
   };
 
@@ -66,7 +66,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     try {
       const data: Behavior = {
         name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '',
-        behavior_type: editData.behavior_type || 'API', params: parsedParams, response: parsedResponse, related_concepts: editData.related_concepts || [],
+        behavior_type: editData.behavior_type || 'API', op_type: editData.op_type || '', params: parsedParams, response: parsedResponse, related_concepts: editData.related_concepts || [],
       };
       const isNew = editingKey === '__new__';
       if (isNew) {
@@ -111,10 +111,14 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const columns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
     { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
-    { title: '类型', dataIndex: 'behavior_type', key: 'behavior_type', width: 55, render: (v: any, r: Behavior) => {
+    { title: '接口类型', dataIndex: 'behavior_type', key: 'behavior_type', width: 80, render: (v: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Select size="small" value={editData.behavior_type || 'API'} onChange={v => setEditData((p: any) => ({...p, behavior_type: v}))} options={[{label:'API',value:'API'},{label:'SQL',value:'SQL'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
       const t = v || 'API';
       return <Tag color={t === 'SQL' ? 'purple' : 'blue'}>{t}</Tag>;
+    }},
+    { title: '操作类型', dataIndex: 'op_type', key: 'op_type', width: 70, render: (v: any, r: Behavior) => {
+      if (isEditing(r) || isNewRow(r)) return <Select size="small" value={editData.op_type || ''} onChange={v => setEditData((p: any) => ({...p, op_type: v}))} options={[{label:'command（命令）',value:'command'},{label:'query（查询）',value:'query'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+      return v ? <Tag color={v === 'command' ? 'orange' : 'cyan'}>{v}</Tag> : '-';
     }},
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'description') },
     { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },

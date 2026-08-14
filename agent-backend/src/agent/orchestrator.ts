@@ -12,8 +12,8 @@
  */
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
-import { contentToText } from './text-utils.js';
-import { validateBehaviorNames, validateParamsStructure, validatePlanStructure } from './plan-validation.js';
+import { getLastAssistantMessage } from './text-utils.js';
+import { validateBehaviorNames, validateParamsStructure, validatePlanStructure, topologicalSort } from './plan-validation.js';
 import type { InvalidBehavior } from './plan-validation.js';
 import { ConfirmManager } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
@@ -69,7 +69,7 @@ export class Orchestrator {
     this.confirmManager = confirmManager ?? new ConfirmManager();
     this.subtaskRunner = new SubtaskRunner({
       confirmManager: this.confirmManager,
-      createChildAgent: (ctx, pb, rp, budget) => this.agentFactory.createChildAgent(ctx, pb, rp, budget),
+      createChildAgent: (ctx, pb, rp, budget, legalCalls) => this.agentFactory.createChildAgent(ctx, pb, rp, budget, legalCalls),
       childAgents: this.childAgentSet,
       getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
@@ -195,7 +195,7 @@ export class Orchestrator {
     }
 
     if (!plan || !plan.subtasks || plan.subtasks.length === 0) {
-      const lastMsg = this.getLastAssistantMessage(parentAgent.state.messages);
+      const lastMsg = getLastAssistantMessage(parentAgent.state.messages);
       // 保护：模型若违反约束把规划写成 JSON 文本，不当作回答返回。
       // 正则只认 "subtasks" key（不锚定 {），避免嵌套 JSON 导致漏判。
       // 注意：error 需先于 done 发送（前端遇到 done 即 break，同批到达时会跳过 error）
@@ -295,7 +295,7 @@ export class Orchestrator {
       if (!parentAborted) {
         await this.parentPrompt(parentAgent,`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
       }
-      const reply = this.getLastAssistantMessage(parentAgent.state.messages)
+      const reply = getLastAssistantMessage(parentAgent.state.messages)
         || (exitReason === '规划确认超时' ? '规划确认超时，已取消执行'
           : exitReason === '用户中断' ? '已中断'
           : '用户已拒绝执行规划');
@@ -310,7 +310,7 @@ export class Orchestrator {
       if (!isChildAborted(parentAgent)) {
         await this.parentPrompt(parentAgent,`用户确认的规划中没有任何子任务（可能已在确认时全部删除），尚未执行任何子任务。请用一两句话简短确认已取消。`);
       }
-      const reply = this.getLastAssistantMessage(parentAgent.state.messages) || '规划为空，已取消执行';
+      const reply = getLastAssistantMessage(parentAgent.state.messages) || '规划为空，已取消执行';
       sendEvent({ type: 'done' });
       return reply;
     }
@@ -350,9 +350,10 @@ export class Orchestrator {
 
     // ── 阶段2：按依赖拓扑分波并行执行子任务，每波完成后一次反馈父Agent ──
     emitTokens = false; // 子任务执行和反馈不流到聊天区，避免重复
-    let pending = this.topologicalSort(plan.subtasks);
+    let pending = topologicalSort(plan.subtasks);
     let aborted = false;
     let blocked = false; // 依赖未满足导致执行终止
+    let failed = false; // 波内子任务执行失败导致终止（非用户中断）
     let waveCapped = false; // 波数上限触顶，仍有未执行子任务
 
     for (let wave = 0; wave < MAX_ROUNDS; wave++) {
@@ -384,7 +385,10 @@ export class Orchestrator {
         for (const r of waveResults) {
           if (!r.success) sendEvent({ type: 'token', token: `\r📋 **子任务 ${r.seq} ${r.behavior}** ❌ ${r.error}\n` });
         }
-        aborted = waveResults.some(r => !r.success && r.aborted); // 波内任一中止（拒确/中断）都视为用户中止
+        // 波内任一中止（拒确/中断）→ 用户中止；否则为普通执行失败。二者必须分开记，
+        // 否则普通失败会被下方 waveCapped 判定误报成"波数触顶"。
+        if (waveResults.some(r => !r.success && r.aborted)) aborted = true;
+        else failed = true;
         break;
       }
 
@@ -406,13 +410,13 @@ export class Orchestrator {
 
     // 波数上限触顶：循环自然退出但仍有未执行子任务 → 视同未完成（改进点1），
     // 杜绝"报全部成功却静默吞掉末尾子任务"。
-    if (pending.length > 0 && !aborted && !blocked) {
+    if (pending.length > 0 && !aborted && !blocked && !failed) {
       waveCapped = true;
     }
 
     // 无论成功/失败/中断，父Agent 统一生成最终总结
     let finalSummary = '执行完成';
-    if (results.length > 0 || aborted || blocked || waveCapped) {
+    if (results.length > 0 || aborted || blocked || failed || waveCapped) {
       const allSuccess = results.length > 0 && results.every(r => r.success);
       if (isChildAborted(parentAgent)) {
         // 父Agent 在反馈/调整阶段被打断，不能再复用其生成总结 → 罐头文案，无流式，显式发送
@@ -421,11 +425,14 @@ export class Orchestrator {
       } else {
         // 恢复流式：让父Agent 生成的最终总结逐字输出（emitTokens 在执行阶段被置 false）
         emitTokens = true;
-        if (allSuccess && !aborted && !blocked && !waveCapped) {
+        // 最终总结也是一次父Agent LLM 调用，发进行中信号点亮前端"处理中"转圈，
+        // 消除"子任务全完成 → 总结首字流式"之间的静默空窗（镜像 runWaveFeedback 的 feedback 事件）。
+        emit.raw({ type: 'feedback', status: 'running' });
+        if (allSuccess && !aborted && !blocked && !failed && !waveCapped) {
           // 带上全量结果：末子任务跳过了中间分析，总结必须自包含
           const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
           await this.parentPrompt(parentAgent,`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
-          finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
+          finalSummary = getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
         } else {
           const outcomeSummary = results.length > 0
             ? results.map(r =>
@@ -433,12 +440,13 @@ export class Orchestrator {
               ).join('\n')
             : '（无子任务成功执行）';
           const reason = aborted ? '任务已被用户中断'
+            : (failed ? '存在子任务执行失败'
             : (blocked ? '因前置依赖未完成而终止'
-            : (waveCapped ? `执行波数已达上限，仍有 ${pending.length} 个子任务未执行`
-            : '存在子任务执行失败'));
+            : `执行波数已达上限，仍有 ${pending.length} 个子任务未执行`));
           await this.parentPrompt(parentAgent,`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
-          finalSummary = this.getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
+          finalSummary = getLastAssistantMessage(parentAgent.state.messages) || '执行未完成';
         }
+        emit.raw({ type: 'feedback', status: 'done' });
       }
     } else {
       // 无子任务执行（罕见）：直接显式发送默认文案
@@ -550,7 +558,7 @@ ${waveList}
     if (this.activeAbortHolder?.aborted) return null; // 反馈期间被中断 → 外层终止执行
 
     // 提取父Agent的分析结果推送到前端执行记录
-    const analysisText = this.getLastAssistantMessage(ctx.parentAgent.state.messages);
+    const analysisText = getLastAssistantMessage(ctx.parentAgent.state.messages);
     // 显式断言：submit_plan 工具回调可能在上一个 await 期间写入了新规划，
     // TS 闭包窄化无法感知，需还原为可空类型
     const adjusted = ctx.submittedPlan.value as SubTaskPlan | null;
@@ -569,7 +577,7 @@ ${waveList}
           if (validatedD) {
             // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
             const executedSeqs = new Set(allResults.map(r => r.seq));
-            nextPending = this.topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
+            nextPending = topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
             analysisDetail = nextPending.length === 0
               ? `本波次已提前终止后续流程`
               : `本波次已调整后续计划`;
@@ -591,22 +599,6 @@ ${waveList}
     }
     ctx.emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: '子任务结果分析', status: 'done', detail: analysisDetail, result: analysisText, source: 'parent' });
     return nextPending;
-  }
-
-  /** 按 depends_on 拓扑排序 */
-  private topologicalSort(subtasks: SubTask[]): SubTask[] {
-    const sorted: SubTask[] = [];
-    const visited = new Set<number>();
-    const visit = (seq: number) => {
-      if (visited.has(seq)) return;
-      visited.add(seq);
-      const st = subtasks.find(s => s.seq === seq);
-      if (!st) return;
-      if (st.depends_on) for (const d of st.depends_on) visit(d);
-      sorted.push(st);
-    };
-    for (const st of subtasks) visit(st.seq);
-    return sorted;
   }
 
   /** 校验子任务行为名合法性；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
@@ -679,16 +671,6 @@ ${waveList}
     if (!opts.isClean(corrected)) return null;
     ctx.emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: opts.doneLabel, status: 'done', source: 'parent' });
     return corrected;
-  }
-
-  private getLastAssistantMessage(messages: any[]): string {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.role === 'assistant' && !m.errorMessage) {
-        return contentToText(m.content);
-      }
-    }
-    return '';
   }
 
   /**

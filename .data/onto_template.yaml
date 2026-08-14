@@ -80,6 +80,7 @@ behaviors:
 - name: behaviorName
   description: 行为描述
   behavior_type: API
+  op_type: command
   params:
     tradeId:
       type: string
@@ -153,6 +154,7 @@ behaviors:
 - name: queryOrderSQL
   description: 根据订单状态查询订单明细
   behavior_type: SQL
+  op_type: query
   params:
     status:
       type: string

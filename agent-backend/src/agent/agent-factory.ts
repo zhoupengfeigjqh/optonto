@@ -14,7 +14,7 @@ import { isParamValueEmpty } from './param-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
-import type { OntologyGatewayPort } from './agent-ports.js';
+import type { LegalCalls } from './legal-calls.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
@@ -81,7 +81,6 @@ export class AgentFactory {
   constructor(
     private mcpConfigStore: MCPConfigStore,
     private skillLoader: SkillLoader,
-    private ontologyGateway: OntologyGatewayPort,
   ) {}
 
   /**
@@ -158,7 +157,13 @@ export class AgentFactory {
    * 不挂 load_skill / submit_plan / list* 本体浏览工具——合法行为列表已在指令中渲染，无需自行浏览本体元数据。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    */
-  async createChildAgent(context: SkillContext, primaryBehavior?: string, requiredParams?: string[], errorBudget?: ToolErrorBudget): Promise<AgentPort> {
+  async createChildAgent(
+    context: SkillContext,
+    primaryBehavior?: string,
+    requiredParams?: string[],
+    errorBudget?: ToolErrorBudget,
+    legalCalls?: LegalCalls,
+  ): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
@@ -167,10 +172,15 @@ export class AgentFactory {
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
     // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
     // requiredParams：主行为执行前的硬检查——必填参数必须有值，缺失拒绝执行。
+    // legalCalls：executeOntoBehavior/Function 的白名单——非法名在工具层拒绝，堵"执行期换行为绕过安全门"。
     // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
     const mcpTools = allMcp
       .filter(({ tool }) => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name))
-      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, primaryBehavior, requiredParams, errorBudget));
+      .map(({ tool }) => this.scopeToOntology(
+        tool,
+        { ontologyId, primaryBehavior, requiredParams, legalCalls: legalCalls ?? { behaviors: [], functions: [] } },
+        errorBudget,
+      ));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'low' },
@@ -183,9 +193,15 @@ export class AgentFactory {
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
    * - 主行为（subTask.behavior）额外做必填参数硬检查（见 execute 内）
+   * - executeOntoBehavior/Function 做白名单硬检查：非法名在工具层拒绝（见 execute 内）
    * 无 ontology_id 的工具（如公共函数）原样返回。
    */
-  private scopeToOntology(tool: AgentTool, ontologyId: number, primaryBehavior?: string, requiredParams?: string[], errorBudget?: ToolErrorBudget): AgentTool {
+  private scopeToOntology(
+    tool: AgentTool,
+    scope: { ontologyId: number; primaryBehavior?: string; requiredParams?: string[]; legalCalls: LegalCalls },
+    errorBudget?: ToolErrorBudget,
+  ): AgentTool {
+    const { ontologyId, primaryBehavior, requiredParams, legalCalls } = scope;
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     const hasOntologyId = !!props && 'ontology_id' in props;
@@ -202,6 +218,23 @@ export class AgentFactory {
     const originalExecute = tool.execute;
     const execute = async (toolCallId: string, params: any) => {
       const p = hasOntologyId ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
+
+      // ── 白名单闸门：业务执行面（executeOntoBehavior/Function）的 behavior/function 名只允许合法集合 ──
+      // 与父 Agent 工具边界同源：只靠提示词"未列入一律不得调用"挡不住幻觉（历史教训：父 Agent 双重执行）。
+      // 抛错落进 wrapExecuteWithErrorBudget → 连续 3 次 terminate 停循环，子任务判失败（与必填参数硬检查同一套语义）。
+      if (tool.name === 'executeOntoBehavior') {
+        const bn = p?.behavior_name;
+        if (bn && !legalCalls.behaviors.includes(bn)) {
+          throw new Error(`禁止执行：behavior "${bn}" 不在本子任务合法行为列表（合法：${legalCalls.behaviors.join('、')}）。`);
+        }
+      }
+      if (tool.name === 'executeOntoFunction') {
+        const fn = p?.function_name;
+        if (fn && !legalCalls.functions.includes(fn)) {
+          throw new Error(`禁止执行：function "${fn}" 不在本子任务合法函数列表（合法：${legalCalls.functions.join('、') || '（无）'}）。`);
+        }
+      }
+
       if (primaryBehavior && p?.behavior_name === primaryBehavior) {
         // 硬检查：主行为执行前，必填参数必须已有值。缺失则抛异常（pi-agent 以抛异常识别工具错误并触发子 Agent 重试；
         // 返回 isError 字段会被 pi-agent 吞掉——executePreparedToolCall 硬编码 isError:false，重试永不触发）。
@@ -216,7 +249,7 @@ export class AgentFactory {
     return {
       ...tool,
       ...(nextParameters !== schema ? { parameters: nextParameters } : {}),
-      // 有预算时包上报错计数（含主行为硬检查抛错）；无预算向后兼容，不包
+      // 有预算时包上报错计数（含白名单/主行为硬检查抛错）；无预算向后兼容，不包
       execute: errorBudget ? wrapExecuteWithErrorBudget(execute, errorBudget) : execute,
     };
   }

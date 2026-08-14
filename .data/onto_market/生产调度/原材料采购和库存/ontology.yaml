@@ -327,6 +327,7 @@ behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
   behavior_type: API
+  op_type: command
   params:
     rawMaterialId:
       type: string
@@ -432,11 +433,12 @@ behaviors:
 - name: CancelPurchaseRecord
   description: 取消一笔已创建但尚未入库的采购记录。
   behavior_type: API
+  op_type: command
   params:
     purchaseRecordId:
       type: string
       required: true
-      display_name: 采购单号
+      description: ''
       example: PO-20231027-001
   response:
     code:
@@ -463,10 +465,12 @@ behaviors:
 - name: ReceiveRawMaterial
   description: 将原材料采购入库。
   behavior_type: API
+  op_type: command
   params:
     purchaseRecordId:
       type: string
-      display_name: 采购单号
+      required: true
+      description: ''
       example: PO-20231027-001
   response:
     code:
@@ -493,6 +497,7 @@ behaviors:
 - name: QueryInventory
   description: 根据原材料ID或名称查询其最新的库存快照。
   behavior_type: API
+  op_type: query
   params:
     rawMaterialId:
       type: string
@@ -552,22 +557,23 @@ behaviors:
 - name: QueryPurchaseRecords
   description: 根据采购单/原材料/关联客单来查询采购记录列表。
   behavior_type: API
+  op_type: query
   params:
     purchaseRecordId:
       type: string
       required: false
+      description: ''
       example: PO-20231027-001
-      display_name: 采购单号
     rawMaterialId:
       type: string
       required: false
+      description: ''
       example: RM-001
-      display_name: 原材料编号
     rawMaterialName:
       type: string
       required: false
+      description: ''
       example: 高强度钢板
-      display_name: 原材料名称
   response:
     code:
       type: number
@@ -628,17 +634,18 @@ behaviors:
 - name: QueryRawMaterials
   description: 根据原材料ID或名称查询原材料的基础信息。
   behavior_type: API
+  op_type: query
   params:
     rawMaterialId:
       type: string
       required: false
+      description: ''
       example: RM-001
-      display_name: 原材料编号
     rawMaterialName:
       type: string
       required: false
+      description: ''
       example: 高强度钢板
-      display_name: 原材料名称
   response:
     code:
       type: number
@@ -670,17 +677,18 @@ behaviors:
 - name: QuerySuppliers
   description: 根据供应商名或原材料名查询供应商
   behavior_type: API
+  op_type: query
   params:
     supplierName:
       type: string
       required: false
+      description: ''
       example: 宝钢钢铁集团
-      display_name: 供应商名称，模糊匹配
     rawMaterialName:
       type: string
       required: false
+      description: ''
       example: 钢板008
-      display_name: 原材料名称
   response:
     code:
       type: number
@@ -716,17 +724,18 @@ behaviors:
 - name: QuerySupplierCapability
   description: 根据供应商名或原材料名，查询供应商供货能力
   behavior_type: API
+  op_type: query
   params:
     supplierName:
       type: string
       required: false
+      description: ''
       example: 宝钢钢铁集团
-      display_name: 供应商名称，模糊匹配
     rawMaterialName:
       type: string
       required: false
+      description: ''
       example: 钢板008
-      display_name: 原材料名称
   response:
     code:
       type: number
@@ -758,6 +767,7 @@ behaviors:
 - name: QuerySupplierCapabilitySQL
   description: 根据供应商名或原材料名，查询供应能力
   behavior_type: SQL
+  op_type: query
   params:
     supplierName:
       type: string

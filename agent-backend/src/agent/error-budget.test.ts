@@ -39,6 +39,28 @@ describe('wrapExecuteWithErrorBudget', () => {
     expect(budget.exceeded).toBe(false);
   });
 
+  it('成功调用重置计数：报错→成功→报错不累积，只有连续报错才触发超限', async () => {
+    const budget = createToolErrorBudget();
+    let shouldFail = true;
+    const wrapped = wrapExecuteWithErrorBudget(async () => {
+      if (shouldFail) throw new Error('boom');
+      return { content: [{ type: 'text', text: 'ok' }] };
+    }, budget);
+
+    await expect(wrapped('c1', {})).rejects.toThrow('boom');   // 报错 → count=1
+    expect(budget.count).toBe(1);
+
+    shouldFail = false;
+    const res = await wrapped('c2', {});                        // 成功 → count 重置为 0
+    expect(res.content[0].text).toBe('ok');
+    expect(budget.count).toBe(0);
+
+    shouldFail = true;
+    await expect(wrapped('c3', {})).rejects.toThrow('boom');   // 再次报错 → count=1（非 2）
+    expect(budget.count).toBe(1);
+    expect(budget.exceeded).toBe(false);
+  });
+
   it('第 3 次报错不抛，返回 terminate:true 并置 exceeded', async () => {
     const budget = createToolErrorBudget();
     const wrapped = wrapExecuteWithErrorBudget(async () => { throw new Error('boom'); }, budget);

@@ -45,7 +45,8 @@ class RelationItem(BaseModel):
 class BehaviorItem(BaseModel):
     name: str = Field(..., description="行为名称")
     description: str = Field("", description="行为描述")
-    behavior_type: str = Field("API", description="行为类型（API/SQL）")
+    behavior_type: str = Field("API", description="接口类型（API/SQL）")
+    op_type: str = Field("", description="操作类型（command/query）")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念")

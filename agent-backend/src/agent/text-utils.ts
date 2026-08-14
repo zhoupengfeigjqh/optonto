@@ -18,3 +18,14 @@ export function toolResultToText(content: any[] | undefined): string {
     .filter(Boolean)
     .join('\n');
 }
+
+/** 从消息列表末尾向前找最后一条非错误 assistant 消息，提取纯文本（无则空串）。 */
+export function getLastAssistantMessage(messages: any[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'assistant' && !m.errorMessage) {
+      return contentToText(m.content);
+    }
+  }
+  return '';
+}

@@ -10,6 +10,8 @@ import { createToolErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
 import { COMMON_FUNCTION_NAMES } from './agent-factory.js';
+import { legalCallNames } from './legal-calls.js';
+import type { LegalCalls } from './legal-calls.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult, ExecutionEntry, SSEEvent } from '../types.js';
 import type { ConfirmManager } from './confirm-manager.js';
 
@@ -18,7 +20,7 @@ const MAX_LLM_EXCEPTION_RETRIES = 2;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmManager;
-  createChildAgent: (context: SkillContext, primaryBehavior: string, requiredParams?: string[], errorBudget?: ToolErrorBudget) => Promise<AgentPort>;
+  createChildAgent: (context: SkillContext, primaryBehavior: string, requiredParams?: string[], errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls) => Promise<AgentPort>;
   /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
   childAgents: Set<AgentPort>;
   /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
@@ -82,9 +84,11 @@ export class SubtaskRunner {
     // 复用同一个子 Agent 实例：失败原因、工具结果保留在上下文中（异常重试时参考）
     // 主行为必填参数名（来自行为元信息）：工具层硬检查用，缺失则拒绝执行
     const requiredParams = requiredParamNames(meta);
+    // 合法调用名集合（主行为 + 规则关联行为/函数）：executeOntoBehavior/Function 工具层白名单硬检查用
+    const legalCalls = legalCallNames(meta, subTask.behavior);
     // 工具报错预算：连续报错达上限即中断（pi-agent 内层循环被 terminate 停住），不再无限试错
     const errorBudget = createToolErrorBudget();
-    const childAgent = await this.deps.createChildAgent(context, subTask.behavior, requiredParams, errorBudget);
+    const childAgent = await this.deps.createChildAgent(context, subTask.behavior, requiredParams, errorBudget, legalCalls);
     this.deps.childAgents.add(childAgent);
     try {
       // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
@@ -294,21 +298,17 @@ export class SubtaskRunner {
       });
     }
 
-    // 合法行为列表：本子任务唯一可调用的行为/函数范围。
+    // 合法行为列表：本子任务唯一可调用的行为/函数范围。与工具层白名单闸门同源于 legalCallNames，
+    // 保证"文案展示的合法集合"与"工具层强制的合法集合"永远一致（单一事实源）。
     // 主行为 + 规则关联行为（data_supplements 取数接口）+ 两类函数：
     //   ① 规则声明的 related_functions —— 本体函数，经 executeOntoFunction 调用；
-    //   ② 公共函数（时间工具等直接 MCP 工具）—— 不经 executeOntoFunction，若不并入列表会被"未列出一律不得调用"误伤。
+    //   ② 公共函数（时间工具等直接 MCP 工具）—— 不经 executeOntoFunction，恒可调用。
     // 无规则时列表只有主行为 + 公共函数——子 Agent 无查询类依据，从源头杜绝臆造行为名。
-    const allRules = [...meta.preRules, ...meta.postRules];
-    const ruleBehaviors = allRules.flatMap(r => r.data_supplements || []);
-    // 规则声明的关联函数，剔除已在公共函数行的（公共函数是直接 MCP 工具，不经 executeOntoFunction）
-    const ruleFunctions = allRules
-      .flatMap(r => r.related_functions || [])
-      .filter((f: string) => !COMMON_FUNCTION_NAMES.includes(f));
+    const legal = legalCallNames(meta, subTask.behavior);
     text += `\n### 本子任务合法行为列表（只能调用以下行为/函数，严禁调用未列出的）\n`;
     text += `- 主行为: ${subTask.behavior}\n`;
-    text += `- 规则关联行为: ${[...new Set(ruleBehaviors.filter(b => b !== subTask.behavior))].join('、') || '（无）'}\n`;
-    text += `- 关联函数（规则声明，经 executeOntoFunction 调用）: ${[...new Set(ruleFunctions)].join('、') || '（无）'}\n`;
+    text += `- 规则关联行为: ${legal.behaviors.filter(b => b !== subTask.behavior).join('、') || '（无）'}\n`;
+    text += `- 关联函数（规则声明，经 executeOntoFunction 调用）: ${legal.functions.join('、') || '（无）'}\n`;
     text += `- 公共函数（直接 MCP 工具，不经 executeOntoFunction）: ${COMMON_FUNCTION_NAMES.join('、')}\n`;
 
     return text;
@@ -381,12 +381,14 @@ export class SubtaskRunner {
   private extractResult(messages: any[], seq: number, behavior: string): SubTaskResult {
     const last = [...messages].reverse().find((m: any) => m.role === 'assistant' && !m.errorMessage);
     const content = last ? contentToText(last.content) : '';
-    const { failed } = parseResultStatus(content);
+    const { failed, found } = parseResultStatus(content);
     const success = !failed;
+    // 无状态标记（found=false）→ 判失败：结果无法确认，不甩 LLM 原文（可能是"成功完成xxx"但漏打标记，易割裂）
+    const summary = found ? stripResultStatus(content) : '结果无法确认：未按协议输出状态标记';
     return {
       seq, behavior,
       success,
-      summary: stripResultStatus(content),
+      summary,
     };
   }
 }
