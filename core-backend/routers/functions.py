@@ -7,7 +7,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from config import DATA_DIR
 from dependencies import get_ontology_names
+from metadata import list_all_ontologies
 from schemas import FunctionItem
 from services import (
     load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir,
@@ -26,6 +28,44 @@ def _code_path(sc_name: str, on_name: str, func_name: str) -> Path:
     return _get_functions_dir(sc_name, on_name) / f"{func_name}.py"
 
 
+# ─── 函数名全局唯一 ─────────────────────────────────────────────────────────────
+# 本体函数注册为一等 MCP 工具后，工具名 = 函数名（与公共函数并列暴露给 LLM）。
+# 因此函数名必须跨本体唯一，且不得与公共函数重名，否则 MCP 工具名冲突。
+
+_COMMON_FUNCTIONS_PATH = DATA_DIR / "common_functions" / "functions.json"
+
+
+def _common_function_names() -> set[str]:
+    try:
+        if _COMMON_FUNCTIONS_PATH.exists():
+            with open(_COMMON_FUNCTIONS_PATH, encoding="utf-8") as f:
+                entries = json.load(f)
+            return {e["name"] for e in entries if isinstance(e, dict) and e.get("name")}
+    except (json.JSONDecodeError, OSError):
+        pass
+    return set()
+
+
+def _ensure_global_unique(name: str, sc_name: str, on_name: str) -> None:
+    """函数名跨本体 + 对公共函数 全局唯一校验（当前本体内的查重由 ensure_unique 负责）。"""
+    common = _common_function_names()
+    if name in common:
+        raise HTTPException(status_code=400, detail=f"函数名「{name}」与公共函数重名，请更换函数名")
+    for onto in list_all_ontologies():
+        sc = onto.get("scenario_name")
+        on = onto.get("ontology_name")
+        if not sc or not on:
+            continue
+        if sc == sc_name and on == on_name:
+            continue  # 当前本体内查重由 ensure_unique 负责
+        try:
+            data = load_ontology_data(sc, on)
+        except Exception:
+            continue
+        if any(fn.name == name for fn in data.functions):
+            raise HTTPException(status_code=400, detail=f"函数名「{name}」已存在于本体「{on}」（函数名需全局唯一）")
+
+
 # ─── CRUD ─────────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -41,6 +81,7 @@ async def create_function(ontology_id: int, item: FunctionItem):
     data = load_ontology_data(sc_name, on_name)
 
     ensure_unique(data.functions, item.name, "函数")
+    _ensure_global_unique(item.name, sc_name, on_name)
 
     data.functions.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -54,6 +95,7 @@ async def update_function(ontology_id: int, function_name: str, item: FunctionIt
 
     idx = find_index(data.functions, function_name, "函数")
     ensure_unique(data.functions, item.name, "函数", exclude_name=function_name)
+    _ensure_global_unique(item.name, sc_name, on_name)
 
     data.functions[idx] = item
     save_ontology_data(sc_name, on_name, data)

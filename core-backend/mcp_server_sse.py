@@ -6,6 +6,7 @@ Agents connect via MCP protocol over SSE.
 
 import json
 import os
+import time
 from pathlib import Path
 
 import httpx
@@ -61,7 +62,46 @@ async def _api_get(path: str, timeout: int = 15) -> dict | list:
         return resp.json()
 
 
+# ─── 本体函数工具（动态注册：函数名即工具名，schema = ontology_id + 展开参数）────────
+# 替代原 executeOntoFunction 黑盒包装——本体函数与公共函数同形，参数在工具 schema 可见。
+_FUNCTION_CACHE: dict = {"ts": 0.0, "tools": [], "names": set()}
+_FUNCTION_CACHE_TTL = 30.0  # 秒；函数列表随本体文件变化，短 TTL 折中（避免每次 list_tools 读盘）
+
+
+async def _load_function_tools(force: bool = False) -> list[Tool]:
+    """从后端聚合端点拉取所有本体函数并转成 Tool（带 TTL 缓存）。"""
+    now = time.monotonic()
+    if not force and _FUNCTION_CACHE["ts"] and (now - _FUNCTION_CACHE["ts"]) < _FUNCTION_CACHE_TTL:
+        return _FUNCTION_CACHE["tools"]
+    try:
+        data = await _api_get("/api/ontologies/functions/all")
+        if isinstance(data, dict) and data.get("error"):
+            data = []
+        tools: list[Tool] = []
+        names: set[str] = set()
+        for fn in data or []:
+            if not isinstance(fn, dict) or not fn.get("name"):
+                continue
+            name = fn["name"]
+            desc_parts = [p for p in (fn.get("display_name"), fn.get("description")) if p]
+            desc = "：".join(desc_parts) if desc_parts else name
+            oname = fn.get("ontology_name")
+            if oname:
+                desc = f"{desc}（本体「{oname}」）"
+            tools.append(Tool(
+                name=name,
+                description=desc,
+                inputSchema=fn.get("inputSchema", {"type": "object", "properties": {}}),
+            ))
+            names.add(name)
+        _FUNCTION_CACHE.update(ts=now, tools=tools, names=names)
+    except Exception:
+        pass  # 拉取失败保留旧缓存；首次失败则沿用空列表
+    return _FUNCTION_CACHE["tools"]
+
+
 async def _list_tools() -> list[Tool]:
+    function_tools = await _load_function_tools()
     return COMMON_TOOLS + [
         Tool(
             name="listScenarios",
@@ -156,20 +196,7 @@ async def _list_tools() -> list[Tool]:
                 "required": ["ontology_id", "behavior_name", "params"],
             },
         ),
-        Tool(
-            name="executeOntoFunction",
-            description="执行本体中函数的 Python 计算代码。传入 ontology_id、function_name 和 params，运行本地 Python 函数并返回计算结果。params 按函数定义的展开关键字传入。",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "function_name": {"type": "string", "description": "函数名称"},
-                    "params": {"type": "object", "description": "函数输入参数，按函数定义的 key 名展开传入"},
-                },
-                "required": ["ontology_id", "function_name", "params"],
-            },
-        ),
-    ]
+    ] + function_tools
 
 
 @server.list_tools()
@@ -189,6 +216,8 @@ async def _filter_list(data: list | dict, keyword: str | None, fields: list[str]
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     result = None
+    # 确保本体函数工具名缓存已加载（MCP 协议先 list_tools 后 call_tool，此处兜底直连场景）
+    await _load_function_tools()
 
     if name == "listScenarios":
         data = await _api_get("/api/scenarios")
@@ -247,25 +276,6 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     elif name == "listOntoSecurities":
         result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/securities")
 
-    elif name == "executeOntoFunction":
-        oid = arguments["ontology_id"]
-        fname = arguments["function_name"]
-        params = arguments.get("params", {})
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{API_BASE}/api/ontologies/{oid}/functions/{fname}/execute",
-                json={"params": params},
-            )
-            if resp.status_code >= 400:
-                try:
-                    err = resp.json()
-                except Exception:
-                    err = {"detail": resp.text}
-                # 抛异常让 MCP 返回 isError=true，agent 侧才能判定工具执行失败，
-                # 而不是把 {"error": true} 当成功文本返回、成败全靠 LLM 读 JSON。
-                raise RuntimeError(f"函数 {fname} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
-            result = resp.json()
-
     elif name == "executeOntoBehavior":
         oid = arguments["ontology_id"]
         bname = arguments["behavior_name"]
@@ -300,6 +310,25 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                 # 与 executeOntoBehavior/Function 一致：失败必须置 isError（抛异常），
                 # 而非返回 {"error": true} 文本——否则 agent 侧把失败当成功文本，成败全靠 LLM 读 JSON。
                 raise RuntimeError(f"公共函数 {name} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
+            result = resp.json()
+
+    # ─── 本体函数执行（一等工具，函数名即工具名；ontology_id 由 schema 必填，子 Agent 由 scopeToOntology 注入）────────
+    if result is None and name in _FUNCTION_CACHE["names"]:
+        oid = arguments.get("ontology_id")
+        if oid is None:
+            raise ValueError(f"函数 {name} 缺少 ontology_id")
+        params = {k: v for k, v in arguments.items() if k != "ontology_id"}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{API_BASE}/api/ontologies/{oid}/functions/{name}/execute",
+                json={"params": params},
+            )
+            if resp.status_code >= 400:
+                try:
+                    err = resp.json()
+                except Exception:
+                    err = {"detail": resp.text}
+                raise RuntimeError(f"函数 {name} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
             result = resp.json()
 
     if result is None:

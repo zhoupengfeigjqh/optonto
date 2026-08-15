@@ -1,6 +1,7 @@
 /**
  * legalCallNames 单元测试 —— 合法调用名集合（子 Agent 白名单）的单一事实源。
- * 验证：主行为恒在、data_supplements 并入 behaviors、related_functions 剔除公共函数后并入 functions、去重。
+ * 验证：主行为恒在、data_supplements 并入 behaviors、
+ * related_functions（含公共函数）∪ 父 Agent 指定 related_functions 并入 functions、去重。
  */
 import { describe, it, expect } from 'vitest';
 import { legalCallNames } from './legal-calls.js';
@@ -15,7 +16,7 @@ describe('legalCallNames', () => {
     });
   });
 
-  it('有规则：data_supplements 并入 behaviors，related_functions 剔除公共函数后并入 functions', () => {
+  it('有规则：data_supplements 并入 behaviors，related_functions（含公共函数）并入 functions', () => {
     const meta: BehaviorMeta = {
       params: {},
       preRules: [
@@ -29,8 +30,22 @@ describe('legalCallNames', () => {
     };
     expect(legalCallNames(meta, 'CreatePurchaseRecord')).toEqual({
       behaviors: ['CreatePurchaseRecord', 'QueryRawMaterials', 'QueryInventory'],
-      functions: ['calcSafetyStock'],
+      functions: ['getCurrentDate', 'calcSafetyStock'],
     });
+  });
+
+  it('父 Agent 指定 related_functions 与规则函数取并集（可额外注入规则之外的函数）', () => {
+    const meta: BehaviorMeta = {
+      params: {},
+      preRules: [
+        { name: 'V01', description: '', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: [], related_functions: ['getCurrentDate'] },
+      ],
+      postRules: [],
+      concepts: [],
+      isWrite: true,
+    };
+    expect(legalCallNames(meta, 'CreatePurchaseRecord', ['sumRawNotArrivalQty', 'getCurrentDate']).functions)
+      .toEqual(['getCurrentDate', 'sumRawNotArrivalQty']);
   });
 
   it('主行为在 data_supplements 里重复出现 → 去重', () => {

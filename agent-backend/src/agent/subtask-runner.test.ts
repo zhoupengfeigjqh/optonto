@@ -47,7 +47,6 @@ function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): Subt
     getBehaviorDisplayName: () => '',
     getFunctionDisplayName: () => '',
     getBehaviorParams: () => ({}),
-    getFunctionParams: () => null,
   };
 }
 
@@ -248,9 +247,8 @@ describe('SubtaskRunner · 工具报错预算', () => {
     expect(instruction).toContain('### 本子任务合法行为列表');
     expect(instruction).toContain('- 主行为: CreatePurchaseRecord');
     expect(instruction).toContain('- 规则关联行为: （无）');
-    // 无规则时规则关联函数为无，公共函数（时间工具等直接 MCP 工具）恒可调用
-    expect(instruction).toContain('- 关联函数（规则声明，经 executeOntoFunction 调用）: （无）');
-    expect(instruction).toContain('- 公共函数（直接 MCP 工具，不经 executeOntoFunction）: getCurrentDate、dateAdd、dateDiff、getWeekday');
+    // 无规则且父 Agent 未指定时，可用函数/工具为无（不再恒挂公共函数）
+    expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: （无）');
     // 无规则 → 关联概念属性不渲染，避免诱导无谓查证
     expect(instruction).not.toContain('关联概念属性');
   });
@@ -281,10 +279,37 @@ describe('SubtaskRunner · 工具报错预算', () => {
 
     expect(result.success).toBe(true);
     expect(instruction).toContain('- 规则关联行为: QueryRawMaterials');
-    // 规则关联函数经 executeOntoFunction 调用；公共函数（时间工具等直接 MCP 工具）恒在
-    expect(instruction).toContain('- 关联函数（规则声明，经 executeOntoFunction 调用）: calcSafetyStock');
-    expect(instruction).toContain('- 公共函数（直接 MCP 工具，不经 executeOntoFunction）: getCurrentDate、dateAdd、dateDiff、getWeekday');
+    // 规则关联函数直接工具调用；可用函数/工具按「规则声明 ∪ 父 Agent 指定」挂载（不再恒挂全部）
+    expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: getCurrentDate、calcSafetyStock');
     // 有规则 → 关联概念属性渲染（规则可能引用属性验证）
     expect(instruction).toContain('### 关联概念属性');
+  });
+
+  it('父 Agent 指定 related_functions 时：规则外函数并入合法列表（合并）', async () => {
+    let instruction = '';
+    const subTaskWithFuncs: SubTask = { ...subTask, related_functions: ['sumRawNotArrivalQty'] };
+    const metaWithRules: BehaviorMeta = {
+      display_name: '创建采购记录',
+      params: {},
+      preRules: [],
+      postRules: [
+        { name: 'I02', description: '超期预警', position: '后置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: [], related_functions: ['getCurrentDate', 'calcSafetyStock'] },
+      ],
+      concepts: [],
+      isWrite: true,
+    };
+    const deps = makeDeps(async () => ({
+      prompt: async (msg: string) => { instruction = msg; },
+      abort: () => {},
+      subscribe: () => {},
+      state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
+    } satisfies AgentPort));
+
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(subTaskWithFuncs, metaWithRules, context, () => {}, () => {});
+
+    expect(result.success).toBe(true);
+    // 规则声明 getCurrentDate、calcSafetyStock + 父 Agent 补充 sumRawNotArrivalQty → 并集（单一「可用函数/工具」行）
+    expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: getCurrentDate、calcSafetyStock、sumRawNotArrivalQty');
   });
 });

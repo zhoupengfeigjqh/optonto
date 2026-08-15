@@ -32,6 +32,4 @@ export interface OntologyGatewayPort {
   getBehaviorNames(scenario: string, ontology: string): string[];
   /** 函数元信息（中文显示名），工具调用展示用 */
   getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string };
-  /** 本体函数参数结构（渲染指令用）；共享函数返回 null（参数在工具 schema 可见） */
-  getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null;
 }

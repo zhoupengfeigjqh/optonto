@@ -77,8 +77,6 @@ export class Orchestrator {
         this.ontologyGateway.getFunctionMeta(scenario, ontology, functionName).display_name || '',
       getBehaviorParams: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).params || {},
-      getFunctionParams: (scenario, ontology, functionName) =>
-        this.ontologyGateway.getFunctionParams(scenario, ontology, functionName),
     });
   }
 
@@ -548,7 +546,7 @@ ${waveList}
 
 请分析：
 1. 各结果是否符合预期？有无异常或风险？
-2. 后续未开始的子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态等）？
+2. 后续未开始的子任务是否需要本次结果中的数据（如新生成的 ID、主键、状态、计算结果等）？
 3. 【提前终止判断】后续未开始的子任务是否仍有必要执行？若某些或全部子任务已失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请调用 submit_plan 提交【剔除这些子任务】的调整规划；若要结束整个流程，可提交只包含【已执行子任务】的规划或空 subtasks，让流程提前结束，避免执行无意义的操作。
 
 【数据传播（必须）】

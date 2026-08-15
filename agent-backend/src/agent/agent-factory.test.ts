@@ -22,9 +22,11 @@ vi.mock('../services/mcp-client.js', () => ({
     async listTools() {
       return { tools: [
         { name: 'executeOntoBehavior', description: '执行本体行为', inputSchema: { type: 'object', properties: { behavior_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['behavior_name', 'ontology_id'] } },
-        { name: 'executeOntoFunction', description: '执行本体函数', inputSchema: { type: 'object', properties: { function_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['function_name', 'ontology_id'] } },
+        { name: 'calcSafetyStock', description: '计算安全库存', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, currentStock: { type: 'number' }, safetyStock: { type: 'number' } }, required: ['ontology_id'] } },
+        { name: 'sumRawNotArrivalQty', description: '未到位数求和', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, purchaseRecordSet: { type: 'array' } }, required: ['ontology_id'] } },
         { name: 'listOntoBehaviors', description: '列出本体行为', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' } } } },
         { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {} } },
+        { name: 'weatherQuery', description: '外部天气查询', inputSchema: { type: 'object', properties: { city: { type: 'string' } } } },
       ] };
     }
     async callTool() { return { content: [{ type: 'text', text: '{"ok":true}' }], isError: false }; }
@@ -105,7 +107,7 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
  * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
  * legalCalls 默认含主行为 + 一个规则关联行为 + 一个关联函数，供白名单/硬检查测试共用。
  */
-async function captureChildTools(legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock'] }) {
+async function captureChildTools(legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] }) {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
@@ -162,28 +164,51 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     expect(names).toContain('submit_plan');
   });
 
-  it('父 Agent 挂本体查询工具（list*）与公共函数', async () => {
-    const names = (await captureParentTools()).map(t => t.name);
-    expect(names).toContain('listOntoBehaviors');
-    expect(names).toContain('getCurrentDate');
+  it('父 Agent 挂只读 list_mcp_tools，返回紧凑可挂载工具清单（名字+分类+描述，剔除 list* 与 executeOntoBehavior）', async () => {
+    const tools = await captureParentTools();
+    const tool = tools.find(t => t.name === 'list_mcp_tools');
+    expect(tool).toBeTruthy();
+    const result = await tool.execute('call-list', {});
+    const text = result.content[0].text;
+    const parsed = JSON.parse(text);
+    const names = parsed.map((t: any) => t.name);
+    expect(names).toContain('weatherQuery'); // 其他 MCP 工具可见（供父 Agent 规划 related_functions）
+    expect(names).toContain('calcSafetyStock'); // 本体函数可见
+    expect(names).not.toContain('listOntoBehaviors'); // 本体浏览不属可挂载域
+    expect(names).not.toContain('executeOntoBehavior'); // 行为执行不属可挂载域
+    // 分类正确且紧凑（不返回参数 schema）
+    const byName = Object.fromEntries(parsed.map((t: any) => [t.name, t]));
+    expect(byName['calcSafetyStock'].category).toBe('本体函数');
+    expect(byName['getCurrentDate'].category).toBe('公共函数');
+    expect(byName['weatherQuery'].category).toBe('其他MCP工具');
+    expect(byName['weatherQuery'].parameters).toBeUndefined();
   });
 
-  it('父 Agent 不挂执行工具（executeOntoBehavior / executeOntoFunction）', async () => {
+  it('父 Agent 只挂本体查询工具（list*），不挂函数/外部工具', async () => {
+    const names = (await captureParentTools()).map(t => t.name);
+    expect(names).toContain('listOntoBehaviors');
+    expect(names).not.toContain('getCurrentDate'); // 公共函数不挂父 Agent（由 list_mcp_tools 发现）
+  });
+
+  it('父 Agent 不挂 executeOntoBehavior / 本体函数 / 外部工具', async () => {
     const names = (await captureParentTools()).map(t => t.name);
     expect(names).not.toContain('executeOntoBehavior');
-    expect(names).not.toContain('executeOntoFunction');
+    expect(names).not.toContain('calcSafetyStock'); // 本体函数不挂父 Agent
+    expect(names).not.toContain('sumRawNotArrivalQty');
+    expect(names).not.toContain('weatherQuery'); // 外部工具不挂父 Agent
   });
 });
 
 describe('AgentFactory 子 Agent 工具职责边界', () => {
   beforeEach(() => mockedAgent.mockClear());
 
-  it('子 Agent 挂执行工具 + 公共函数，不挂本体浏览工具', async () => {
+  it('子 Agent 挂执行工具 + 合法本体函数 + 公共函数，不挂本体浏览工具', async () => {
     const names = (await captureChildTools()).map(t => t.name);
     expect(names).toContain('executeOntoBehavior');
-    expect(names).toContain('executeOntoFunction');
+    expect(names).toContain('calcSafetyStock'); // legalCalls.functions 声明的本体函数
     expect(names).toContain('getCurrentDate');
     expect(names).not.toContain('listOntoBehaviors');
+    expect(names).not.toContain('executeOntoFunction');
   });
 });
 
@@ -206,19 +231,40 @@ describe('AgentFactory 子 Agent 白名单闸门', () => {
     expect(result).toBeTruthy();
   });
 
-  it('executeOntoFunction 调用非法 function_name → 抛错拒绝', async () => {
+  it('本体函数工具按挂载期过滤：只挂 legalCalls.functions 声明的函数', async () => {
     const tools = await captureChildTools();
-    const tool = tools.find(t => t.name === 'executeOntoFunction');
-    expect(tool).toBeTruthy();
-    await expect(
-      tool.execute('call-3', { function_name: 'arbitraryFn', params: {} }),
-    ).rejects.toThrow(/不在本子任务合法函数列表/);
+    const names = tools.map(t => t.name);
+    expect(names).toContain('calcSafetyStock'); // legalCalls.functions 含 calcSafetyStock
+    expect(names).not.toContain('sumRawNotArrivalQty'); // 未声明的本体函数不挂（挂载期白名单过滤）
   });
 
-  it('executeOntoFunction 调用合法关联函数 → 放行', async () => {
+  it('公共函数按挂载期过滤：未声明的公共函数不挂（不再恒挂全部）', async () => {
+    const tools = await captureChildTools({ behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock'] });
+    const names = tools.map(t => t.name);
+    expect(names).not.toContain('getCurrentDate'); // 公共函数未在 legalCalls.functions 声明 → 不挂
+  });
+
+  it('其他 MCP 工具（无 ontology_id、非公共函数）默认不挂，父 Agent 指定才挂', async () => {
+    // 默认 legalCalls.functions 不含 weatherQuery → 不挂（不再恒挂新增 MCP）
+    const defaultTools = await captureChildTools();
+    expect(defaultTools.map(t => t.name)).not.toContain('weatherQuery');
+    // 父 Agent 指定 weatherQuery 进 related_functions → legalCalls.functions 含它 → 挂载
+    mockedAgent.mockClear();
+    const withExternal = await captureChildTools({ behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate', 'weatherQuery'] });
+    const names = withExternal.map(t => t.name);
+    expect(names).toContain('weatherQuery');
+  });
+
+  it('本体函数工具：子 Agent 视角 schema 已剔除 ontology_id', async () => {
     const tools = await captureChildTools();
-    const tool = tools.find(t => t.name === 'executeOntoFunction');
-    const result = await tool.execute('call-4', { function_name: 'calcSafetyStock', params: {} });
+    const tool = tools.find(t => t.name === 'calcSafetyStock');
+    expect(tool).toBeTruthy();
+    const props = (tool.parameters as any)?.properties ?? {};
+    const required = (tool.parameters as any)?.required ?? [];
+    // 本体函数工具与 executeOntoBehavior 一样：子 Agent 不感知 ontology_id（由 scopeToOntology 强制注入）
+    expect('ontology_id' in props).toBe(false);
+    expect(required).not.toContain('ontology_id');
+    const result = await tool.execute('call-5', { currentStock: 10, safetyStock: 5 });
     expect(result).toBeTruthy();
   });
 });

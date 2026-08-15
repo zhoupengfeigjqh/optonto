@@ -81,6 +81,8 @@ export interface SubTask {
   ontology_name: string;
   ontology_id: number;
   depends_on?: number[];
+  /** 父 Agent 指定的本子任务可能用到的函数（英文函数名，含公共函数）。与规则声明的 related_functions 取并集后挂载给子 Agent。 */
+  related_functions?: string[];
 }
 
 /** 父Agent 输出的完整规划 */

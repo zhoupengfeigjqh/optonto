@@ -8,6 +8,7 @@ from metadata import (
     create_ontology, update_ontology, delete_ontology,
 )
 from services import ensure_ontology_dir, save_ontology_data, load_ontology_data, OntologyData
+from services.params_schema import params_to_input_schema
 
 router = APIRouter(prefix="/api/ontologies", tags=["本体"])
 
@@ -16,6 +17,32 @@ router = APIRouter(prefix="/api/ontologies", tags=["本体"])
 async def list_all_ontologies_api():
     """列出所有本体（跨场景全量列表）。"""
     return list_all_ontologies()
+
+
+@router.get("/functions/all")
+async def list_all_functions_api():
+    """跨本体聚合所有本体函数，产出带 inputSchema 的列表（MCP 注册一等函数工具用）。"""
+    result = []
+    for onto in list_all_ontologies():
+        oid = onto.get("id")
+        scenario_name = onto.get("scenario_name")
+        ontology_name = onto.get("ontology_name")
+        if oid is None or not scenario_name or not ontology_name:
+            continue
+        try:
+            data = load_ontology_data(scenario_name, ontology_name)
+        except Exception:
+            continue
+        for fn in data.functions:
+            result.append({
+                "ontology_id": oid,
+                "ontology_name": ontology_name,
+                "name": fn.name,
+                "display_name": fn.display_name,
+                "description": fn.description,
+                "inputSchema": params_to_input_schema(fn.params),
+            })
+    return result
 
 
 @router.get("/by-scenario/{scenario_id}")

@@ -122,8 +122,9 @@ export class OntologyGateway {
 
   /**
    * 按函数名取本体函数的参数结构。
-   * 函数定义在 functions[] 中才有 params（本体函数，走 executeOntoFunction 包装、参数不可见，需渲染）；
-   * 不在则返回 null，表示共享函数（直接 MCP 工具，参数在工具 schema 可见，无需渲染）。
+   * 函数定义在 functions[] 中才有 params（本体函数）；不在则返回 null（公共函数）。
+   * 注意：本体函数现已注册为一等 MCP 工具（参数在工具 schema 可见），本方法仅用于校验脚本/工具链，
+   * 不再用于子任务指令渲染（renderRelatedFunctions 已移除）。
    */
   getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null {
     const data = this.loadOntologyData(scenario, ontology);

@@ -9,7 +9,6 @@ import { requiredParamNames, renderParam } from './param-contract.js';
 import { createToolErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
-import { COMMON_FUNCTION_NAMES } from './agent-factory.js';
 import { legalCallNames } from './legal-calls.js';
 import type { LegalCalls } from './legal-calls.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult, ExecutionEntry, SSEEvent } from '../types.js';
@@ -29,8 +28,6 @@ export interface SubtaskRunnerDeps {
   getFunctionDisplayName: (scenario: string, ontology: string, functionName: string) => string;
   /** 按 (scenario, ontology, behavior) 解析行为参数结构（规则取数接口 data_supplements 渲染用） */
   getBehaviorParams: (scenario: string, ontology: string, behaviorName: string) => Record<string, any>;
-  /** 按 (scenario, ontology, function) 解析本体函数参数结构（规则关联函数渲染用）；共享函数返回 null */
-  getFunctionParams: (scenario: string, ontology: string, functionName: string) => Record<string, any> | null;
 }
 
 /**
@@ -84,8 +81,8 @@ export class SubtaskRunner {
     // 复用同一个子 Agent 实例：失败原因、工具结果保留在上下文中（异常重试时参考）
     // 主行为必填参数名（来自行为元信息）：工具层硬检查用，缺失则拒绝执行
     const requiredParams = requiredParamNames(meta);
-    // 合法调用名集合（主行为 + 规则关联行为/函数）：executeOntoBehavior/Function 工具层白名单硬检查用
-    const legalCalls = legalCallNames(meta, subTask.behavior);
+    // 合法调用名集合（主行为 + 规则关联行为/函数 + 父 Agent 指定的 related_functions）：工具层白名单硬检查用
+    const legalCalls = legalCallNames(meta, subTask.behavior, subTask.related_functions);
     // 工具报错预算：连续报错达上限即中断（pi-agent 内层循环被 terminate 停住），不再无限试错
     const errorBudget = createToolErrorBudget();
     const childAgent = await this.deps.createChildAgent(context, subTask.behavior, requiredParams, errorBudget, legalCalls);
@@ -102,19 +99,19 @@ export class SubtaskRunner {
         if (signal?.aborted) userAborted = true;
         if (event.type === 'tool_execution_start') {
           const displayName = this.describeToolCall(event.toolName, event.args);
-          // 行为/函数调用只展示传入的 params（去掉 behavior_name/function_name 包装层）
-          const displayParams = (event.toolName === 'executeOntoBehavior' || event.toolName === 'executeOntoFunction')
+          // 行为调用只展示传入的 params（去掉 behavior_name 包装层）；本体函数/公共函数工具参数即 event.args
+          const displayParams = (event.toolName === 'executeOntoBehavior')
             ? (event.args?.params ?? event.args)
             : event.args;
           // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名
-          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args);
+          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, legalCalls.functions);
           const entryDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
           toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
           pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: entryDisplay, displayLabel: called.display || undefined, description: subTask.description });
         } else if (event.type === 'tool_execution_end') {
           const text = toolResultToText(event.result?.content);
           const display = toolDisplayNames.get(event.toolCallId);
-          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args);
+          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, legalCalls.functions);
           const entryDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
           pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: entryDisplay, displayLabel: called.display || undefined, description: subTask.description });
         }
@@ -203,29 +200,29 @@ export class SubtaskRunner {
 
   /**
    * 解析被调对象的中文名（工具调用展示用）：
-   *  executeOntoBehavior → 被调行为的中文 display_name；executeOntoFunction → 函数中文 display_name；
+   *  executeOntoBehavior → 被调行为的中文 display_name；本体函数（工具名=函数名）→ 函数中文 display_name；
    *  其它工具无中文映射 → 返回空（前端用工具原名兜底）。
    */
-  private resolveCalledDisplay(subTask: SubTask, toolName: string, args: any): { name: string; display: string } {
+  private resolveCalledDisplay(subTask: SubTask, toolName: string, args: any, functionNames: string[]): { name: string; display: string } {
     if (toolName === 'executeOntoBehavior' && args?.behavior_name) {
       return {
         name: args.behavior_name,
         display: this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, args.behavior_name),
       };
     }
-    if (toolName === 'executeOntoFunction' && args?.function_name) {
+    // 本体函数是一等工具（函数名即工具名），用合法函数名判定是函数而非公共函数/新增 MCP
+    if (functionNames.includes(toolName)) {
       return {
-        name: args.function_name,
-        display: this.deps.getFunctionDisplayName(subTask.scenario_name, subTask.ontology_name, args.function_name),
+        name: toolName,
+        display: this.deps.getFunctionDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
       };
     }
     return { name: '', display: '' };
   }
 
-  /** 工具调用的显示名：行为/函数调用直接显示其名称（如 QueryInventory），其余工具显示工具名。 */
+  /** 工具调用的显示名：行为调用显示 behavior_name；本体函数工具名即函数名；其余工具显示工具名。 */
   private describeToolCall(toolName: string, args: any): string {
     if (toolName === 'executeOntoBehavior' && args?.behavior_name) return args.behavior_name;
-    if (toolName === 'executeOntoFunction' && args?.function_name) return args.function_name;
     return toolName;
   }
 
@@ -261,7 +258,6 @@ export class SubtaskRunner {
         }
         if (r.related_functions?.length) {
           text += `  关联函数: ${r.related_functions.join(', ')}\n`;
-          text += `${this.renderRelatedFunctions(r.related_functions, subTask.scenario_name, subTask.ontology_name)}\n`;
         }
       });
     }
@@ -284,7 +280,6 @@ export class SubtaskRunner {
         }
         if (r.related_functions?.length) {
           text += `  关联函数: ${r.related_functions.join(', ')}\n`;
-          text += `${this.renderRelatedFunctions(r.related_functions, subTask.scenario_name, subTask.ontology_name)}\n`;
         }
       });
     }
@@ -298,18 +293,16 @@ export class SubtaskRunner {
       });
     }
 
-    // 合法行为列表：本子任务唯一可调用的行为/函数范围。与工具层白名单闸门同源于 legalCallNames，
+    // 合法行为列表：本子任务唯一可调用的行为/函数/工具范围。与工具层白名单闸门 + 挂载期过滤同源于 legalCallNames，
     // 保证"文案展示的合法集合"与"工具层强制的合法集合"永远一致（单一事实源）。
-    // 主行为 + 规则关联行为（data_supplements 取数接口）+ 两类函数：
-    //   ① 规则声明的 related_functions —— 本体函数，经 executeOntoFunction 调用；
-    //   ② 公共函数（时间工具等直接 MCP 工具）—— 不经 executeOntoFunction，恒可调用。
-    // 无规则时列表只有主行为 + 公共函数——子 Agent 无查询类依据，从源头杜绝臆造行为名。
-    const legal = legalCallNames(meta, subTask.behavior);
-    text += `\n### 本子任务合法行为列表（只能调用以下行为/函数，严禁调用未列出的）\n`;
+    // 主行为 + 规则关联行为（data_supplements 取数接口）+ 可用函数/工具：
+    //   规则声明 ∪ 父 Agent 指定的 related_functions（本体函数 / 公共函数 / 其他 MCP 工具三合一，均按名挂载）。
+    // 无规则且父 Agent 未指定时列表只有主行为——子 Agent 无查询/计算依据，从源头杜绝臆造行为名/函数名/工具名。
+    const legal = legalCallNames(meta, subTask.behavior, subTask.related_functions);
+    text += `\n### 本子任务合法行为列表（只能调用以下行为/函数/工具，严禁调用未列出的）\n`;
     text += `- 主行为: ${subTask.behavior}\n`;
     text += `- 规则关联行为: ${legal.behaviors.filter(b => b !== subTask.behavior).join('、') || '（无）'}\n`;
-    text += `- 关联函数（规则声明，经 executeOntoFunction 调用）: ${legal.functions.join('、') || '（无）'}\n`;
-    text += `- 公共函数（直接 MCP 工具，不经 executeOntoFunction）: ${COMMON_FUNCTION_NAMES.join('、')}\n`;
+    text += `- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: ${legal.functions.join('、') || '（无）'}\n`;
 
     return text;
   }
@@ -347,31 +340,6 @@ export class SubtaskRunner {
         continue;
       }
       lines.push(`  ${api} 参数:`);
-      lines.push(this.renderParamSpecs(params, '    '));
-    }
-    return lines.join('\n');
-  }
-
-  /**
-   * 渲染规则关联函数（related_functions）。
-   * 共享函数是直接 MCP 工具，参数在工具 schema 可见，只标注"共享函数"；
-   * 本体函数走 executeOntoFunction 包装、参数不可见，需把 functions[].params 结构渲染出来（与规则一致）。
-   */
-  private renderRelatedFunctions(funcs: string[], scenario: string, ontology: string): string {
-    const lines: string[] = [];
-    for (const fn of funcs) {
-      if (!fn) continue;
-      const params = this.deps.getFunctionParams(scenario, ontology, fn);
-      if (params === null) {
-        lines.push(`  ${fn}（共享函数，参数见工具定义）`);
-        continue;
-      }
-      const keys = Object.keys(params);
-      if (keys.length === 0) {
-        lines.push(`  ${fn}（无参数）`);
-        continue;
-      }
-      lines.push(`  ${fn} 参数:`);
       lines.push(this.renderParamSpecs(params, '    '));
     }
     return lines.join('\n');
