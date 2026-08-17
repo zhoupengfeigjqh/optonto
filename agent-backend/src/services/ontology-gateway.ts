@@ -12,6 +12,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
+import { COMMON_FUNCTION_NAMES } from './common-functions.js';
 import type { BehaviorMeta, RuleDetail, ConceptInfo } from '../types.js';
 
 export class OntologyGateway {
@@ -118,6 +119,16 @@ export class OntologyGateway {
       concepts,
       isWrite,
     };
+  }
+
+  /**
+   * 获取函数子任务可用的函数名列表（本体函数 ∪ 公共函数），函数子任务名校验用。
+   * 本体函数来自 ontology.yaml functions[]；公共函数来自全局 functions.json（与 AgentFactory 同源 COMMON_FUNCTION_NAMES）。
+   */
+  getFunctionNames(scenario: string, ontology: string): string[] {
+    const data = this.loadOntologyData(scenario, ontology);
+    const ontoFns = (data?.functions || []).map((f: any) => f.name).filter(Boolean);
+    return [...new Set([...ontoFns, ...COMMON_FUNCTION_NAMES])];
   }
 
   /**

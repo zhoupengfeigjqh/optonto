@@ -73,6 +73,9 @@ export interface SkillDescription {
 export interface SubTask {
   seq: number;
   behavior: string;
+  /** 函数子任务：直接调用本体函数/公共函数（统计/聚合等纯计算），与 behavior 互斥。
+   *  函数节点时 behavior 为空串，function 填函数英文名；不经过子 Agent LLM，由 orchestrator 直连 MCP 执行。 */
+  function?: string;
   params: Record<string, any>;
   description: string;
   guidance?: string;

@@ -459,7 +459,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">规则管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增规则</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">配置行为执行前后的管控规则（验证规则和推理规则可以进行精细的规则结构设计，其他规则则侧重于语义上的自由表达，无结构设计）</p>
+      <p className="text-text-muted text-xs mb-3">配置行为执行前后的约束规则（验证规则和推理规则可以进行精细的规则结构设计，其他规则则侧重于语义上的自由表达，无结构设计）</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       {/* ─── Rule Design Modal ──────────────────────────────────────────── */}

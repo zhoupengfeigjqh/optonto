@@ -114,7 +114,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">流程管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>新增流程</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">编排行为步骤形成完整业务流程</p>
+      <p className="text-text-muted text-xs mb-3">可供参考的核心业务价值链（业务流程）</p>
 
       <ResizableTable dataSource={processes.map(p => ({ ...p, _key: p.name }))} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 

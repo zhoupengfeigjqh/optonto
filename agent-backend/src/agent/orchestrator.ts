@@ -13,8 +13,9 @@
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import { getLastAssistantMessage } from './text-utils.js';
-import { validateBehaviorNames, validateParamsStructure, validatePlanStructure, topologicalSort } from './plan-validation.js';
+import { validateBehaviorNames, validateFunctionNames, validateParamsStructure, validatePlanStructure, topologicalSort } from './plan-validation.js';
 import type { InvalidBehavior } from './plan-validation.js';
+import { unwrapParamValues } from './param-contract.js';
 import { ConfirmManager } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
 import type { AgentPort } from './agent-port.js';
@@ -330,7 +331,7 @@ export class Orchestrator {
       // 用户编辑只同步给前端，父Agent 不知道。把最终规划注入其上下文，
       // 否则父Agent 会基于过期规划生成总结/分析，脑补被删除的子任务。
       const finalPlanText = plan.subtasks
-        .map(st => `${st.seq}. ${st.behavior}（${st.scenario_name}/${st.ontology_name}）`)
+        .map(st => `${st.seq}. ${st.function || st.behavior}（${st.scenario_name}/${st.ontology_name}）`)
         .join('\n');
       parentAgent.state.messages.push({
         role: 'user',
@@ -342,7 +343,7 @@ export class Orchestrator {
     sendEvent({ type: 'plan_received', plan: this.enrichPlanDisplay(plan) });
     const planSummary = plan.subtasks
       .sort((a, b) => a.seq - b.seq)
-      .map(st => `${st.seq}. ${st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
+      .map(st => `${st.seq}. ${st.function || st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
       .join('\n');
     sendEvent({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
 
@@ -484,12 +485,16 @@ export class Orchestrator {
   ): Promise<SubTaskResult[]> {
     const secured: { st: SubTask; meta: BehaviorMeta }[] = [];
     const plain: { st: SubTask; meta: BehaviorMeta }[] = [];
+    const functions: SubTask[] = [];
     for (const st of batch) {
+      if (st.function) { functions.push(st); continue; }
       const meta = this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
       (meta.security || meta.isWrite ? secured : plain).push({ st, meta });
     }
 
     const results: SubTaskResult[] = [];
+    // 函数子任务：确定性直连调用（无 LLM、无安全确认、无规则），与行为子任务并行
+    results.push(...await Promise.all(functions.map(st => this.runFunctionEntry(st, emit))));
     // 并行分块：每块内 Promise.all 并发执行
     for (let i = 0; i < plain.length; i += MAX_PARALLEL) {
       const chunk = plain.slice(i, i + MAX_PARALLEL);
@@ -523,6 +528,36 @@ export class Orchestrator {
 
     emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）`, displayLabel: meta.display_name || subTask.description, description: subTask.description });
     return result;
+  }
+
+  /** 执行单个函数子任务：确定性直连调用 MCP 函数（无子 Agent LLM、无安全确认、无规则）。 */
+  private async runFunctionEntry(
+    subTask: SubTask,
+    emit: EventChannel,
+  ): Promise<SubTaskResult> {
+    const functionName = subTask.function!;
+    const fnMeta = this.ontologyGateway.getFunctionMeta(subTask.scenario_name, subTask.ontology_name, functionName);
+    const displayLabel = fnMeta.display_name || subTask.description;
+    const displayName = `${displayLabel}（${functionName}）`;
+
+    // 直连执行前深展开计划期 {type/required/description/value} 包装为纯值（真实 LLM 中继会把包装递归嵌套进数组项）
+    const args = unwrapParamValues(subTask.params || {});
+
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_start', name: functionName, status: 'running', detail: `${functionName}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, displayName, displayLabel, description: subTask.description });
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: functionName, status: 'running', params: args, source: 'child', seq: subTask.seq, displayName, displayLabel, description: subTask.description });
+
+    const { text, isError } = await this.agentFactory.callFunctionTool(functionName, subTask.ontology_id, args);
+
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: functionName, status: isError ? 'failed' : 'done', params: args, result: text, source: 'child', seq: subTask.seq, displayName, displayLabel, description: subTask.description });
+
+    if (isError) {
+      emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: functionName, status: 'failed', detail: `${functionName}｜子任务 ${subTask.seq}`, result: text, source: 'child', seq: subTask.seq, displayName, displayLabel, description: subTask.description });
+      return { seq: subTask.seq, behavior: functionName, success: false, error: `❌ 函数执行失败：${text}`, summary: '' };
+    }
+
+    emit.entry({ time: new Date().toLocaleTimeString(), type: 'subtask_done', name: functionName, status: 'done', detail: `${functionName}｜子任务 ${subTask.seq}`, result: text, source: 'child', seq: subTask.seq, displayName, displayLabel, description: subTask.description });
+    // summary 直接放函数原始结果 JSON——它是 L0 波次反馈中继给后续子任务的一等值
+    return { seq: subTask.seq, behavior: functionName, success: true, summary: text };
   }
 
   /**
@@ -599,17 +634,17 @@ ${waveList}
     return nextPending;
   }
 
-  /** 校验子任务行为名合法性；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  /** 校验子任务行为/函数名合法性；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
   private async validateBehaviors(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
     return this.repairPlan(plan, ctx, {
-      label: '行为名校验',
-      doneLabel: '行为名已修正',
-      detailOf: (p) => `不存在的 behavior: ${this.behaviorInvalid(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
+      label: '行为/函数名校验',
+      doneLabel: '行为/函数名已修正',
+      detailOf: (p) => `不存在的 behavior/function: ${this.behaviorInvalid(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.function || iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
       isClean: (p) => this.behaviorInvalid(p).length === 0,
       nudge: (p) => {
         const invalid = this.behaviorInvalid(p);
         const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
-        return `以下子任务的 behavior 名称不在其所属场景/本体的行为集合中：${invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}。\n合法行为有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`;
+        return `以下子任务的名称（behavior 或 function）不在其所属场景/本体的合法集合中：${invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.function || iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}。\n合法名称有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`;
       },
     });
   }
@@ -636,9 +671,12 @@ ${waveList}
     });
   }
 
-  /** 非法 behavior 列表（子任务 + 合法名提示），供行为名校验的 detail/nudge 共用。 */
+  /** 非法行为/函数名列表（子任务 + 合法名提示），供行为/函数名校验的 detail/nudge 共用。 */
   private behaviorInvalid(plan: SubTaskPlan): InvalidBehavior[] {
-    return validateBehaviorNames(this.ontologyGateway, plan);
+    return [
+      ...validateBehaviorNames(this.ontologyGateway, plan),
+      ...validateFunctionNames(this.ontologyGateway, plan),
+    ];
   }
 
   /**
@@ -680,7 +718,9 @@ ${waveList}
       ...plan,
       subtasks: plan.subtasks.map(st => ({
         ...st,
-        display_name: this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).display_name || '',
+        display_name: st.function
+          ? (this.ontologyGateway.getFunctionMeta(st.scenario_name, st.ontology_name, st.function).display_name || '')
+          : (this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).display_name || ''),
       })),
     };
   }

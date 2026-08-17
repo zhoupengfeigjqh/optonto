@@ -806,7 +806,7 @@ behaviors:
   display_name: 查询供应商供货能力SQL
 rules:
 - name: V01_UnitConsistency_Purchase
-  description: 创建采购单时，提供的 rawMaterialId 必须与RawMaterial 概念中的rawMaterialId一致，并且unit页必须一致。
+  description: 创建采购单时，提供的原材料ID（rawMaterialId）必须存在，且单位也必须与原材料的定义一致。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
@@ -838,7 +838,7 @@ rules:
   data_supplements:
   - QueryRawMaterials
 - name: V03_ArrivalTimeValidity
-  description: 创建采购单时，输入的 arrivalTime 必须晚于 purchaseTime。
+  description: 创建采购单时，输入的到位时间（arrivalTime）必须晚于采购时间（purchaseTime）。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
@@ -860,7 +860,7 @@ rules:
           attribute: purchaseTime
   data_supplements: []
 - name: V05_SupplierExistence
-  description: 创建采购单时，提供的 supplierName 必须与 Supplier 概念中suplierName的一致。
+  description: 创建采购单时，提供的供应商名称（supplierName）必须存在，不能随便杜撰。
   related_behaviors:
   - CreatePurchaseRecord
   related_functions: []
@@ -928,11 +928,11 @@ rules:
           type: concept
           concept: PurchaseRecord
           attribute: arrivalTime
-    then: 采购单已到位，建议启动入库操作
+    then: 采购单已到位，请考虑是否进行入库操作
     else: 采购单尚未到位，无需操作
   data_supplements: []
 - name: I03_PurchasePurposeInference
-  description: IF 采购单relatedOrderId 为空 THEN 该采购目的可视为“补充库存”。
+  description: IF 采购单的关联客户订单ID（relatedOrderId）为空 THEN 该采购目的可视为“补充库存”。
   related_behaviors:
   - CreatePurchaseRecord
   - QueryPurchaseRecords
@@ -952,8 +952,8 @@ rules:
         right:
           type: value
           value: '""'
-    then: 该采购单的采购目的可视为“补充库存”
-    else: 该采购单有关联订单，采购目的可能为生产订单备料
+    then: 该采购单未关联具体的客户订单，因此可视为“补充库存”
+    else: 该采购单有关联订单，采购目的视为生产订单备料
   data_supplements: []
 - name: I04_RelatedOrderValidation
   description: 创建采购单时，如果客户订单relatedOrderId不为空，则必须存在于客户订单中
@@ -984,35 +984,33 @@ rules:
           type: set
           concept: CustomerOrder
           attribute: customerOrderId
-    then: 关联订单编号不存在于客户订单中，请中断后续推理，并检查
+    then: 由于关联订单编号不存在于客户订单中，因此请中断订单创建
     else: 关联订单编号存在或未填写，校验通过
   data_supplements: []
 events:
 - name: PurchaseRecordCreated
   event_type: 动作执行
-  trigger_condition: 成功执行 CreatePurchaseRecord 行为后。
-  related_concepts: []
+  trigger_condition: 成功执行采购订单创建（CreatePurchaseRecord）行为后。
+  related_concepts:
+  - PurchaseRecord
   related_behavior: CreatePurchaseRecord
-  trigger_behaviors:
-  - QueryInventory
-  - QueryPurchaseRecords
+  trigger_behaviors: []
   display_name: 原材料采购订单创建事件
 - name: PurchaseRecordCancelled
   event_type: 动作执行
-  trigger_condition: 成功执行 CancelPurchaseRecord 行为后。
-  related_concepts: []
+  trigger_condition: 成功执行采购订单取消（CancelPurchaseRecord）行为后。
+  related_concepts:
+  - PurchaseRecord
   related_behavior: CancelPurchaseRecord
-  trigger_behaviors:
-  - QueryInventory
-  - QueryPurchaseRecords
+  trigger_behaviors: []
   display_name: 原材料采购订单取消事件
 - name: RawMaterialReceived
   event_type: 动作执行
-  trigger_condition: 成功执行 ReceiveRawMaterial 行为后。
-  related_concepts: []
+  trigger_condition: 成功执行入库操作（ReceiveRawMaterial）行为后。
+  related_concepts:
+  - PurchaseRecord
   related_behavior: ReceiveRawMaterial
-  trigger_behaviors:
-  - QueryInventory
+  trigger_behaviors: []
   display_name: 原材料入库事件
 processes:
 - name: ProcureAndReceiveRawMaterial
@@ -1036,20 +1034,16 @@ processes:
     previous_action: QueryPurchaseRecords
     description: 确认原材料到货，执行入库操作，更新库存。
     connection_type: 串行
-  - current_action: QueryInventory
-    previous_action: ReceiveRawMaterial
-    description: 入库完成后，再次查询库存，确认库存状态已更新。
-    connection_type: 串行
 securities:
 - action_name: CreatePurchaseRecord
   audit_node: 前置
-  audit_content: 确认采购的必要性：请确认是否确实需要补货，关联的客户订单是否真实有效，采购数量和到位时间是否合理。
+  audit_content: 确认采购信息正确性：请再次确认该采购信息，例如关联的客户订单是否真实有效，采购数量和到位时间是否合理。
 - action_name: CancelPurchaseRecord
   audit_node: 前置
-  audit_content: 确认取消的原因：确认取消采购单是否合理，是否已与供应商沟通，是否存在违约风险。
+  audit_content: 确认采购取消的原因：确认取消采购单是否合理，是否存在违约风险。
 - action_name: ReceiveRawMaterial
   audit_node: 前置
-  audit_content: 确认入库的准确性：请确认到货的原材料、数量、供应商是否与采购单一致，质检是否已通过（如适用）。
+  audit_content: 确认入库的准确性：请确认到货的原材料、数量、供应商是否与采购单一致。
 data_engines:
 - name: CreatePurchaseRecord
   display_name: ''

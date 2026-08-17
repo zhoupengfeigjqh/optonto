@@ -1,10 +1,8 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@sinclair/typebox';
-import { config } from '../config.js';
 import { MCPClient } from '../services/mcp-client.js';
+import { COMMON_FUNCTION_NAMES } from '../services/common-functions.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
@@ -18,31 +16,6 @@ import type { LegalCalls } from './legal-calls.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
-
-/**
- * 运行时读取公共函数定义（.data/common_functions/functions.json，与 core-backend 同一份数据源）。
- * 返回函数名数组。文件缺失/解析失败时返回空数组（此时 core-backend 也不会注册这些工具，白名单空是自洽的）。
- */
-function loadCommonFunctionNames(): string[] {
-  const file = join(config.dataDir, 'common_functions', 'functions.json');
-  try {
-    if (!existsSync(file)) {
-      console.warn(`[CommonFunctions] 未找到 ${file}，公共函数列表为空`);
-      return [];
-    }
-    const raw: unknown = JSON.parse(readFileSync(file, 'utf-8'));
-    if (!Array.isArray(raw)) throw new Error('顶层应为数组');
-    return raw
-      .map((f: any) => (f && typeof f.name === 'string' ? f.name : ''))
-      .filter((n: string) => n.length > 0);
-  } catch (e: any) {
-    console.warn(`[CommonFunctions] 读取 ${file} 失败: ${e.message}，公共函数列表为空`);
-    return [];
-  }
-}
-
-/** 运行时读出的公共函数名（子/父 Agent 共用同一数据源，新增/改名公共函数无需改代码）。 */
-export const COMMON_FUNCTION_NAMES = loadCommonFunctionNames();
 
 /**
  * 父 Agent 可挂载的本体查询工具（只读元数据，规划时了解场景/本体/行为/概念/关系/函数/安全）。
@@ -196,6 +169,30 @@ export class AgentFactory {
   }
 
   /**
+   * 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。
+   * 从已发现工具清单按名定位工具；本体函数工具 schema 带 ontology_id → 强制注入本体 id（与 scopeToOntology 同源锁定），
+   * 公共函数/其他 MCP 工具无 ontology_id → 参数原样透传。
+   * 复用 discoverTools 的原始 execute（内含 ontology_id/scenario_id 数字强转 + isError→抛错），调用一次即返回。
+   * 不抛异常：错误一律折叠为 { isError: true }，由 orchestrator 记入结果，避免函数失败打断整波并行。
+   */
+  async callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }> {
+    const all = await this.discoverTools();
+    const found = all.find(({ tool }) => tool.name === functionName);
+    if (!found) {
+      return { text: `函数 ${functionName} 不在可挂载工具清单中`, isError: true };
+    }
+    const props = (found.tool.parameters as any)?.properties;
+    const hasOntologyId = !!props && typeof props === 'object' && 'ontology_id' in props;
+    const p = hasOntologyId ? { ...params, ontology_id: ontologyId } : { ...params };
+    try {
+      const res = await found.tool.execute('direct-function-call', p);
+      return { text: toolResultToText(res.content), isError: false };
+    } catch (e: any) {
+      return { text: e?.message || String(e), isError: true };
+    }
+  }
+
+  /**
    * 将执行类工具限定到指定本体：
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
@@ -303,6 +300,7 @@ export class AgentFactory {
           // 由 execute 回调统一规整为 number（规避 LLM 输出 "1" 导致校验失败的场景）
           seq: Type.Union([Type.Number(), Type.String()]),
           behavior: Type.String(),
+          function: Type.Optional(Type.String()),
           params: Type.Record(Type.String(), Type.Any()),
           description: Type.String(),
           guidance: Type.Optional(Type.String()),
@@ -324,6 +322,12 @@ export class AgentFactory {
           st.scenario_id = st.scenario_id != null && st.scenario_id !== '' ? toFiniteNum(st.scenario_id, `子任务 ${st.seq} 的 scenario_id`) : undefined;
           st.ontology_id = toFiniteNum(st.ontology_id, `子任务 ${st.seq} 的 ontology_id`);
           if (Array.isArray(st.depends_on)) st.depends_on = st.depends_on.map(d => toFiniteNum(d, `子任务 ${st.seq} 的 depends_on`));
+          // 行为/函数互斥：有且只有一个非空。函数节点 behavior 填空串，行为节点 function 不填/为空。
+          const hasBehavior = typeof st.behavior === 'string' && st.behavior.trim() !== '';
+          const hasFunction = typeof st.function === 'string' && st.function.trim() !== '';
+          if (hasBehavior === hasFunction) {
+            throw new Error(`子任务 ${st.seq} 必须且只能填写 behavior 或 function 之一（当前 behavior="${st.behavior ?? ''}"，function="${st.function ?? ''}"）`);
+          }
         }
         if (onPlanSubmitted) onPlanSubmitted(plan as unknown as SubTaskPlan);
         return {

@@ -345,7 +345,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">函数管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增函数</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">定义可复用的属性计算函数以及输入输出（根据现有接口的输出做一些简单的统计，不用单独开发新接口）</p>
+      <p className="text-text-muted text-xs mb-3">定义可复用的属性计算函数（根据现有接口的输出做一些简单的计算或统计，不用单独开发新接口）</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       {/* ─── Attribute Tree Selection Modal ───────────────────────────── */}

@@ -11,12 +11,24 @@ export interface InvalidBehavior {
   valid: string[];
 }
 
-/** 行为名合法性：枚举比对行为是否存在于所属本体。返回非法子任务及该本体的合法名列表。 */
+/** 行为名合法性：枚举比对行为是否存在于所属本体。函数子任务（function 非空）跳过。返回非法子任务及该本体的合法名列表。 */
 export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidBehavior[] {
   const invalid: InvalidBehavior[] = [];
   for (const st of plan.subtasks) {
+    if (st.function) continue; // 函数子任务不走行为名校验
     const names = gateway.getBehaviorNames(st.scenario_name, st.ontology_name);
     if (!names.includes(st.behavior)) invalid.push({ sub: st, valid: names });
+  }
+  return invalid;
+}
+
+/** 函数名合法性：函数子任务的 function 必须存在于所属本体的 functions[]。行为子任务跳过。 */
+export function validateFunctionNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidBehavior[] {
+  const invalid: InvalidBehavior[] = [];
+  for (const st of plan.subtasks) {
+    if (!st.function) continue;
+    const names = gateway.getFunctionNames(st.scenario_name, st.ontology_name);
+    if (!names.includes(st.function)) invalid.push({ sub: st, valid: names });
   }
   return invalid;
 }
@@ -25,8 +37,14 @@ export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTas
 export function validateParamsStructure(gateway: OntologyGatewayPort, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
+    if (st.function) {
+      const fnParams = gateway.getFunctionParams(st.scenario_name, st.ontology_name, st.function);
+      // 公共函数无 params 声明（返回 null）→ 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）
+      if (fnParams) errors.push(...validateParamStructure(fnParams, st.params || {}, st.seq, st.function));
+      continue;
+    }
     const meta = gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
-    errors.push(...validateParamStructure(meta, st.params || {}, st.seq, st.behavior));
+    errors.push(...validateParamStructure(meta.params, st.params || {}, st.seq, st.behavior));
   }
   return errors;
 }

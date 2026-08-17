@@ -23,6 +23,8 @@ export interface AgentFactoryPort {
     errorBudget?: ToolErrorBudget,
     legalCalls?: LegalCalls,
   ): Promise<AgentPort>;
+  /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
+  callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;
   closeAll(): Promise<void>;
 }
 
@@ -32,4 +34,8 @@ export interface OntologyGatewayPort {
   getBehaviorNames(scenario: string, ontology: string): string[];
   /** 函数元信息（中文显示名），工具调用展示用 */
   getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string };
+  /** 本体函数名列表（函数子任务名校验用） */
+  getFunctionNames(scenario: string, ontology: string): string[];
+  /** 本体函数参数结构（函数子任务参数结构校验用）；公共函数返回 null（无 params 声明） */
+  getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null;
 }
