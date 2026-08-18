@@ -47,8 +47,36 @@ def _load_common_functions() -> tuple[list[Tool], list[dict]]:
         return [], []
 
 
-COMMON_TOOLS, COMMON_MANIFEST = _load_common_functions()
+COMMON_TOOLS, _ = _load_common_functions()
 COMMON_TOOL_NAMES = {t.name for t in COMMON_TOOLS}
+
+# 本体函数工具 schema 前置的作用域块键（含所属场景/本体的真实值，非函数输入参数）。
+# 供父 Agent 经 listAllMcpFunctions（agent-backend 内部工具）了解函数所属场景/本体；执行路径统一剥离，不传给后端。
+SCOPE_KEY = "scope"
+FUNCTION_SCOPE_KEYS = {SCOPE_KEY}
+
+
+def _with_function_scope(input_schema: dict, fn: dict) -> dict:
+    """本体函数工具 schema 前置 scope 作用域块（const 带真实值，供规划填子任务对应字段）。
+
+    scope 块放在函数参数之前；agent-backend 的 listAllMcpFunctions 读出 scope 展示给父 Agent，
+    callFunctionTool/scopeToOntology 与本分发器在调用前剥离 scope，避免污染真实函数参数。
+    """
+    props: dict = {
+        SCOPE_KEY: {
+            "type": "object",
+            "description": "本函数所属场景/本体上下文（规划时填子任务对应字段；非函数输入参数，执行时自动剥离）",
+            "properties": {},
+        },
+    }
+    for k, t in (("ontology_id", "integer"), ("scenario_id", "integer"),
+                 ("scenario_name", "string"), ("ontology_name", "string")):
+        v = fn.get(k)
+        if v is not None:
+            props[SCOPE_KEY]["properties"][k] = {"type": t, "const": v}
+    props.update(input_schema.get("properties", {}))
+    return {"type": "object", "properties": props, "required": input_schema.get("required", [])}
+
 
 server = Server("optonto-api")
 
@@ -91,7 +119,7 @@ async def _load_function_tools(force: bool = False) -> list[Tool]:
             tools.append(Tool(
                 name=name,
                 description=desc,
-                inputSchema=fn.get("inputSchema", {"type": "object", "properties": {}}),
+                inputSchema=_with_function_scope(fn.get("inputSchema", {"type": "object", "properties": {}}), fn),
             ))
             names.add(name)
         _FUNCTION_CACHE.update(ts=now, tools=tools, names=names)
@@ -162,7 +190,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoFunctions",
-            description="列出指定本体的函数以及对应的输入输出结构。返回函数的 name、display_name、description、params（输入）、response（返回的） 以及公共函数。",
+            description="列出指定本体的函数以及对应的输入输出结构。返回函数的 name、display_name、description、params（输入）、response（返回的）。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -258,20 +286,6 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/functions")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
-        if isinstance(result, list) and COMMON_MANIFEST:
-            common_list = [
-                {
-                    "name": entry["name"],
-                    "display_name": entry.get("display_name", ""),
-                    "description": entry.get("description", ""),
-                    "source": "common",
-                }
-                for entry in COMMON_MANIFEST
-            ]
-            kw = (arguments.get("keyword") or "").lower()
-            if kw:
-                common_list = [c for c in common_list if kw in c["name"].lower() or kw in c.get("description","").lower() or kw in c.get("display_name","").lower()]
-            result.extend(common_list)
 
     elif name == "listOntoSecurities":
         result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/securities")
@@ -317,7 +331,8 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         oid = arguments.get("ontology_id")
         if oid is None:
             raise ValueError(f"函数 {name} 缺少 ontology_id")
-        params = {k: v for k, v in arguments.items() if k != "ontology_id"}
+        # scope 是规划元数据（非函数输入），剥离后再转发后端；ontology_id 亦剥离（仅路由用）
+        params = {k: v for k, v in arguments.items() if k not in FUNCTION_SCOPE_KEYS and k != "ontology_id"}
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{API_BASE}/api/ontologies/{oid}/functions/{name}/execute",

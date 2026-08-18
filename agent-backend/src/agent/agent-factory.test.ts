@@ -22,9 +22,10 @@ vi.mock('../services/mcp-client.js', () => ({
     async listTools() {
       return { tools: [
         { name: 'executeOntoBehavior', description: '执行本体行为', inputSchema: { type: 'object', properties: { behavior_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['behavior_name', 'ontology_id'] } },
-        { name: 'calcSafetyStock', description: '计算安全库存', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, currentStock: { type: 'number' }, safetyStock: { type: 'number' } }, required: ['ontology_id'] } },
+        { name: 'calcSafetyStock', description: '计算安全库存', inputSchema: { type: 'object', properties: { scope: { type: 'object', properties: { ontology_id: { type: 'integer', const: 1 }, scenario_id: { type: 'integer', const: 1 }, scenario_name: { type: 'string', const: '生产调度' }, ontology_name: { type: 'string', const: '原材料采购和库存' } } }, ontology_id: { type: 'integer' }, currentStock: { type: 'number' }, safetyStock: { type: 'number' } }, required: ['ontology_id'] } },
         { name: 'sumRawNotArrivalQty', description: '未到位数求和', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, purchaseRecordSet: { type: 'array' } }, required: ['ontology_id'] } },
         { name: 'listOntoBehaviors', description: '列出本体行为', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' } } } },
+        { name: 'listOntoFunctions', description: '列出本体函数（元数据查询）', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, keyword: { type: 'string' } }, required: ['ontology_id'] } },
         { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {} } },
         { name: 'weatherQuery', description: '外部天气查询', inputSchema: { type: 'object', properties: { city: { type: 'string' } } } },
       ] };
@@ -155,6 +156,48 @@ async function captureParentTools() {
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
 }
 
+describe('AgentFactory submit_plan 互斥门与键省略容忍', () => {
+  beforeEach(() => mockedAgent.mockClear());
+
+  const baseSub = () => ({
+    seq: 1, params: {}, description: 'd', guidance: 'g',
+    scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1,
+  });
+
+  it('schema 层不再强制 behavior 键（LLM 对函数子任务本能省略该键，不应在 schema 层被拒）', async () => {
+    const tool = (await captureParentTools()).find(t => t.name === 'submit_plan');
+    const required: string[] = (tool.parameters as any).properties.subtasks.items.required ?? [];
+    expect(required).not.toContain('behavior');
+    expect(required).not.toContain('function');
+  });
+
+  it('函数子任务省略 behavior 键 → 正常提交，behavior 规整为空串', async () => {
+    let received: any = null;
+    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
+    await factory.createParentAgent([], [], () => {}, (plan) => { received = plan; });
+    const sp = (mockedAgent.mock.calls[0][0].initialState.tools as any[]).find(t => t.name === 'submit_plan');
+    const sub = { ...baseSub(), function: 'sumRawNotArrivalQty' }; // 无 behavior 键
+    const res = await sp.execute('c1', { subtasks: [sub] });
+    expect(res.details.submitted).toBe(true);
+    expect(received.subtasks[0].behavior).toBe('');
+    expect(received.subtasks[0].function).toBe('sumRawNotArrivalQty');
+  });
+
+  it('behavior/function 都省略 → 互斥门抛错（语义校验在 execute，不依赖 schema）', async () => {
+    const tool = (await captureParentTools()).find(t => t.name === 'submit_plan');
+    await expect(tool.execute('c2', { subtasks: [baseSub()] }))
+      .rejects.toThrow('必须且只能填写 behavior 或 function 之一');
+  });
+
+  it('behavior 填纯空白串 + function 正常 → 空白规整为空串，按函数子任务放行（下游裸真值判别不再被骗）', async () => {
+    const tool = (await captureParentTools()).find(t => t.name === 'submit_plan');
+    const plan: any = { subtasks: [{ ...baseSub(), behavior: '  ', function: 'sumRawNotArrivalQty' }] };
+    const res = await tool.execute('c3', plan);
+    expect(res.details.submitted).toBe(true);
+    expect(plan.subtasks[0].behavior).toBe(''); // 规整已回写
+  });
+});
+
 describe('AgentFactory 父 Agent 工具职责边界', () => {
   beforeEach(() => mockedAgent.mockClear());
 
@@ -164,30 +207,73 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     expect(names).toContain('submit_plan');
   });
 
-  it('父 Agent 挂只读 list_mcp_tools，返回紧凑可挂载工具清单（名字+分类+描述，剔除 list* 与 executeOntoBehavior）', async () => {
+  it('父 Agent 挂只读 listAllMcpFunctions，默认返回全量函数/工具清单（名字+分类+描述+完整params，本体函数带scope，剔除 list* 与 executeOntoBehavior）', async () => {
     const tools = await captureParentTools();
-    const tool = tools.find(t => t.name === 'list_mcp_tools');
+    const tool = tools.find(t => t.name === 'listAllMcpFunctions');
     expect(tool).toBeTruthy();
     const result = await tool.execute('call-list', {});
     const text = result.content[0].text;
     const parsed = JSON.parse(text);
     const names = parsed.map((t: any) => t.name);
-    expect(names).toContain('weatherQuery'); // 其他 MCP 工具可见（供父 Agent 规划 related_functions）
+    expect(names).toContain('weatherQuery'); // 其他 MCP 工具可见（可规划为函数子任务 / related_functions）
     expect(names).toContain('calcSafetyStock'); // 本体函数可见
-    expect(names).not.toContain('listOntoBehaviors'); // 本体浏览不属可挂载域
-    expect(names).not.toContain('executeOntoBehavior'); // 行为执行不属可挂载域
-    // 分类正确且紧凑（不返回参数 schema）
+    expect(names).toContain('getCurrentDate'); // 公共函数可见
+    expect(names).not.toContain('listOntoBehaviors'); // 本体浏览不属可规划域
+    expect(names).not.toContain('listOntoFunctions'); // MCP 版函数元数据查询工具不属可规划域（与本地清单工具共存不串扰）
+    expect(names).not.toContain('executeOntoBehavior'); // 行为执行不属可规划域
+    // 分类正确
     const byName = Object.fromEntries(parsed.map((t: any) => [t.name, t]));
     expect(byName['calcSafetyStock'].category).toBe('本体函数');
     expect(byName['getCurrentDate'].category).toBe('公共函数');
     expect(byName['weatherQuery'].category).toBe('其他MCP工具');
-    expect(byName['weatherQuery'].parameters).toBeUndefined();
+    // 完整参数结构（type/required/description/example）
+    expect(byName['getCurrentDate'].params).toEqual({});
+    expect(byName['weatherQuery'].params).toEqual({ city: { type: 'string', required: false } });
+    // 本体函数：params 剔除 scope/ontology_id，另附 scope 真实值（父 Agent 填子任务场景/本体字段用）
+    expect(byName['calcSafetyStock'].params).toEqual({
+      currentStock: { type: 'number', required: false },
+      safetyStock: { type: 'number', required: false },
+    });
+    expect(byName['calcSafetyStock'].scope).toEqual({
+      ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存',
+    });
+    expect(byName['weatherQuery'].scope).toBeUndefined(); // 非本体函数无 scope
+  });
+
+  it('listAllMcpFunctions 按 ontology_id 过滤：只滤本体函数（按 scope 匹配），全局工具（公共/其他MCP）保留', async () => {
+    const tools = await captureParentTools();
+    const tool = tools.find(t => t.name === 'listAllMcpFunctions');
+    const parsed = JSON.parse((await tool.execute('call-f1', { ontology_id: 1 })).content[0].text);
+    const names = parsed.map((t: any) => t.name);
+    expect(names).toContain('calcSafetyStock'); // scope.ontology_id=1 命中
+    expect(names).not.toContain('sumRawNotArrivalQty'); // 本体函数但无匹配 scope → 被过滤
+    expect(names).toContain('getCurrentDate'); // 公共函数是全局工具，保留
+    expect(names).toContain('weatherQuery'); // 其他MCP工具是全局工具，保留
+  });
+
+  it('listAllMcpFunctions 按 keyword 过滤：模糊匹配名称/描述（大小写不敏感）', async () => {
+    const tools = await captureParentTools();
+    const tool = tools.find(t => t.name === 'listAllMcpFunctions');
+    const byKw = JSON.parse((await tool.execute('call-f2', { keyword: 'WEATHER' })).content[0].text);
+    expect(byKw.map((t: any) => t.name)).toEqual(['weatherQuery']);
+    const byDesc = JSON.parse((await tool.execute('call-f3', { keyword: '安全库存' })).content[0].text);
+    expect(byDesc.map((t: any) => t.name)).toEqual(['calcSafetyStock']);
+  });
+
+  it('listAllMcpFunctions 双过滤为与关系；ontology_id 接受字符串数字', async () => {
+    const tools = await captureParentTools();
+    const tool = tools.find(t => t.name === 'listAllMcpFunctions');
+    // ontology_id='1'（字符串）AND keyword='库存' → 只剩 calcSafetyStock（全局工具不含关键词也被滤掉）
+    const parsed = JSON.parse((await tool.execute('call-f4', { ontology_id: '1', keyword: '库存' })).content[0].text);
+    expect(parsed.map((t: any) => t.name)).toEqual(['calcSafetyStock']);
   });
 
   it('父 Agent 只挂本体查询工具（list*），不挂函数/外部工具', async () => {
     const names = (await captureParentTools()).map(t => t.name);
     expect(names).toContain('listOntoBehaviors');
-    expect(names).not.toContain('getCurrentDate'); // 公共函数不挂父 Agent（由 list_mcp_tools 发现）
+    expect(names).toContain('listOntoFunctions'); // MCP 版本体函数元数据查询工具（恢复挂载，判断3 用）
+    expect(names).toContain('listAllMcpFunctions'); // 本地内部工具：可规划函数/工具清单（只读）
+    expect(names).not.toContain('getCurrentDate'); // 公共函数不挂父 Agent（由 listAllMcpFunctions 发现）
   });
 
   it('父 Agent 不挂 executeOntoBehavior / 本体函数 / 外部工具', async () => {
@@ -208,6 +294,7 @@ describe('AgentFactory 子 Agent 工具职责边界', () => {
     expect(names).toContain('calcSafetyStock'); // legalCalls.functions 声明的本体函数
     expect(names).toContain('getCurrentDate');
     expect(names).not.toContain('listOntoBehaviors');
+    expect(names).not.toContain('listOntoFunctions'); // 本体浏览工具不挂子 Agent
     expect(names).not.toContain('executeOntoFunction');
   });
 });

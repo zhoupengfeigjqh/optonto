@@ -8,6 +8,17 @@ import type { ToolErrorBudget } from './error-budget.js';
 import type { LegalCalls } from './legal-calls.js';
 import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta } from '../types.js';
 
+/** 可挂载函数/工具目录条目（getMountableToolCatalog 返回）。三类：本体函数 / 公共函数 / 其他MCP工具 */
+export interface MountableToolInfo {
+  name: string;
+  category: '本体函数' | '公共函数' | '其他MCP工具';
+  description: string;
+  /** 参数声明结构（inputSchema 经 schemaToDeclaredParams 转形，已剥离 scope/ontology_id），与子任务 params 填法同形 */
+  params: Record<string, any>;
+  /** 本体函数独有：所属场景/本体真实值（ontology_id/scenario_id/scenario_name/ontology_name） */
+  scope?: Record<string, any>;
+}
+
 /** AgentFactory 门面 —— Orchestrator 需要的工厂能力（创建父/子 Agent + run 级资源释放） */
 export interface AgentFactoryPort {
   createParentAgent(
@@ -25,6 +36,8 @@ export interface AgentFactoryPort {
   ): Promise<AgentPort>;
   /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
   callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;
+  /** 可挂载函数/工具目录（本体函数/公共函数/其他MCP工具三类），父 Agent listAllMcpFunctions 工具与规划校验共用 */
+  getMountableToolCatalog(): Promise<MountableToolInfo[]>;
   closeAll(): Promise<void>;
 }
 
@@ -34,8 +47,8 @@ export interface OntologyGatewayPort {
   getBehaviorNames(scenario: string, ontology: string): string[];
   /** 函数元信息（中文显示名），工具调用展示用 */
   getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string };
-  /** 本体函数名列表（函数子任务名校验用） */
+  /** 本体函数名列表（本体函数 ∪ 公共函数；函数子任务名校验用，其他MCP工具由 MountableToolInfo 目录补充） */
   getFunctionNames(scenario: string, ontology: string): string[];
-  /** 本体函数参数结构（函数子任务参数结构校验用）；公共函数返回 null（无 params 声明） */
+  /** 函数参数结构（函数子任务参数结构校验用）：本体函数取 functions[].params，公共函数取 functions.json inputSchema 转形；都无声明返回 null */
   getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null;
 }

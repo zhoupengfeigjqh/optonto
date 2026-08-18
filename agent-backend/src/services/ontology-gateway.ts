@@ -12,7 +12,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
-import { COMMON_FUNCTION_NAMES } from './common-functions.js';
+import { getCommonFunctionParams, getCommonFunctionMeta, getCommonFunctionNames } from './common-functions.js';
 import type { BehaviorMeta, RuleDetail, ConceptInfo } from '../types.js';
 
 export class OntologyGateway {
@@ -123,38 +123,42 @@ export class OntologyGateway {
 
   /**
    * 获取函数子任务可用的函数名列表（本体函数 ∪ 公共函数），函数子任务名校验用。
-   * 本体函数来自 ontology.yaml functions[]；公共函数来自全局 functions.json（与 AgentFactory 同源 COMMON_FUNCTION_NAMES）。
+   * 本体函数来自 ontology.yaml functions[]；公共函数来自全局 functions.json（与 AgentFactory 同源 getCommonFunctionNames）。
    */
   getFunctionNames(scenario: string, ontology: string): string[] {
     const data = this.loadOntologyData(scenario, ontology);
     const ontoFns = (data?.functions || []).map((f: any) => f.name).filter(Boolean);
-    return [...new Set([...ontoFns, ...COMMON_FUNCTION_NAMES])];
+    return [...new Set([...ontoFns, ...getCommonFunctionNames()])];
   }
 
   /**
-   * 按函数名取本体函数的参数结构。
-   * 函数定义在 functions[] 中才有 params（本体函数）；不在则返回 null（公共函数）。
-   * 注意：本体函数现已注册为一等 MCP 工具（参数在工具 schema 可见），本方法仅用于校验脚本/工具链，
-   * 不再用于子任务指令渲染（renderRelatedFunctions 已移除）。
+   * 按函数名取参数结构（函数子任务参数结构校验用）。
+   * 本体函数取 functions[].params（源形式：内联 required:boolean）；本体函数没有则查公共函数
+   * （functions.json 的 inputSchema 为标准 JSON Schema，经 schemaToDeclaredParams 转成同形声明）。
+   * 两类都没有（函数名不在任何声明源）→ 返回 null，结构无从比对，由 MCP 工具 schema 兜底。
    */
   getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null {
     const data = this.loadOntologyData(scenario, ontology);
     const fn = (data?.functions || []).find((f: any) => f.name === functionName);
-    if (!fn) return null;
-    return fn?.params || {};
+    if (fn) return fn?.params || {};
+    return getCommonFunctionParams(functionName);
   }
 
   /**
    * 按函数名提取展示元信息（中文显示名 + 描述），工具调用展示用。
-   * 不 fallback 到英文函数名：无中文名时返回空，让上层用子任务描述兜底。
+   * 本体函数优先取 functions[]；没有则回查公共函数（functions.json 的 display_name）。
+   * 都不在 → 返回空，让上层用子任务描述兜底（不 fallback 到英文函数名）。
    */
   getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string } {
     const data = this.loadOntologyData(scenario, ontology);
     const fn = (data?.functions || []).find((f: any) => f.name === functionName);
-    return {
-      display_name: fn?.display_name || fn?.description || '',
-      description: fn?.description,
-    };
+    if (fn) {
+      return {
+        display_name: fn?.display_name || fn?.description || '',
+        description: fn?.description,
+      };
+    }
+    return getCommonFunctionMeta(functionName);
   }
 
   /**

@@ -17,6 +17,9 @@ function findEnvPath(): string {
 }
 
 function loadConfig() {
+  // 注意：这里的 process.env 写入是 pi-ai SDK 的鉴权契约，不能删——
+  // SDK 内部从 process.env.DEEPSEEK_API_KEY 取 key（见 node_modules/@earendil-works/pi-ai env-api-keys.js），
+  // 不把 config/.env 注入 env，Agent 调用会因缺 key 失败。已存在的 env 优先（容器注入 > 文件）。
   const envPath = findEnvPath();
   if (envPath) {
     const content = readFileSync(envPath, 'utf-8');

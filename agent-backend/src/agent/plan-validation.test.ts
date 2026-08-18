@@ -3,9 +3,11 @@
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
  */
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateParamsStructure } from './plan-validation.js';
+import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateParamsStructure, validatePlanStructure } from './plan-validation.js';
+import { FunctionCatalog } from './function-catalog.js';
+import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
-import type { OntologyGatewayPort } from './agent-ports.js';
+import type { MountableToolInfo, OntologyGatewayPort } from './agent-ports.js';
 
 function st(seq: number, depends_on?: number[]): SubTask {
   return {
@@ -44,6 +46,44 @@ describe('topologicalSort', () => {
   });
 });
 
+// ─── 依赖结构校验（含 executedSeqs 中继语义） ─────────────────────────
+
+describe('validatePlanStructure', () => {
+  const plan = (...subs: SubTask[]): SubTaskPlan => ({ subtasks: subs } as SubTaskPlan);
+
+  it('合法依赖链 → 无错误', () => {
+    expect(validatePlanStructure(plan(st(1), st(2, [1]), st(3, [2])))).toEqual([]);
+  });
+
+  it('悬空依赖（dep 既不在规划也未执行）→ 报错', () => {
+    const errors = validatePlanStructure(plan(st(2, [1])));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('子任务 2 依赖的子任务 1 不存在');
+  });
+
+  it('dep 指向已执行成功的子任务（executedSeqs）→ 合法（中继调整规划只含剩余子任务的场景）', () => {
+    // 波次反馈：子任务 1（getCurrentDate）已执行，父Agent 重提的调整规划只含剩余 seq 2/3
+    const adjusted = plan(st(2, [1]), st(3, [2]));
+    expect(validatePlanStructure(adjusted, new Set([1]))).toEqual([]);
+  });
+
+  it('dep 指向未执行的未知 seq → 仍报错（executedSeqs 不放行真空引用）', () => {
+    const errors = validatePlanStructure(plan(st(2, [9])), new Set([1]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('子任务 2 依赖的子任务 9 不存在');
+  });
+
+  it('自引用仍报错（executedSeqs 不豁免）', () => {
+    const errors = validatePlanStructure(plan(st(2, [2])), new Set([2]));
+    expect(errors[0]).toContain('不能依赖自身');
+  });
+
+  it('循环依赖仍检出', () => {
+    const errors = validatePlanStructure(plan(st(1, [2]), st(2, [1])));
+    expect(errors.some(e => e.includes('循环'))).toBe(true);
+  });
+});
+
 // ─── 函数子任务名校验 + 参数结构校验分支 ─────────────────────────────
 
 function fakeGateway(): OntologyGatewayPort {
@@ -76,16 +116,39 @@ function plan(subtasks: SubTask[]): SubTaskPlan {
   return { subtasks };
 }
 
+/** 其他MCP工具目录项（FunctionCatalog 的第三数据源） */
+function mcpTool(name: string, params: Record<string, any> = {}): MountableToolInfo {
+  return { name, category: '其他MCP工具', description: '', params };
+}
+
+/** 经真实 FunctionCatalog 构建 view（fake gateway + fake MCP 目录），测试覆盖真实三源 join 链路 */
+async function mkView(mcpTools: MountableToolInfo[] = []): Promise<FunctionCatalogView> {
+  return new FunctionCatalog(fakeGateway(), async () => mcpTools).view();
+}
+
 describe('validateFunctionNames', () => {
-  it('函数子任务的 function 不在 functions[] → 非法，并给出合法名', () => {
-    const invalid = validateFunctionNames(fakeGateway(), plan([fnSubtask('notExistFn')]));
+  it('函数子任务的 function 不在 functions[] → 非法，并给出合法名', async () => {
+    const invalid = validateFunctionNames(await mkView(), plan([fnSubtask('notExistFn')]));
     expect(invalid).toHaveLength(1);
     expect(invalid[0].sub.function).toBe('notExistFn');
     expect(invalid[0].valid).toContain('sumRawNotArrivalQty');
   });
 
-  it('行为子任务跳过函数名校验', () => {
-    expect(validateFunctionNames(fakeGateway(), plan([behSubtask('QueryPurchaseRecords')]))).toEqual([]);
+  it('行为子任务跳过函数名校验', async () => {
+    expect(validateFunctionNames(await mkView(), plan([behSubtask('QueryPurchaseRecords')]))).toEqual([]);
+  });
+
+  it('其他MCP工具在目录中 → 合法（函数子任务可规划外部工具）', async () => {
+    const view = await mkView([mcpTool('generate_line_chart')]);
+    expect(validateFunctionNames(view, plan([fnSubtask('generate_line_chart')]))).toEqual([]);
+  });
+
+  it('其他MCP工具不在目录中 → 非法，合法名含目录内工具', async () => {
+    const view = await mkView([mcpTool('weatherQuery')]);
+    const invalid = validateFunctionNames(view, plan([fnSubtask('generate_line_chart')]));
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0].valid).toContain('weatherQuery');
+    expect(invalid[0].valid).toContain('sumRawNotArrivalQty');
   });
 });
 
@@ -96,17 +159,28 @@ describe('validateBehaviorNames 跳过函数节点', () => {
 });
 
 describe('validateParamsStructure 函数/行为分支', () => {
-  it('函数子任务：按函数 params 校验必填', () => {
-    const errors = validateParamsStructure(fakeGateway(), plan([fnSubtask('sumRawNotArrivalQty')]));
+  it('函数子任务：按函数 params 校验必填', async () => {
+    const errors = validateParamsStructure(fakeGateway(), await mkView(), plan([fnSubtask('sumRawNotArrivalQty')]));
     expect(errors).toEqual(['子任务1(sumRawNotArrivalQty) 缺少必填参数 purchaseRecordSet']);
   });
 
-  it('公共函数（getFunctionParams 返回 null）跳过结构校验', () => {
-    expect(validateParamsStructure(fakeGateway(), plan([fnSubtask('calcSafetyStock')]))).toEqual([]);
+  it('函数无声明源（view 返回 null）跳过结构校验', async () => {
+    expect(validateParamsStructure(fakeGateway(), await mkView(), plan([fnSubtask('calcSafetyStock')]))).toEqual([]);
   });
 
-  it('行为子任务：仍按行为 params 校验', () => {
-    const errors = validateParamsStructure(fakeGateway(), plan([behSubtask('CreatePurchaseRecord')]));
+  it('其他MCP工具：按目录声明校验必填（gateway 无声明时兜底数据源）', async () => {
+    const view = await mkView([mcpTool('generate_line_chart', { data: { required: true, type: 'array' } })]);
+    const errors = validateParamsStructure(fakeGateway(), view, plan([fnSubtask('generate_line_chart')]));
+    expect(errors).toEqual(['子任务1(generate_line_chart) 缺少必填参数 data']);
+  });
+
+  it('其他MCP工具：目录声明为空（MCP 无 inputSchema）→ 跳过结构校验', async () => {
+    const view = await mkView([mcpTool('weatherQuery')]);
+    expect(validateParamsStructure(fakeGateway(), view, plan([fnSubtask('weatherQuery')]))).toEqual([]);
+  });
+
+  it('行为子任务：仍按行为 params 校验', async () => {
+    const errors = validateParamsStructure(fakeGateway(), await mkView(), plan([behSubtask('CreatePurchaseRecord')]));
     expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
   });
 });

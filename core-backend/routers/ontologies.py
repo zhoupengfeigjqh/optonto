@@ -37,6 +37,8 @@ async def list_all_functions_api():
             result.append({
                 "ontology_id": oid,
                 "ontology_name": ontology_name,
+                "scenario_id": onto.get("scenario_id"),
+                "scenario_name": scenario_name,
                 "name": fn.name,
                 "display_name": fn.display_name,
                 "description": fn.description,

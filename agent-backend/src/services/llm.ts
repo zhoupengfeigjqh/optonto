@@ -5,7 +5,7 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { getModel, getModels } from '@earendil-works/pi-ai';
 import { config } from '../config.js';
-import { contentToText } from '../agent/text-utils.js';
+import { contentToText } from '../utils/text-utils.js';
 
 /**
  * 解析 DeepSeek 模型：优先用 config.yaml 的 modelName，无效时回退默认 flash。

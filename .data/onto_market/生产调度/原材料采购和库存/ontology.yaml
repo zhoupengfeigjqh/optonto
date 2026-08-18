@@ -935,7 +935,6 @@ rules:
   description: IF 采购单的关联客户订单ID（relatedOrderId）为空 THEN 该采购目的可视为“补充库存”。
   related_behaviors:
   - CreatePurchaseRecord
-  - QueryPurchaseRecords
   related_functions: []
   display_name: 采购目的推理
   rule_type: 推理规则
@@ -984,7 +983,7 @@ rules:
           type: set
           concept: CustomerOrder
           attribute: customerOrderId
-    then: 由于关联订单编号不存在于客户订单中，因此请中断订单创建
+    then: 由于关联订单编号不存在于客户订单中，因此该订单创建无效，请中止
     else: 关联订单编号存在或未填写，校验通过
   data_supplements: []
 events:

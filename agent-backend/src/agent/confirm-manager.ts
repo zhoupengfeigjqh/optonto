@@ -1,9 +1,13 @@
 /**
  * ConfirmManager —— 规划确认 / 安全管控弹窗的等待-回调管理。
  * 独立成模块：避免 subtask-runner 与 orchestrator 循环依赖。
+ *
+ * 对外依赖 ConfirmPort 接口而非具体类（seam）：编排链路（orchestrator / SubtaskRunnerDeps）
+ * 面向接口，测试可直接 fake 五个方法，无需 as unknown as 强转。
  */
 import { randomUUID } from 'node:crypto';
-import type { SubTaskPlan, SSEEvent } from '../types.js';
+import type { SubTaskPlan } from '../types.js';
+import type { EventChannel } from './event-channel.js';
 
 export const CONFIRM_TIMEOUT = 60000;
 
@@ -23,7 +27,21 @@ export interface PlanConfirmResult {
   reason?: 'user' | 'timeout' | 'abort';
 }
 
-export class ConfirmManager {
+/** 确认管理接口 —— 编排层依赖的确认能力（弹窗请求 + 路由回调 + 全量中断） */
+export interface ConfirmPort {
+  /** 安全管控确认弹窗（写操作/security 行为执行前） */
+  requestConfirm(behavior: string, content: string, params: Record<string, any> | undefined, emit: EventChannel): Promise<ConfirmResult>;
+  /** 规划确认弹窗（多步规划执行前） */
+  requestPlanConfirm(plan: SubTaskPlan, emit: EventChannel): Promise<PlanConfirmResult>;
+  /** 路由回调：用户答复安全管控弹窗 */
+  handleConfirm(confirmId: string, approved: boolean): void;
+  /** 路由回调：用户答复规划确认弹窗 */
+  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): void;
+  /** 中断：立即拒绝所有待确认弹窗（reason='abort'） */
+  abortAll(): void;
+}
+
+export class ConfirmManager implements ConfirmPort {
   private pending = new Map<string, {
     resolve: (v: ConfirmResult) => void;
     timer: NodeJS.Timeout;
@@ -33,9 +51,9 @@ export class ConfirmManager {
     timer: NodeJS.Timeout;
   }>();
 
-  async requestConfirm(behavior: string, content: string, params: Record<string, any> | undefined, sendEvent: (e: SSEEvent) => void): Promise<ConfirmResult> {
+  async requestConfirm(behavior: string, content: string, params: Record<string, any> | undefined, emit: EventChannel): Promise<ConfirmResult> {
     const confirmId = randomUUID();
-    sendEvent({ type: 'confirm', confirmId, behavior, content, params });
+    emit.raw({ type: 'confirm', confirmId, behavior, content, params });
     return new Promise((resolve) => {
       const timer = setTimeout(() => { this.pending.delete(confirmId); resolve({ approved: false, reason: 'timeout' }); }, CONFIRM_TIMEOUT);
       this.pending.set(confirmId, { resolve, timer });
@@ -50,9 +68,9 @@ export class ConfirmManager {
     entry.resolve({ approved, reason: 'user' });
   }
 
-  async requestPlanConfirm(plan: SubTaskPlan, sendEvent: (e: SSEEvent) => void): Promise<PlanConfirmResult> {
+  async requestPlanConfirm(plan: SubTaskPlan, emit: EventChannel): Promise<PlanConfirmResult> {
     const confirmId = randomUUID();
-    sendEvent({ type: 'plan_confirm', confirmId, plan });
+    emit.raw({ type: 'plan_confirm', confirmId, plan });
     return new Promise((resolve) => {
       const timer = setTimeout(() => { this.planPending.delete(confirmId); resolve({ approved: false, reason: 'timeout' }); }, CONFIRM_TIMEOUT);
       this.planPending.set(confirmId, { resolve, timer });
@@ -69,7 +87,7 @@ export class ConfirmManager {
 
   /**
    * 中断：立即拒绝所有待确认的规划/安全管控弹窗（reason='abort'）。
-   * 注：ConfirmManager 与 Orchestrator 同属单例，假定同一时刻只有一个活动对话。
+   * 注：同一时刻只有一个活动 run（orchestrator.execute 入口互斥保证），abortAll 不误伤其他 run。
    */
   abortAll(): void {
     for (const [id, entry] of this.pending) {

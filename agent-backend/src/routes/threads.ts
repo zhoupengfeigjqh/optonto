@@ -1,16 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { ThreadStore } from '../services/thread-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
-import { MemoryService } from '../services/memory-service.js';
+import { ChatSession } from '../services/chat-session.js';
 import { Orchestrator } from '../agent/orchestrator.js';
-import type { ThreadMessage, SSEEvent } from '../types.js';
+import type { SSEEvent } from '../types.js';
 import { ForbiddenError } from '../security/path-access-controller.js';
 
 export function createThreadsRouter(
   threadStore: ThreadStore,
   skillLoader: SkillLoader,
   orchestrator: Orchestrator,
-  memoryService: MemoryService,
+  chatSession: ChatSession,
 ): Router {
   const router = Router();
 
@@ -90,26 +90,9 @@ export function createThreadsRouter(
 
     const sendEvent = (event: SSEEvent) => { res.write(`data: ${JSON.stringify(event)}\n\n`); };
 
+    // 纯 HTTP 适配：对话生命周期（记忆压缩/编排/持久化）全部委托 ChatSession
     try {
-      const thread = threadStore.get(scenario, ontology, tid);
-      let history: ThreadMessage[] = thread.messages || [];
-
-      // 短期记忆：压缩历史（生成摘要则写回线程，压缩后的消息喂父Agent 上下文）
-      try {
-        const prepared = await memoryService.prepareHistory(history);
-        if (prepared.summary !== null) {
-          threadStore.replaceMessages(scenario, ontology, tid, prepared.messages);
-          history = prepared.messages;
-        }
-      } catch (e: any) {
-        console.error(`[threads] 历史压缩失败（忽略，走原始历史）: ${e?.message || e}`);
-      }
-
-      const result = await orchestrator.execute(message, thread.skill_names, history, sendEvent);
-
-      const userMsg: ThreadMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };
-      const asstMsg: ThreadMessage = { role: 'assistant', content: result, timestamp: new Date().toISOString() };
-      threadStore.appendMessages(scenario, ontology, tid, [userMsg, asstMsg]);
+      await chatSession.chat(scenario, ontology, tid, message, sendEvent);
     } catch (e: any) {
       sendEvent({ type: 'error', message: e.message || '请求失败' });
     } finally {

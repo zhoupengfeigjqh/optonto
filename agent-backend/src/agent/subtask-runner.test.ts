@@ -8,8 +8,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SubtaskRunner, type SubtaskRunnerDeps } from './subtask-runner.js';
 import { wrapExecuteWithErrorBudget, type ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
-import type { ConfirmManager } from './confirm-manager.js';
+import type { ConfirmPort } from './confirm-manager.js';
+import { createEventChannel } from './event-channel.js';
 import type { SubTask, BehaviorMeta, SkillContext } from '../types.js';
+
+/** 静默事件通道（测试不关心事件流，只关心返回值） */
+const noopChannel = createEventChannel(() => {});
 
 // ─── fixtures ──────────────────────────────
 
@@ -41,7 +45,7 @@ const context: SkillContext = {
 function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): SubtaskRunnerDeps {
   const confirm = vi.fn(async () => ({ approved: true }));
   return {
-    confirmManager: { requestConfirm: confirm } as unknown as ConfirmManager,
+    confirmManager: { requestConfirm: confirm } as unknown as ConfirmPort,
     createChildAgent,
     childAgents: new Set(),
     getBehaviorDisplayName: () => '',
@@ -84,7 +88,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, () => {}, () => {});
+    const result = await runner.run(subTask, meta, context, noopChannel);
 
     // createChildAgent 确实收到了预算
     expect(capturedBudget).toBeDefined();
@@ -117,7 +121,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, () => {}, () => {});
+    const result = await runner.run(subTask, meta, context, noopChannel);
 
     expect(capturedBudget!.exceeded).toBe(false);
     expect(capturedBudget!.count).toBe(0);
@@ -145,7 +149,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, () => {}, () => {});
+    const result = await runner.run(subTask, meta, context, noopChannel);
 
     // 结果以【状态】标记为准：工具报过 1 次错（预算未达上限）但最终成功 → 成功
     expect(result.success).toBe(true);
@@ -173,7 +177,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, () => {}, () => {});
+    const result = await runner.run(subTask, meta, context, noopChannel);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('前置规则验证失败');
@@ -196,7 +200,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, () => {}, () => {});
+    const result = await runner.run(subTask, meta, context, noopChannel);
 
     expect(result.success).toBe(true);
     expect(promptCalls).toBe(2);                 // 1 次初始 + 1 次异常重试
@@ -216,7 +220,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, () => {}, () => {});
+    const result = await runner.run(subTask, meta, context, noopChannel);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('LLM 调用异常');
@@ -241,7 +245,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaNoRules, context, () => {}, () => {});
+    const result = await runner.run(subTask, metaNoRules, context, noopChannel);
 
     expect(result.success).toBe(true);
     expect(instruction).toContain('### 本子任务合法行为列表');
@@ -275,7 +279,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaWithRules, context, () => {}, () => {});
+    const result = await runner.run(subTask, metaWithRules, context, noopChannel);
 
     expect(result.success).toBe(true);
     expect(instruction).toContain('- 规则关联行为: QueryRawMaterials');
@@ -306,7 +310,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTaskWithFuncs, metaWithRules, context, () => {}, () => {});
+    const result = await runner.run(subTaskWithFuncs, metaWithRules, context, noopChannel);
 
     expect(result.success).toBe(true);
     // 规则声明 getCurrentDate、calcSafetyStock + 父 Agent 补充 sumRawNotArrivalQty → 并集（单一「可用函数/工具」行）

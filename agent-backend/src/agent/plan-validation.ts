@@ -1,9 +1,10 @@
 /**
  * 规划校验 —— 纯函数集合，脱离 orchestrator 可独立单测。
- * 输入 plan（+ 只读的 OntologyGateway），输出错误/非法项列表，不做任何编排副作用。
+ * 输入 plan（+ 只读的 OntologyGateway / FunctionCatalogView），输出错误/非法项列表，不做任何编排副作用。
  */
 import type { SubTask, SubTaskPlan } from '../types.js';
 import type { OntologyGatewayPort } from './agent-ports.js';
+import type { FunctionCatalogView } from './function-catalog.js';
 import { validateParamStructure } from './param-contract.js';
 
 export interface InvalidBehavior {
@@ -22,24 +23,27 @@ export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTas
   return invalid;
 }
 
-/** 函数名合法性：函数子任务的 function 必须存在于所属本体的 functions[]。行为子任务跳过。 */
-export function validateFunctionNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidBehavior[] {
+/** 函数名合法性：函数子任务的 function 必须存在于合法函数集合。行为子任务跳过。
+ *  合法集合由 FunctionCatalogView 单源提供（本体函数 ∪ 公共函数 ∪ 其他MCP工具，三源 join 已收进 FunctionCatalog）。 */
+export function validateFunctionNames(catalog: FunctionCatalogView, plan: SubTaskPlan): InvalidBehavior[] {
   const invalid: InvalidBehavior[] = [];
   for (const st of plan.subtasks) {
     if (!st.function) continue;
-    const names = gateway.getFunctionNames(st.scenario_name, st.ontology_name);
+    const names = catalog.functionNames(st.scenario_name, st.ontology_name);
     if (!names.includes(st.function)) invalid.push({ sub: st, valid: names });
   }
   return invalid;
 }
 
-/** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。 */
-export function validateParamsStructure(gateway: OntologyGatewayPort, plan: SubTaskPlan): string[] {
+/** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。
+ *  函数节点的参数声明由 FunctionCatalogView 单源提供（本体函数 functions[].params → 公共函数 functions.json
+ *  → 其他MCP工具 inputSchema，三源按序；都没有 → null 跳过，参数正确性由 MCP 工具 schema 兜底）。 */
+export function validateParamsStructure(gateway: OntologyGatewayPort, catalog: FunctionCatalogView, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
     if (st.function) {
-      const fnParams = gateway.getFunctionParams(st.scenario_name, st.ontology_name, st.function);
-      // 公共函数无 params 声明（返回 null）→ 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）
+      const fnParams = catalog.functionParams(st.scenario_name, st.ontology_name, st.function);
+      // null = 函数不在任何声明源 → 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）
       if (fnParams) errors.push(...validateParamStructure(fnParams, st.params || {}, st.seq, st.function));
       continue;
     }
@@ -65,15 +69,20 @@ export function topologicalSort(subtasks: SubTask[]): SubTask[] {
   return sorted;
 }
 
-/** 规划结构校验：依赖存在性 / 无自引用 / 无环。返回错误列表（空数组 = 通过）。 */
-export function validatePlanStructure(plan: SubTaskPlan): string[] {
+/**
+ * 规划结构校验：依赖存在性 / 无自引用 / 无环。返回错误列表（空数组 = 通过）。
+ * executedSeqs：已执行成功子任务的 seq 集合（波次反馈中继路径传入）。
+ * dep 指向已执行子任务不算悬空——它不是"不存在"而是"已完成"：中继调整规划常只含
+ * 剩余未执行子任务，depends_on 仍引用已执行的前序 seq，这是合法的（执行时就绪检查读 session.results）。
+ */
+export function validatePlanStructure(plan: SubTaskPlan, executedSeqs: ReadonlySet<number> = new Set()): string[] {
   const errors: string[] = [];
   const seqs = new Set(plan.subtasks.map(st => st.seq));
   for (const st of plan.subtasks) {
     if (!st.depends_on || st.depends_on.length === 0) continue;
     for (const dep of st.depends_on) {
       if (dep === st.seq) errors.push(`子任务 ${st.seq} 不能依赖自身`);
-      else if (!seqs.has(dep)) errors.push(`子任务 ${st.seq} 依赖的子任务 ${dep} 不存在（可能已被删除）`);
+      else if (!seqs.has(dep) && !executedSeqs.has(dep)) errors.push(`子任务 ${st.seq} 依赖的子任务 ${dep} 不存在（可能已被删除）`);
     }
   }
   // 环检测（DFS 三色标记：0 未访问 / 1 访问中 / 2 已访问）

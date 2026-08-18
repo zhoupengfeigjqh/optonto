@@ -3,7 +3,7 @@
  * childAgent 通过 createChildAgent 工厂注入，测试时可用 fake 替换 pi-agent，
  * 确定性验证重试 / 安全门 / 中断逻辑。
  */
-import { contentToText, toolResultToText } from './text-utils.js';
+import { contentToText, toolResultToText } from '../utils/text-utils.js';
 import { parseResultStatus, stripResultStatus } from './result-protocol.js';
 import { requiredParamNames, renderParam } from './param-contract.js';
 import { createToolErrorBudget } from './error-budget.js';
@@ -11,14 +11,16 @@ import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
 import { legalCallNames } from './legal-calls.js';
 import type { LegalCalls } from './legal-calls.js';
-import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult, ExecutionEntry, SSEEvent } from '../types.js';
-import type { ConfirmManager } from './confirm-manager.js';
+import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult } from '../types.js';
+import type { ConfirmPort } from './confirm-manager.js';
+import type { EventChannel } from './event-channel.js';
+import { entryDisplay } from './event-channel.js';
 
 /** LLM 调用异常（prompt() 抛错：API/网络瞬态错误）时的最大重试次数。工具报错不在此列——由内层自纠（≤2 次 rethrow）与预算（第 3 次 terminate）处理。 */
 const MAX_LLM_EXCEPTION_RETRIES = 2;
 
 export interface SubtaskRunnerDeps {
-  confirmManager: ConfirmManager;
+  confirmManager: ConfirmPort;
   createChildAgent: (context: SkillContext, primaryBehavior: string, requiredParams?: string[], errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls) => Promise<AgentPort>;
   /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
   childAgents: Set<AgentPort>;
@@ -50,15 +52,17 @@ export class SubtaskRunner {
   async run(
     subTask: SubTask, meta: BehaviorMeta,
     context: SkillContext,
-    sendEvent: (e: SSEEvent) => void, pushEntry: (e: ExecutionEntry) => void,
+    emit: EventChannel,
   ): Promise<SubTaskResult> {
+    const display = entryDisplay(meta.display_name, subTask.behavior, subTask.description);
+    const pushEntry = emit.entry;
     // 安全管控（含参数审核）。写操作一律强制确认：有 securities 登记用登记内容，未登记用通用提示。
     const auditContent = meta.security?.audit_content || '此行为是写操作，请确认执行';
     // 中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值），避免只给 id 等无语义内容
     const confirmContent = this.buildSecurityContent(subTask, auditContent);
     if (meta.security || meta.isWrite) {
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'running', detail: confirmContent, params: subTask.params, source: 'child', seq: subTask.seq, ...this.displayInfo(subTask, meta) });
-      const confirmResult = await this.deps.confirmManager.requestConfirm(subTask.behavior, confirmContent, subTask.params, sendEvent);
+      emit.entry({ type: 'security_confirm', name: subTask.behavior, status: 'running', detail: confirmContent, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
+      const confirmResult = await this.deps.confirmManager.requestConfirm(subTask.behavior, confirmContent, subTask.params, emit);
       if (!confirmResult.approved) {
         const aborted = confirmResult.reason !== 'timeout'; // 用户拒绝/中断 → aborted；超时 → 常规失败
         return {
@@ -70,12 +74,12 @@ export class SubtaskRunner {
           aborted,
         };
       }
-      pushEntry({ time: new Date().toLocaleTimeString(), type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params, source: 'child', seq: subTask.seq, ...this.displayInfo(subTask, meta) });
+      emit.entry({ type: 'security_confirm', name: subTask.behavior, status: 'done', detail: '用户已确认', params: subTask.params, source: 'child', seq: subTask.seq, ...display });
     }
 
     // 组装指令（参数在规划确认/数据传播阶段已定死，安全确认只做批准/拒绝，不改参数）
     const instruction = this.buildInstruction(subTask, meta);
-    pushEntry({ time: new Date().toLocaleTimeString(), type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq, ...this.displayInfo(subTask, meta) });
+    emit.entry({ type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
     let lastError = '';
 
     // 复用同一个子 Agent 实例：失败原因、工具结果保留在上下文中（异常重试时参考）
@@ -103,17 +107,17 @@ export class SubtaskRunner {
           const displayParams = (event.toolName === 'executeOntoBehavior')
             ? (event.args?.params ?? event.args)
             : event.args;
-          // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名
+          // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名（无中文映射 → undefined，前端用工具原名兜底）
           const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, legalCalls.functions);
-          const entryDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
+          const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
           toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: entryDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         } else if (event.type === 'tool_execution_end') {
           const text = toolResultToText(event.result?.content);
           const display = toolDisplayNames.get(event.toolCallId);
           const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, legalCalls.functions);
-          const entryDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: entryDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
+          pushEntry({ type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         }
       });
 
@@ -152,7 +156,7 @@ export class SubtaskRunner {
           // 仅 prompt() 抛异常（LLM/传输层）才走重试；工具层报错已被预算与内层覆盖，不会走到这里
           lastError = e.message;
           if (attempt < MAX_LLM_EXCEPTION_RETRIES) {
-            pushEntry({ time: new Date().toLocaleTimeString(), type: 'tool_call', name: `LLM 异常重试 ${attempt + 1}/${MAX_LLM_EXCEPTION_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq, ...this.displayInfo(subTask, meta) });
+            pushEntry({ type: 'tool_call', name: `LLM 异常重试 ${attempt + 1}/${MAX_LLM_EXCEPTION_RETRIES}`, status: 'running', detail: lastError, source: 'child', seq: subTask.seq, ...display });
           }
         }
       }
@@ -182,20 +186,6 @@ export class SubtaskRunner {
       });
     }
     return lines.join('\n');
-  }
-
-  /**
-   * 子任务展示信息三元组：
-   *  - displayName：中文（英文），执行记录侧面板用，如 创建采购记录（CreatePurchaseRecord）
-   *  - displayLabel：纯中文（display_name 或 description），聊天区用
-   *  - description：子任务描述（父 Agent 生成），聊天区标题副行用
-   */
-  private displayInfo(subTask: SubTask, meta: BehaviorMeta) {
-    return {
-      displayName: `${meta.display_name || subTask.description}（${subTask.behavior}）`,
-      displayLabel: meta.display_name || subTask.description,
-      description: subTask.description,
-    };
   }
 
   /**
