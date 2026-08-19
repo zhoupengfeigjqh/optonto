@@ -53,6 +53,29 @@ export function validateAllParams(gateway: OntologyGatewayPort, catalog: Functio
   return errors;
 }
 
+/**
+ * seq 冲突校验：① 规划内 seq 唯一；② 反馈路径防冒名——seq 指向已执行子任务但任务名不一致
+ * （调整规划是权威全集，冒名 seq 会被"剔除已执行"filter 当成已执行静默吞掉，新任务凭空消失）。
+ * executedTasks：已执行 seq → 任务名（波次反馈路径传入）；不传（规划路径）则规则②休眠。
+ */
+export function validateSeqConflicts(plan: SubTaskPlan, executedTasks?: ReadonlyMap<number, string>): string[] {
+  const errors: string[] = [];
+  const seen = new Map<number, string>();
+  for (const st of plan.subtasks) {
+    const name = st.function || st.behavior;
+    if (seen.has(st.seq)) {
+      errors.push(`seq ${st.seq} 被重复占用（${seen.get(st.seq)} 与 ${name}）`);
+    } else {
+      seen.set(st.seq, name);
+    }
+    const executedName = executedTasks?.get(st.seq);
+    if (executedName !== undefined && executedName !== name) {
+      errors.push(`子任务 ${st.seq}（${name}）冒用了已执行子任务的 seq（已执行的是 ${executedName}），新增子任务请使用未占用的 seq`);
+    }
+  }
+  return errors;
+}
+
 /** 按 depends_on 拓扑排序（DFS 后序：依赖在前，被依赖的后继在后）。悬空依赖对应的 seq 直接跳过（已被 validatePlanStructure 兜底）。 */
 export function topologicalSort(subtasks: SubTask[]): SubTask[] {
   const sorted: SubTask[] = [];

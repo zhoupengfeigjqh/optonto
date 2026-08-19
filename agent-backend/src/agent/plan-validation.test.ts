@@ -3,7 +3,7 @@
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
  */
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure } from './plan-validation.js';
+import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
@@ -183,5 +183,43 @@ describe('validateAllParams 函数/行为分支', () => {
   it('行为子任务：仍按行为 params 校验', async () => {
     const errors = validateAllParams(fakeGateway(), await mkView(), plan([behSubtask('CreatePurchaseRecord')]));
     expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
+  });
+});
+
+describe('validateSeqConflicts（seq 防碰撞）', () => {
+  const planOf = (subs: SubTask[]): SubTaskPlan => ({ subtasks: subs });
+
+  it('规划内 seq 重复 → 报错指出重复占用', () => {
+    const errors = validateSeqConflicts(planOf([st(1), st(2), { ...st(2), behavior: 'Other' }]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('seq 2');
+    expect(errors[0]).toContain('重复占用');
+  });
+
+  it('seq 全部唯一 → 通过', () => {
+    expect(validateSeqConflicts(planOf([st(1), st(2), st(3)]))).toEqual([]);
+  });
+
+  it('反馈路径：复述已执行子任务（seq 与任务名一致）→ 合法', () => {
+    const executed = new Map([[1, 'B1']]);
+    expect(validateSeqConflicts(planOf([st(1), st(2)]), executed)).toEqual([]);
+  });
+
+  it('反馈路径：新任务冒名已执行 seq（任务名不一致）→ 报错', () => {
+    const executed = new Map([[1, 'B1']]);
+    const errors = validateSeqConflicts(planOf([{ ...st(1), behavior: 'NewTask' }]), executed);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('冒用');
+    expect(errors[0]).toContain('B1');
+  });
+
+  it('反馈路径：函数子任务按 function 名比对（一致则合法）', () => {
+    const executed = new Map([[1, 'sumRawNotArrivalQty']]);
+    const fnSub: SubTask = { ...st(1), behavior: '', function: 'sumRawNotArrivalQty' };
+    expect(validateSeqConflicts(planOf([fnSub]), executed)).toEqual([]);
+  });
+
+  it('规划路径不传 executedTasks → 冒名规则休眠（只查重复）', () => {
+    expect(validateSeqConflicts(planOf([st(1)]))).toEqual([]);
   });
 });

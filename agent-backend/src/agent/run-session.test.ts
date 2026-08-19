@@ -105,3 +105,14 @@ describe('RunSession — release', () => {
     expect(s.parentAgent).toBeNull();
   });
 });
+
+describe('RunSession — adjustmentInvalid（调整规划校验失败主动中止）', () => {
+  it('terminate(adjustmentInvalid) → isIncomplete=true，原因文案点破中止动机', () => {
+    const s = new RunSession();
+    expect(s.isIncomplete()).toBe(false);
+    s.terminate('adjustmentInvalid');
+    expect(s.isIncomplete()).toBe(true);
+    expect(s.terminalReason(2)).toContain('调整规划校验未通过');
+    expect(s.terminalReason(2)).toContain('主动中止');
+  });
+});

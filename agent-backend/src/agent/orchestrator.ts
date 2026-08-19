@@ -17,7 +17,7 @@
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import { getLastAssistantMessage } from '../utils/text-utils.js';
-import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, topologicalSort } from './plan-validation.js';
+import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts, topologicalSort } from './plan-validation.js';
 import type { InvalidTaskName } from './plan-validation.js';
 import { isParamValueEmpty, renderParamStructure, unwrapParamValues, validateParamStructure, type ParamSpec } from './param-contract.js';
 import { ConfirmManager } from './confirm-manager.js';
@@ -261,6 +261,14 @@ export class Orchestrator {
     let exitReason = '用户拒绝执行规划';
 
     for (let round = 0; round < MAX_PLAN_ROUNDS; round++) {
+      // seq 冲突校验（链首）：规划内 seq 唯一；非法时提示父Agent 修正（最多 1 次）
+      const validSeqs = await this.validateTaskSeqs(plan, planCtx);
+      if (!validSeqs) {
+        emit.raw({ type: 'error', message: '⚠️ 规划校验失败：无法生成有效的执行计划' });
+        return { reply: '⚠️ 规划校验失败：无法生成有效的执行计划，请重新描述需求。' };
+      }
+      plan = validSeqs;
+
       // 名称合法性校验（每轮都做；先行为后函数，非法时各类分别提示父Agent 自动修正，各最多修正 1 次）
       const validNamed = await this.validateTaskBehaviorNames(plan, planCtx);
       const validNamedF = validNamed ? await this.validateTaskFunctionNames(validNamed, planCtx) : null;
@@ -354,8 +362,8 @@ export class Orchestrator {
       return { reply };
     }
 
-    // 结构校验：依赖存在性 / 无自引用 / 无环（纯代码，不弹窗，兜底前端已做的校验）
-    const structureErrors = validatePlanStructure(plan);
+    // 结构校验：依赖存在性 / 无自引用 / 无环 / seq 唯一（纯代码，不弹窗，兜底前端已做的校验——用户编辑可绕过上方各闸）
+    const structureErrors = [...validatePlanStructure(plan), ...validateSeqConflicts(plan)];
     if (structureErrors.length > 0) {
       emit.entry({ type: 'subtask_done', name: '规划结构校验', status: 'failed', detail: structureErrors.join('；'), source: 'parent' });
       const msg = '规划结构不合法，请重新发起。';
@@ -450,7 +458,7 @@ export class Orchestrator {
           emit.entry({ type: 'subtask_done', name: '本波无数据依赖', status: 'done', detail: `子任务 ${waveResults.map(r => r.seq).join('、')} 全部成功，直接进入下一波`, source: 'parent' });
         } else {
           const adjusted = await this.runWaveFeedback(session, waveResults, session.results, planCtx, pending);
-          if (session.isAborted()) break; // 反馈期间被中断 → 终止执行
+          if (session.isIncomplete()) break; // 反馈期间被中断 / 调整规划校验失败被主动中止 → 终止执行
           if (adjusted) pending = adjusted;
         }
       }
@@ -655,31 +663,28 @@ ${waveList}
 
     let nextPending: SubTask[] | null = null;
     if (adjusted && Array.isArray(adjusted.subtasks)) {
-      // L3: 执行中调整规划 → 与初始规划同等的三道校验（行为名/参数结构/依赖），静默修正，不再弹窗用户确认。
+      // L3: 执行中调整规划 → 与初始规划同等的校验链（seq冲突/行为名/函数名/参数/依赖），静默修正，不再弹窗用户确认。
       // 父 Agent 提交空规划或"只含已执行子任务"的规划 = 提前终止后续流程（nextPending 会被置空）。
       // 已执行 seq 集合提前算出：依赖校验视其为合法（调整规划常只含剩余子任务，depends_on 引用已执行前序）。
       const executedSeqs = new Set(allResults.map(r => r.seq));
-      const validatedB = await this.validateTaskBehaviorNames(adjusted, ctx);
+      // seq 防冒名依据：已执行 seq → 任务名（seq 相同但任务名不同 = 新任务冒名，会被下方 filter 静默吞掉）
+      const executedTasks = new Map(allResults.map(r => [r.seq, r.task] as const));
+      const validatedS = await this.validateTaskSeqs(adjusted, ctx, executedTasks);
+      const validatedB = validatedS ? await this.validateTaskBehaviorNames(validatedS, ctx) : null;
       const validatedF = validatedB ? await this.validateTaskFunctionNames(validatedB, ctx) : null;
-      if (validatedF) {
-        const validatedP = await this.validateTaskParams(validatedF, ctx);
-        if (validatedP) {
-          // 依赖校验也带 nudge（与行为名/参数一致）
-          const validatedD = await this.validatePlanDeps(validatedP, ctx, executedSeqs);
-          if (validatedD) {
-            // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
-            nextPending = topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
-            analysisDetail = nextPending.length === 0
-              ? `本波次已提前终止后续流程`
-              : `本波次已调整后续计划`;
-          } else {
-            analysisDetail = `本波次调整规划依赖不合法，沿用原计划`;
-          }
-        } else {
-          analysisDetail = `本波次调整规划参数不合法，沿用原计划`;
-        }
+      const validatedP = validatedF ? await this.validateTaskParams(validatedF, ctx) : null;
+      // 依赖校验也带 nudge（与行为名/参数一致）
+      const validatedD = validatedP ? await this.validatePlanDeps(validatedP, ctx, executedSeqs) : null;
+      if (validatedD) {
+        // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
+        nextPending = topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
+        analysisDetail = nextPending.length === 0
+          ? `本波次已提前终止后续流程`
+          : `本波次已调整后续计划`;
       } else {
-        analysisDetail = `本波次调整规划无效，沿用原计划`;
+        // 校验（含 nudge 修正）仍未通过 → 不沿用原计划让下游带空参数裸奔：主动中止，总结阶段点破残留副作用
+        session.terminate('adjustmentInvalid');
+        analysisDetail = `本波次调整规划校验失败，流程已中止（避免后续子任务缺失中继数据继续执行）`;
       }
     }
 
@@ -720,6 +725,17 @@ ${waveList}
     }
     if (blocks.length === 0) return '';
     return `\n\n【待填参数结构参考】（以下子任务依赖本波结果，其 array/object 参数严格按此结构填纯值，数组项/对象字段直接填值即可，不要再包 {type/value} 等包装）\n${blocks.join('\n')}`;
+  }
+
+  /** seq 冲突校验（校验链首）：规划内 seq 唯一 + 反馈路径防"新任务冒名已执行 seq"。非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validateTaskSeqs(plan: SubTaskPlan, ctx: PlanRepairCtx, executedTasks?: ReadonlyMap<number, string>): Promise<SubTaskPlan | null> {
+    return this.repairPlan(plan, ctx, {
+      label: 'seq 冲突校验',
+      doneLabel: 'seq 冲突已修正',
+      detailOf: (p) => validateSeqConflicts(p, executedTasks).join('；'),
+      isClean: (p) => validateSeqConflicts(p, executedTasks).length === 0,
+      nudge: (p) => `以下子任务的 seq 不合法：\n${validateSeqConflicts(p, executedTasks).join('；')}\n\n请重新分配 seq：规划内不得重复；新增子任务不得占用已执行子任务的 seq（改用未占用的 seq），保持其余内容不变，然后重新调用 submit_plan 工具提交修正后的规划。`,
+    });
   }
 
   /** 校验行为子任务的行为名合法性（gateway 花名册，按子任务所属本体过滤）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */

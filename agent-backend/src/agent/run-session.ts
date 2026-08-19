@@ -22,8 +22,9 @@ import type { SubTaskResult, SubTaskPlan } from '../types.js';
  *  - blocked：依赖链断裂（前置失败，后继永不就绪）
  *  - failed：波内子任务普通执行失败
  *  - waveCapped：波数触顶仍有未执行子任务
+ *  - adjustmentInvalid：波次反馈的调整规划校验（含修正）仍未通过——不沿用原计划裸奔，主动中止
  */
-export type WaveOutcome = 'aborted' | 'blocked' | 'failed' | 'waveCapped';
+export type WaveOutcome = 'aborted' | 'blocked' | 'failed' | 'waveCapped' | 'adjustmentInvalid';
 
 export class RunSession {
   /** 在途子 Agent 集合：并行子任务各自创建子 Agent，abort 时逐个中断 */
@@ -82,6 +83,7 @@ export class RunSession {
       case 'failed': return '存在子任务执行失败';
       case 'blocked': return '因前置依赖未完成而终止';
       case 'waveCapped': return `执行波数已达上限，仍有 ${pendingCount} 个子任务未执行`;
+      case 'adjustmentInvalid': return '波次反馈的调整规划校验未通过，为避免后续子任务缺失中继数据继续执行，已主动中止';
       default: return null;
     }
   }
