@@ -160,6 +160,8 @@ export interface ExecutionEntry {
 
 export type SSEEvent =
   | { type: 'token'; token: string }
+  | { type: 'narrative'; token: string } // 规划阶段父Agent叙事（前端折叠块展示，不进正文/历史）
+  | { type: 'narrative_end'; outcome: 'plan' | 'answer' | 'aborted' } // 叙事块定格：plan=已提交规划；answer=直答（前端撤块、正文回流）；aborted=中断
   | { type: 'error'; message: string }
   | { type: 'done' }
   | { type: 'plan_received'; plan: SubTaskPlan }

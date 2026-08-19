@@ -218,7 +218,15 @@ export class Orchestrator {
     session.parentAgent = parentAgent;
     parentAgent.subscribe((event: any) => {
       if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && session.tokensEnabled()) {
-        emit.raw({ type: 'token', token: event.assistantMessageEvent.delta });
+        // 此 subscribe 贯穿整个 run（规划/反馈/总结共用同一父Agent），按阶段分流：
+        // 规划阶段 → narrative 折叠块（submit_plan 提交后即断流，防编造执行叙事/假总结进正文）；
+        // 总结阶段（summaryPhase 已置 planningNarrative=false）→ token 正文。反馈阶段 tokens 关闭，不到这里。
+        if (!session.planningNarrative) {
+          emit.raw({ type: 'token', token: event.assistantMessageEvent.delta });
+          return;
+        }
+        if (session.submittedPlan.value) return;
+        emit.raw({ type: 'narrative', token: event.assistantMessageEvent.delta });
       }
     });
     // 规划修复上下文：nudge 父Agent/波次反馈共用的三件套
@@ -228,6 +236,7 @@ export class Orchestrator {
     await this.parentPrompt(parentAgent,`${message}`);
     // 规划阶段被中断 → 干净退出（父Agent 已中断，无规划可言）
     if (session.isAborted() || isChildAborted(parentAgent)) {
+      emit.raw({ type: 'narrative_end', outcome: 'aborted' });
       emit.raw({ type: 'token', token: '\n⏹ 已中断\n' });
       emit.raw({ type: 'done' });
       return { reply: '已中断' };
@@ -241,17 +250,24 @@ export class Orchestrator {
     if (!plan || !plan.subtasks || plan.subtasks.length === 0) {
       const lastMsg = getLastAssistantMessage(parentAgent.state.messages);
       if (lastMsg) {
-        // 直答收尾注释：token 流补一行提示（正文已在规划阶段流式输出），并拼入回复存历史，UI 与历史一致
-        const note = '\n\n---\n本次回答已结束，您可以根据上述内容开展进一步对话。';
-        emit.raw({ type: 'token', token: note });
+        // 直答路径：叙事块里的流式内容就是正式回答——通知前端撤块，全文回流正文（UI 与历史一致）
+        emit.raw({ type: 'narrative_end', outcome: 'answer' });
+        // 结束语仅是 UI 提示：只发前端展示，不进返回值/历史——否则历史里每条直答都以它结尾，
+        // 模型会鹦鹉学舌自己说一遍，叠加后端追加变成两遍
+        emit.raw({ type: 'token', token: lastMsg });
+        emit.raw({ type: 'token', token: '\n\n---\n本次回答已结束，您可以根据上述内容开展进一步对话。' });
         emit.raw({ type: 'done' });
-        return { reply: lastMsg + note };
+        return { reply: lastMsg };
       }
       const msg = '⚠️ 无法生成执行计划，请重新描述需求。';
+      emit.raw({ type: 'narrative_end', outcome: 'answer' });
       emit.raw({ type: 'error', message: msg });
       emit.raw({ type: 'done' });
       return { reply: msg };
     }
+
+    // 规划路径：叙事块定格为"规划思考过程"（默认折叠留存），正文只放结构化规划与结论
+    emit.raw({ type: 'narrative_end', outcome: 'plan' });
 
     // ── 规划确认循环（支持"拒绝并重规划"） ──
     // 每轮：行为名校验（静默修正一次）→ 弹窗确认；用户可确认 / 拒绝并重规划 / 拒绝并退出。
@@ -302,6 +318,9 @@ export class Orchestrator {
         break;
       }
 
+      // 校验修复轮可能让叙事块重新流入（repairPlan 清零 submittedPlan 后断流解除），
+      // 确认弹窗前幂等定格一次，前端转圈不残留
+      emit.raw({ type: 'narrative_end', outcome: 'plan' });
       const planConfirm = await this.confirmManager.requestPlanConfirm(this.enrichPlanDisplay(plan, session.catalogView!), emit);
 
       if (planConfirm.approved) {
@@ -388,6 +407,7 @@ export class Orchestrator {
       });
     }
     emit.entry({ type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
+    emit.raw({ type: 'narrative_end', outcome: 'plan' }); // 单步任务无弹窗路径也在此定格叙事块（幂等）
     emit.raw({ type: 'plan_received', plan: this.enrichPlanDisplay(plan, session.catalogView!) });
     const planSummary = plan.subtasks
       .sort((a, b) => a.seq - b.seq)
@@ -490,7 +510,9 @@ export class Orchestrator {
         finalSummary = '任务已被用户中断。';
         emit.raw({ type: 'token', token: `\n\n${finalSummary}` });
       } else {
-        // 恢复流式：让父Agent 生成的最终总结逐字输出（token 流式在执行阶段被关闭）
+        // 恢复流式：让父Agent 生成的最终总结逐字输出（token 流式在执行阶段被关闭）。
+        // 同时关闭规划叙事通道——同一 subscribe 贯穿全 run，不关会把总结误路由进折叠块
+        session.planningNarrative = false;
         session.enableTokens();
         // 最终总结也是一次父Agent LLM 调用，发进行中信号点亮前端"处理中"转圈，
         // 消除"子任务全完成 → 总结首字流式"之间的静默空窗（镜像 runWaveFeedback 的 feedback 事件）。

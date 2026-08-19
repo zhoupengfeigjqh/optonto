@@ -208,6 +208,24 @@ function SubtaskBlock({ item }: { item: SubtaskChatItem }) {
   );
 }
 
+/** 聊天里的规划叙事折叠块：父Agent 规划阶段的思考/叙事实时流入，默认折叠；submit_plan 提交后定格（防编造执行叙事进正文） */
+function NarrativeBlock({ item }: { item: { content: string; streaming?: boolean } }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-dark-card border border-dark-border rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-dark-hover" onClick={() => setOpen(!open)}>
+        <span className="text-text-muted text-xs">{open ? '▼' : '▶'}</span>
+        <span className="text-accent-blue text-xs font-semibold">思考内容...</span>
+        {item.streaming && <Spin size="small" />}
+        <span className="text-text-muted text-xs ml-auto">{open ? '收起' : '展开'}</span>
+      </div>
+      {open && (
+        <div className="pl-4 pr-3 py-2 bg-dark-bg/40 text-xs text-text-secondary whitespace-pre-wrap break-words max-h-60 overflow-y-auto">{item.content}</div>
+      )}
+    </div>
+  );
+}
+
 /** 执行记录单条条目卡片 */
 function EntryCard({ entry }: { entry: any }) {
   return (
@@ -490,8 +508,10 @@ function AgentConversation({
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'done') { setPlanConfirmModal(null); setConfirmModal(null); break; }
+            if (data.type === 'done') { setPlanConfirmModal(null); setConfirmModal(null); setMessages(prev => prev.map(m => (m as any).role === 'narrative' ? { ...(m as any), streaming: false } : m)); break; }
             if (data.type === 'error') {
+              // 定格叙事块转圈（校验失败等路径不会再发 narrative_end）
+              setMessages(prev => prev.map(m => (m as any).role === 'narrative' ? { ...(m as any), streaming: false } : m));
               if (phaseRef.current === 'subtask') {
                 phaseRef.current = 'summary';
                 setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: '' }]);
@@ -501,6 +521,11 @@ function AgentConversation({
                 const last = updated[updated.length - 1];
                 if ((last as any).role === 'assistant' && !(last as any).content) {
                   updated[updated.length - 1] = { ...(last as any), content: `\n\n[错误: ${data.message}]` };
+                } else if ((last as any).role !== 'assistant') {
+                  // 末尾是叙事块/子任务块 → 回收空占位气泡，新开正文消息承接错误（与 token 处理器同逻辑）
+                  const emptyIdx = updated.findIndex(m => (m as any).role === 'assistant' && !(m as any).content);
+                  if (emptyIdx >= 0) updated.splice(emptyIdx, 1);
+                  updated.push({ role: 'assistant', content: `\n\n[错误: ${data.message}]`, timestamp: '' });
                 }
                 return updated;
               });
@@ -565,6 +590,31 @@ function AgentConversation({
                 });
               }
             }
+            if (data.type === 'narrative') {
+              // 规划叙事：流入本轮的折叠块（runId 定位，修复轮重新流入时复用同一块并重启转圈）
+              const runId = runIdRef.current;
+              setMessages(prev => {
+                const updated = [...prev];
+                const idx = updated.findIndex(m => (m as any).role === 'narrative' && (m as any).runId === runId);
+                if (idx >= 0) {
+                  const it = updated[idx] as any;
+                  updated[idx] = { ...it, content: it.content + (data.token || ''), streaming: true };
+                } else {
+                  updated.push({ role: 'narrative', runId, content: data.token || '', streaming: true } as any);
+                }
+                return updated;
+              });
+              continue;
+            }
+            if (data.type === 'narrative_end') {
+              const runId = runIdRef.current;
+              setMessages(prev => data.outcome === 'answer'
+                // 直答：撤掉折叠块（正文随后以 token 全文回流）
+                ? prev.filter(m => !((m as any).role === 'narrative' && (m as any).runId === runId))
+                // 规划/中断：定格折叠块（停止转圈，内容留存可展开）
+                : prev.map(m => (m as any).role === 'narrative' && (m as any).runId === runId ? { ...(m as any), streaming: false } : m));
+              continue;
+            }
             if (data.type === 'token') {
               const tokenText = data.token || '';
               // 子任务阶段后的第一个 token = 最终总结 → 新开一条 assistant 消息（排在子任务块之后）
@@ -578,6 +628,11 @@ function AgentConversation({
                   const last = updated[updated.length - 1];
                   if ((last as any).role === 'assistant') {
                     updated[updated.length - 1] = { ...(last as any), content: (last as any).content + tokenText };
+                  } else {
+                    // 末尾是叙事块/子任务块等非正文消息 → 回收空的 assistant 占位气泡（防残留空气泡/转圈），在末尾新开正文消息承接
+                    const emptyIdx = updated.findIndex(m => (m as any).role === 'assistant' && !(m as any).content);
+                    if (emptyIdx >= 0) updated.splice(emptyIdx, 1);
+                    updated.push({ role: 'assistant', content: tokenText, timestamp: '' });
                   }
                   return updated;
                 });
@@ -593,6 +648,10 @@ function AgentConversation({
           const last = updated[updated.length - 1];
           if (last.role === 'assistant' && !last.content) {
             updated[updated.length - 1] = { ...last, content: `\n\n[错误: ${e.message}]` };
+          } else if (last.role !== 'assistant') {
+            const emptyIdx = updated.findIndex(m => m.role === 'assistant' && !m.content);
+            if (emptyIdx >= 0) updated.splice(emptyIdx, 1);
+            updated.push({ role: 'assistant', content: `\n\n[错误: ${e.message}]`, timestamp: '' });
           }
           return updated;
         });
@@ -641,6 +700,17 @@ function AgentConversation({
     const isLast = idx === messages.length - 1;
     // 短期记忆摘要：仅供后端父Agent上下文，聊天区不展示
     if ((msg as any).role === 'summary') return null;
+    // 规划叙事折叠块（本轮规划思考过程，默认折叠；直答路径 narrative_end 时已被移除）
+    if ((msg as any).role === 'narrative') {
+      return (
+        <div key={idx} className="flex gap-3 justify-start mb-1">
+          <div className="w-8 h-8 shrink-0" />
+          <div className="flex-1 max-w-[75%]">
+            <NarrativeBlock item={msg as any} />
+          </div>
+        </div>
+      );
+    }
     // 聊天内嵌的子任务执行块：无头像，占位对齐到 assistant 气泡下方，保持对话整体感
     if ((msg as any).role === 'subtask') {
       return (

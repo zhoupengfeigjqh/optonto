@@ -39,6 +39,10 @@ export class RunSession {
    *  同源同时刻——一次 run 内函数信息一致，不随 MCP 目录中途变化而漂移 */
   catalogView: FunctionCatalogView | null = null;
 
+  /** 规划叙事通道开关：true=父Agent文本增量走 narrative 折叠块（规划阶段）；
+   *  false=走 token 正文（summaryPhase 恢复流式时关闭——同一 subscribe 贯穿全 run，不分阶段会把总结误路由进折叠块） */
+  planningNarrative = true;
+
   private abortedFlag = false;
   /** token 流式开关：true=父 Agent 文本增量流式到聊天区（原 emitTokens 局部变量） */
   private tokens = true;
