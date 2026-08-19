@@ -13,6 +13,7 @@
  * 并发串扰从"注释假设"变成"机制强制"。
  */
 import type { AgentPort } from './agent-port.js';
+import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTaskResult, SubTaskPlan } from '../types.js';
 
 /**
@@ -33,6 +34,9 @@ export class RunSession {
   readonly submittedPlan: { value: SubTaskPlan | null } = { value: null };
   /** 本 run 的父 Agent（规划/波次反馈/总结复用同一实例） */
   parentAgent: AgentPort | null = null;
+  /** run 级函数目录快照（runExecute 开头建一次）：规划校验（函数名/参数）与执行展示（中文名）
+   *  同源同时刻——一次 run 内函数信息一致，不随 MCP 目录中途变化而漂移 */
+  catalogView: FunctionCatalogView | null = null;
 
   private abortedFlag = false;
   /** token 流式开关：true=父 Agent 文本增量流式到聊天区（原 emitTokens 局部变量） */

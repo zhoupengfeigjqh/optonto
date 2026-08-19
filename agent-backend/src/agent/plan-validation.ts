@@ -36,13 +36,13 @@ export function validateFunctionNames(catalog: FunctionCatalogView, plan: SubTas
 }
 
 /** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。
- *  函数节点的参数声明由 FunctionCatalogView 单源提供（本体函数 functions[].params → 公共函数 functions.json
- *  → 其他MCP工具 inputSchema，三源按序；都没有 → null 跳过，参数正确性由 MCP 工具 schema 兜底）。 */
+ *  函数节点的参数声明由 FunctionCatalogView 单源提供（functionInfo：本体函数限定本体 → 公共函数 → 其他MCP工具）；
+ *  函数不在任何源（functionInfo null）→ 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）。 */
 export function validateAllParams(gateway: OntologyGatewayPort, catalog: FunctionCatalogView, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
     if (st.function) {
-      const fnParams = catalog.functionParams(st.scenario_name, st.ontology_name, st.function);
+      const fnParams = catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.params ?? null;
       // null = 函数不在任何声明源 → 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）
       if (fnParams) errors.push(...validateParamStructure(fnParams, st.params || {}, st.seq, st.function));
       continue;

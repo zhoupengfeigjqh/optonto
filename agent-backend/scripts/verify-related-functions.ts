@@ -27,9 +27,8 @@ const runner = new SubtaskRunner({
   createChildAgent: async () => (null as any),
   childAgents: new Set(),
   getBehaviorDisplayName: (s: string, o: string, b: string) => gateway.getBehaviorMeta(s, o, b).display_name || '',
-  getFunctionDisplayName: (s: string, o: string, f: string) => gateway.getFunctionMeta(s, o, f).display_name || '',
+  getFunctionDisplayName: (s: string, o: string, f: string) => gateway.getFunctionInfo(s, o, f)?.display_name || '',
   getBehaviorParams: (s: string, o: string, b: string) => gateway.getBehaviorMeta(s, o, b).params || {},
-  getFunctionParams: (s: string, o: string, f: string) => gateway.getFunctionParams(s, o, f),
 });
 
 console.log('该行为关联的规则（含 related_functions）：');
@@ -41,5 +40,5 @@ console.log((runner as any).buildInstruction(subTask, meta));
 
 console.log('\n── 非共享（本体函数）路径演示 ──');
 const ontologyFn = 'sumRawNotArrivalQty';
-console.log(`getFunctionParams(${ontologyFn}) =`, JSON.stringify(gateway.getFunctionParams(ctx.scenario_name, ctx.ontology_name, ontologyFn), null, 2));
+console.log(`getFunctionInfo(${ontologyFn}) =`, JSON.stringify(gateway.getFunctionInfo(ctx.scenario_name, ctx.ontology_name, ontologyFn), null, 2));
 console.log((runner as any).renderRelatedFunctions([ontologyFn], ctx.scenario_name, ctx.ontology_name));

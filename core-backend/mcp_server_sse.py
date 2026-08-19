@@ -28,7 +28,11 @@ MANIFEST_PATH = COMMON_DIR / "functions.json"
 
 
 def _load_common_functions() -> tuple[list[Tool], list[dict]]:
-    """一次读取 functions.json，产出 Tool 列表与原始 manifest 条目（此前两次读取同一文件）。"""
+    """一次读取 functions.json，产出 Tool 列表与原始 manifest 条目（此前两次读取同一文件）。
+
+    inputSchema 注入 x-category/x-display_name 发布方标记（JSON Schema 扩展键，协议透传）：
+    agent-backend 据此分类（不再读 functions.json 名单比对），display_name 结构化可得。
+    """
     if not MANIFEST_PATH.exists():
         return [], []
     try:
@@ -38,7 +42,11 @@ def _load_common_functions() -> tuple[list[Tool], list[dict]]:
             Tool(
                 name=entry["name"],
                 description=entry.get("description", ""),
-                inputSchema=entry.get("inputSchema", {"type": "object", "properties": {}}),
+                inputSchema={
+                    **entry.get("inputSchema", {"type": "object", "properties": {}}),
+                    "x-category": "公共函数",
+                    "x-display_name": entry.get("display_name", ""),
+                },
             )
             for entry in entries
         ]
@@ -61,12 +69,17 @@ def _with_function_scope(input_schema: dict, fn: dict) -> dict:
 
     scope 块放在函数参数之前；agent-backend 的 listAllMcpFunctions 读出 scope 展示给父 Agent，
     callFunctionTool/scopeToOntology 与本分发器在调用前剥离 scope，避免污染真实函数参数。
+    category/display_name 为发布方权威标记：agent-backend 据此分类（不再靠特征猜测），
+    display_name 使中文名结构化可得（不再从 description 前缀切分）。
     """
     props: dict = {
         SCOPE_KEY: {
             "type": "object",
             "description": "本函数所属场景/本体上下文（规划时填子任务对应字段；非函数输入参数，执行时自动剥离）",
-            "properties": {},
+            "properties": {
+                "category": {"type": "string", "const": "本体函数"},
+                "display_name": {"type": "string", "const": fn.get("display_name") or ""},
+            },
         },
     }
     for k, t in (("ontology_id", "integer"), ("scenario_id", "integer"),

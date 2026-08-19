@@ -12,7 +12,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
-import { getCommonFunctionParams, getCommonFunctionMeta, getCommonFunctionNames } from './common-functions.js';
+import { getCommonFunctionNames, getCommonFunctionInfo } from './common-functions.js';
 import type { BehaviorMeta, RuleDetail, ConceptInfo } from '../types.js';
 
 export class OntologyGateway {
@@ -132,33 +132,22 @@ export class OntologyGateway {
   }
 
   /**
-   * 按函数名取参数结构（函数子任务参数结构校验用）。
-   * 本体函数取 functions[].params（源形式：内联 required:boolean）；本体函数没有则查公共函数
-   * （functions.json 的 inputSchema 为标准 JSON Schema，经 schemaToDeclaredParams 转成同形声明）。
-   * 两类都没有（函数名不在任何声明源）→ 返回 null，结构无从比对，由 MCP 工具 schema 兜底。
+   * 函数信息合一查询（中文名 + 描述 + 参数声明）：本体函数 functions[] 优先，不在则回查公共函数；
+   * 都不在 → null（函数不在任何文件声明源）。
+   * FunctionCatalog 文件兜底模式的①②数据源；meta/params 单点取数，替代原 getFunctionParams/getFunctionMeta
+   * 双方法各自重复查找（曾导致第三源只并入 params 链、meta 链漏接的漂移）。
    */
-  getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null {
-    const data = this.loadOntologyData(scenario, ontology);
-    const fn = (data?.functions || []).find((f: any) => f.name === functionName);
-    if (fn) return fn?.params || {};
-    return getCommonFunctionParams(functionName);
-  }
-
-  /**
-   * 按函数名提取展示元信息（中文显示名 + 描述），工具调用展示用。
-   * 本体函数优先取 functions[]；没有则回查公共函数（functions.json 的 display_name）。
-   * 都不在 → 返回空，让上层用子任务描述兜底（不 fallback 到英文函数名）。
-   */
-  getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string } {
+  getFunctionInfo(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string; params: Record<string, any> } | null {
     const data = this.loadOntologyData(scenario, ontology);
     const fn = (data?.functions || []).find((f: any) => f.name === functionName);
     if (fn) {
       return {
         display_name: fn?.display_name || fn?.description || '',
         description: fn?.description,
+        params: fn?.params || {},
       };
     }
-    return getCommonFunctionMeta(functionName);
+    return getCommonFunctionInfo(functionName);
   }
 
   /**

@@ -98,9 +98,10 @@ function fakeGateway(): OntologyGatewayPort {
       concepts: [],
       isWrite: false,
     }),
-    getFunctionMeta: () => ({ display_name: '' }),
-    getFunctionParams: (_scenario, _ontology, fn) =>
-      fn === 'sumRawNotArrivalQty' ? { purchaseRecordSet: { required: true, type: 'array' } } : null,
+    getFunctionInfo: (_scenario, _ontology, fn) =>
+      fn === 'sumRawNotArrivalQty'
+        ? { display_name: '', params: { purchaseRecordSet: { required: true, type: 'array' } } }
+        : null,
   };
 }
 

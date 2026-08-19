@@ -25,6 +25,7 @@ import type { ConfirmPort } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
 import { RunSession } from './run-session.js';
 import { FunctionCatalog } from './function-catalog.js';
+import type { FunctionCatalogView } from './function-catalog.js';
 import { createEventChannel, entryDisplay } from './event-channel.js';
 import type { EventChannel } from './event-channel.js';
 import type { AgentPort } from './agent-port.js';
@@ -46,11 +47,12 @@ export function planNeedsConfirm(plan: SubTaskPlan): boolean {
   return plan.subtasks.length > 1;
 }
 
-/** 规划修复上下文：nudge 父Agent 所需三件套打包，替代 4-5 参穿透 */
+/** 规划修复上下文：nudge 父Agent 所需三件套 + run 级函数目录快照打包，替代 4-5 参穿透 */
 interface PlanRepairCtx {
   parentAgent: AgentPort;
   submittedPlan: { value: SubTaskPlan | null };
   emit: EventChannel;
+  catalog: FunctionCatalogView;
 }
 
 /** 规划阶段产物：拿到确认后的最终规划，或直接终结本轮的回复文案 */
@@ -89,7 +91,7 @@ export class Orchestrator {
       getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
       getFunctionDisplayName: (scenario, ontology, functionName) =>
-        this.ontologyGateway.getFunctionMeta(scenario, ontology, functionName).display_name || '',
+        session.catalogView?.functionInfo(scenario, ontology, functionName)?.displayName ?? '',
       getBehaviorParams: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).params || {},
     });
@@ -163,6 +165,9 @@ export class Orchestrator {
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
     const emit = createEventChannel(sendEvent);
+    // run 级函数目录快照：规划校验与执行展示同源同时刻（建快照是一次 async MCP 目录读取，
+    // 之后全 run 同步复用，不再每次校验各自 view()）
+    session.catalogView = await this.functionCatalog.view();
     try {
       const planned = await this.planningPhase(session, message, skills, history, emit);
       if ('reply' in planned) return planned.reply;
@@ -217,7 +222,7 @@ export class Orchestrator {
       }
     });
     // 规划修复上下文：nudge 父Agent/波次反馈共用的三件套
-    const planCtx: PlanRepairCtx = { parentAgent, submittedPlan: session.submittedPlan, emit };
+    const planCtx: PlanRepairCtx = { parentAgent, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView! };
 
     // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
     await this.parentPrompt(parentAgent,`${message}`);
@@ -289,7 +294,7 @@ export class Orchestrator {
         break;
       }
 
-      const planConfirm = await this.confirmManager.requestPlanConfirm(this.enrichPlanDisplay(plan), emit);
+      const planConfirm = await this.confirmManager.requestPlanConfirm(this.enrichPlanDisplay(plan, session.catalogView!), emit);
 
       if (planConfirm.approved) {
         if (planConfirm.plan) { plan = planConfirm.plan; planModified = true; }
@@ -375,7 +380,7 @@ export class Orchestrator {
       });
     }
     emit.entry({ type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
-    emit.raw({ type: 'plan_received', plan: this.enrichPlanDisplay(plan) });
+    emit.raw({ type: 'plan_received', plan: this.enrichPlanDisplay(plan, session.catalogView!) });
     const planSummary = plan.subtasks
       .sort((a, b) => a.seq - b.seq)
       .map(st => `${st.seq}. ${st.function || st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
@@ -397,7 +402,7 @@ export class Orchestrator {
   ): Promise<SubTask[]> {
     session.disableTokens(); // 子任务执行和反馈不流到聊天区，避免重复
     const runner = this.createSubtaskRunner(session);
-    const planCtx: PlanRepairCtx = { parentAgent: session.parentAgent!, submittedPlan: session.submittedPlan, emit };
+    const planCtx: PlanRepairCtx = { parentAgent: session.parentAgent!, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView! };
     let pending = topologicalSort(plan.subtasks);
 
     for (let wave = 0; wave < MAX_ROUNDS; wave++) {
@@ -415,7 +420,7 @@ export class Orchestrator {
       if (ready.length === 0) { session.terminate('blocked'); break; }
 
       // 执行本波：无确认子任务并行（MAX_PARALLEL 限流分块），需确认子任务逐个串行（前端单弹窗）
-      const waveResults = await this.runBatch(ready, emit, runner);
+      const waveResults = await this.runBatch(ready, emit, runner, session.catalogView!);
       session.results.push(...waveResults);
 
       // 已执行子任务移出待执行列表
@@ -520,6 +525,7 @@ export class Orchestrator {
     batch: SubTask[],
     emit: EventChannel,
     runner: SubtaskRunner,
+    catalog: FunctionCatalogView,
   ): Promise<SubTaskResult[]> {
     const secured: { st: SubTask; meta: BehaviorMeta }[] = [];
     const plain: { st: SubTask; meta: BehaviorMeta }[] = [];
@@ -532,7 +538,7 @@ export class Orchestrator {
 
     const results: SubTaskResult[] = [];
     // 函数子任务：确定性直连调用（无 LLM、无安全确认、无规则），与行为子任务并行
-    results.push(...await Promise.all(functions.map(st => this.runFunctionEntry(st, emit))));
+    results.push(...await Promise.all(functions.map(st => this.runFunctionEntry(st, emit, catalog))));
     // 并行分块：每块内 Promise.all 并发执行
     for (let i = 0; i < plain.length; i += MAX_PARALLEL) {
       const chunk = plain.slice(i, i + MAX_PARALLEL);
@@ -575,10 +581,12 @@ export class Orchestrator {
   private async runFunctionEntry(
     subTask: SubTask,
     emit: EventChannel,
+    catalog: FunctionCatalogView,
   ): Promise<SubTaskResult> {
     const functionName = subTask.function!;
-    const fnMeta = this.ontologyGateway.getFunctionMeta(subTask.scenario_name, subTask.ontology_name, functionName);
-    const display = entryDisplay(fnMeta.display_name, functionName, subTask.description);
+    // 中文名走 run 级目录快照（三源含其他MCP工具），无则空串由 entryDisplay 兜底子任务描述
+    const fnDisplay = catalog.functionInfo(subTask.scenario_name, subTask.ontology_name, functionName)?.displayName ?? '';
+    const display = entryDisplay(fnDisplay, functionName, subTask.description);
 
     // 直连执行前深展开计划期 {type/required/description/value} 包装为纯值（真实 LLM 中继会把包装递归嵌套进数组项）
     const args = unwrapParamValues(subTask.params || {});
@@ -618,7 +626,7 @@ export class Orchestrator {
     ctx.submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
     const feedbackStart = ctx.parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
     const waveList = waveResults.map(r => `- 子任务 ${r.seq}（${r.task}）: ${r.summary}`).join('\n');
-    const structureHint = await this.buildRelayStructureHint(waveResults, pending);
+    const structureHint = await this.buildRelayStructureHint(waveResults, pending, session.catalogView!);
     await this.parentPrompt(ctx.parentAgent,`本波次已执行完毕，共 ${waveResults.length} 个子任务。
 
 【执行结果】
@@ -627,13 +635,14 @@ ${waveList}
 请分析：
 1. 各结果是否符合预期？有无异常或风险？
 2. 后续未开始的子任务是否需要本次结果中的数据（如查询结果和计算结果）？
-3. 【提前终止判断】后续未开始的子任务是否仍有必要执行？若某些或全部子任务已失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请调用 submit_plan 提交【剔除这些子任务】的调整规划；若要结束整个流程，可提交只包含【已执行子任务】的规划或空 subtasks，让流程提前结束，避免执行无意义的操作。
+3. 【提前终止判断】后续未开始的子任务是否仍有必要执行？若某些或全部子任务已失去意义（例如订单已显示取消，则无需再入库/查询后续步骤），请调用 submit_plan 提交【剔除这些子任务】的调整规划；若要结束整个流程，可提交空 subtasks 的规划，让流程提前结束，避免执行无意义的操作。
 
 数据传播（必须）
 1. 若后续子任务的 params 或 guidance 依赖本次产生的新数据（如A生成订单号，B需使用），即使本次执行完全正常，也必须调用 submit_plan 提交调整后的规划，将数据填入对应字段。
-2. 部分后续子任务无法自行查询这些数据，只能由你中继传递，请高度重视！
+2. 部分后续依赖对的子任务无法自行查询这些数据，只能由你中继传递，请高度重视！
 3. 填入值时严格保持参数声明的类型，例如：integer → 填数字，不填字符串；array → 填数组
-4. 仅当所有后续子任务均不依赖本次结果、且无需调整时，才可直接说明"继续执行原计划"，无需调用 submit_plan。${structureHint}`);
+4. 调整规划只需列出未执行的子任务；已完成的子任务不必重复列出（即使列出也会被系统自动忽略）。
+5. 仅当所有后续子任务均不依赖本次结果、且无需调整时，才可直接说明"继续执行原计划"，无需调用 submit_plan。${structureHint}`);
     ctx.emit.raw({ type: 'feedback', status: 'done' });
     if (session.isAborted()) return null; // 反馈期间被中断 → 外层终止执行
 
@@ -690,16 +699,15 @@ ${waveList}
    * 参数校验器消费同一份声明，填值依据和判错依据严格一致；不靠父 Agent 记忆/抄写。
    * 无声明源（functionParams 返回 null）或全部参数都是标量 → 返回空串（prompt 不加段）。
    */
-  private async buildRelayStructureHint(waveResults: SubTaskResult[], pending: SubTask[]): Promise<string> {
+  private async buildRelayStructureHint(waveResults: SubTaskResult[], pending: SubTask[], catalog: FunctionCatalogView): Promise<string> {
     const waveSeqs = new Set(waveResults.map(r => r.seq));
     // 只取直接依赖本波的子任务：跨代依赖到后续波次中继时再填，不超前
     const dependents = pending.filter(st => (st.depends_on || []).some(d => waveSeqs.has(d)));
     if (dependents.length === 0) return '';
-    const catalog = await this.functionCatalog.view();
     const blocks: string[] = [];
     for (const st of dependents) {
       const declared = st.function
-        ? catalog.functionParams(st.scenario_name, st.ontology_name, st.function)
+        ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.params ?? null)
         : this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior)?.params;
       if (!declared) continue; // 无声明源 → 跳过（与校验器"无声明跳过、MCP schema 兜底"口径一致）
       const lines: string[] = [];
@@ -711,7 +719,7 @@ ${waveList}
       if (lines.length > 0) blocks.push(`子任务${st.seq}（${st.function || st.behavior}）：\n${lines.join('\n')}`);
     }
     if (blocks.length === 0) return '';
-    return `\n\n【待填参数结构参考】（以下子任务依赖本波结果，其 array/object 参数严格按此结构填纯值，数组项/对象字段直接填值即可，不要再包 {type/value} 包装）\n${blocks.join('\n')}`;
+    return `\n\n【待填参数结构参考】（以下子任务依赖本波结果，其 array/object 参数严格按此结构填纯值，数组项/对象字段直接填值即可，不要再包 {type/value} 等包装）\n${blocks.join('\n')}`;
   }
 
   /** 校验行为子任务的行为名合法性（gateway 花名册，按子任务所属本体过滤）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
@@ -739,7 +747,7 @@ ${waveList}
 
   /** 校验函数子任务的函数名合法性（FunctionCatalog 三源合一：本体函数按本体过滤 ∪ 公共函数 ∪ 其他MCP工具）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
   private async validateTaskFunctionNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
-    const catalog = await this.functionCatalog.view();
+    const catalog = ctx.catalog; // run 级快照（session.catalogView），与执行展示同源同时刻
     const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateFunctionNames(catalog, p);
     return this.repairPlan(plan, ctx, {
       label: '函数名校验',
@@ -762,7 +770,7 @@ ${waveList}
 
   /** 参数结构校验：必填参数 key 齐全 + 类型匹配；非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
   private async validateTaskParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
-    const catalog = await this.functionCatalog.view();
+    const catalog = ctx.catalog; // run 级快照（session.catalogView）
     return this.repairPlan(plan, ctx, {
       label: '参数结构校验',
       doneLabel: '参数结构已修正',
@@ -775,7 +783,7 @@ ${waveList}
         const blocks: string[] = [];
         for (const st of p.subtasks) {
           const declared = st.function
-            ? catalog.functionParams(st.scenario_name, st.ontology_name, st.function)
+            ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.params ?? null)
             : this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior)?.params;
           if (!declared) continue; // 无声明源 → 该校验器本就跳过（MCP 工具 schema 兜底）
           const errs = validateParamStructure(declared, st.params || {}, st.seq, st.function || st.behavior);
@@ -838,13 +846,13 @@ ${waveList}
    * 给规划补展示字段：每个子任务附加行为中文名 display_name，供前端弹窗可读展示。
    * 纯展示用途，不参与结构校验；行为/函数名已在确认前经 validateTaskBehaviorNames / validateTaskFunctionNames 校验存在，getBehaviorMeta 不会抛错。
    */
-  private enrichPlanDisplay(plan: SubTaskPlan): SubTaskPlan {
+  private enrichPlanDisplay(plan: SubTaskPlan, catalog: FunctionCatalogView): SubTaskPlan {
     return {
       ...plan,
       subtasks: plan.subtasks.map(st => ({
         ...st,
         display_name: st.function
-          ? (this.ontologyGateway.getFunctionMeta(st.scenario_name, st.ontology_name, st.function).display_name || '')
+          ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.displayName ?? '')
           : (this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).display_name || ''),
       })),
     };

@@ -1,10 +1,10 @@
 /**
  * common-functions 单测 —— schemaToDeclaredParams（JSON Schema → 本体函数 params 同形声明）的纯函数测试，
- * 以及 getCommonFunctionParams 对真实 functions.json 的读取测试。
+ * 以及 getCommonFunctionInfo 对真实 functions.json 的合一查询测试（meta/params 单点取数）。
  * 目的：公共函数参数结构校验（方案A 收尾）—— 公共函数 inputSchema 能正确转换为 validateParamStructure 可校验的声明形状。
  */
 import { describe, it, expect } from 'vitest';
-import { schemaToDeclaredParams, getCommonFunctionParams, getCommonFunctionMeta, getCommonFunctionNames } from './common-functions.js';
+import { schemaToDeclaredParams, getCommonFunctionInfo, getCommonFunctionNames } from './common-functions.js';
 
 describe('schemaToDeclaredParams（JSON Schema → 本体函数 params 同形声明）', () => {
   it('顶层 required:[数组] → 每个参数 required:boolean，type/description 原样保留', () => {
@@ -82,33 +82,23 @@ describe('schemaToDeclaredParams（JSON Schema → 本体函数 params 同形声
   });
 });
 
-describe('getCommonFunctionParams（真实 functions.json）', () => {
-  it('dateAdd → {date, days} 均为必填，类型 string/integer，带 example', () => {
-    const params = getCommonFunctionParams('dateAdd')!;
-    expect(params).toMatchObject({
+describe('getCommonFunctionInfo（真实 functions.json 合一查询）', () => {
+  it('dateAdd → 中文显示名 + 描述 + {date, days} 必填声明（带 example）', () => {
+    const info = getCommonFunctionInfo('dateAdd')!;
+    expect(info.display_name).toBe('日期加减');
+    expect(info.description).toContain('日期加减指定天数');
+    expect(info.params).toMatchObject({
       date: { type: 'string', required: true, example: '2026-08-01' },
       days: { type: 'integer', required: true, example: 7 },
     });
   });
 
-  it('无参数函数 getCurrentDate → 空对象（非 null，结构校验对空声明放行）', () => {
-    expect(getCommonFunctionParams('getCurrentDate')).toEqual({});
+  it('无参数函数 getCurrentDate → params 空对象（非 null，结构校验对空声明放行）', () => {
+    expect(getCommonFunctionInfo('getCurrentDate')!.params).toEqual({});
   });
 
-  it('不在 functions.json → null', () => {
-    expect(getCommonFunctionParams('notExistFn')).toBeNull();
-  });
-});
-
-describe('getCommonFunctionMeta（真实 functions.json 展示元信息）', () => {
-  it('dateAdd → 返回中文显示名 日期加减 + 描述', () => {
-    const meta = getCommonFunctionMeta('dateAdd');
-    expect(meta.display_name).toBe('日期加减');
-    expect(meta.description).toContain('日期加减指定天数');
-  });
-
-  it('不在 functions.json → 空显示名（上层用子任务描述兜底）', () => {
-    expect(getCommonFunctionMeta('notExistFn').display_name).toBe('');
+  it('不在 functions.json → null（不在②源语义，上层继续查③或判非法）', () => {
+    expect(getCommonFunctionInfo('notExistFn')).toBeNull();
   });
 });
 

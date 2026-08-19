@@ -13,6 +13,8 @@ export interface MountableToolInfo {
   name: string;
   category: '本体函数' | '公共函数' | '其他MCP工具';
   description: string;
+  /** 中文显示名（发布方结构化标记：本体函数 scope.display_name / 公共函数 x-display_name），无则由上层兜底 */
+  displayName?: string;
   /** 参数声明结构（inputSchema 经 schemaToDeclaredParams 转形，已剥离 scope/ontology_id），与子任务 params 填法同形 */
   params: Record<string, any>;
   /** 本体函数独有：所属场景/本体真实值（ontology_id/scenario_id/scenario_name/ontology_name） */
@@ -45,10 +47,9 @@ export interface AgentFactoryPort {
 export interface OntologyGatewayPort {
   getBehaviorMeta(scenario: string, ontology: string, behavior: string): BehaviorMeta;
   getBehaviorNames(scenario: string, ontology: string): string[];
-  /** 函数元信息（中文显示名），工具调用展示用 */
-  getFunctionMeta(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string };
-  /** 本体函数名列表（本体函数 ∪ 公共函数；函数子任务名校验用，其他MCP工具由 MountableToolInfo 目录补充） */
+  /** 本体函数名列表（本体函数 ∪ 公共函数；函数子任务名校验的文件兜底数据源，正常模式以 MCP 目录为准） */
   getFunctionNames(scenario: string, ontology: string): string[];
-  /** 函数参数结构（函数子任务参数结构校验用）：本体函数取 functions[].params，公共函数取 functions.json inputSchema 转形；都无声明返回 null */
-  getFunctionParams(scenario: string, ontology: string, functionName: string): Record<string, any> | null;
+  /** 函数信息合一查询（中文名 + 描述 + 参数声明）：本体函数 functions[].params → 公共函数 functions.json；
+   *  都不在返回 null。FunctionCatalog 文件兜底模式专用（MCP 目录缺①②时启用）。 */
+  getFunctionInfo(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string; params: Record<string, any> } | null;
 }

@@ -2,7 +2,7 @@ import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@sinclair/typebox';
 import { MCPClient } from '../services/mcp-client.js';
-import { getCommonFunctionNames, schemaToDeclaredParams } from '../services/common-functions.js';
+import { schemaToDeclaredParams } from '../services/common-functions.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
@@ -35,6 +35,47 @@ const PARENT_ONTOLOGY_QUERY_TOOLS = [
  * 非函数输入参数：listAllMcpFunctions 读出 scope 展示给父 Agent；scopeToOntology/callFunctionTool 调用前剥离。
  */
 const SCOPE_KEY = 'scope';
+
+/**
+ * MCP 工具 → 可挂载目录条目（纯函数，导出供单测直调，无需 MCP 连接）。
+ * 分类唯一依据：发布方标记（本体函数 = scope.category const，公共函数 = x-category 扩展键）；
+ * 无标记 = 外部 MCP 工具（排除法）。core/agent 同仓库整栈部署，不设旧启发式兼容层——
+ * 特征猜测（hasOntologyId）会把碰巧带 ontology_id 参数的外部工具误判为本体函数并误删其参数。
+ */
+export function toMountableToolInfo(tool: { name: string; description?: string; label?: string; parameters?: any }): MountableToolInfo {
+  const schema = tool.parameters || {};
+  const scopeProp = schema.properties?.[SCOPE_KEY];
+  const category: MountableToolInfo['category'] =
+    scopeProp?.properties?.category?.const ?? schema['x-category'] ?? '其他MCP工具';
+  // 版本错配告警：带 scope 块但无 category 标记 = 连上了未打标记的旧版 core-backend
+  if (scopeProp && !scopeProp.properties?.category) {
+    console.warn(`[AgentFactory] 工具 ${tool.name} 带 scope 块但无 category 标记——core-backend 版本过旧，请同步升级`);
+  }
+  // scope 作用域块一律剥离（规划元数据，非函数输入参数）；ontology_id 仅对本体函数剥离
+  // （发布方标记判定，执行时自动注入，见 entry.scope）。
+  const baseProps = { ...(schema.properties || {}) };
+  delete baseProps[SCOPE_KEY];
+  if (category === '本体函数') delete baseProps.ontology_id;
+  const entry: MountableToolInfo = {
+    name: tool.name,
+    category,
+    description: tool.description || tool.label || '',
+    // 中文显示名：发布方结构化字段（scope.display_name / x-display_name），无则留空由上层兜底
+    displayName: scopeProp?.properties?.display_name?.const ?? schema['x-display_name'] ?? undefined,
+    // 完整参数结构：类型/必填/描述（本体函数示例拼在描述里，公共函数有 example 字段）
+    params: schemaToDeclaredParams({ ...schema, properties: baseProps }),
+  };
+  // 本体函数：scope 块（const 真实值）→ 独立 scope 字段（仅场景/本体四值，剔除 category/display_name 标记），
+  // 父 Agent 填子任务 scenario/ontology 字段用
+  if (category === '本体函数' && scopeProp?.properties) {
+    entry.scope = Object.fromEntries(
+      Object.entries(scopeProp.properties)
+        .filter(([k]) => k !== 'category' && k !== 'display_name')
+        .map(([k, v]: [string, any]) => [k, v?.const ?? v?.description ?? null]),
+    );
+  }
+  return entry;
+}
 
 /**
  * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
@@ -191,8 +232,10 @@ export class AgentFactory {
       return { text: `函数 ${functionName} 不在可挂载工具清单中`, isError: true };
     }
     const props = (found.tool.parameters as any)?.properties;
-    const hasOntologyId = !!props && typeof props === 'object' && 'ontology_id' in props;
-    const p = hasOntologyId ? { ...params, ontology_id: ontologyId } : { ...params };
+    // 本体函数判定用发布方标记（scope.category const），不靠 ontology_id 属性猜测：
+    // 外部工具碰巧带 ontology_id 参数时按原样透传，不被误注入本体 id
+    const isOntoFn = props?.[SCOPE_KEY]?.properties?.category?.const === '本体函数';
+    const p = isOntoFn ? { ...params, ontology_id: ontologyId } : { ...params };
     try {
       const res = await found.tool.execute('direct-function-call', p);
       return { text: toolResultToText(res.content), isError: false };
@@ -218,10 +261,13 @@ export class AgentFactory {
     const { ontologyId, primaryBehavior, requiredParams, legalCalls } = scope;
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
-    const hasOntologyId = !!props && 'ontology_id' in props;
-    // 仅含 ontology_id 的工具才做剔除 + 强制注入；其余（如时间函数）原样透传参数
+    // 本体锁定对象：executeOntoBehavior（行为执行）+ 发布方标记的本体函数（scope.category const）。
+    // 不靠 ontology_id 属性猜测——外部工具碰巧带该参数时不会被误剥参数/误注入本体 id
+    const needLock = tool.name === 'executeOntoBehavior'
+      || props?.[SCOPE_KEY]?.properties?.category?.const === '本体函数';
+    // 仅锁定的工具做 ontology_id 剔除 + 强制注入；其余（公共函数/外部 MCP）原样透传参数
     let nextParameters = schema;
-    if (hasOntologyId) {
+    if (needLock && props) {
       const nextProps = { ...props };
       delete nextProps.ontology_id;
       delete nextProps[SCOPE_KEY]; // scope 是规划元数据（非函数输入），子 Agent 不该看见/填写
@@ -232,7 +278,7 @@ export class AgentFactory {
     }
     const originalExecute = tool.execute;
     const execute = async (toolCallId: string, params: any) => {
-      const p = hasOntologyId ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
+      const p = needLock ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
 
       // ── 白名单闸门：业务执行面（executeOntoBehavior）的 behavior 名只允许合法集合 ──
       // 与父 Agent 工具边界同源：只靠提示词"未列入一律不得调用"挡不住幻觉（历史教训：父 Agent 双重执行）。
@@ -365,7 +411,8 @@ export class AgentFactory {
    * 可挂载函数/工具目录（单一事实源）：本体函数 / 公共函数 / 其他 MCP 工具三类。
    * 供父 Agent 的 listAllMcpFunctions 工具（规划发现）与规划校验（函数名/参数结构数据源）共用。
    * 每个条目：
-   *   - category：本体函数（schema 带 ontology_id）/ 公共函数（functions.json）/ 其他MCP工具
+   *   - category：发布方标记（本体函数 scope.category / 公共函数 x-category），无标记 = 其他MCP工具
+   *   - displayName：中文显示名（scope.display_name / x-display_name），无则上层兜底
    *   - params：完整参数结构（inputSchema 剔除 scope 后经 schemaToDeclaredParams 转声明形状
    *     {key: {type, required, description(含示例), example?}}），与子任务 params 填法同形
    *   - scope（本体函数独有）：所属场景/本体的真实值 {ontology_id, scenario_id, scenario_name, ontology_name}，
@@ -378,33 +425,7 @@ export class AgentFactory {
     // 其余（本体函数 / 公共函数 / 其他 MCP 工具）均是可挂载项，即 related_functions / 函数子任务 function 的取值域。
     return all
       .filter(({ tool }) => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name) && tool.name !== 'executeOntoBehavior')
-      .map(({ tool }) => {
-        const props = (tool.parameters as any)?.properties;
-        const hasOntologyId = !!props && 'ontology_id' in props;
-        const category: MountableToolInfo['category'] = getCommonFunctionNames().includes(tool.name)
-          ? '公共函数'
-          : hasOntologyId ? '本体函数' : '其他MCP工具';
-        const schema = (tool.parameters as any) || {};
-        // 剥离 scope 作用域块（本体函数独有，非函数输入参数）；本体函数还剥离 ontology_id（执行时自动注入，见 scope）
-        const baseProps = { ...(schema.properties || {}) };
-        const scopeProp = baseProps[SCOPE_KEY];
-        delete baseProps[SCOPE_KEY];
-        if (hasOntologyId) delete baseProps.ontology_id;
-        const entry: MountableToolInfo = {
-          name: tool.name,
-          category,
-          description: (tool as any).description || tool.label || '',
-          // 完整参数结构：类型/必填/描述（本体函数示例拼在描述里，公共函数有 example 字段）
-          params: schemaToDeclaredParams({ ...schema, properties: baseProps }),
-        };
-        // 本体函数：scope 块（const 真实值）→ 独立 scope 字段，父 Agent 填子任务 scenario/ontology 字段用
-        if (hasOntologyId && scopeProp?.properties) {
-          entry.scope = Object.fromEntries(
-            Object.entries(scopeProp.properties).map(([k, v]: [string, any]) => [k, v?.const ?? v?.description ?? null]),
-          );
-        }
-        return entry;
-      });
+      .map(({ tool }) => toMountableToolInfo(tool));
   }
 
   /**

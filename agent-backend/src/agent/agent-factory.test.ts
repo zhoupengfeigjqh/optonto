@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Agent } from '@earendil-works/pi-agent-core';
+import { toMountableToolInfo } from './agent-factory.js';
 
 // 整体替换 pi-agent-core：捕获 new Agent(config) 的 config（含 transformContext）
 vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
@@ -20,13 +21,15 @@ vi.mock('../services/mcp-client.js', () => ({
     async connect() {}
     async close() {}
     async listTools() {
+      // 工具集带发布方标记（与新版 core-backend 发布形态一致）：
+      // 本体函数 scope.category/display_name const；公共函数 x-category/x-display_name 扩展键；外部工具无标记
       return { tools: [
         { name: 'executeOntoBehavior', description: '执行本体行为', inputSchema: { type: 'object', properties: { behavior_name: { type: 'string' }, ontology_id: { type: 'integer' }, params: { type: 'object' } }, required: ['behavior_name', 'ontology_id'] } },
-        { name: 'calcSafetyStock', description: '计算安全库存', inputSchema: { type: 'object', properties: { scope: { type: 'object', properties: { ontology_id: { type: 'integer', const: 1 }, scenario_id: { type: 'integer', const: 1 }, scenario_name: { type: 'string', const: '生产调度' }, ontology_name: { type: 'string', const: '原材料采购和库存' } } }, ontology_id: { type: 'integer' }, currentStock: { type: 'number' }, safetyStock: { type: 'number' } }, required: ['ontology_id'] } },
-        { name: 'sumRawNotArrivalQty', description: '未到位数求和', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, purchaseRecordSet: { type: 'array' } }, required: ['ontology_id'] } },
+        { name: 'calcSafetyStock', description: '计算安全库存', inputSchema: { type: 'object', properties: { scope: { type: 'object', properties: { category: { type: 'string', const: '本体函数' }, display_name: { type: 'string', const: '计算安全库存' }, ontology_id: { type: 'integer', const: 1 }, scenario_id: { type: 'integer', const: 1 }, scenario_name: { type: 'string', const: '生产调度' }, ontology_name: { type: 'string', const: '原材料采购和库存' } } }, ontology_id: { type: 'integer' }, currentStock: { type: 'number' }, safetyStock: { type: 'number' } }, required: ['ontology_id'] } },
+        { name: 'sumRawNotArrivalQty', description: '未到位数求和', inputSchema: { type: 'object', properties: { scope: { type: 'object', properties: { category: { type: 'string', const: '本体函数' }, display_name: { type: 'string', const: '未到位数求和' }, ontology_id: { type: 'integer', const: 2 }, scenario_id: { type: 'integer', const: 1 }, scenario_name: { type: 'string', const: '生产调度' }, ontology_name: { type: 'string', const: '订单排程' } } }, ontology_id: { type: 'integer' }, purchaseRecordSet: { type: 'array' } }, required: ['ontology_id'] } },
         { name: 'listOntoBehaviors', description: '列出本体行为', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' } } } },
         { name: 'listOntoFunctions', description: '列出本体函数（元数据查询）', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, keyword: { type: 'string' } }, required: ['ontology_id'] } },
-        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {} } },
+        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-display_name': '当前日期' } },
         { name: 'weatherQuery', description: '外部天气查询', inputSchema: { type: 'object', properties: { city: { type: 'string' } } } },
       ] };
     }
@@ -379,5 +382,72 @@ describe('AgentFactory 子 Agent 白名单闸门', () => {
     expect(required).not.toContain('ontology_id');
     const result = await tool.execute('call-5', { currentStock: 10, safetyStock: 5 });
     expect(result).toBeTruthy();
+  });
+});
+
+// ─── toMountableToolInfo：发布方标记分类（纯函数，脱离 MCP 连接直测） ─────────────
+
+describe('toMountableToolInfo 标记分类', () => {
+  it('本体函数：scope.category 标记 → 归本体函数，剥离 scope/ontology_id，scope 仅留场景本体四值', () => {
+    const info = toMountableToolInfo({
+      name: 'calcSafetyStock',
+      description: '计算安全库存',
+      parameters: { type: 'object', properties: {
+        scope: { type: 'object', properties: {
+          category: { const: '本体函数' }, display_name: { const: '计算安全库存' },
+          ontology_id: { const: 1 }, scenario_id: { const: 1 },
+          scenario_name: { const: '生产调度' }, ontology_name: { const: '原材料采购和库存' },
+        } },
+        ontology_id: { type: 'integer' }, currentStock: { type: 'number' },
+      }, required: ['ontology_id'] },
+    });
+    expect(info.category).toBe('本体函数');
+    expect(info.displayName).toBe('计算安全库存');
+    expect(info.params).toEqual({ currentStock: { type: 'number', required: false } }); // ontology_id/scope 已剥离
+    expect(info.scope).toEqual({ ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' });
+  });
+
+  it('公共函数：x-category 标记 → 归公共函数，x-display_name 进 displayName', () => {
+    const info = toMountableToolInfo({
+      name: 'getCurrentDate', description: '当前日期',
+      parameters: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-display_name': '当前日期' },
+    });
+    expect(info.category).toBe('公共函数');
+    expect(info.displayName).toBe('当前日期');
+    expect(info.scope).toBeUndefined();
+  });
+
+  it('无标记 → 归其他MCP工具（排除法）', () => {
+    const info = toMountableToolInfo({
+      name: 'weatherQuery', description: '天气',
+      parameters: { type: 'object', properties: { city: { type: 'string' } } },
+    });
+    expect(info.category).toBe('其他MCP工具');
+    expect(info.displayName).toBeUndefined();
+  });
+
+  it('回归：外部工具碰巧带 ontology_id 参数 → 仍归其他MCP工具，参数不被误删（hasOntologyId 特征猜测已退役）', () => {
+    const info = toMountableToolInfo({
+      name: 'externalReport', description: '外部报表',
+      parameters: { type: 'object', properties: { ontology_id: { type: 'integer' }, title: { type: 'string' } }, required: ['ontology_id'] },
+    });
+    expect(info.category).toBe('其他MCP工具');
+    expect(info.params.ontology_id).toBeTruthy(); // 真实业务参数原样保留
+    expect(info.scope).toBeUndefined();
+  });
+
+  it('版本错配告警：带 scope 块但无 category 标记 → console.warn 提示 core-backend 过旧', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const info = toMountableToolInfo({
+        name: 'legacyFn', description: '',
+        parameters: { type: 'object', properties: { scope: { type: 'object', properties: { ontology_id: { const: 1 } } } } },
+      });
+      expect(info.category).toBe('其他MCP工具'); // 无标记仍走排除法
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0][0]).toContain('core-backend 版本过旧');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

@@ -86,23 +86,16 @@ export function getCommonFunctionNames(): string[] {
 }
 
 /**
- * 取公共函数的参数结构（inputSchema 经 schemaToDeclaredParams 转成与本体函数 params 同形的声明形状）。
- * 函数不在 functions.json 或未声明 inputSchema → 返回 null（"无声明"语义，与 getFunctionParams 的 null 分支一致）。
+ * 公共函数信息合一查询（中文名 + 描述 + 参数声明），不在 functions.json → null。
+ * FunctionCatalog 文件兜底模式的②数据源；meta/params 单点取数，不再两次查找。
+ * params 恒为对象：{} = 无声明（等价旧 getCommonFunctionParams 对无 inputSchema 返回空声明放行的语义）。
  */
-export function getCommonFunctionParams(functionName: string): Record<string, any> | null {
+export function getCommonFunctionInfo(functionName: string): { display_name: string; description?: string; params: Record<string, any> } | null {
   const fn = loadCommonFunctions().find(f => f.name === functionName);
-  if (!fn || !fn.inputSchema || typeof fn.inputSchema !== 'object') return null;
-  return schemaToDeclaredParams(fn.inputSchema);
-}
-
-/**
- * 取公共函数的展示元信息（中文显示名 + 描述），工具调用展示用。
- * 函数不在 functions.json → 返回空（让上层用子任务描述兜底，与 getFunctionMeta 语义一致）。
- */
-export function getCommonFunctionMeta(functionName: string): { display_name: string; description?: string } {
-  const fn = loadCommonFunctions().find(f => f.name === functionName);
+  if (!fn) return null;
   return {
-    display_name: fn?.display_name || fn?.description || '',
-    description: fn?.description,
+    display_name: fn.display_name || fn.description || '',
+    description: fn.description,
+    params: (fn.inputSchema && typeof fn.inputSchema === 'object') ? schemaToDeclaredParams(fn.inputSchema) : {},
   };
 }
