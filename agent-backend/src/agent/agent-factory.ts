@@ -343,6 +343,14 @@ export class AgentFactory {
           if (hasBehavior === hasFunction) {
             throw new Error(`子任务 ${st.seq} 必须且只能填写 behavior 或 function 之一（当前 behavior="${st.behavior}"，function="${st.function}"）`);
           }
+          // related_functions 只服务于行为子任务（子 Agent 执行取数/计算的函数挂载面）：
+          // 行为子任务可填可不填；函数子任务自身即函数直连调用（无子 Agent），必须为空。
+          if (Array.isArray(st.related_functions)) {
+            st.related_functions = st.related_functions.filter((f: any) => typeof f === 'string' && f.trim() !== ''); // 规整回写：剔除空白项
+          }
+          if (hasFunction && Array.isArray(st.related_functions) && st.related_functions.length > 0) {
+            throw new Error(`子任务 ${st.seq} 是函数子任务（function="${st.function}"），related_functions 必须为空（该字段仅用于行为子任务，当前 ${JSON.stringify(st.related_functions)}）`);
+          }
         }
         if (onPlanSubmitted) onPlanSubmitted(plan as unknown as SubTaskPlan);
         return {

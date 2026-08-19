@@ -17,9 +17,9 @@
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import { getLastAssistantMessage } from '../utils/text-utils.js';
-import { validateBehaviorNames, validateFunctionNames, validateParamsStructure, validatePlanStructure, topologicalSort } from './plan-validation.js';
-import type { InvalidBehavior } from './plan-validation.js';
-import { isParamValueEmpty, renderParamStructure, unwrapParamValues, type ParamSpec } from './param-contract.js';
+import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, topologicalSort } from './plan-validation.js';
+import type { InvalidTaskName } from './plan-validation.js';
+import { isParamValueEmpty, renderParamStructure, unwrapParamValues, validateParamStructure, type ParamSpec } from './param-contract.js';
 import { ConfirmManager } from './confirm-manager.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
@@ -175,7 +175,7 @@ export class Orchestrator {
       console.error(`[orchestrator] 执行异常: ${e?.stack || e}`);
       const results = session.results;
       const executedList = results.length > 0
-        ? results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`).join('\n')
+        ? results.map(r => `- 子任务 ${r.seq}（${r.task}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`).join('\n')
         : '（无子任务执行完成）';
       const successCount = results.filter(r => r.success).length;
       const residualNote = successCount > 0
@@ -235,18 +235,12 @@ export class Orchestrator {
 
     if (!plan || !plan.subtasks || plan.subtasks.length === 0) {
       const lastMsg = getLastAssistantMessage(parentAgent.state.messages);
-      // 保护：模型若违反约束把规划写成 JSON 文本，不当作回答返回。
-      // 正则只认 "subtasks" key（不锚定 {），避免嵌套 JSON 导致漏判。
-      // 注意：error 需先于 done 发送（前端遇到 done 即 break，同批到达时会跳过 error）
-      if (lastMsg && /"subtasks"\s*:/.test(lastMsg)) {
-        const msg = '⚠️ 无法生成执行计划：规划格式异常，请重新描述需求。';
-        emit.raw({ type: 'error', message: msg });
-        emit.raw({ type: 'done' });
-        return { reply: msg };
-      }
       if (lastMsg) {
+        // 直答收尾注释：token 流补一行提示（正文已在规划阶段流式输出），并拼入回复存历史，UI 与历史一致
+        const note = '\n\n---\n本次回答已结束，您可以根据上述内容开展进一步对话。';
+        emit.raw({ type: 'token', token: note });
         emit.raw({ type: 'done' });
-        return { reply: lastMsg };
+        return { reply: lastMsg + note };
       }
       const msg = '⚠️ 无法生成执行计划，请重新描述需求。';
       emit.raw({ type: 'error', message: msg });
@@ -262,16 +256,17 @@ export class Orchestrator {
     let exitReason = '用户拒绝执行规划';
 
     for (let round = 0; round < MAX_PLAN_ROUNDS; round++) {
-      // 校验 behavior 名称合法性（每轮都做；非法时提示父Agent 自动修正，最多修正 1 次）
-      const validated = await this.validateBehaviors(plan, planCtx);
-      if (!validated) {
+      // 名称合法性校验（每轮都做；先行为后函数，非法时各类分别提示父Agent 自动修正，各最多修正 1 次）
+      const validNamed = await this.validateTaskBehaviorNames(plan, planCtx);
+      const validNamedF = validNamed ? await this.validateTaskFunctionNames(validNamed, planCtx) : null;
+      if (!validNamedF) {
         emit.raw({ type: 'error', message: '⚠️ 规划校验失败：无法生成有效的执行计划' });
         return { reply: '⚠️ 规划校验失败：无法生成有效的执行计划，请重新描述需求。' };
       }
-      plan = validated;
+      plan = validNamedF;
 
       // 参数结构校验（必填参数 key 齐全 + 类型匹配）：非法时 nudge 父Agent 修正一次，不再直接失败
-      const paramValidated = await this.validateParams(plan, planCtx);
+      const paramValidated = await this.validateTaskParams(plan, planCtx);
       if (!paramValidated) {
         emit.entry({ type: 'subtask_done', name: '参数结构修正失败', status: 'failed', source: 'parent' });
         emit.raw({ type: 'error', message: '⚠️ 规划校验失败：参数结构不合法，修正失败' });
@@ -432,7 +427,7 @@ export class Orchestrator {
       const waveFailed = waveResults.find(r => !r.success);
       if (waveFailed) {
         for (const r of waveResults) {
-          if (!r.success) emit.raw({ type: 'token', token: `\r📋 **子任务 ${r.seq} ${r.behavior}** ❌ ${r.error}\n` });
+          if (!r.success) emit.raw({ type: 'token', token: `\r📋 **子任务 ${r.seq} ${r.task}** ❌ ${r.error}\n` });
         }
         // 波内任一中止（拒确/中断）→ 用户中止；否则为普通执行失败。二者必须分开记，
         // 否则普通失败会被下方 waveCapped 判定误报成"波数触顶"。
@@ -490,13 +485,13 @@ export class Orchestrator {
         const reason = session.terminalReason(pending.length);
         if (allSuccess && reason === null) {
           // 带上全量结果：末子任务跳过了中间分析，总结必须自包含
-          const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
+          const resultsText = results.map(r => `- 子任务 ${r.seq}（${r.task}）: ${r.summary}`).join('\n');
           await this.parentPrompt(parentAgent,`所有子任务已执行完毕。\n各子任务结果：\n${resultsText}\n\n请给用户一个简洁、完整的最终总结（包括执行结果、关键数据和后续建议）。`);
           finalSummary = getLastAssistantMessage(parentAgent.state.messages) || '执行完成';
         } else {
           const outcomeSummary = results.length > 0
             ? results.map(r =>
-                `- 子任务 ${r.seq}（${r.behavior}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
+                `- 子任务 ${r.seq}（${r.task}）: ${r.success ? '成功' : `失败 - ${r.error || '未知原因'}`}`,
               ).join('\n')
             : '（无子任务成功执行）';
           await this.parentPrompt(parentAgent,`任务未全部完成（${reason}）。\n已执行的子任务结果：\n${outcomeSummary}\n\n请给用户一个简洁的最终说明，并严格遵守以下要求：\n1. 总结已完成的操作与结果，说明终止/失败的原因\n2. 【残留副作用必须点破】若之前的子任务已产生持久化写入（如创建/更新/删除了采购单、库存等实体），必须明确列出这些【已生效】的写操作及其实体ID/编号，并说明任务终止后它们【仍然存在、不会被自动回滚】\n3. 针对上述残留状态，给出具体的后续处理建议（例如：重新发起剩余操作 / 取消或冲销已创建的记录 / 检查状态是否正常）\n4. 给出后续建议`);
@@ -597,12 +592,12 @@ export class Orchestrator {
 
     if (isError) {
       emit.entry({ type: 'subtask_done', name: functionName, status: 'failed', detail: `${functionName}｜子任务 ${subTask.seq}`, result: text, source: 'child', seq: subTask.seq, ...display });
-      return { seq: subTask.seq, behavior: functionName, success: false, error: `❌ 函数执行失败：${text}`, summary: '' };
+      return { seq: subTask.seq, task: functionName, success: false, error: `❌ 函数执行失败：${text}`, summary: '' };
     }
 
     emit.entry({ type: 'subtask_done', name: functionName, status: 'done', detail: `${functionName}｜子任务 ${subTask.seq}`, result: text, source: 'child', seq: subTask.seq, ...display });
     // summary 直接放函数原始结果 JSON——它是 L0 波次反馈中继给后续子任务的一等值
-    return { seq: subTask.seq, behavior: functionName, success: true, summary: text };
+    return { seq: subTask.seq, task: functionName, success: true, summary: text };
   }
 
   // ─── 波次反馈与规划校验 ──────────────────────
@@ -622,7 +617,7 @@ export class Orchestrator {
     ctx.emit.raw({ type: 'feedback', status: 'running' });
     ctx.submittedPlan.value = null; // 只识别本次分析中新提交的调整规划，避免误取历史规划
     const feedbackStart = ctx.parentAgent.state.messages.length; // 方案B：记录反馈轮起点，无调整则整体剔除
-    const waveList = waveResults.map(r => `- 子任务 ${r.seq}（${r.behavior}）: ${r.summary}`).join('\n');
+    const waveList = waveResults.map(r => `- 子任务 ${r.seq}（${r.task}）: ${r.summary}`).join('\n');
     const structureHint = await this.buildRelayStructureHint(waveResults, pending);
     await this.parentPrompt(ctx.parentAgent,`本波次已执行完毕，共 ${waveResults.length} 个子任务。
 
@@ -655,9 +650,10 @@ ${waveList}
       // 父 Agent 提交空规划或"只含已执行子任务"的规划 = 提前终止后续流程（nextPending 会被置空）。
       // 已执行 seq 集合提前算出：依赖校验视其为合法（调整规划常只含剩余子任务，depends_on 引用已执行前序）。
       const executedSeqs = new Set(allResults.map(r => r.seq));
-      const validatedB = await this.validateBehaviors(adjusted, ctx);
-      if (validatedB) {
-        const validatedP = await this.validateParams(validatedB, ctx);
+      const validatedB = await this.validateTaskBehaviorNames(adjusted, ctx);
+      const validatedF = validatedB ? await this.validateTaskFunctionNames(validatedB, ctx) : null;
+      if (validatedF) {
+        const validatedP = await this.validateTaskParams(validatedF, ctx);
         if (validatedP) {
           // 依赖校验也带 nudge（与行为名/参数一致）
           const validatedD = await this.validatePlanDeps(validatedP, ctx, executedSeqs);
@@ -718,36 +714,78 @@ ${waveList}
     return `\n\n【待填参数结构参考】（以下子任务依赖本波结果，其 array/object 参数严格按此结构填纯值，数组项/对象字段直接填值即可，不要再包 {type/value} 包装）\n${blocks.join('\n')}`;
   }
 
-  /** 校验子任务行为/函数名合法性；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  private async validateBehaviors(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
-    const catalog = await this.functionCatalog.view();
-    // 合法名 = 行为（所属本体，gateway）∪ 函数（本体∪公共∪其他MCP工具，FunctionCatalog 三源合一）
-    const invalidOf = (p: SubTaskPlan): InvalidBehavior[] => [
-      ...validateBehaviorNames(this.ontologyGateway, p),
-      ...validateFunctionNames(catalog, p),
-    ];
+  /** 校验行为子任务的行为名合法性（gateway 花名册，按子任务所属本体过滤）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validateTaskBehaviorNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateBehaviorNames(this.ontologyGateway, p);
     return this.repairPlan(plan, ctx, {
-      label: '行为/函数名校验',
-      doneLabel: '行为/函数名已修正',
-      detailOf: (p) => `不存在的 behavior/function: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.function || iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
+      label: '行为名校验',
+      doneLabel: '行为名已修正',
+      detailOf: (p) => `不存在的 behavior: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
       isClean: (p) => invalidOf(p).length === 0,
       nudge: (p) => {
         const invalid = invalidOf(p);
-        const allValid = [...new Set(invalid.flatMap(iv => iv.valid))].join(', ');
-        return `以下子任务的名称（behavior 或 function）不在其所属场景/本体的合法集合中：${invalid.map(iv => `子任务${iv.sub.seq}: ${iv.sub.function || iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}。\n合法名称有：${allValid}。\n请重新调用 submit_plan 工具提交修正后的规划。`;
+        // 按子任务分行列各自的合法名单（不合并成总表）：跨本体规划中合并名单会导致父 Agent
+        // 跨本体误选、白白浪费唯一的修正机会；valid 为空（本体无行为/yaml缺失）时给删除或换本体的出口
+        const lines = invalid.map(iv => {
+          const head = `- 子任务${iv.sub.seq}（${iv.sub.behavior}，${iv.sub.scenario_name}/${iv.sub.ontology_name}）`;
+          return iv.valid.length > 0
+            ? `${head}，合法行为名有：${iv.valid.join('、')}`
+            : `${head}，该本体下没有任何合法行为名——请检查 scenario_name/ontology_name 是否填错，或删除该子任务`;
+        });
+        return `以下子任务的 behavior 不在其所属场景/本体的合法集合中：\n${lines.join('\n')}\n请严格按各子任务对应的合法名单修正（严禁跨子任务借用名单），保持其余子任务不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
+      },
+    });
+  }
+
+  /** 校验函数子任务的函数名合法性（FunctionCatalog 三源合一：本体函数按本体过滤 ∪ 公共函数 ∪ 其他MCP工具）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validateTaskFunctionNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    const catalog = await this.functionCatalog.view();
+    const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateFunctionNames(catalog, p);
+    return this.repairPlan(plan, ctx, {
+      label: '函数名校验',
+      doneLabel: '函数名已修正',
+      detailOf: (p) => `不存在的 function: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.function}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
+      isClean: (p) => invalidOf(p).length === 0,
+      nudge: (p) => {
+        const invalid = invalidOf(p);
+        // 按子任务分行列各自的合法名单（不合并成总表），与行为校验同构；valid 为空时给出口
+        const lines = invalid.map(iv => {
+          const head = `- 子任务${iv.sub.seq}（${iv.sub.function}，${iv.sub.scenario_name}/${iv.sub.ontology_name}）`;
+          return iv.valid.length > 0
+            ? `${head}，合法函数名有：${iv.valid.join('、')}`
+            : `${head}，没有可用的合法函数名——请检查 scenario_name/ontology_name 是否填错，或删除该子任务`;
+        });
+        return `以下子任务的 function 不在合法函数集合中：\n${lines.join('\n')}\n请严格按各子任务对应的合法名单修正（严禁跨子任务借用名单；公共函数与其他MCP工具为全局工具，任何子任务都可用），保持其余子任务不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
       },
     });
   }
 
   /** 参数结构校验：必填参数 key 齐全 + 类型匹配；非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  private async validateParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+  private async validateTaskParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
     const catalog = await this.functionCatalog.view();
     return this.repairPlan(plan, ctx, {
       label: '参数结构校验',
       doneLabel: '参数结构已修正',
-      detailOf: (p) => validateParamsStructure(this.ontologyGateway, catalog, p).join('；'),
-      isClean: (p) => validateParamsStructure(this.ontologyGateway, catalog, p).length === 0,
-      nudge: (p) => `以下子任务的参数结构不合法，缺少必填参数：\n${validateParamsStructure(this.ontologyGateway, catalog, p).join('；')}\n\n请先重新加载相关技能（load_skill）获取每个行为的完整参数结构，确保每个子任务的 params 包含该行为声明的【全部必填参数】（type/required/description/value 齐全，用户已提供的填入 value，缺失的留空字符串），保持行为与整体规划不变，然后重新调用 submit_plan 提交修正后的规划。`,
+      detailOf: (p) => validateAllParams(this.ontologyGateway, catalog, p).join('；'),
+      isClean: (p) => validateAllParams(this.ontologyGateway, catalog, p).length === 0,
+      nudge: (p) => {
+        // 逐子任务取声明源并校验（与 validateAllParams 同口径：行为→gateway 行为声明，函数→catalog 三源），
+        // 按子任务分组输出：错误清单 + 声明结构 sketch。sketch 用中继提示同款 renderParamStructure——
+        // 父 Agent 修正时看到的结构 = 校验器判错的依据 = 中继填值的依据（单一事实源），不再让它绕路 load_skill。
+        const blocks: string[] = [];
+        for (const st of p.subtasks) {
+          const declared = st.function
+            ? catalog.functionParams(st.scenario_name, st.ontology_name, st.function)
+            : this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior)?.params;
+          if (!declared) continue; // 无声明源 → 该校验器本就跳过（MCP 工具 schema 兜底）
+          const errs = validateParamStructure(declared, st.params || {}, st.seq, st.function || st.behavior);
+          if (errs.length === 0) continue; // 只给有错子任务出块
+          const sketch = Object.entries(declared)
+            .flatMap(([k, s]) => renderParamStructure(k, s as ParamSpec, {}, '  '));
+          blocks.push(`- 子任务${st.seq}（${st.function || st.behavior}，${st.scenario_name}/${st.ontology_name}）\n  错误：\n${errs.map(e => `  · ${e}`).join('\n')}\n  参数声明结构（请严格按此修正）：\n${sketch.join('\n')}`);
+        }
+        return `以下子任务的参数不合法：\n${blocks.join('\n\n')}\n\n请逐项修正：必填参数 key 齐全（type/required/description/value 四键）、type 与 value 的类型与声明一致、缺失值留空字符串；保持行为与整体规划不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
+      },
     });
   }
 
@@ -798,7 +836,7 @@ ${waveList}
 
   /**
    * 给规划补展示字段：每个子任务附加行为中文名 display_name，供前端弹窗可读展示。
-   * 纯展示用途，不参与结构校验；行为名已在确认前经 validateBehaviors 校验存在，getBehaviorMeta 不会抛错。
+   * 纯展示用途，不参与结构校验；行为/函数名已在确认前经 validateTaskBehaviorNames / validateTaskFunctionNames 校验存在，getBehaviorMeta 不会抛错。
    */
   private enrichPlanDisplay(plan: SubTaskPlan): SubTaskPlan {
     return {

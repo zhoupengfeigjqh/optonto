@@ -7,7 +7,7 @@
  *  ③ 其他MCP工具：AgentFactory.discoverTools() 清单（getMountableToolCatalog，run 级缓存）
  *
  * 本模块把 join 收进一处，对外只暴露一个方法 view()：
- * 规划校验（validateFunctionNames / validateParamsStructure）不再各自接收
+ * 规划校验（validateFunctionNames / validateAllParams）不再各自接收
  * mcpToolNames / mcpToolParams 手工拼接参数，统一消费 FunctionCatalogView。
  *
  * view() 是 async 快照：MCP 目录发现是 async（其内部 run 级缓存保证重复调用代价可忽略），

@@ -96,7 +96,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     expect(capturedBudget!.exceeded).toBe(true);
 
     // 记为失败 + 明确原因，不置 aborted（aborted 语义是用户中断/拒绝）
-    expect(result).toMatchObject({ seq: 1, behavior: 'CreatePurchaseRecord', success: false });
+    expect(result).toMatchObject({ seq: 1, task: 'CreatePurchaseRecord', success: false });
     expect(result.error).toContain('连续报错已达 3 次');
     expect(result.error).toContain('已中断执行');
     expect(result.aborted).toBeUndefined();

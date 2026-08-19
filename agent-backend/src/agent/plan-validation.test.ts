@@ -3,7 +3,7 @@
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
  */
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateParamsStructure, validatePlanStructure } from './plan-validation.js';
+import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure } from './plan-validation.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
@@ -158,29 +158,29 @@ describe('validateBehaviorNames 跳过函数节点', () => {
   });
 });
 
-describe('validateParamsStructure 函数/行为分支', () => {
+describe('validateAllParams 函数/行为分支', () => {
   it('函数子任务：按函数 params 校验必填', async () => {
-    const errors = validateParamsStructure(fakeGateway(), await mkView(), plan([fnSubtask('sumRawNotArrivalQty')]));
+    const errors = validateAllParams(fakeGateway(), await mkView(), plan([fnSubtask('sumRawNotArrivalQty')]));
     expect(errors).toEqual(['子任务1(sumRawNotArrivalQty) 缺少必填参数 purchaseRecordSet']);
   });
 
   it('函数无声明源（view 返回 null）跳过结构校验', async () => {
-    expect(validateParamsStructure(fakeGateway(), await mkView(), plan([fnSubtask('calcSafetyStock')]))).toEqual([]);
+    expect(validateAllParams(fakeGateway(), await mkView(), plan([fnSubtask('calcSafetyStock')]))).toEqual([]);
   });
 
   it('其他MCP工具：按目录声明校验必填（gateway 无声明时兜底数据源）', async () => {
     const view = await mkView([mcpTool('generate_line_chart', { data: { required: true, type: 'array' } })]);
-    const errors = validateParamsStructure(fakeGateway(), view, plan([fnSubtask('generate_line_chart')]));
+    const errors = validateAllParams(fakeGateway(), view, plan([fnSubtask('generate_line_chart')]));
     expect(errors).toEqual(['子任务1(generate_line_chart) 缺少必填参数 data']);
   });
 
   it('其他MCP工具：目录声明为空（MCP 无 inputSchema）→ 跳过结构校验', async () => {
     const view = await mkView([mcpTool('weatherQuery')]);
-    expect(validateParamsStructure(fakeGateway(), view, plan([fnSubtask('weatherQuery')]))).toEqual([]);
+    expect(validateAllParams(fakeGateway(), view, plan([fnSubtask('weatherQuery')]))).toEqual([]);
   });
 
   it('行为子任务：仍按行为 params 校验', async () => {
-    const errors = validateParamsStructure(fakeGateway(), await mkView(), plan([behSubtask('CreatePurchaseRecord')]));
+    const errors = validateAllParams(fakeGateway(), await mkView(), plan([behSubtask('CreatePurchaseRecord')]));
     expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
   });
 });

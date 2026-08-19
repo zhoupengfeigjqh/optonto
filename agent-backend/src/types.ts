@@ -127,7 +127,8 @@ export interface BehaviorMeta {
 /** 子任务执行结果 */
 export interface SubTaskResult {
   seq: number;
-  behavior: string;
+  /** 执行目标名：行为子任务为行为名，函数子任务为函数名（结果侧不再区分二者，统一在此） */
+  task: string;
   success: boolean;
   error?: string;
   /** 是否因用户中断/拒绝而终止（区别于常规失败） */

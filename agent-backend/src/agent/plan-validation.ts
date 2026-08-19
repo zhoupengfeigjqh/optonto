@@ -7,14 +7,14 @@ import type { OntologyGatewayPort } from './agent-ports.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import { validateParamStructure } from './param-contract.js';
 
-export interface InvalidBehavior {
+export interface InvalidTaskName {
   sub: SubTask;
   valid: string[];
 }
 
 /** 行为名合法性：枚举比对行为是否存在于所属本体。函数子任务（function 非空）跳过。返回非法子任务及该本体的合法名列表。 */
-export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidBehavior[] {
-  const invalid: InvalidBehavior[] = [];
+export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidTaskName[] {
+  const invalid: InvalidTaskName[] = [];
   for (const st of plan.subtasks) {
     if (st.function) continue; // 函数子任务不走行为名校验
     const names = gateway.getBehaviorNames(st.scenario_name, st.ontology_name);
@@ -25,8 +25,8 @@ export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTas
 
 /** 函数名合法性：函数子任务的 function 必须存在于合法函数集合。行为子任务跳过。
  *  合法集合由 FunctionCatalogView 单源提供（本体函数 ∪ 公共函数 ∪ 其他MCP工具，三源 join 已收进 FunctionCatalog）。 */
-export function validateFunctionNames(catalog: FunctionCatalogView, plan: SubTaskPlan): InvalidBehavior[] {
-  const invalid: InvalidBehavior[] = [];
+export function validateFunctionNames(catalog: FunctionCatalogView, plan: SubTaskPlan): InvalidTaskName[] {
+  const invalid: InvalidTaskName[] = [];
   for (const st of plan.subtasks) {
     if (!st.function) continue;
     const names = catalog.functionNames(st.scenario_name, st.ontology_name);
@@ -38,7 +38,7 @@ export function validateFunctionNames(catalog: FunctionCatalogView, plan: SubTas
 /** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。
  *  函数节点的参数声明由 FunctionCatalogView 单源提供（本体函数 functions[].params → 公共函数 functions.json
  *  → 其他MCP工具 inputSchema，三源按序；都没有 → null 跳过，参数正确性由 MCP 工具 schema 兜底）。 */
-export function validateParamsStructure(gateway: OntologyGatewayPort, catalog: FunctionCatalogView, plan: SubTaskPlan): string[] {
+export function validateAllParams(gateway: OntologyGatewayPort, catalog: FunctionCatalogView, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
     if (st.function) {

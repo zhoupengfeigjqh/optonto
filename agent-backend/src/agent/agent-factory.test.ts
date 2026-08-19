@@ -196,6 +196,32 @@ describe('AgentFactory submit_plan 互斥门与键省略容忍', () => {
     expect(res.details.submitted).toBe(true);
     expect(plan.subtasks[0].behavior).toBe(''); // 规整已回写
   });
+
+  it('函数子任务填了 related_functions → 硬门抛错（该字段仅用于行为子任务）', async () => {
+    const tool = (await captureParentTools()).find(t => t.name === 'submit_plan');
+    await expect(tool.execute('c4', { subtasks: [{ ...baseSub(), function: 'sumRawNotArrivalQty', related_functions: ['getCurrentDate'] }] }))
+      .rejects.toThrow('related_functions 必须为空');
+  });
+
+  it('行为子任务可填可不填 related_functions → 均放行；填了则规整回写（剔除空白项）', async () => {
+    const tool = (await captureParentTools()).find(t => t.name === 'submit_plan');
+    // 不填 → 放行
+    const res1 = await tool.execute('c5', { subtasks: [{ ...baseSub(), behavior: 'CreatePurchaseRecord' }] });
+    expect(res1.details.submitted).toBe(true);
+    // 填了（含空白项）→ 放行且规整
+    const plan: any = { subtasks: [{ ...baseSub(), behavior: 'CreatePurchaseRecord', related_functions: ['getCurrentDate', ' '] }] };
+    const res2 = await tool.execute('c6', plan);
+    expect(res2.details.submitted).toBe(true);
+    expect(plan.subtasks[0].related_functions).toEqual(['getCurrentDate']);
+  });
+
+  it('函数子任务 related_functions 缺省或空数组 → 放行（规整后为空视同未填）', async () => {
+    const tool = (await captureParentTools()).find(t => t.name === 'submit_plan');
+    const res1 = await tool.execute('c7', { subtasks: [{ ...baseSub(), function: 'sumRawNotArrivalQty' }] });
+    expect(res1.details.submitted).toBe(true);
+    const res2 = await tool.execute('c8', { subtasks: [{ ...baseSub(), function: 'sumRawNotArrivalQty', related_functions: ['  '] }] });
+    expect(res2.details.submitted).toBe(true);
+  });
 });
 
 describe('AgentFactory 父 Agent 工具职责边界', () => {

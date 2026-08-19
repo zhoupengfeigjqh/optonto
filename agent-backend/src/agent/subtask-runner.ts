@@ -66,7 +66,7 @@ export class SubtaskRunner {
       if (!confirmResult.approved) {
         const aborted = confirmResult.reason !== 'timeout'; // 用户拒绝/中断 → aborted；超时 → 常规失败
         return {
-          seq: subTask.seq, behavior: subTask.behavior, success: false,
+          seq: subTask.seq, task: subTask.behavior, success: false,
           error: confirmResult.reason === 'timeout' ? '⏱ 安全确认超时'
             : confirmResult.reason === 'abort' ? '⏹ 用户中断'
             : '🔒 安全确认被拒绝',
@@ -134,13 +134,13 @@ export class SubtaskRunner {
           // pi-agent-core 的中断不会让 prompt() 抛错，而是正常 resolve（最后一条消息 stopReason='aborted'）。
           // 必须显式检测，否则中断会被 extractResult 误判为成功。
           if (userAborted || isChildAborted(childAgent)) {
-            return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
+            return { seq: subTask.seq, task: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
           }
           // 工具连续报错达上限：pi-agent 内层循环已被 terminate 停住，直接判失败收尾。
           // 记为失败+明确原因（不置 aborted —— aborted 语义是用户中断/拒绝）。
           if (errorBudget.exceeded) {
             return {
-              seq: subTask.seq, behavior: subTask.behavior, success: false,
+              seq: subTask.seq, task: subTask.behavior, success: false,
               error: `⏹ 子任务连续报错已达 ${errorBudget.limit} 次，已中断执行（不再重试）`, summary: '',
             };
           }
@@ -148,10 +148,10 @@ export class SubtaskRunner {
           const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior);
           if (result.success) { return result; }
           // LLM 自报失败（前置规则未过、必填参数无法获取等）直接返回，不重试、不整轮重做
-          return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: result.summary || '❌ 执行未成功', summary: result.summary };
+          return { seq: subTask.seq, task: subTask.behavior, success: false, error: result.summary || '❌ 执行未成功', summary: result.summary };
         } catch (e: any) {
           if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
-            return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
+            return { seq: subTask.seq, task: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
           }
           // 仅 prompt() 抛异常（LLM/传输层）才走重试；工具层报错已被预算与内层覆盖，不会走到这里
           lastError = e.message;
@@ -161,7 +161,7 @@ export class SubtaskRunner {
         }
       }
 
-      return { seq: subTask.seq, behavior: subTask.behavior, success: false, error: `❌ 执行失败（LLM 调用异常，重试${MAX_LLM_EXCEPTION_RETRIES}次后）: ${lastError}`, summary: '' };
+      return { seq: subTask.seq, task: subTask.behavior, success: false, error: `❌ 执行失败（LLM 调用异常，重试${MAX_LLM_EXCEPTION_RETRIES}次后）: ${lastError}`, summary: '' };
     } finally {
       this.deps.childAgents.delete(childAgent);
     }
@@ -336,7 +336,7 @@ export class SubtaskRunner {
   }
 
   /** 提取子任务执行结果：以 LLM 回复末尾的【状态】标记为准。工具报错已由内层自纠/预算兜底，不再额外判失败。 */
-  private extractResult(messages: any[], seq: number, behavior: string): SubTaskResult {
+  private extractResult(messages: any[], seq: number, task: string): SubTaskResult {
     const last = [...messages].reverse().find((m: any) => m.role === 'assistant' && !m.errorMessage);
     const content = last ? contentToText(last.content) : '';
     const { failed, found } = parseResultStatus(content);
@@ -344,7 +344,7 @@ export class SubtaskRunner {
     // 无状态标记（found=false）→ 判失败：结果无法确认，不甩 LLM 原文（可能是"成功完成xxx"但漏打标记，易割裂）
     const summary = found ? stripResultStatus(content) : '结果无法确认：未按协议输出状态标记';
     return {
-      seq, behavior,
+      seq, task,
       success,
       summary,
     };
