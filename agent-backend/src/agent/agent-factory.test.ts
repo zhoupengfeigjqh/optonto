@@ -29,6 +29,7 @@ vi.mock('../services/mcp-client.js', () => ({
         { name: 'sumRawNotArrivalQty', description: '未到位数求和', inputSchema: { type: 'object', properties: { scope: { type: 'object', properties: { category: { type: 'string', const: '本体函数' }, display_name: { type: 'string', const: '未到位数求和' }, ontology_id: { type: 'integer', const: 2 }, scenario_id: { type: 'integer', const: 1 }, scenario_name: { type: 'string', const: '生产调度' }, ontology_name: { type: 'string', const: '订单排程' } } }, ontology_id: { type: 'integer' }, purchaseRecordSet: { type: 'array' } }, required: ['ontology_id'] } },
         { name: 'listOntoBehaviors', description: '列出本体行为', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' } } } },
         { name: 'listOntoFunctions', description: '列出本体函数（元数据查询）', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' }, keyword: { type: 'string' } }, required: ['ontology_id'] } },
+        { name: 'listOntoProcesses', description: '列出本体业务流程', inputSchema: { type: 'object', properties: { ontology_id: { type: 'integer' } }, required: ['ontology_id'] } },
         { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-display_name': '当前日期' } },
         { name: 'weatherQuery', description: '外部天气查询', inputSchema: { type: 'object', properties: { city: { type: 'string' } } } },
       ] };
@@ -36,9 +37,14 @@ vi.mock('../services/mcp-client.js', () => ({
     async callTool() { return { content: [{ type: 'text', text: '{"ok":true}' }], isError: false }; }
   },
 }));
-// SkillLoader 只用到 getSkillDescriptions（tools 的 execute 不在此路径触发）
+// SkillLoader 只用到 getSkillDescriptions / getSelectedContexts（tools 的 execute 不在此路径触发）
 vi.mock('../services/skill-loader.js', () => ({
-  SkillLoader: class { getSkillDescriptions() { return []; } },
+  SkillLoader: class {
+    getSkillDescriptions() { return []; }
+    getSelectedContexts() {
+      return [{ scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 }];
+    }
+  },
 }));
 // 模型解析：返回假模型，避免真实解析
 vi.mock('../services/llm.js', () => ({
@@ -236,6 +242,14 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     expect(names).toContain('submit_plan');
   });
 
+  it('父 Agent system prompt 含本次对话本体信息列表（scenario/ontology 四元组）', async () => {
+    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
+    await factory.createParentAgent([], mkHistory(), () => {});
+    const prompt = mockedAgent.mock.calls[0][0].initialState.systemPrompt as string;
+    expect(prompt).toContain('## 本次对话本体信息');
+    expect(prompt).toContain('场景：生产调度（scenario_id=1）｜本体：原材料采购和库存（ontology_id=1）');
+  });
+
   it('父 Agent 挂只读 listAllMcpFunctions，默认返回全量函数/工具清单（名字+分类+描述+完整params，本体函数带scope，剔除 list* 与 executeOntoBehavior）', async () => {
     const tools = await captureParentTools();
     const tool = tools.find(t => t.name === 'listAllMcpFunctions');
@@ -301,6 +315,7 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     const names = (await captureParentTools()).map(t => t.name);
     expect(names).toContain('listOntoBehaviors');
     expect(names).toContain('listOntoFunctions'); // MCP 版本体函数元数据查询工具（恢复挂载，判断3 用）
+    expect(names).toContain('listOntoProcesses'); // 本体业务流程查询工具
     expect(names).toContain('listAllMcpFunctions'); // 本地内部工具：可规划函数/工具清单（只读）
     expect(names).not.toContain('getCurrentDate'); // 公共函数不挂父 Agent（由 listAllMcpFunctions 发现）
   });

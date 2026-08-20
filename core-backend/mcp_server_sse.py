@@ -166,7 +166,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoBehaviors",
-            description="列出指定本体的行为。返回行为的 name、display_name、description、params（输入参数结构）、response（返回结构）。",
+            description="列出指定本体的行为。返回行为的 name、display_name、description、params（输入参数结构）、response（返回结构）、rules（该行为关联的规则：name、display_name、position 介入位置、description）。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -225,6 +225,18 @@ async def _list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="listOntoProcesses",
+            description="列出指定本体的业务流程。返回流程的 name、display_name、goal（流程目标）、description、steps（流程步骤：current_action 当前动作、previous_action 上一动作、description 步骤描述、connection_type 衔接类型）。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ontology_id": {"type": "integer", "description": "本体 ID"},
+                    "keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配流程名称或展示名称"},
+                },
+                "required": ["ontology_id"],
+            },
+        ),
+        Tool(
             name="executeOntoBehavior",
             description="执行本体行为。API 类型调用目标 HTTP 接口，SQL 类型执行 SQL 查询。传入 ontology_id、behavior_name 和 params，返回按 response 结构对齐的数据。",
             inputSchema={
@@ -271,6 +283,16 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     elif name == "listOntoBehaviors":
         oid = arguments["ontology_id"]
         data = await _api_get(f"/api/ontologies/{oid}/behaviors")
+        # 附带每个行为关联的规则（名称/展示名称/介入位置/描述）：规则经 related_behaviors 反向挂到行为上
+        rules = await _api_get(f"/api/ontologies/{oid}/rules")
+        if isinstance(data, list) and isinstance(rules, list):
+            for b in data:
+                b["rules"] = [
+                    {"name": r.get("name"), "display_name": r.get("display_name"),
+                     "position": r.get("position"), "description": r.get("description")}
+                    for r in rules
+                    if isinstance(r, dict) and b.get("name") in (r.get("related_behaviors") or [])
+                ]
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
     elif name == "listOntoConcepts":
@@ -302,6 +324,11 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "listOntoSecurities":
         result = await _api_get(f"/api/ontologies/{arguments['ontology_id']}/securities")
+
+    elif name == "listOntoProcesses":
+        oid = arguments["ontology_id"]
+        data = await _api_get(f"/api/ontologies/{oid}/processes")
+        result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
     elif name == "executeOntoBehavior":
         oid = arguments["ontology_id"]

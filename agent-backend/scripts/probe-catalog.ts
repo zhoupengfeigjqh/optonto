@@ -7,7 +7,7 @@ import { MCPClient } from '../src/services/mcp-client.js';
 import { toMountableToolInfo } from '../src/agent/agent-factory.js';
 
 const PARENT_QUERY = ['listScenarios', 'listOntologies', 'listOntoBehaviors', 'listOntoConcepts',
-  'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities'];
+  'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities', 'listOntoProcesses'];
 
 async function main() {
   const client = new MCPClient('http://localhost:8002/sse');

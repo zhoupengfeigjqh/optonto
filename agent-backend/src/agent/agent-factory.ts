@@ -19,7 +19,7 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '.
 // ─── 工具集配置 ─────────────────────────────
 
 /**
- * 父 Agent 可挂载的本体查询工具（只读元数据，规划时了解场景/本体/行为/概念/关系/函数/安全）。
+ * 父 Agent 可挂载的本体查询工具（只读元数据，规划时了解场景/本体/行为/概念/关系/函数/安全/流程）。
  * 父 Agent 工具职责边界：load_skill + 本体查询 list* + listAllMcpFunctions（本地内部工具：函数/工具清单）+ submit_plan，【不挂执行工具、不挂函数/外部工具】。
  * 函数/外部工具由 listAllMcpFunctions 实时发现（本体函数/公共函数/其他MCP工具三类），父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务；executeOntoBehavior 由子 Agent 独占。
  * 注：load_skill / submit_plan / listAllMcpFunctions 是 agent-backend 本地内部工具，只挂父 Agent，
@@ -27,7 +27,7 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '.
  */
 const PARENT_ONTOLOGY_QUERY_TOOLS = [
   'listScenarios', 'listOntologies', 'listOntoBehaviors', 'listOntoConcepts',
-  'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities',
+  'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities', 'listOntoProcesses',
 ];
 
 /**
@@ -143,9 +143,10 @@ export class AgentFactory {
     onSkillLoaded: (skillName: string) => void,
     onPlanSubmitted?: (plan: SubTaskPlan) => void,
   ): Promise<AgentPort> {
-    // 合并所有选中技能（可跨本体）的 name+description 进 system prompt
+    // 合并所有选中技能（可跨本体）的 name+description 进 system prompt；附带本体信息列表（id 权威来源：core meta.json）
     const descriptions = this.skillLoader.getSkillDescriptions(skills);
-    const systemPrompt = buildParentPrompt(descriptions);
+    const contexts = this.skillLoader.getSelectedContexts(skills);
+    const systemPrompt = buildParentPrompt(descriptions, contexts);
     const model = resolveDeepSeekModel();
 
     const loadSkillTool = this.createLoadSkillTool(skills, onSkillLoaded);

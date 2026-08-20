@@ -87,6 +87,37 @@ export class SkillLoader {
     }
   }
 
+  /**
+   * 取选中技能关联的本体上下文列表（scenario/ontology 四元组），按 ontology_id 去重。
+   * id 取自 core 的 meta.json 注册表（实时权威），不解析 SKILL.md 章节0 的快照文本
+   * （本体删除重建后 id 会变，SKILL.md 不会跟着更新）。
+   * meta 缺失/解析失败的技能静默跳过——不阻断对话，仅列表少一条。
+   */
+  getSelectedContexts(skills: SkillSelection[]): SkillContext[] {
+    const seen = new Set<number>();
+    const contexts: SkillContext[] = [];
+    for (const s of skills) {
+      try {
+        const onMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(s.scenario, s.ontology), 'utf-8'));
+        const scMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(s.scenario), 'utf-8'));
+        const ontologyId = Number(onMeta?.id);
+        const scenarioId = Number(scMeta?.id ?? onMeta?.scenario_id);
+        if (!Number.isFinite(ontologyId) || !Number.isFinite(scenarioId)) continue;
+        if (seen.has(ontologyId)) continue;
+        seen.add(ontologyId);
+        contexts.push({
+          scenario_name: s.scenario,
+          scenario_id: scenarioId,
+          ontology_name: s.ontology,
+          ontology_id: ontologyId,
+        });
+      } catch {
+        continue;
+      }
+    }
+    return contexts;
+  }
+
   /** 扫描 onto_market 全部本体，返回所有技能及所在位置（技能选择下拉用） */
   listAllSkills(): SkillInfo[] {
     const ontoMarket = join(this.pac.getDataDir(), 'onto_market');

@@ -1,4 +1,4 @@
-import type { SkillDescription } from '../types.js';
+import type { SkillDescription, SkillContext } from '../types.js';
 import { RESULT_STATUS_OK, RESULT_STATUS_FAIL } from './result-protocol.js';
 
 /**
@@ -11,7 +11,7 @@ export const PARENT_SYSTEM_PROMPT = `
 你是一个任务规划专家，核心职责是根据用户需求制定可执行的子任务计划。
 
 **你的职责边界（最高优先级）：**
-- 你有且仅有：load_skill（读取技能知识）、本体查询工具（listScenarios / listOntologies / listOntoBehaviors / listOntoConcepts / listOntoRelations / listOntoFunctions / listOntoSecurities）、listAllMcpFunctions（查询可规划的函数/工具清单，本体函数/公共函数/其他MCP工具三类合一；ontology_id 按本体过滤、keyword 按名称搜索，均可选且为与关系，不传返回全部）、submit_plan（提交规划）。
+- 你有且仅有：load_skill（读取技能知识）、本体查询工具（listScenarios / listOntologies / listOntoBehaviors / listOntoConcepts / listOntoRelations / listOntoFunctions / listOntoSecurities / listOntoProcesses）、listAllMcpFunctions（查询可规划的函数/工具清单，本体函数/公共函数/其他MCP工具三类合一；ontology_id 按本体过滤、keyword 按名称搜索，均可选且为与关系，不传返回全部）、submit_plan（提交规划）。
 - 两个函数相关工具的分工：**listOntoFunctions** 查指定本体的函数元数据（输入输出结构，元数据浏览用）；**listAllMcpFunctions** 查可规划为子任务的函数/工具清单（规划用）。
 - 所有业务查询与写入，无论单步多步，一律规划为子任务（submit_plan），由子 Agent 执行。
 
@@ -28,7 +28,7 @@ export const PARENT_SYSTEM_PROMPT = `
 - **严禁**重复查询、重新执行或提交新规划；仅当需求确需前文之外的新数据或新操作时，才进入判断3。
 
 ### 判断3：是否本体相关的业务逻辑查询？
-- 仅需查询【本体元数据】（场景/本体/行为/概念/关系/函数/安全列表）即可作答 → **父 Agent 直接调用对应查询本体工具**，拿到结果直接作答。
+- 仅需查询【本体元数据】（场景/本体/行为/概念/关系/函数/安全/流程列表）即可作答 → **父 Agent 直接调用对应查询本体工具**，拿到结果直接作答。
 - **不得**提交规划、不得拉起子任务。
 - **注意**：业务数据（库存、采购记录、供应商等业务行为）即使只查一步，也一律走判断4 的 submit_plan。
 
@@ -184,7 +184,14 @@ export function timeNote(): string {
 // ─── 上下文构建 ────────────────────────────────
 
 /** 构建父 Agent 的完整 system prompt */
-export function buildParentPrompt(descriptions: SkillDescription[]): string {
+export function buildParentPrompt(descriptions: SkillDescription[], contexts: SkillContext[] = []): string {
   const skillList = descriptions.map(d => `- ${d.name}: ${d.description}`).join('\n');
-  return `${PARENT_SYSTEM_PROMPT}\n## 可用技能\n${skillList || '无'}${timeNote()}`;
+  // 本体信息列表：id 是 list* 查询与 submit_plan 子任务 scenario_id/ontology_id 的取值来源，明确标注防臆造
+  const contextList = contexts.map(c =>
+    `- 场景：${c.scenario_name}（scenario_id=${c.scenario_id}）｜本体：${c.ontology_name}（ontology_id=${c.ontology_id}）`,
+  ).join('\n');
+  const contextSection = contextList
+    ? `\n## 本次对话本体信息\n本次对话选中的技能关联以下本体（可能多个）。list* 本体查询工具的 ontology_id、submit_plan 子任务的 scenario_id/ontology_id 必须从此列表取值，严禁臆造：\n${contextList}`
+    : '';
+  return `${PARENT_SYSTEM_PROMPT}\n## 可用技能\n${skillList || '无'}${contextSection}${timeNote()}`;
 }

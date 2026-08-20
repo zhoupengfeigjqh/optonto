@@ -94,6 +94,18 @@ export class PathAccessController {
     return resolve(this.dataDir, 'onto_market', scenario, ontology);
   }
 
+  /**
+   * 取场景/本体 meta.json 只读路径（core-backend 的 id 注册表，scenario_id/ontology_id 的权威来源）。
+   * 不校验存在性——调用方自行容错（meta 缺失时静默降级）。
+   */
+  resolveOntologyMetaPath(scenario: string, ontology?: string): string {
+    this.assertValidPathComponent(scenario, '场景');
+    if (ontology !== undefined) this.assertValidPathComponent(ontology, '本体');
+    return ontology
+      ? resolve(this.dataDir, 'onto_market', scenario, ontology, 'meta.json')
+      : resolve(this.dataDir, 'onto_market', scenario, 'meta.json');
+  }
+
   /** 暴露数据根目录（只读，用于跨本体扫描技能文件） */
   getDataDir(): string {
     return this.dataDir;
