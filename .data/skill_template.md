@@ -6,7 +6,7 @@ description: 技能描述
 # 原材料库存和采购本体技能
 
 ## 0 本体基本信息
-本体名称（ontology_name）: 原材料库存和采购
+本体名称（ontology_name）: 原材料采购和库存
 本体id（ontology_id）: 1
 场景名称（scenario_name）: 生产调度
 场景id（scenario_id）: 1
