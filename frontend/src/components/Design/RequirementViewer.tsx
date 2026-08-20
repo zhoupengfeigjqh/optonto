@@ -57,7 +57,7 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
     setGenerating(true);
     try {
       const result = await generateOntology(threadId, filename);
-      message.success(`本体已生成！概念:${result.concepts} 关系:${result.relations} 行为:${result.behaviors} 规则:${result.rules} 事件:${result.events}`);
+      message.success(`本体已生成！概念:${result.concepts} 关系:${result.relations} 行为:${result.behaviors} 规则:${result.rules}`);
     } catch (e: any) {
       message.error('生成本体失败: ' + e.message);
     } finally {

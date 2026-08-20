@@ -50,7 +50,6 @@ export interface OntologyData {
   relations: Relation[];
   behaviors: Behavior[];
   rules: Rule[];
-  events: Event[];
   processes: Process[];
   securities: Security[];
   data_engines: DataEngine[];
@@ -228,30 +227,6 @@ export const deleteRule = (ontologyId: number, name: string) =>
 export const updateRule = (ontologyId: number, name: string, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
-// ─── Event ─────────────────────────────────────────────────────────────────
-
-export interface Event {
-  name: string;
-  event_type?: string;
-  trigger_condition?: string;
-  related_concepts?: string[];
-  related_behavior: string | null;
-  trigger_behaviors: string[];
-  display_name?: string;
-}
-
-export const getEvents = (ontologyId: number) =>
-  request<Event[]>(`/api/ontologies/${ontologyId}/events`);
-
-export const createEvent = (ontologyId: number, data: Event) =>
-  request<Event>(`/api/ontologies/${ontologyId}/events`, { method: 'POST', body: JSON.stringify(data) });
-
-export const deleteEvent = (ontologyId: number, name: string) =>
-  request<{ message: string }>(`/api/ontologies/${ontologyId}/events/${encodeURIComponent(name)}`, { method: 'DELETE' });
-
-export const updateEvent = (ontologyId: number, name: string, data: Event) =>
-  request<Event>(`/api/ontologies/${ontologyId}/events/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
-
 // ─── Business Process ──────────────────────────────────────────────────────
 
 export interface ProcessStep {
@@ -321,8 +296,6 @@ export interface DataEngine {
   input_mapping: Record<string, string>;
   output_mapping: Record<string, string>;
   sql?: string;
-  sql_vars?: Record<string, string>;
-  datasource?: string;
 }
 
 export const getDataEngines = (ontologyId: number) =>
@@ -451,7 +424,7 @@ export const validateAnalysis = (threadId: string, selectedIndices: number[]) =>
   request<{ result: string }>(`/api/threads/${threadId}/validate`, { method: 'POST', body: JSON.stringify({ selected_indices: selectedIndices }) });
 
 export const generateOntology = (threadId: string, filename: string) =>
-  request<{ message: string; scenario: string; ontology: string; concepts: number; relations: number; behaviors: number; rules: number; events: number }>(
+  request<{ message: string; scenario: string; ontology: string; concepts: number; relations: number; behaviors: number; rules: number }>(
     `/api/threads/${threadId}/generate-ontology`, { method: 'POST', body: JSON.stringify({ filename }) }
   );
 

@@ -2,14 +2,14 @@ metadata:
   name: 原材料采购与库存管理本体
   source_file: 原材料采购需求分析.md
   source_thread: 原材料采购与库存管理
-  created_at: '2026-07-15 16:05:01'
+  created_at: '2026-07-15 16:05:02'
   scenario_name: 生产调度
   scenario_id: 1
   ontology_name: 原材料采购和库存
   ontology_id: 1
 concepts:
 - name: RawMaterial
-  description: 生产过程中消耗的外部输入物料，是采购和库存管理的核心对象。
+  description: 生产过程中消耗的外部输入物料，是采购和库存管理核心对象。
   attributes:
   - name: rawMaterialId
     type: string
@@ -986,31 +986,6 @@ rules:
     then: 由于关联订单编号不存在于客户订单中，因此该订单创建无效，请中止
     else: 关联订单编号存在或未填写，校验通过
   data_supplements: []
-events:
-- name: PurchaseRecordCreated
-  event_type: 动作执行
-  trigger_condition: 成功执行采购订单创建（CreatePurchaseRecord）行为后。
-  related_concepts:
-  - PurchaseRecord
-  related_behavior: CreatePurchaseRecord
-  trigger_behaviors: []
-  display_name: 原材料采购订单创建事件
-- name: PurchaseRecordCancelled
-  event_type: 动作执行
-  trigger_condition: 成功执行采购订单取消（CancelPurchaseRecord）行为后。
-  related_concepts:
-  - PurchaseRecord
-  related_behavior: CancelPurchaseRecord
-  trigger_behaviors: []
-  display_name: 原材料采购订单取消事件
-- name: RawMaterialReceived
-  event_type: 动作执行
-  trigger_condition: 成功执行入库操作（ReceiveRawMaterial）行为后。
-  related_concepts:
-  - PurchaseRecord
-  related_behavior: ReceiveRawMaterial
-  trigger_behaviors: []
-  display_name: 原材料入库事件
 processes:
 - name: ProcureAndReceiveRawMaterial
   display_name: 原材料采购到入库
@@ -1170,8 +1145,6 @@ data_engines:
     data.leadTime: ''
     data.status: data.status
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: CancelPurchaseRecord
   display_name: ''
   behavior_name: CancelPurchaseRecord
@@ -1219,8 +1192,6 @@ data_engines:
     data.rawMaterialId: data.rawMaterialId
     data.rawMaterialName: data.rawMaterialName
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: ReceiveRawMaterial
   display_name: ''
   behavior_name: ReceiveRawMaterial
@@ -1276,8 +1247,6 @@ data_engines:
     data.rawMaterialId: data.rawMaterialId
     data.rawMaterialName: data.rawMaterialName
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: QueryInventory
   display_name: ''
   behavior_name: QueryInventory
@@ -1358,8 +1327,6 @@ data_engines:
     data[*].availableStock: data[*].availableQuantity
     data[*].unit: data[*].unit
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: QueryPurchaseRecords
   display_name: ''
   behavior_name: QueryPurchaseRecords
@@ -1470,8 +1437,6 @@ data_engines:
     data[*].relatedOrderName: data[*].relatedOrderName
     data[*].leadTime: ''
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: QueryRawMaterials
   display_name: ''
   behavior_name: QueryRawMaterials
@@ -1526,9 +1491,9 @@ data_engines:
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
   input_mapping:
-    a: a
+    rawMaterialId: rawMaterialId
+    rawMaterialName: rawMaterialName
   output_mapping:
-    b: b
     code: code
     data: data
     data[*].rawMaterialId: data[*].rawMaterialId
@@ -1536,8 +1501,6 @@ data_engines:
     data[*].unit: data[*].unit
     data[*].safetyStock: data[*].safetyStock
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: QuerySuppliers
   display_name: ''
   behavior_name: QuerySuppliers
@@ -1615,8 +1578,6 @@ data_engines:
     data[*].contactPerson: data[*].contactPerson
     data[*].contactPhone: data[*].contactPhone
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: QuerySupplierCapability
   display_name: ''
   behavior_name: QuerySupplierCapability
@@ -1677,7 +1638,7 @@ data_engines:
             createdAt:
               type: string
               display_name: 创建时间
-              example: '2026-07-15T22:33:33'
+              example: '2026-07-15T22:33:13'
             updatedAt:
               type: string
               display_name: 更新时间
@@ -1693,8 +1654,6 @@ data_engines:
     data[*].rawMaterialName: data[*].rawMaterialName
     data[*].leadTime: data[*].leadTime
   sql: ''
-  sql_vars: {}
-  datasource: ''
 - name: QuerySupplierCapabilitySQL
   display_name: ''
   behavior_name: QuerySupplierCapabilitySQL
@@ -1712,5 +1671,3 @@ data_engines:
     \    s.raw_material_name AS rawMaterialName,\n    s.lead_time AS leadTime\nFROM\
     \ supplier s\nWHERE (s.supplier_name = :supplierName OR :supplierName IS NULL)\n\
     \  AND (s.raw_material_name = :rawMaterialName OR :rawMaterialName IS NULL)"
-  sql_vars: {}
-  datasource: ''

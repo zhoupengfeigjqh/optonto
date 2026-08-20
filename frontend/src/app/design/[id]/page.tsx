@@ -19,7 +19,6 @@ import RelationTable from '@/components/Design/RelationTable';
 import FunctionTable from '@/components/Design/FunctionTable';
 import BehaviorTable from '@/components/Design/BehaviorTable';
 import RuleTable from '@/components/Design/RuleTable';
-import EventTable from '@/components/Design/EventTable';
 import ProcessTable from '@/components/Design/ProcessTable';
 import SecurityTable from '@/components/Design/SecurityTable';
 import FileViewer from '@/components/Design/FileViewer';
@@ -36,12 +35,11 @@ import MCPConfigPanel from '@/components/Design/MCPConfig';
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
   { key: 'relations', label: '关系' },
-  { key: 'functions', label: '函数' },
   { key: 'behaviors', label: '行为' },
+  { key: 'functions', label: '函数' },
   { key: 'rules', label: '规则' },
-  { key: 'processes', label: '流程' },
-  { key: 'events', label: '事件' },
   { key: 'securities', label: '安全' },
+  { key: 'processes', label: '流程' },
 ];
 
 export default function DesignPage() {
@@ -140,7 +138,6 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'processes' ? '' : 'none' }}><ProcessTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'events' ? '' : 'none' }}><EventTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
 
       {/* ── 数据引擎 & 智能体：条件渲染 ── */}
