@@ -194,15 +194,6 @@ rules:
   display_name: 规则展示名称
   rule_type: 规则类型
   position: 前置/后置
-events:
-- name: eventName
-  event_type: 动作执行
-  trigger_condition: 触发条件描述
-  related_concepts:
-  - ConceptName
-  related_behavior: behaviorName
-  trigger_behaviors: []
-  display_name: 事件展示名称
 processes:
 - name: processName
   display_name: 流程展示名称

@@ -160,8 +160,8 @@ async def execute_sql(sc_name: str, on_name: str, de: DataEngineItem, params: di
     try:
         sql = de.sql
         for k, v in params.items():
-            var_name = de.sql_vars.get(k, k)
-            placeholder = f":{var_name}"
+            # 占位符名与行为参数名同名（生成规则强制 :paramName），无需换名映射
+            placeholder = f":{k}"
             if isinstance(v, str):
                 sql = sql.replace(placeholder, f"'{v}'")
             else:

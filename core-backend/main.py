@@ -10,7 +10,6 @@ from routers import (
     relations_router,
     behaviors_router,
     rules_router,
-    events_router,
     processes_router,
     securities_router,
     functions_router,
@@ -48,7 +47,6 @@ app.include_router(concepts_router)
 app.include_router(relations_router)
 app.include_router(behaviors_router)
 app.include_router(rules_router)
-app.include_router(events_router)
 app.include_router(processes_router)
 app.include_router(securities_router)
 app.include_router(functions_router)

@@ -1,6 +1,5 @@
 """Pydantic schemas for ontology YAML data structures."""
 
-from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -63,16 +62,6 @@ class RuleItem(BaseModel):
     position: str = Field("", description="介入位置（前置/后置）")
     rule_detail: dict | None = Field(None, description="规则结构配置（条件结构）")
     data_supplements: list[str] = Field(default_factory=list, description="数据补充（可多选行为）")
-
-
-class EventItem(BaseModel):
-    name: str = Field(..., description="事件名")
-    event_type: str = Field("", description="事件类型（动作执行/状态变化）")
-    trigger_condition: str = Field("", description="触发条件")
-    related_concepts: list[str] = Field(default_factory=list, description="关联概念（可多选）")
-    related_behavior: Optional[str] = Field(None, description="关联行为")
-    trigger_behaviors: list[str] = Field(default_factory=list, description="后续触发行为（可多选）")
-    display_name: str = Field("", description="展示名称")
 
 
 class ProcessStep(BaseModel):
@@ -140,8 +129,6 @@ class DataEngineItem(BaseModel):
     input_mapping: dict = Field(default_factory=dict, description="输入映射 {ontology_param: target_param}")
     output_mapping: dict = Field(default_factory=dict, description="输出映射 {ontology_field: target_field}")
     sql: str = Field("", description="SQL 查询语句")
-    sql_vars: dict = Field(default_factory=dict, description="SQL 变量映射 {param: column}")
-    datasource: str = Field("", description="数据源名称")
 
 
 class OntologyData(BaseModel):
@@ -152,7 +139,6 @@ class OntologyData(BaseModel):
     functions: list[FunctionItem] = Field(default_factory=list, description="函数列表")
     behaviors: list[BehaviorItem] = Field(default_factory=list)
     rules: list[RuleItem] = Field(default_factory=list)
-    events: list[EventItem] = Field(default_factory=list)
     processes: list[ProcessItem] = Field(default_factory=list)
     securities: list[SecurityItem] = Field(default_factory=list)
     data_engines: list[DataEngineItem] = Field(default_factory=list)

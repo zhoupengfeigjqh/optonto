@@ -284,7 +284,6 @@ async def generate_ontology(thread_id: str, body: dict):
             "relations": len(ontology_data.relations),
             "behaviors": len(ontology_data.behaviors),
             "rules": len(ontology_data.rules),
-            "events": len(ontology_data.events),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成本体失败: {str(e)}")

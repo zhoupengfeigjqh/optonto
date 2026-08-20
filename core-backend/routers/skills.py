@@ -158,24 +158,12 @@ def _build_ontology_summary(data) -> str:
         lines.append(f"  - {b.name}（{b.display_name or ''}）: {b.description or ''}")
         lines.append(f"    params: {json.dumps(b.params, ensure_ascii=False, default=str)}")
         lines.append(f"    response: {json.dumps(b.response, ensure_ascii=False, default=str)}")
-    lines.append(f"\n函数（{len(data.functions)}个）:")
-    for f in data.functions:
-        lines.append(f"  - {f.name}（{f.display_name or ''}）: {f.description or ''}")
-        lines.append(f"    params: {json.dumps(f.params, ensure_ascii=False, default=str)}")
-        lines.append(f"    response: {json.dumps(f.response, ensure_ascii=False, default=str)}")
-    lines.append(f"\n规则（{len(data.rules)}个）:")
-    for r in data.rules:
-        lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.description or ''} type={r.rule_type} pos={r.position}")
-        if r.rule_detail:
-            lines.append(f"    rule_detail: {json.dumps(r.rule_detail, ensure_ascii=False, default=str)}")
     lines.append(f"\n流程（{len(data.processes)}个）:")
     for p in data.processes:
         lines.append(f"  - {p.name}（{p.display_name or ''}）: {p.goal or ''}")
         for step in (p.steps or []):
             lines.append(f"    step: {step.current_action}（{step.description or ''}）衔接={step.connection_type}")
-    lines.append(f"\n安全管控（{len(data.securities)}个）:")
-    for s in data.securities:
-        lines.append(f"  - {s.action_name}: {s.audit_node} - {s.audit_content}")
+    # 函数/规则/安全管控不进摘要：技能模板已不含这些章节，喂给生成 LLM 只会浪费 token 并诱使补章节
     return "\n".join(lines)
 
 
