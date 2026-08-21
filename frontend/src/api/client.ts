@@ -76,12 +76,19 @@ export const getOntologyData = (id: number) =>
 
 // ─── Concept ───────────────────────────────────────────────────────────────
 
+export interface AttributeConstraint {
+  unique?: boolean;
+  required?: boolean;
+  enum?: (string | number)[];
+  pattern?: string;
+}
+
 export interface Attribute {
   name: string;
   type: string;
   display_name?: string;
   example?: string;
-  constraint?: string;
+  constraint?: AttributeConstraint | null;
 }
 
 export interface Concept {
@@ -431,11 +438,11 @@ export const generateOntology = (threadId: string, filename: string) =>
 export const exportThread = (id: string, title: string = 'requirement', selectedIndices: number[] = []) =>
   request<{ message: string; path: string; filename: string }>(`/api/threads/${id}/export`, { method: 'POST', body: JSON.stringify({ title, selected_indices: selectedIndices }) });
 
-export const chatStream = (threadId: string, message: string): Promise<Response> =>
+export const chatStream = (threadId: string, message: string, grilling: boolean = false): Promise<Response> =>
   fetch(`/api/threads/${threadId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, grilling }),
   });
 
 // ─── Requirement Files ───────────────────────────────────────────────────

@@ -6,7 +6,6 @@ Agents connect via MCP protocol over SSE.
 
 import json
 import os
-import time
 from pathlib import Path
 
 import httpx
@@ -55,8 +54,18 @@ def _load_common_functions() -> tuple[list[Tool], list[dict]]:
         return [], []
 
 
-COMMON_TOOLS, _ = _load_common_functions()
-COMMON_TOOL_NAMES = {t.name for t in COMMON_TOOLS}
+# 公共函数工具：mtime 缓存（原模块级一次性加载，改 functions.json 必须重启容器才生效）。
+# 与本体函数工具的指纹缓存同语义——文件一变下次 list_tools 即生效，没变则不重读。
+_COMMON_CACHE: dict = {"mtime": None, "tools": [], "names": set()}
+
+
+def _get_common_tools() -> tuple[list[Tool], set[str]]:
+    mtime = MANIFEST_PATH.stat().st_mtime_ns if MANIFEST_PATH.exists() else -1
+    if _COMMON_CACHE["mtime"] == mtime:
+        return _COMMON_CACHE["tools"], _COMMON_CACHE["names"]
+    tools, _ = _load_common_functions()
+    _COMMON_CACHE.update(mtime=mtime, tools=tools, names={t.name for t in tools})
+    return tools, _COMMON_CACHE["names"]
 
 # 本体函数工具 schema 前置的作用域块键（含所属场景/本体的真实值，非函数输入参数）。
 # 供父 Agent 经 listAllMcpFunctions（agent-backend 内部工具）了解函数所属场景/本体；执行路径统一剥离，不传给后端。
@@ -105,14 +114,36 @@ async def _api_get(path: str, timeout: int = 15) -> dict | list:
 
 # ─── 本体函数工具（动态注册：函数名即工具名，schema = ontology_id + 展开参数）────────
 # 替代原 executeOntoFunction 黑盒包装——本体函数与公共函数同形，参数在工具 schema 可见。
-_FUNCTION_CACHE: dict = {"ts": 0.0, "tools": [], "names": set()}
-_FUNCTION_CACHE_TTL = 30.0  # 秒；函数列表随本体文件变化，短 TTL 折中（避免每次 list_tools 读盘）
+ONTO_MARKET_DIR = Path("/app/.data/onto_market")
+
+# mtime 指纹缓存：函数清单只依赖各 ontology.yaml 的 functions 段与本体清单（meta.json），
+# 与 OntologyGateway / services.load_ontology_data 的 mtime 失效语义一致——无 TTL 陈旧窗口，
+# 文件一改下次 list_tools 即生效，没变则永不重拉。
+_FUNCTION_CACHE: dict = {"fingerprint": None, "tools": [], "names": set()}
+
+
+def _functions_fingerprint() -> tuple[int, int]:
+    """(文件数, 最大 mtime_ns)。仅 stat 不走解析，代价远小于全量拉取。
+
+    覆盖新增/删除（文件数变化）与编辑（mtime 变化）；函数 .py 代码文件不影响
+    工具清单（name/desc/params 都在 ontology.yaml），有意不纳入，避免代码-only
+    保存触发无谓重拉。
+    """
+    count, latest = 0, -1
+    if ONTO_MARKET_DIR.exists():
+        for p in ONTO_MARKET_DIR.rglob("*"):
+            if p.is_file() and p.name in ("ontology.yaml", "meta.json"):
+                count += 1
+                m = p.stat().st_mtime_ns
+                if m > latest:
+                    latest = m
+    return count, latest
 
 
 async def _load_function_tools(force: bool = False) -> list[Tool]:
-    """从后端聚合端点拉取所有本体函数并转成 Tool（带 TTL 缓存）。"""
-    now = time.monotonic()
-    if not force and _FUNCTION_CACHE["ts"] and (now - _FUNCTION_CACHE["ts"]) < _FUNCTION_CACHE_TTL:
+    """从后端聚合端点拉取所有本体函数并转成 Tool（mtime 指纹缓存）。"""
+    fingerprint = _functions_fingerprint()
+    if not force and _FUNCTION_CACHE["fingerprint"] is not None and _FUNCTION_CACHE["fingerprint"] == fingerprint:
         return _FUNCTION_CACHE["tools"]
     try:
         data = await _api_get("/api/ontologies/functions/all")
@@ -135,7 +166,7 @@ async def _load_function_tools(force: bool = False) -> list[Tool]:
                 inputSchema=_with_function_scope(fn.get("inputSchema", {"type": "object", "properties": {}}), fn),
             ))
             names.add(name)
-        _FUNCTION_CACHE.update(ts=now, tools=tools, names=names)
+        _FUNCTION_CACHE.update(fingerprint=fingerprint, tools=tools, names=names)
     except Exception:
         pass  # 拉取失败保留旧缓存；首次失败则沿用空列表
     return _FUNCTION_CACHE["tools"]
@@ -143,7 +174,8 @@ async def _load_function_tools(force: bool = False) -> list[Tool]:
 
 async def _list_tools() -> list[Tool]:
     function_tools = await _load_function_tools()
-    return COMMON_TOOLS + [
+    common_tools, _ = _get_common_tools()
+    return common_tools + [
         Tool(
             name="listScenarios",
             description="列出所有场景。返回每个场景的 id、name和description等。",
@@ -350,7 +382,8 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = resp.json()
 
     # ─── Common function execution (proxied to backend) ────────────────
-    if result is None and name in COMMON_TOOL_NAMES:
+    _, common_names = _get_common_tools()
+    if result is None and name in common_names:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{API_BASE}/api/common-functions/{name}/execute",

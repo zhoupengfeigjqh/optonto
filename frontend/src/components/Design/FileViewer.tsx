@@ -19,7 +19,8 @@ interface Doc { header: string; segs: Seg[] }
 
 const ALL = '__all__';
 
-/** 顶层 key 中文映射（与本体明细页签命名一致），未映射的显示原 key */
+/** 顶层 key 中文映射（与本体明细页签命名一致），未映射的显示原 key。
+ *  注：data_engines 已剥离为独立 data_engines.yaml，不在本文件出现，故无映射。 */
 const KEY_LABELS: Record<string, string> = {
   metadata: '元数据',
   concepts: '概念',
@@ -29,7 +30,6 @@ const KEY_LABELS: Record<string, string> = {
   rules: '规则',
   processes: '流程',
   securities: '安全',
-  data_engines: '数据引擎',
 };
 
 /** 按"0 缩进 + key: 形态"切分顶层段；第一个 key 之前的内容（如文件头注释）归入 header */

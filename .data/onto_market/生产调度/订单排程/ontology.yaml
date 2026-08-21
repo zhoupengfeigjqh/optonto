@@ -395,6 +395,7 @@ behaviors:
 - name: CreateOrder
   description: 用户或智能体创建新的订单及其明细
   behavior_type: API
+  op_type: ''
   params:
     orderName:
       type: string
@@ -416,6 +417,7 @@ behaviors:
 - name: UpdateOrder
   description: 用户或智能体更新已有订单信息及明细
   behavior_type: API
+  op_type: ''
   params:
     orderId: string
     orderName: string
@@ -427,6 +429,7 @@ behaviors:
 - name: DeleteOrder
   description: 用户或智能体删除已有订单及明细
   behavior_type: API
+  op_type: ''
   params:
     orderId: string
   response: {}
@@ -436,6 +439,7 @@ behaviors:
 - name: QueryOrder
   description: 用户或智能体查询订单及明细
   behavior_type: API
+  op_type: ''
   params:
     orderId: string
     orderName: string
@@ -447,6 +451,7 @@ behaviors:
 - name: CreateSchedTask
   description: 用户或智能体根据订单信息创建排产任务
   behavior_type: API
+  op_type: ''
   params:
     orderId: string
   response: {}
@@ -457,6 +462,7 @@ behaviors:
 - name: AddSchedTask
   description: 基于已有排产任务创建新场景下的排产任务
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
     scenario: string
@@ -467,6 +473,7 @@ behaviors:
 - name: CreateAlgoParams
   description: 用户或智能体为排产任务创建算法参数
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
   response: {}
@@ -477,6 +484,7 @@ behaviors:
 - name: StartSchedTask
   description: 用户或智能体选择排产任务并执行
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
   response: {}
@@ -486,6 +494,7 @@ behaviors:
 - name: QuerySchedTask
   description: 用户或智能体查询排产任务的当前状态
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
     orderId: string
@@ -496,6 +505,7 @@ behaviors:
 - name: QuerySchedResult
   description: 用户或智能体查询排产任务结果
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
     orderId: string
@@ -506,6 +516,7 @@ behaviors:
 - name: DeploySchedResult
   description: 用户或智能体将已成功执行的排产任务下发
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
   response: {}
@@ -516,6 +527,7 @@ behaviors:
 - name: RecallSchedResult
   description: 用户或智能体取消已下发的排产结果
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
   response: {}
@@ -526,6 +538,7 @@ behaviors:
 - name: QueryShortage
   description: 用户或智能体查询订单下发后的齐套欠料信息
   behavior_type: API
+  op_type: ''
   params:
     scheduleId: string
     orderId: string
@@ -536,6 +549,7 @@ behaviors:
 - name: StartPollingTask
   description: 后台启动定时任务轮询排产任务状态
   behavior_type: API
+  op_type: ''
   params:
     scheduleId:
       type: string
@@ -686,70 +700,5 @@ rules:
   rule_type: 推理规则
   position: ''
   data_supplements: []
-events:
-- name: OrderCreated
-  event_type: 输入事件
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: CreateOrder
-  trigger_behaviors: []
-  display_name: 订单创建事件
-- name: OrderUpdated
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: UpdateOrder
-  trigger_behaviors: []
-  display_name: 订单更新事件
-- name: OrderDeleted
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: DeleteOrder
-  trigger_behaviors: []
-  display_name: 订单删除事件
-- name: SchedTaskCreated
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: CreateSchedTask
-  trigger_behaviors: []
-  display_name: 排产任务创建事件
-- name: SchedTaskAdded
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: AddSchedTask
-  trigger_behaviors: []
-  display_name: 新增排产任务事件
-- name: SchedTaskStarted
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: StartSchedTask
-  trigger_behaviors: []
-  display_name: 排产任务启动事件
-- name: SchedResultDeployed
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: DeploySchedResult
-  trigger_behaviors: []
-  display_name: 排产结果下发事件
-- name: SchedResultRecalled
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: RecallSchedResult
-  trigger_behaviors: []
-  display_name: 排产结果撤回事件
-- name: AlgoParamsCreated
-  event_type: ''
-  trigger_condition: ''
-  related_concepts: []
-  related_behavior: CreateAlgoParams
-  trigger_behaviors: []
-  display_name: 算法参数创建事件
 processes: []
 securities: []
-data_engines: []

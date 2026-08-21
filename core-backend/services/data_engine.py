@@ -20,35 +20,55 @@ logger = logging.getLogger(__name__)
 _sql_pools: dict = {}
 
 
-def _translate_input(params: dict, input_mapping: dict) -> dict:
-    """Translate ontology param keys to target param keys via input_mapping."""
-    if not input_mapping:
+def _translate_input(params: dict, input_mapping: dict, _onto_path: str = "") -> dict:
+    """Rename ontology param keys to target keys via input_mapping (recursive, in-place).
+
+    与 _translate_output 同构（方向相反：本体路径 → 目标路径，原地换名不改结构）。
+    平铺映射是路径的特例；object 内嵌套字段、array[object] 内部字段（[*] 路径）均可换名：
+    {"order.lines[*].prod": "order.items[*].prod_name", "order.lines": "order.items"}
+    """
+    if not input_mapping or not params:
         return params
     result = {}
-    for onto_key, value in params.items():
-        target_key = input_mapping.get(onto_key, onto_key)
-        result[target_key] = value
+    for k, v in params.items():
+        onto_path = f"{_onto_path}.{k}" if _onto_path else k
+        target_full = input_mapping.get(onto_path, k)
+        new_key = target_full.rsplit(".", 1)[-1]
+        result[new_key] = _translate_input_value(v, input_mapping, onto_path)
     return result
 
 
-def _translate_output(data, output_mapping: dict, _path: str = ""):
-    """Recursively rename keys in target response back to ontology names via output_mapping."""
+def _translate_input_value(value, input_mapping: dict, onto_path: str):
+    """值递归：dict 继续换名，list 元素走 [*] 路径，标量原样透传。"""
+    if isinstance(value, dict):
+        return _translate_input(value, input_mapping, onto_path)
+    if isinstance(value, list):
+        item_path = f"{onto_path}[*]"
+        return [_translate_input_value(item, input_mapping, item_path) for item in value]
+    return value
+
+
+def _translate_output(data, output_mapping: dict, _orig_path: str = "", _reverse: dict | None = None):
+    """Recursively rename keys in target response back to ontology names via output_mapping.
+
+    查表一律用目标原始路径（_orig_path 由响应里的真实 key 拼成），与父节点是否改名无关——
+    因此数组/对象节点换名与其内部字段换名可共存（如 {"items": "data", "items[*].name": "data[*].prod_name"}）。
+    """
     if not output_mapping or not data:
         return data
-    reverse_map = {v: k for k, v in output_mapping.items() if v}
+    reverse_map = _reverse if _reverse is not None else {v: k for k, v in output_mapping.items() if v}
 
     if isinstance(data, dict):
         result = {}
         for k, v in data.items():
-            full_path = f"{_path}.{k}" if _path else k
-            onto_full = reverse_map.get(full_path, k)
-            new_key = onto_full.rsplit(".", 1)[-1] if "." in onto_full else onto_full
-            new_path = f"{_path}.{new_key}" if _path else new_key
-            result[new_key] = _translate_output(v, output_mapping, new_path)
+            orig_path = f"{_orig_path}.{k}" if _orig_path else k
+            onto_full = reverse_map.get(orig_path, k)
+            new_key = onto_full.rsplit(".", 1)[-1]
+            result[new_key] = _translate_output(v, output_mapping, orig_path, reverse_map)
         return result
     if isinstance(data, list):
-        new_path = f"{_path}[*]" if _path else "[*]"
-        return [_translate_output(item, output_mapping, new_path) for item in data]
+        orig_path = f"{_orig_path}[*]" if _orig_path else "[*]"
+        return [_translate_output(item, output_mapping, orig_path, reverse_map) for item in data]
     return data
 
 

@@ -16,22 +16,29 @@ import { getCommonFunctionNames, getCommonFunctionInfo } from './common-function
 import type { BehaviorMeta, RuleDetail, ConceptInfo } from '../types.js';
 
 export class OntologyGateway {
-  /** 按 (scenario, ontology) 缓存解析后的 ontology.yaml，用文件 mtime 失效，避免编排中反复读盘 */
-  private cache = new Map<string, { data: any; mtimeMs: number }>();
+  /** 按 (scenario, ontology) 缓存解析结果，用文件 mtime 失效（ontology.yaml + data_engines.yaml 双 mtime），避免编排中反复读盘 */
+  private cache = new Map<string, { data: any; mtimeMs: number; enginesMtimeMs: number }>();
 
   constructor(private pac: PathAccessController) {}
 
-  /** 读取并缓存 ontology.yaml 的解析结果；文件 mtime 变化时自动重读 */
+  /** 读取并缓存本体配置；ontology.yaml 与 data_engines.yaml 任一 mtime 变化时自动重读。
+   *  数据引擎已剥离为独立文件：存在则覆盖 data.data_engines，不存在回退 ontology.yaml 旧段（读时兼容）。 */
   private loadOntologyData(scenario: string, ontology: string): any | null {
     const key = `${scenario}\u0000${ontology}`;
     const yamlPath = join(this.pac.resolveConfigDir(scenario, ontology), 'ontology.yaml');
+    const enginesPath = join(this.pac.resolveConfigDir(scenario, ontology), 'data_engines.yaml');
     if (!existsSync(yamlPath)) return null;
     try {
       const mtimeMs = statSync(yamlPath).mtimeMs;
+      const enginesMtimeMs = existsSync(enginesPath) ? statSync(enginesPath).mtimeMs : 0;
       const hit = this.cache.get(key);
-      if (hit && hit.mtimeMs === mtimeMs) return hit.data;
+      if (hit && hit.mtimeMs === mtimeMs && hit.enginesMtimeMs === enginesMtimeMs) return hit.data;
       const data = load(readFileSync(yamlPath, 'utf-8'));
-      this.cache.set(key, { data, mtimeMs });
+      if (enginesMtimeMs && data && typeof data === 'object') {
+        const enginesDoc: any = load(readFileSync(enginesPath, 'utf-8'));
+        (data as any).data_engines = Array.isArray(enginesDoc) ? enginesDoc : (enginesDoc?.data_engines ?? []);
+      }
+      this.cache.set(key, { data, mtimeMs, enginesMtimeMs });
       return data;
     } catch {
       return null;

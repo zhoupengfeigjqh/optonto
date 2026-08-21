@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { Button, Input, Modal, message, Space, Spin } from 'antd';
+import { Button, Input, Modal, message, Space, Spin, Switch, Tooltip } from 'antd';
 import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined } from '@ant-design/icons';
 import { getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
@@ -28,6 +28,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [validating, setValidating] = useState(false);
   const [validateResult, setValidateResult] = useState('');
   const [showValidateModal, setShowValidateModal] = useState(false);
+  const [grilling, setGrilling] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -62,7 +63,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
 
     abortRef.current = new AbortController();
     try {
-      const response = await chatStream(threadId, text);
+      const response = await chatStream(threadId, text, grilling);
       if (!response.ok) throw new Error(await response.text());
 
       const reader = response.body?.getReader();
@@ -266,15 +267,23 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
 
       {/* Input */}
       <div className="flex gap-2 items-end border-t border-dark-border pt-3">
-        <Input.TextArea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
-          placeholder="输入您的需求或问题... (Shift+Enter 换行)"
-          rows={2}
-          className="bg-dark-bg border-dark-border text-text-primary"
-          disabled={sending}
-        />
+        <div className="flex-1">
+          <div className="flex items-center gap-1 mb-1 px-0.5">
+            <Tooltip title="开启后，助手会先对模糊点、矛盾点和关键决策逐个发问（每题附推荐答案），收敛后再输出；同一主题最多追问 3 轮">
+              <span className="text-xs text-text-muted select-none">拷问模式</span>
+            </Tooltip>
+            <Switch size="small" checked={grilling} onChange={setGrilling} />
+          </div>
+          <Input.TextArea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="输入您的需求或问题... (Shift+Enter 换行)"
+            rows={2}
+            className="bg-dark-bg border-dark-border text-text-primary"
+            disabled={sending}
+          />
+        </div>
         <Button
           type="primary"
           icon={<SendOutlined />}

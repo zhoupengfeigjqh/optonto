@@ -225,6 +225,7 @@ behaviors:
 - name: QueryProduct
   description: 用户或智能体查询货品基本信息
   behavior_type: API
+  op_type: ''
   params:
     productId:
       type: string
@@ -239,6 +240,7 @@ behaviors:
 - name: QueryProductInv
   description: 用户或智能体查询货品库存
   behavior_type: API
+  op_type: ''
   params:
     productId: string
     productName: string
@@ -249,6 +251,7 @@ behaviors:
 - name: QueryBOMInfo
   description: 用户或智能体查询BOM基本信息
   behavior_type: API
+  op_type: ''
   params:
     bomId: string
     productId: string
@@ -259,6 +262,7 @@ behaviors:
 - name: QueryBOMMaterialReq
   description: 用户或智能体查询BOM的原料汇总需求
   behavior_type: API
+  op_type: ''
   params:
     bomId: string
   response: {}
@@ -268,6 +272,7 @@ behaviors:
 - name: QueryBOMEquipReq
   description: 用户或智能体查询BOM的设备组汇总需求
   behavior_type: API
+  op_type: ''
   params:
     bomId: string
   response: {}
@@ -277,6 +282,7 @@ behaviors:
 - name: QueryBOMPersonReq
   description: 用户或智能体查询BOM的人员组汇总需求
   behavior_type: API
+  op_type: ''
   params:
     bomId: string
   response: {}
@@ -286,6 +292,7 @@ behaviors:
 - name: QueryBOMDetail
   description: 用户或智能体查询BOM及其明细和工艺路径
   behavior_type: API
+  op_type: ''
   params:
     bomId: string
   response: {}
@@ -295,6 +302,7 @@ behaviors:
 - name: QueryProcessRoute
   description: 用户或智能体查询工艺路径及其关联资源需求
   behavior_type: API
+  op_type: ''
   params:
     routeId: string
     routeName: string
@@ -305,6 +313,7 @@ behaviors:
 - name: QueryRouteMatReq
   description: 用户或智能体查询工艺路径关联的原料需求
   behavior_type: API
+  op_type: ''
   params:
     routeId: string
   response: {}
@@ -314,6 +323,7 @@ behaviors:
 - name: QueryRouteEquipReq
   description: 用户或智能体查询工艺路径关联的设备组需求
   behavior_type: API
+  op_type: ''
   params:
     routeId: string
   response: {}
@@ -323,6 +333,7 @@ behaviors:
 - name: QueryRoutePersonReq
   description: 用户或智能体查询工艺路径关联的人员组需求
   behavior_type: API
+  op_type: ''
   params:
     routeId: string
   response: {}
@@ -348,7 +359,5 @@ rules:
   rule_type: 推理规则
   position: 后置
   data_supplements: []
-events: []
 processes: []
 securities: []
-data_engines: []

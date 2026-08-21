@@ -5,17 +5,49 @@ from pydantic import BaseModel, Field, field_validator
 
 # ─── Ontology Components (YAML-based) ─────────────────────────────────────────
 
+class ConstraintItem(BaseModel):
+    """属性约束（挂载在 AttributeItem.constraint 下，全部缺省即无约束、不落盘）。"""
+    unique: bool = Field(False, description="是否唯一")
+    required: bool = Field(False, description="是否非空")
+    enum: list = Field(default_factory=list, description="枚举值")
+    pattern: str = Field("", description="匹配模式（正则，仅 string 类型）")
+
+    @field_validator('required', mode='before')
+    @classmethod
+    def coerce_required(cls, v: any) -> bool:
+        return bool(v) if v is not None else False
+
+
 class AttributeItem(BaseModel):
     name: str = Field(..., description="属性名")
     type: str = Field(..., description="属性类型")
     display_name: str = Field("", description="展示名称")
     example: str = Field("", description="示例")
-    constraint: str = Field("", description="约束")
+    constraint: ConstraintItem | None = Field(None, description="约束")
 
     @field_validator('example', mode='before')
     @classmethod
     def coerce_example(cls, v: any) -> str:
         return str(v) if v is not None else ""
+
+    @field_validator('constraint', mode='before')
+    @classmethod
+    def coerce_constraint(cls, v: any) -> any:
+        # 存量自由文本约束（"唯一"/"≥ 0"/"yyyy-mm-dd" 等）按决议直接丢弃
+        if isinstance(v, str) or v is None:
+            return None
+        return v
+
+    @field_validator('constraint')
+    @classmethod
+    def unique_implies_required(cls, v: ConstraintItem | None) -> ConstraintItem | None:
+        # 选了唯一则必须非空（与前端联动同规则，兜底 API 直调）
+        if v is not None and v.unique:
+            v.required = True
+        # 全缺省视为无约束，避免 YAML 落一串默认值噪音
+        if v is not None and not v.unique and not v.required and not v.enum and not v.pattern:
+            return None
+        return v
 
 
 class ConceptItem(BaseModel):

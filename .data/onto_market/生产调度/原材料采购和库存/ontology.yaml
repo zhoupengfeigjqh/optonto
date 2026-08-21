@@ -9,28 +9,39 @@ metadata:
   ontology_id: 1
 concepts:
 - name: RawMaterial
-  description: 生产过程中消耗的外部输入物料，是采购和库存管理核心对象。
+  description: 生产过程中消耗的外部输入物料，是采购和库存管理的核心对象。
   attributes:
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
     example: RM-001
-    constraint: 唯一
+    constraint:
+      unique: false
+      required: true
+      enum: []
+      pattern: ''
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
     example: 高强度钢板
-    constraint: ''
+    constraint:
+      unique: false
+      required: true
+      enum: []
+      pattern: ''
   - name: unit
     type: string
     display_name: 单位
     example: 吨
-    constraint: ''
+    constraint:
+      unique: false
+      required: true
+      enum: []
+      pattern: ''
   - name: safetyStock
     type: number
     display_name: 安全库存
     example: '100'
-    constraint: ≥ 0
   display_name: 原材料
 - name: Supplier
   description: 原材料的供应方，可以供应一种或多种原材料。
@@ -39,27 +50,22 @@ concepts:
     type: string
     display_name: 供应商编号
     example: SUP-001
-    constraint: 唯一
   - name: supplierName
     type: string
     display_name: 供应商名称
     example: XX钢铁集团
-    constraint: ''
   - name: address
     type: string
     display_name: 地址
     example: XX省XX市XX路XX号
-    constraint: ''
   - name: contactPerson
     type: string
     display_name: 联系人
     example: 张三
-    constraint: ''
   - name: contactPhone
     type: string
     display_name: 联系电话
     example: '13800138000'
-    constraint: ''
   display_name: 供应商
 - name: PurchaseRecord
   description: 一次具体的原材料采购行为，关联了采购的原材料、供应商以及驱动采购的客户订单。
@@ -68,57 +74,46 @@ concepts:
     type: string
     display_name: 采购单号
     example: PO-20231027-001
-    constraint: 唯一
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
     example: RM-001
-    constraint: ''
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
     example: 高强度钢板
-    constraint: ''
   - name: purchaseTime
     type: string
     display_name: 采购时间
     example: '2023-10-27'
-    constraint: yyyy-mm-dd
   - name: arrivalTime
     type: string
     display_name: 到位时间
     example: '2023-11-10'
-    constraint: yyyy-mm-dd
   - name: arrivalQuantity
     type: number
     display_name: 到位数量
     example: '50'
-    constraint: ≥ 0
   - name: unit
     type: string
     display_name: 单位
     example: 吨
-    constraint: ''
   - name: leadTime
     type: number
     display_name: 等待周期
     example: '14'
-    constraint: ≥ 0
   - name: supplierName
     type: string
     display_name: 供应商名称
     example: XX钢铁集团
-    constraint: ''
   - name: relatedOrderId
     type: string
     display_name: 关联订单编号
     example: SO-20231025-001
-    constraint: ''
   - name: relatedOrderName
     type: string
     display_name: 关联订单名称
     example: 客户A-项目X订单
-    constraint: ''
   display_name: 原材料采购记录
 - name: RawMaterialInventory
   description: 特定原材料在当前时刻的库存状态快照，包括待入库、可用和累计库存量。
@@ -127,42 +122,34 @@ concepts:
     type: string
     display_name: 库存编号
     example: INV-RM-001
-    constraint: 唯一
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
     example: RM-001
-    constraint: ''
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
     example: 高强度钢板
-    constraint: ''
   - name: materialType
     type: enum
     display_name: 材料类型
     example: 原材料
-    constraint: ''
   - name: pendingReceiptQuantity
     type: number
     display_name: 待入库量
     example: '50'
-    constraint: ≥ 0
   - name: cumulativeStockQuantity
     type: number
     display_name: 累计库存量
     example: '200'
-    constraint: ≥ 0
   - name: availableStock
     type: number
     display_name: 可用库存
     example: '150'
-    constraint: 可为负数
   - name: unit
     type: string
     display_name: 单位
     example: 吨
-    constraint: ''
   display_name: 原材料库存
 - name: CustomerOrder
   description: 客户下达的销售订单或询单，是驱动原材料采购的源头需求。
@@ -171,32 +158,26 @@ concepts:
     type: string
     display_name: 订单编号
     example: SO-20231025-001
-    constraint: 唯一
   - name: customerOrderName
     type: string
     display_name: 订单名称
     example: 客户A-项目X订单
-    constraint: ''
   - name: batchNumber
     type: string
     display_name: 订单批次号
     example: BATCH-001
-    constraint: ''
   - name: bufferPeriod
     type: number
     display_name: 订单缓冲周期
     example: '7'
-    constraint: ≥ 0
   - name: orderType
     type: enum
     display_name: 订单类型
     example: 销售
-    constraint: 销售/询单
   - name: status
     type: enum
     display_name: 订单状态
     example: 有效
-    constraint: 有效/无效
   display_name: 客户订单
 - name: DeliveryCapability
   description: 供应商的交货能力，包括交货周期、最低交货数量等
@@ -205,32 +186,26 @@ concepts:
     type: string
     display_name: 原材料编号
     example: ''
-    constraint: ''
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
     example: ''
-    constraint: ''
   - name: supplierName
     type: string
     display_name: 供应商名称
     example: ''
-    constraint: ''
   - name: supplierId
     type: string
     display_name: 供应商编号
     example: ''
-    constraint: ''
   - name: leadTime
     type: number
     display_name: 交货周期
     example: ''
-    constraint: ''
   - name: minCount
     type: number
     display_name: 最小交货数
     example: ''
-    constraint: ''
   display_name: 交货能力
 relations:
 - name: hasRawInventory
@@ -371,7 +346,7 @@ behaviors:
       example: 吨
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: object
@@ -442,7 +417,7 @@ behaviors:
       example: PO-20231027-001
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: object
@@ -474,7 +449,7 @@ behaviors:
       example: PO-20231027-001
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: object
@@ -511,7 +486,7 @@ behaviors:
       example: 高强度钢板
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: array
@@ -576,7 +551,7 @@ behaviors:
       example: 高强度钢板
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: array
@@ -648,7 +623,7 @@ behaviors:
       example: 高强度钢板
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: array
@@ -691,7 +666,7 @@ behaviors:
       example: 钢板008
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: array
@@ -738,7 +713,7 @@ behaviors:
       example: 钢板008
   response:
     code:
-      type: number
+      type: integer
       example: 0
     data:
       type: array
@@ -1018,656 +993,3 @@ securities:
 - action_name: ReceiveRawMaterial
   audit_node: 前置
   audit_content: 确认入库的准确性：请确认到货的原材料、数量、供应商是否与采购单一致。
-data_engines:
-- name: CreatePurchaseRecord
-  display_name: ''
-  behavior_name: CreatePurchaseRecord
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 创建采购单
-    url: http://optonto-business-backend:8080/api/purchase-records
-    method: POST
-    params:
-      rawMaterialId:
-        type: string
-        display_name: 原材料ID
-        required: true
-        example: RM-001
-      rawMaterialName:
-        type: string
-        display_name: 原材料名称
-        required: true
-        example: 高强度钢板
-      unit:
-        type: string
-        display_name: 单位 (吨/千件/桶/千米)
-        required: true
-        example: 吨
-      supplierName:
-        type: string
-        display_name: 供应商名称
-        required: true
-        example: 宝钢钢铁集团
-      arrivalTime:
-        type: string
-        display_name: 到货日期 (yyyy-MM-dd)
-        required: true
-        example: '2026-08-01'
-      arrivalQuantity:
-        type: number
-        display_name: 到货数量
-        required: true
-        example: 100
-      relatedOrderId:
-        type: string
-        display_name: 关联客户订单ID
-        required: false
-        example: SO-20231001-001
-      relatedOrderName:
-        type: string
-        display_name: 关联客户订单名称
-        required: false
-        example: 2023年10月-A客户-建筑钢结构
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: object
-        properties:
-          purchaseOrderId:
-            type: string
-            display_name: 采购单号
-            example: PO-20260716-026
-          rawMaterialId:
-            type: string
-            display_name: 原材料ID
-            example: RM-001
-          rawMaterialName:
-            type: string
-            display_name: 原材料名称
-            example: 高强度钢板
-          unit:
-            type: string
-            display_name: 单位
-            example: 吨
-          purchaseTime:
-            type: string
-            display_name: 采购时间
-            example: '2026-07-16'
-          arrivalTime:
-            type: string
-            display_name: 到货日期
-            example: '2026-08-01'
-          arrivalQuantity:
-            type: number
-            display_name: 到货数量
-            example: 100
-          supplierName:
-            type: string
-            display_name: 供应商名称
-            example: 宝钢钢铁集团
-          relatedOrderId:
-            type: string
-            display_name: 关联客户订单ID
-            example: SO-20231001-001
-          relatedOrderName:
-            type: string
-            display_name: 关联客户订单名称
-            example: 2023年10月-A客户-建筑钢结构
-          status:
-            type: string
-            display_name: 状态
-            example: 待入库
-  input_mapping:
-    rawMaterialId: rawMaterialId
-    rawMaterialName: rawMaterialName
-    arrivalQuantity: arrivalQuantity
-    supplierName: supplierName
-    arrivalTime: arrivalTime
-    relatedOrderId: relatedOrderId
-    relatedOrderName: relatedOrderName
-    unit: unit
-  output_mapping:
-    code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-    data.purchaseTime: data.purchaseTime
-    data.arrivalTime: data.arrivalTime
-    data.arrivalQuantity: data.arrivalQuantity
-    data.unit: data.unit
-    data.supplierName: data.supplierName
-    data.relatedOrderId: data.relatedOrderId
-    data.relatedOrderName: data.relatedOrderName
-    data.leadTime: ''
-    data.status: data.status
-  sql: ''
-- name: CancelPurchaseRecord
-  display_name: ''
-  behavior_name: CancelPurchaseRecord
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 取消原材料采购单
-    url: http://optonto-business-backend:8080/api/purchase-records/{purchaseOrderId}/cancel
-    method: POST
-    params:
-      purchaseOrderId:
-        type: string
-        display_name: 采购单号
-        required: true
-        example: PO-20260716-026
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: object
-        properties:
-          purchaseOrderId:
-            type: string
-            display_name: 采购单号
-            example: PO-20260716-026
-          rawMaterialId:
-            type: string
-            display_name: 原材料ID
-            example: RM-001
-          rawMaterialName:
-            type: string
-            display_name: 原材料名称
-            example: 高强度钢板
-          status:
-            type: string
-            display_name: 状态
-            example: 已取消
-  input_mapping:
-    purchaseRecordId: purchaseOrderId
-  output_mapping:
-    code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-  sql: ''
-- name: ReceiveRawMaterial
-  display_name: ''
-  behavior_name: ReceiveRawMaterial
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 入库原材料
-    url: http://optonto-business-backend:8080/api/purchase-records/{purchaseOrderId}/receive
-    method: POST
-    params:
-      purchaseOrderId:
-        type: string
-        display_name: 采购单号
-        required: true
-        example: PO-20260716-026
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: object
-        properties:
-          purchaseOrderId:
-            type: string
-            display_name: 采购单号
-            example: PO-20260716-026
-          rawMaterialId:
-            type: string
-            display_name: 原材料ID
-            example: RM-001
-          rawMaterialName:
-            type: string
-            display_name: 原材料名称
-            example: 高强度钢板
-          unit:
-            type: string
-            display_name: 单位
-            example: 吨
-          arrivalQuantity:
-            type: number
-            display_name: 到货数量
-            example: 100
-          status:
-            type: string
-            display_name: 状态
-            example: 已入库
-  input_mapping:
-    purchaseRecordId: purchaseOrderId
-  output_mapping:
-    code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-  sql: ''
-- name: QueryInventory
-  display_name: ''
-  behavior_name: QueryInventory
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 查询原材料库存
-    url: http://optonto-business-backend:8080/api/inventories
-    method: GET
-    params:
-      rawMaterialId:
-        type: string
-        display_name: 原材料ID
-        required: false
-        example: RM-001
-      rawMaterialName:
-        type: string
-        display_name: 原材料名称，模糊匹配
-        required: false
-        example: 高强度钢板
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: array
-        items:
-          type: object
-          properties:
-            rawMaterialId:
-              type: string
-              display_name: 原材料ID
-              example: RM-001
-            rawMaterialName:
-              type: string
-              display_name: 原材料名称
-              example: 高强度钢板
-            unit:
-              type: string
-              display_name: 单位
-              example: 吨
-            pendingReceiptQuantity:
-              type: number
-              display_name: 待入库量
-              example: 0
-            cumulativeStockQuantity:
-              type: number
-              display_name: 累计库存量
-              example: 2400
-            availableQuantity:
-              type: number
-              display_name: 可用库存
-              example: 1800
-            consumedQuantity:
-              type: number
-              display_name: 已消耗量
-              example: 600
-            createdAt:
-              type: string
-              display_name: 创建时间
-              example: '2026-07-15T22:33:33'
-            updatedAt:
-              type: string
-              display_name: 更新时间
-              example: '2026-07-15T22:33:33'
-  input_mapping:
-    rawMaterialId: rawMaterialId
-    rawMaterialName: rawMaterialName
-  output_mapping:
-    code: code
-    data: data
-    data[*].inventoryId: ''
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].materialType: ''
-    data[*].pendingReceiptQuantity: data[*].pendingReceiptQuantity
-    data[*].cumulativeStockQuantity: data[*].cumulativeStockQuantity
-    data[*].availableStock: data[*].availableQuantity
-    data[*].unit: data[*].unit
-  sql: ''
-- name: QueryPurchaseRecords
-  display_name: ''
-  behavior_name: QueryPurchaseRecords
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 查询原材料采购订单
-    url: http://optonto-business-backend:8080/api/purchase-records
-    method: GET
-    params:
-      purchaseOrderId:
-        type: string
-        display_name: 采购单号
-        required: false
-        example: PO-20260716-026
-      rawMaterialId:
-        type: string
-        display_name: 原材料ID
-        required: false
-        example: RM-001
-      rawMaterialName:
-        type: string
-        display_name: 原材料名称，模糊匹配
-        required: false
-        example: 高强度钢板
-      relatedOrderId:
-        type: string
-        display_name: 关联订单ID
-        required: false
-        example: SO-20231001-001
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: array
-        items:
-          type: object
-          properties:
-            purchaseOrderId:
-              type: string
-              display_name: 采购单号
-              example: PO-20260716-026
-            rawMaterialId:
-              type: string
-              display_name: 原材料ID
-              example: RM-001
-            rawMaterialName:
-              type: string
-              display_name: 原材料名称
-              example: 高强度钢板
-            unit:
-              type: string
-              display_name: 单位
-              example: 吨
-            purchaseTime:
-              type: string
-              display_name: 采购时间
-              example: '2026-07-16'
-            arrivalTime:
-              type: string
-              display_name: 到位时间
-              example: '2026-08-01'
-            arrivalQuantity:
-              type: number
-              display_name: 到位数量
-              example: 100
-            supplierName:
-              type: string
-              display_name: 供应商名称
-              example: 宝钢钢铁集团
-            relatedOrderId:
-              type: string
-              display_name: 关联订单ID
-              example: SO-20231001-001
-            relatedOrderName:
-              type: string
-              display_name: 关联订单名称
-              example: 2023年10月-A客户-建筑钢结构
-            status:
-              type: string
-              display_name: 状态
-              example: 已入库
-            createdAt:
-              type: string
-              display_name: 创建时间
-              example: '2026-07-15T22:33:33'
-            updatedAt:
-              type: string
-              display_name: 更新时间
-              example: '2026-07-15T22:33:33'
-  input_mapping:
-    purchaseRecordId: purchaseOrderId
-    rawMaterialId: rawMaterialId
-    rawMaterialName: rawMaterialName
-  output_mapping:
-    code: code
-    data: data
-    data[*].purchaseRecordId: data[*].purchaseOrderId
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].purchaseTime: data[*].purchaseTime
-    data[*].arrivalTime: data[*].arrivalTime
-    data[*].arrivalQuantity: data[*].arrivalQuantity
-    data[*].unit: data[*].unit
-    data[*].supplierName: data[*].supplierName
-    data[*].relatedOrderId: data[*].relatedOrderId
-    data[*].relatedOrderName: data[*].relatedOrderName
-    data[*].leadTime: ''
-  sql: ''
-- name: QueryRawMaterials
-  display_name: ''
-  behavior_name: QueryRawMaterials
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 查询原材料基本信息
-    url: http://optonto-business-backend:8080/api/raw-materials
-    method: GET
-    params:
-      rawMaterialId:
-        type: string
-        display_name: 原材料ID
-        required: false
-        example: RM-001
-      rawMaterialName:
-        type: string
-        display_name: 原材料名称，模糊匹配
-        required: false
-        example: 高强度钢板
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: array
-        items:
-          type: object
-          properties:
-            rawMaterialId:
-              type: string
-              display_name: 原材料ID
-              example: RM-001
-            rawMaterialName:
-              type: string
-              display_name: 原材料名称
-              example: 高强度钢板
-            unit:
-              type: string
-              display_name: 单位
-              example: 吨
-            safetyStock:
-              type: number
-              display_name: 安全库存
-              example: 100
-            createdAt:
-              type: string
-              display_name: 创建时间
-              example: '2026-07-15T22:33:33'
-            updatedAt:
-              type: string
-              display_name: 更新时间
-              example: '2026-07-15T22:33:33'
-  input_mapping:
-    rawMaterialId: rawMaterialId
-    rawMaterialName: rawMaterialName
-  output_mapping:
-    code: code
-    data: data
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].unit: data[*].unit
-    data[*].safetyStock: data[*].safetyStock
-  sql: ''
-- name: QuerySuppliers
-  display_name: ''
-  behavior_name: QuerySuppliers
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 供应商查询
-    url: http://optonto-business-backend:8080/api/suppliers
-    method: GET
-    params:
-      supplierName:
-        type: string
-        display_name: 供应商名称，模糊匹配
-        required: false
-        example: 宝钢钢铁集团
-      rawMaterialName:
-        type: string
-        display_name: 原材料名称
-        required: false
-        example: 钢板008
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: array
-        items:
-          type: object
-          properties:
-            supplierName:
-              type: string
-              display_name: 供应商名称
-              example: 宝钢钢铁集团
-            address:
-              type: string
-              display_name: 地址
-              example: 上海市宝山区富锦路888号
-            contactPerson:
-              type: string
-              display_name: 联系人
-              example: 张经理
-            contactPhone:
-              type: string
-              display_name: 联系电话
-              example: '13800131001'
-            rawMaterialId:
-              type: string
-              display_name: 原材料ID
-              example: RM-001
-            rawMaterialName:
-              type: string
-              display_name: 原材料名称
-              example: 高强度钢板
-            leadTime:
-              type: number
-              display_name: 交货周期
-              example: 100
-            createdAt:
-              type: string
-              display_name: 创建时间
-              example: '2026-07-15T22:33:33'
-            updatedAt:
-              type: string
-              display_name: 更新时间
-              example: '2026-07-15T22:33:33'
-  input_mapping:
-    supplierName: supplierName
-    rawMaterialName: rawMaterialName
-  output_mapping:
-    code: code
-    data: data
-    data[*].supplierId: ''
-    data[*].supplierName: data[*].supplierName
-    data[*].address: data[*].address
-    data[*].contactPerson: data[*].contactPerson
-    data[*].contactPhone: data[*].contactPhone
-  sql: ''
-- name: QuerySupplierCapability
-  display_name: ''
-  behavior_name: QuerySupplierCapability
-  engine_type: API
-  target:
-    data_source_name: aps
-    api_name: 供应商查询
-    url: http://optonto-business-backend:8080/api/suppliers
-    method: GET
-    params:
-      supplierName:
-        type: string
-        display_name: 供应商名称，模糊匹配
-        required: false
-        example: 宝钢钢铁集团
-      rawMaterialName:
-        type: string
-        display_name: 原材料名称
-        required: false
-        example: 钢板008
-    response:
-      code:
-        type: number
-        example: 0
-      data:
-        type: array
-        items:
-          type: object
-          properties:
-            supplierName:
-              type: string
-              display_name: 供应商名称
-              example: 宝钢钢铁集团
-            address:
-              type: string
-              display_name: 地址
-              example: 上海市宝山区富锦路888号
-            contactPerson:
-              type: string
-              display_name: 联系人
-              example: 张经理
-            contactPhone:
-              type: string
-              display_name: 联系电话
-              example: '13800131001'
-            rawMaterialId:
-              type: string
-              display_name: 原材料ID
-              example: RM-001
-            rawMaterialName:
-              type: string
-              display_name: 原材料名称
-              example: 高强度钢板
-            leadTime:
-              type: number
-              display_name: 交货周期
-              example: 100
-            createdAt:
-              type: string
-              display_name: 创建时间
-              example: '2026-07-15T22:33:13'
-            updatedAt:
-              type: string
-              display_name: 更新时间
-              example: '2026-07-15T22:33:33'
-  input_mapping:
-    supplierName: supplierName
-    rawMaterialName: rawMaterialName
-  output_mapping:
-    code: code
-    data: data
-    data[*].supplierName: data[*].supplierName
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].leadTime: data[*].leadTime
-  sql: ''
-- name: QuerySupplierCapabilitySQL
-  display_name: ''
-  behavior_name: QuerySupplierCapabilitySQL
-  engine_type: SQL
-  target:
-    data_source_name: ''
-    api_name: ''
-    url: ''
-    method: POST
-    params: {}
-    response: {}
-  input_mapping: {}
-  output_mapping: {}
-  sql: "SELECT \n    s.supplier_name AS supplierName,\n    s.raw_material_id AS rawMaterialId,\n\
-    \    s.raw_material_name AS rawMaterialName,\n    s.lead_time AS leadTime\nFROM\
-    \ supplier s\nWHERE (s.supplier_name = :supplierName OR :supplierName IS NULL)\n\
-    \  AND (s.raw_material_name = :rawMaterialName OR :rawMaterialName IS NULL)"

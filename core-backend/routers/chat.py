@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 
 from config import (
     ANALYSIS_SYSTEM_PROMPT,
+    GRILLING_PROMPT,
     ONTOLOGY_GENERATE_SYSTEM_PROMPT,
     ONTOLOGY_GENERATE_PROMPT_TEMPLATE,
     VALIDATION_SYSTEM_PROMPT,
@@ -49,9 +50,11 @@ async def _mock_stream(prompt: str) -> AsyncGenerator[str, None]:
     yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
 
 
-def _build_system_message(messages: list) -> str:
+def _build_system_message(messages: list, grilling: bool = False) -> str:
     """Build system message: inject business info from first user message into the analysis system prompt."""
     prompt = ANALYSIS_SYSTEM_PROMPT
+    if grilling:
+        prompt += GRILLING_PROMPT
     business_info = ""
     for msg in messages:
         if msg["role"] == "user" and msg["content"].strip():
@@ -62,11 +65,11 @@ def _build_system_message(messages: list) -> str:
     return prompt
 
 
-async def _langchain_stream(llm, messages: list) -> AsyncGenerator[str, None]:
+async def _langchain_stream(llm, messages: list, grilling: bool = False) -> AsyncGenerator[str, None]:
     """Stream response from LangChain."""
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-    system_content = _build_system_message(messages)
+    system_content = _build_system_message(messages, grilling)
     lc_messages = [SystemMessage(content=system_content)]
     for msg in messages:
         if msg["role"] == "user":
@@ -91,6 +94,7 @@ async def chat(thread_id: str, body: dict):
     user_msg = body.get("message", "").strip()
     if not user_msg:
         raise HTTPException(status_code=400, detail="消息不能为空")
+    grilling = bool(body.get("grilling", False))
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -120,7 +124,7 @@ async def chat(thread_id: str, body: dict):
         if llm is None:
             stream = _mock_stream(user_msg)
         else:
-            stream = _langchain_stream(llm, thread["messages"][:-1])
+            stream = _langchain_stream(llm, thread["messages"][:-1], grilling)
 
         async for chunk in stream:
             yield chunk

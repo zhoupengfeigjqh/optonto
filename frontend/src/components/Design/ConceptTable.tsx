@@ -1,10 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, message, Tag, Space } from 'antd';
+import { Button, Input, Modal, message, Tag, Space, Table, Select } from 'antd';
 import { PlusOutlined, DeleteOutlined, SettingOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { getConcepts, createConcept, updateConcept, deleteConcept, updateAttributes, Concept, Attribute } from '@/api/client';
+import { getConcepts, createConcept, updateConcept, deleteConcept, updateAttributes, Concept, Attribute, AttributeConstraint } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+
+const ATTR_TYPES = ['string', 'number', 'integer', 'boolean', 'object', 'array'];
+// 类型-约束矩阵：唯一/枚举仅 string|number|integer；匹配模式仅 string；非空全类型可填
+const canUnique = (t: string) => ['string', 'number', 'integer'].includes(t);
+const canEnum = canUnique;
+const canPattern = (t: string) => t === 'string';
+
+const BOOL_OPTS = [{ value: 'false', label: '否' }, { value: 'true', label: '是' }];
+
+const patternInvalid = (p?: string) => {
+  if (!p?.trim()) return false;
+  try { new RegExp(p); return false; } catch { return true; }
+};
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -18,11 +31,6 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const [attrConcept, setAttrConcept] = useState<Concept | null>(null);
   const [attributes, setAttributes] = useState<Attribute[]>([]);
   const [attrDialogOpen, setAttrDialogOpen] = useState(false);
-  const [newAttrName, setNewAttrName] = useState('');
-  const [newAttrType, setNewAttrType] = useState('string');
-  const [newAttrDisplayName, setNewAttrDisplayName] = useState('');
-  const [newAttrExample, setNewAttrExample] = useState('');
-  const [newAttrConstraint, setNewAttrConstraint] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -89,17 +97,57 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     setAttrDialogOpen(true);
   };
 
-  const handleAddAttribute = () => {
-    if (!newAttrName.trim()) { message.warning('请输入属性名称'); return; }
-    setAttributes([...attributes, { name: newAttrName.trim(), type: newAttrType, display_name: newAttrDisplayName.trim(), example: newAttrExample.trim(), constraint: newAttrConstraint.trim() }]);
-    setNewAttrName(''); setNewAttrType('string'); setNewAttrDisplayName(''); setNewAttrExample(''); setNewAttrConstraint('');
+  const updateAttr = (idx: number, patch: Partial<Attribute>) => {
+    const n = [...attributes];
+    const next: Attribute = { ...n[idx], ...patch };
+    if (patch.type !== undefined) {
+      // 切换类型：清理不适用的约束项，避免脏数据
+      const c: AttributeConstraint = { ...(next.constraint || {}) };
+      if (!canUnique(next.type)) { delete c.unique; }
+      if (!canEnum(next.type)) { delete c.enum; }
+      if (!canPattern(next.type)) { delete c.pattern; }
+      next.constraint = Object.keys(c).length ? c : null;
+    }
+    if (patch.constraint !== undefined) {
+      // 唯一 ⇒ 非空联动；取消唯一后非空保持原值但恢复可编辑
+      const c: AttributeConstraint = { ...(n[idx].constraint || {}), ...patch.constraint };
+      if (c.unique) c.required = true;
+      next.constraint = c;
+    }
+    n[idx] = next;
+    setAttributes(n);
   };
+
+  const handleAddAttribute = () => setAttributes([...attributes, { name: '', type: 'string' }]);
 
   const handleDeleteAttribute = (idx: number) => setAttributes(attributes.filter((_, i) => i !== idx));
 
   const handleSaveAttributes = async () => {
     if (!attrConcept) return;
-    try { await updateAttributes(ontologyId, attrConcept.name, attributes); message.success('属性已保存'); setAttrDialogOpen(false); await load(); }
+    const names = attributes.map(a => a.name.trim());
+    if (names.some(n => !n)) { message.warning('属性名不能为空'); return; }
+    if (new Set(names).size !== names.length) { message.warning('属性名重复'); return; }
+    for (const a of attributes) {
+      if (patternInvalid(a.constraint?.pattern)) { message.error(`属性「${a.name}」的匹配模式不是合法正则`); return; }
+      if (canEnum(a.type) && a.type !== 'string' && (a.constraint?.enum || []).some(v => isNaN(Number(v)))) {
+        message.warning(`属性「${a.name}」的枚举值必须是数字`); return;
+      }
+    }
+    // 收敛 constraint：清不适用项、数字枚举解析、全缺省置 null（不落盘）
+    const payload = attributes.map(a => {
+      const base = { name: a.name.trim(), type: a.type, display_name: a.display_name?.trim() || '', example: a.example?.trim() || '' };
+      const c = a.constraint;
+      if (!c) return { ...base, constraint: null };
+      const out: AttributeConstraint = {};
+      if (canUnique(a.type) && c.unique) out.unique = true;
+      if (c.required || out.unique) out.required = true;
+      if (canEnum(a.type) && c.enum?.length) {
+        out.enum = a.type === 'string' ? c.enum.map(String) : c.enum.map(Number);
+      }
+      if (canPattern(a.type) && c.pattern?.trim()) out.pattern = c.pattern.trim();
+      return { ...base, constraint: Object.keys(out).length ? out : null };
+    });
+    try { await updateAttributes(ontologyId, attrConcept.name, payload); message.success('属性已保存'); setAttrDialogOpen(false); await load(); }
     catch (e: any) { message.error(e.message); }
   };
 
@@ -167,7 +215,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       <p className="text-text-muted text-xs mb-3">定义业务中的核心对象及其属性结构</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
-      <Modal title={`管理属性 - ${attrConcept?.display_name || attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={850}
+      <Modal title={`管理属性 - ${attrConcept?.display_name || attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={1200}
         footer={
           <div className="flex justify-start gap-2">
             <Button onClick={() => setAttrDialogOpen(false)}>取消</Button>
@@ -175,29 +223,52 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           </div>
         }
       >
-        <div className="space-y-3">
-          {attributes.map((attr, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <Input value={attr.name} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], name: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="属性名" />
-              <Input value={attr.display_name || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], display_name: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="展示名" />
-              <select value={attr.type} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], type: e.target.value }; setAttributes(n); }} className="w-[140px] px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
-                {['string', 'number',  'boolean', 'enum', 'array', 'object'].map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <Input value={attr.constraint || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], constraint: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="约束" />
-              <Input value={attr.example || ''} onChange={e => { const n = [...attributes]; n[idx] = { ...n[idx], example: e.target.value }; setAttributes(n); }} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" placeholder="示例" />
-              <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteAttribute(idx)} />
-            </div>
-          ))}
-          <div className="flex items-center gap-2 pt-2 border-t border-dark-border">
-            <Input placeholder="属性名" value={newAttrName} onChange={e => setNewAttrName(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
-            <Input placeholder="展示名" value={newAttrDisplayName} onChange={e => setNewAttrDisplayName(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
-            <select value={newAttrType} onChange={e => setNewAttrType(e.target.value)} className="w-[140px] px-2 py-1 rounded bg-dark-bg border border-dark-border text-text-primary text-sm">
-              {['string', 'number',  'boolean', 'enum', 'array', 'object'].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <Input placeholder="约束" value={newAttrConstraint} onChange={e => setNewAttrConstraint(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
-            <Input placeholder="示例" value={newAttrExample} onChange={e => setNewAttrExample(e.target.value)} className="w-[140px] bg-dark-bg border-dark-border text-text-primary" />
-            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleAddAttribute}>添加</Button>
-          </div>
+        <Table
+          dataSource={attributes.map((a, i) => ({ ...a, _idx: i }))}
+          rowKey="_idx"
+          size="small"
+          pagination={false}
+          scroll={{ x: 1090 }}
+          columns={[
+            { title: '属性名', width: 130, render: (_: any, r: any) => (
+              <Input size="small" value={r.name} onChange={e => updateAttr(r._idx, { name: e.target.value })} placeholder="属性名" className="bg-dark-bg border-dark-border text-text-primary" />
+            )},
+            { title: '展示名', width: 110, render: (_: any, r: any) => (
+              <Input size="small" value={r.display_name || ''} onChange={e => updateAttr(r._idx, { display_name: e.target.value })} placeholder="展示名" className="bg-dark-bg border-dark-border text-text-primary" />
+            )},
+            { title: '类型', width: 100, render: (_: any, r: any) => (
+              <Select size="small" value={r.type} onChange={v => updateAttr(r._idx, { type: v })} style={{ width: '100%' }}
+                options={ATTR_TYPES.map(t => ({ value: t, label: t }))} />
+            )},
+            { title: '是否唯一', width: 80, render: (_: any, r: any) => canUnique(r.type) ? (
+              <Select size="small" value={String(r.constraint?.unique ?? false)} style={{ width: '100%' }}
+                onChange={v => updateAttr(r._idx, { constraint: { unique: v === 'true' } })} options={BOOL_OPTS} />
+            ) : <span className="text-text-muted">-</span> },
+            { title: '是否非空', width: 80, render: (_: any, r: any) => (
+              <Select size="small" value={String(r.constraint?.required ?? false)} disabled={!!r.constraint?.unique} style={{ width: '100%' }}
+                onChange={v => updateAttr(r._idx, { constraint: { required: v === 'true' } })} options={BOOL_OPTS} />
+            )},
+            { title: '枚举值', width: 170, render: (_: any, r: any) => canEnum(r.type) ? (
+              <Select size="small" mode="tags" value={(r.constraint?.enum || []).map(String)} style={{ width: '100%' }}
+                open={false} suffixIcon={null} placeholder="回车新增"
+                onChange={vals => updateAttr(r._idx, { constraint: { enum: vals } })} />
+            ) : <span className="text-text-muted">-</span> },
+            { title: '匹配模式', width: 170, render: (_: any, r: any) => canPattern(r.type) ? (
+              <Input size="small" value={r.constraint?.pattern || ''} placeholder="^\d{4}-\d{2}-\d{2}$"
+                status={patternInvalid(r.constraint?.pattern) ? 'error' : ''}
+                onChange={e => updateAttr(r._idx, { constraint: { pattern: e.target.value } })}
+                className="bg-dark-bg border-dark-border text-text-primary" />
+            ) : <span className="text-text-muted">-</span> },
+            { title: '示例', width: 110, render: (_: any, r: any) => (
+              <Input size="small" value={r.example || ''} onChange={e => updateAttr(r._idx, { example: e.target.value })} placeholder="示例" className="bg-dark-bg border-dark-border text-text-primary" />
+            )},
+            { title: '操作', width: 60, render: (_: any, r: any) => (
+              <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteAttribute(r._idx)} />
+            )},
+          ]}
+        />
+        <div className="pt-3">
+          <Button type="dashed" icon={<PlusOutlined />} onClick={handleAddAttribute} block>新增属性</Button>
         </div>
       </Modal>
     </div>

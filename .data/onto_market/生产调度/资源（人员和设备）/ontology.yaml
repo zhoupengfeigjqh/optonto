@@ -1,0 +1,12 @@
+metadata:
+  scenario_name: 生产调度
+  scenario_id: 1
+  ontology_name: 资源（人员和设备）
+  ontology_id: 3
+concepts: []
+relations: []
+functions: []
+behaviors: []
+rules: []
+processes: []
+securities: []

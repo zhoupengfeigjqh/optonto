@@ -42,6 +42,11 @@ async def update_behavior(ontology_id: int, behavior_name: str, item: BehaviorIt
     ensure_unique(data.behaviors, item.name, "行为", exclude_name=behavior_name)
 
     data.behaviors[idx] = item
+    # 行为改名联动：数据引擎按 behavior_name 挂接，同步换名防悬空
+    if item.name != behavior_name:
+        for de in data.data_engines:
+            if de.behavior_name == behavior_name:
+                de.behavior_name = item.name
     save_ontology_data(sc_name, on_name, data)
     return item
 
@@ -54,6 +59,8 @@ async def delete_behavior(ontology_id: int, behavior_name: str):
     idx = find_index(data.behaviors, behavior_name, "行为")
 
     data.behaviors.pop(idx)
+    # 级联清理：删除挂在该行为上的数据引擎（引擎按 behavior_name 引用，行为没了引擎即悬空）
+    data.data_engines = [de for de in data.data_engines if de.behavior_name != behavior_name]
     save_ontology_data(sc_name, on_name, data)
     return {"message": "行为已删除"}
 
