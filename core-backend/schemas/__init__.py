@@ -135,7 +135,7 @@ class FunctionItem(BaseModel):
     name: str = Field(..., description="函数名称")
     display_name: str = Field("", description="展示名称")
     description: str = Field("", description="描述/计算逻辑")
-    related_attributes: list[str] = Field(default_factory=list, description="关联属性列表 (concept.attribute)")
+    related_concepts: list[str] = Field(default_factory=list, description="关联概念")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构")
     code_file: str = Field("", description="函数代码文件路径（functions/函数名.py）")

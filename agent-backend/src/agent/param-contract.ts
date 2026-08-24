@@ -8,7 +8,7 @@
  */
 import { Type, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import type { BehaviorMeta } from '../types.js';
+import type { BehaviorMeta, ConceptInfo } from '../types.js';
 
 /** 行为声明中的单个参数（可能只有部分字段；items/properties 承载 array/object 的内部结构声明） */
 export interface ParamSpec {
@@ -22,6 +22,10 @@ export interface ParamSpec {
   items?: ParamSpec;
   /** object 参数的字段结构声明 */
   properties?: Record<string, ParamSpec>;
+  /** 枚举值约束（由概念属性 constraint 回溯合并而来，声明源不直接携带） */
+  enum?: (string | number)[];
+  /** 匹配模式约束（正则，仅 string；同上回溯合并） */
+  pattern?: string;
 }
 
 /** 从行为元信息提取必填参数名列表 */
@@ -245,4 +249,111 @@ export function unwrapParamValues(params: Record<string, any>): Record<string, a
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(params || {})) out[k] = deepUnwrap(v);
   return out;
+}
+
+// ─── 枚举/匹配模式约束校验（规划期父 Agent 专用） ─────────────────────────────
+// 声明源：行为/函数参数本身不带 enum/pattern——按"参数名 = 属性名"从关联概念
+// （行为 related_concepts / 函数 related_concepts）的属性 constraint 回溯合并
+// （单一事实源：约束只存在概念属性上，改一处全局生效）。
+// 同名属性取第一个（建模约定同名属性定义完全一致），不 warn。
+// 子 Agent 执行期不做此类检查（保持原状）；公共函数/第三源 MCP 工具无概念关联，自然跳过。
+
+export interface AttrConstraint { enum?: (string | number)[]; pattern?: string }
+export type AttrConstraintMap = Map<string, AttrConstraint>;
+
+/** 关联概念属性 → 约束查找表（只收有 enum/pattern 的；同名取第一个）。 */
+export function buildAttrConstraintMap(concepts: ConceptInfo[]): AttrConstraintMap {
+  const map: AttrConstraintMap = new Map();
+  for (const c of concepts || []) {
+    for (const a of c.attributes || []) {
+      if (map.has(a.name)) continue; // 同名取第一个
+      const enumVals = a.constraint?.enum;
+      const pattern = a.constraint?.pattern;
+      if ((enumVals && enumVals.length > 0) || pattern) {
+        map.set(a.name, { enum: enumVals?.length ? enumVals : undefined, pattern: pattern || undefined });
+      }
+    }
+  }
+  return map;
+}
+
+/** 约束合并进声明 spec 树副本：顶层参数名、array 项的 properties、object 的 properties 逐级按 key 查表。 */
+export function mergeAttrConstraints(declared: Record<string, any>, attrMap: AttrConstraintMap): Record<string, any> {
+  const mergeLevel = (specs: Record<string, ParamSpec>): Record<string, ParamSpec> => {
+    const out: Record<string, ParamSpec> = {};
+    for (const [k, s] of Object.entries(specs || {})) {
+      const spec: ParamSpec = { ...(s || {}) };
+      const c = attrMap.get(k);
+      if (c?.enum?.length && !spec.enum?.length) spec.enum = c.enum;
+      if (c?.pattern && !spec.pattern) spec.pattern = c.pattern;
+      if (spec.items && typeof spec.items === 'object') {
+        spec.items = { ...spec.items };
+        if (spec.items.properties) spec.items.properties = mergeLevel(spec.items.properties);
+      }
+      if (spec.properties) spec.properties = mergeLevel(spec.properties);
+      out[k] = spec;
+    }
+    return out;
+  };
+  return mergeLevel(declared as Record<string, ParamSpec>);
+}
+
+/** 正则全匹配判定（`^(?:…)$` 包裹防部分命中）；非法正则不当场判负——声明问题不阻塞执行。 */
+function fullMatchPattern(pattern: string, v: string): boolean {
+  try { return new RegExp(`^(?:${pattern})$`).test(v); } catch { return true; }
+}
+
+export interface ConstraintViolations {
+  /** 模式不匹配（可 nudge 父 Agent 转换格式修复） */
+  patternErrors: string[];
+  /** 枚举违例（高风险——调用方应硬停止整个任务，交由用户确认） */
+  enumErrors: string[];
+}
+
+/**
+ * 已填非空值的枚举/模式递归校验（declared 须先经 mergeAttrConstraints 合并）。
+ * array 沿 items、object 沿 properties 递归进内部，错误带路径；标量叶子才查 enum/pattern。
+ */
+export function validateConstraintValues(
+  declared: Record<string, any>,
+  provided: Record<string, any>,
+  seq: number,
+  name: string,
+): ConstraintViolations {
+  const patternErrors: string[] = [];
+  const enumErrors: string[] = [];
+
+  const walkValue = (value: unknown, spec: ParamSpec, path: string): void => {
+    if (value === undefined || value === null || value === '') return;
+    if (Array.isArray(value)) {
+      if (spec.items && typeof spec.items === 'object') {
+        value.forEach((item, i) => walkValue(item, spec.items as ParamSpec, `${path}[${i}]`));
+      }
+      return;
+    }
+    if (typeof value === 'object') {
+      if (spec.properties) {
+        for (const [pk, pspec] of Object.entries(spec.properties)) {
+          walkValue((value as Record<string, unknown>)[pk], pspec, `${path}.${pk}`);
+        }
+      }
+      return;
+    }
+    // 标量叶子
+    if (spec.enum?.length && !spec.enum.some(ev => ev === value)) {
+      enumErrors.push(`子任务${seq}(${name}) 参数 ${path} 值 ${JSON.stringify(value)} 不在枚举值 [${spec.enum.join(' / ')}] 内`);
+    }
+    if (spec.pattern && typeof value === 'string' && !fullMatchPattern(spec.pattern, value)) {
+      patternErrors.push(`子任务${seq}(${name}) 参数 ${path} 值 ${JSON.stringify(value)} 不匹配模式 ${spec.pattern}`);
+    }
+  };
+
+  for (const [key, spec] of Object.entries(declared || {})) {
+    const p = provided?.[key];
+    if (!p || typeof p !== 'object') continue; // 非包装 = 缺失，由结构校验负责
+    const value = unwrapParamValue((p as ParamSpec).value);
+    if (value === undefined || value === null || value === '') continue; // 空值放行（缺值非本校验职责）
+    walkValue(value, spec as ParamSpec, key);
+  }
+  return { patternErrors, enumErrors };
 }

@@ -270,3 +270,103 @@ describe('renderParamStructure', () => {
       .toEqual(['tags: array']);
   });
 });
+
+// ─── 枚举/匹配模式约束校验（规划期父 Agent 专用） ─────────────────────────────
+import { buildAttrConstraintMap, mergeAttrConstraints, validateConstraintValues } from './param-contract.js';
+
+describe('buildAttrConstraintMap · 约束查找表', () => {
+  const concepts = [
+    { name: 'A', display_name: 'A', attributes: [
+      { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['有效', '无效'] } },
+      { name: 'orderDate', type: 'string', display_name: '日期', constraint: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
+      { name: 'qty', type: 'number', display_name: '数量', constraint: { unique: true, required: true } },
+    ]},
+    { name: 'B', display_name: 'B', attributes: [
+      { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['启用', '停用'] } },
+    ]},
+  ] as any;
+
+  it('只收有 enum/pattern 的属性；unique/required 不构成校验依据', () => {
+    const m = buildAttrConstraintMap(concepts);
+    expect(m.size).toBe(2);
+    expect(m.has('qty')).toBe(false);
+    expect(m.get('orderDate')).toEqual({ enum: undefined, pattern: '^\\d{4}-\\d{2}-\\d{2}$' });
+  });
+
+  it('同名属性取第一个（约定同名定义一致），不 warn', () => {
+    expect(buildAttrConstraintMap(concepts).get('status')?.enum).toEqual(['有效', '无效']);
+  });
+});
+
+describe('mergeAttrConstraints · 约束合并进 spec 树', () => {
+  it('顶层 + array 项 properties 逐级合并；已有显式声明不被覆盖', () => {
+    const attrMap = new Map([
+      ['status', { enum: ['有效', '无效'] }],
+      ['arrivalTime', { pattern: '^\\d{4}-\\d{2}-\\d{2}$' }],
+    ]) as any;
+    const merged = mergeAttrConstraints({
+      status: { type: 'string', enum: ['自定义'] },
+      recordSet: { type: 'array', items: { type: 'object', properties: { arrivalTime: { type: 'string' } } } },
+    }, attrMap) as any;
+    expect(merged.status.enum).toEqual(['自定义']); // 显式声明优先
+    expect(merged.recordSet.items.properties.arrivalTime.pattern).toBe('^\\d{4}-\\d{2}-\\d{2}$');
+  });
+});
+
+describe('validateConstraintValues · 枚举/模式分类校验', () => {
+  const declared = {
+    status: { type: 'string', enum: ['有效', '无效'] },
+    orderDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+    level: { type: 'integer', enum: [1, 2, 3] },
+  };
+
+  it('值全部合规 → 无错误', () => {
+    const v = validateConstraintValues(declared, {
+      status: { value: '有效' }, orderDate: { value: '2026-08-24' }, level: { value: 2 },
+    }, 1, 'B');
+    expect(v.enumErrors).toEqual([]);
+    expect(v.patternErrors).toEqual([]);
+  });
+
+  it('枚举违例 → enumErrors（高风险硬停止类）；数字枚举严格比对', () => {
+    const v = validateConstraintValues(declared, {
+      status: { value: '未知' }, level: { value: 9 },
+    }, 1, 'B');
+    expect(v.enumErrors).toHaveLength(2);
+    expect(v.enumErrors[0]).toContain('不在枚举值');
+    expect(v.patternErrors).toEqual([]);
+  });
+
+  it('模式不匹配 → patternErrors（可 nudge 转换类）；强制全匹配防部分命中', () => {
+    const v = validateConstraintValues(declared, {
+      orderDate: { value: '2026-8-4' },
+    }, 2, 'B');
+    expect(v.patternErrors).toHaveLength(1);
+    expect(v.patternErrors[0]).toContain('不匹配模式');
+    expect(v.enumErrors).toEqual([]);
+    // 部分命中也拦：值含额外前后缀不算通过
+    expect(validateConstraintValues(declared, { orderDate: { value: 'x2026-08-24' } }, 2, 'B').patternErrors).toHaveLength(1);
+  });
+
+  it('空值放行（缺值由结构校验/子 Agent 负责，非本校验职责）', () => {
+    const v = validateConstraintValues(declared, { status: { value: '' }, orderDate: {} }, 1, 'B');
+    expect(v.enumErrors).toEqual([]);
+    expect(v.patternErrors).toEqual([]);
+  });
+
+  it('嵌套数组项字段递归校验，错误带路径 recordSet[1].orderDate', () => {
+    const nested = {
+      recordSet: { type: 'array', items: { type: 'object', properties: { orderDate: { type: 'string', pattern: '^\\d{4}$' } } } },
+    };
+    const v = validateConstraintValues(nested, {
+      recordSet: { value: [{ orderDate: { value: '2026' } }, { orderDate: { value: '26' } }] },
+    }, 3, 'B');
+    expect(v.patternErrors).toHaveLength(1);
+    expect(v.patternErrors[0]).toContain('recordSet[1].orderDate');
+  });
+
+  it('非法正则不当场判负（声明问题不阻塞执行）', () => {
+    const v = validateConstraintValues({ x: { type: 'string', pattern: '([' } }, { x: { value: 'any' } }, 1, 'B');
+    expect(v.patternErrors).toEqual([]);
+  });
+});

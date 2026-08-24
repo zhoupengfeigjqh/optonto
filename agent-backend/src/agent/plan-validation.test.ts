@@ -3,7 +3,7 @@
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
  */
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
+import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validateAllConstraints, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
@@ -100,7 +100,7 @@ function fakeGateway(): OntologyGatewayPort {
     }),
     getFunctionInfo: (_scenario, _ontology, fn) =>
       fn === 'sumRawNotArrivalQty'
-        ? { display_name: '', params: { purchaseRecordSet: { required: true, type: 'array' } } }
+        ? { display_name: '', params: { purchaseRecordSet: { required: true, type: 'array' } }, concepts: [] }
         : null,
   };
 }
@@ -221,5 +221,89 @@ describe('validateSeqConflicts（seq 防碰撞）', () => {
 
   it('规划路径不传 executedTasks → 冒名规则休眠（只查重复）', () => {
     expect(validateSeqConflicts(planOf([st(1)]))).toEqual([]);
+  });
+});
+
+// ─── validateAllConstraints · 行为/函数统一约束校验 ─────────────────────────
+// 函数子任务经 getFunctionInfo().concepts（related_concepts 解析）回溯约束，与行为同路径。
+
+describe('validateAllConstraints · 行为/函数统一约束校验', () => {
+  const CONCEPT = {
+    name: 'PurchaseRecord', display_name: '采购记录',
+    attributes: [
+      { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['有效', '无效'] } },
+      { name: 'arrivalTime', type: 'string', display_name: '到位时间', constraint: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
+      { name: 'rawMaterialName', type: 'string', display_name: '原料名', constraint: { enum: ['钢板'] } },
+    ],
+  };
+  const gw = (): OntologyGatewayPort => ({
+    getBehaviorNames: () => ['CreatePurchaseRecord'],
+    getFunctionNames: () => ['sumRawNotArrivalQty'],
+    getBehaviorMeta: (_s, _o, b) => ({
+      display_name: '',
+      params: { status: { type: 'string' }, arrivalTime: { type: 'string' } },
+      preRules: [], postRules: [],
+      concepts: b === 'CreatePurchaseRecord' ? [CONCEPT] : [],
+      isWrite: false,
+    }),
+    getFunctionInfo: (_s, _o, fn) =>
+      fn === 'sumRawNotArrivalQty'
+        ? {
+            display_name: '',
+            params: {
+              filterRawMaterialName: { type: 'string' }, // 改名参数：与属性 rawMaterialName 不同名
+              purchaseRecordSet: { type: 'array', items: { type: 'object', properties: { arrivalTime: { type: 'string' }, status: { type: 'string' } } } },
+            },
+            concepts: [CONCEPT],
+          }
+        : fn === 'dateAdd'
+          ? { display_name: '', params: { days: { type: 'integer' } }, concepts: [] } // 公共函数：无概念关联
+          : null, // 第三源 MCP 工具
+  });
+
+  it('行为子任务：枚举违例 → enumErrors（回归，原行为分支不变）', () => {
+    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { status: { value: '未知' }, arrivalTime: { value: '2026-08-24' } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.enumErrors).toHaveLength(1);
+    expect(v.enumErrors[0]).toContain('status');
+    expect(v.patternErrors).toEqual([]);
+  });
+
+  it('函数子任务：嵌套数组项字段按属性约束递归校验，错误带路径', () => {
+    const sub = {
+      ...fnSubtask('sumRawNotArrivalQty'),
+      params: {
+        purchaseRecordSet: { value: [
+          { arrivalTime: '2026-08-24', status: '有效' },
+          { arrivalTime: '2026-8-4', status: '未知' },
+        ] },
+      },
+    };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.patternErrors).toHaveLength(1);
+    expect(v.patternErrors[0]).toContain('purchaseRecordSet[1].arrivalTime');
+    expect(v.enumErrors).toHaveLength(1);
+    expect(v.enumErrors[0]).toContain('purchaseRecordSet[1].status');
+  });
+
+  it('函数子任务：改名顶层参数 ≠ 属性名 → 不查（键名匹配的既定边界，静默漏检而非误拦）', () => {
+    const sub = { ...fnSubtask('sumRawNotArrivalQty'), params: { filterRawMaterialName: { value: '铁板' } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.enumErrors).toEqual([]);
+    expect(v.patternErrors).toEqual([]);
+  });
+
+  it('公共函数（concepts 恒空）→ 无校验依据，跳过', () => {
+    const sub = { ...fnSubtask('dateAdd'), params: { days: { value: 30 } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.enumErrors).toEqual([]);
+    expect(v.patternErrors).toEqual([]);
+  });
+
+  it('第三源 MCP 工具（getFunctionInfo 返回 null）→ 跳过', () => {
+    const sub = { ...fnSubtask('weatherQuery'), params: { city: { value: '北京' } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.enumErrors).toEqual([]);
+    expect(v.patternErrors).toEqual([]);
   });
 });

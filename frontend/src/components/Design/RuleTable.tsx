@@ -252,7 +252,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     setLoading(true);
     try {
       const [ruleList, behList, fnList, types, conList, commonFnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId), getCommonFunctions()]);
-      const allFuncs = [...fnList, ...commonFnList.map((f: any) => ({ ...f, related_attributes: [] as string[] }))];
+      const allFuncs = [...fnList, ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[] }))];
       setRules(ruleList); setBehaviors(behList); setFuncs(allFuncs);
       setRuleTypeOptions([...types.map(t => ({ label: t, value: t })), { label: '其他规则', value: '其他规则' }]);
       setConcepts(conList);
@@ -459,7 +459,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">规则管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增规则</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">配置行为执行前后的约束规则（验证规则和推理规则可以进行精细的规则结构设计，其他规则则侧重于语义上的自由表达，无结构设计）</p>
+      <p className="text-text-muted text-xs mb-3">配置行为执行前后的约束规则（验证规则和推理规则可以进行精细的规则结构设计，其他规则则侧重于语义上的自由表达，无结构设计。数据补充是指完成该规则校验还需要的额外数据查询）</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       {/* ─── Rule Design Modal ──────────────────────────────────────────── */}

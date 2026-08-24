@@ -20,7 +20,7 @@ function fakeGateway(): OntologyGatewayPort {
     getFunctionNames: () => ['sumRawNotArrivalQty', 'calcSafetyStock'], // 文件两源（yaml∪json）
     getFunctionInfo: (_scenario, _ontology, fn) =>
       fn === 'sumRawNotArrivalQty'
-        ? { display_name: '原料未到货量汇总', params: { purchaseRecordSet: { required: true, type: 'array' } } }
+        ? { display_name: '原料未到货量汇总', params: { purchaseRecordSet: { required: true, type: 'array' } }, concepts: [] }
         : null,
   };
 }

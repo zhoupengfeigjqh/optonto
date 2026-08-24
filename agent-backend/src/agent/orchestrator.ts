@@ -17,7 +17,7 @@
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import { getLastAssistantMessage } from '../utils/text-utils.js';
-import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts, topologicalSort } from './plan-validation.js';
+import { validateBehaviorNames, validateFunctionNames, validateAllParams, validateAllConstraints, validatePlanStructure, validateSeqConflicts, topologicalSort } from './plan-validation.js';
 import type { InvalidTaskName } from './plan-validation.js';
 import { isParamValueEmpty, renderParamStructure, unwrapParamValues, validateParamStructure, type ParamSpec } from './param-contract.js';
 import { ConfirmManager } from './confirm-manager.js';
@@ -303,6 +303,16 @@ export class Orchestrator {
         return { reply: '⚠️ 规划校验失败：参数结构不合法，修正失败，请重新描述需求。' };
       }
       plan = paramValidated;
+
+      // 枚举/匹配模式校验（校验链尾）：枚举违例=高风险 → 硬停止整个任务请用户确认；模式不匹配 → nudge 转换一次
+      const constraintChecked = await this.validateTaskConstraints(plan, planCtx);
+      if (!constraintChecked.plan) {
+        const reason = constraintChecked.fatal ?? '参数值不满足匹配模式，修正失败';
+        emit.raw({ type: 'error', message: `⚠️ ${reason}` });
+        emit.raw({ type: 'done' });
+        return { reply: `⚠️ ${reason}` };
+      }
+      plan = constraintChecked.plan;
 
       if (round === 0) {
         emit.entry({ type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
@@ -695,8 +705,10 @@ ${waveList}
       const validatedB = validatedS ? await this.validateTaskBehaviorNames(validatedS, ctx) : null;
       const validatedF = validatedB ? await this.validateTaskFunctionNames(validatedB, ctx) : null;
       const validatedP = validatedF ? await this.validateTaskParams(validatedF, ctx) : null;
+      // 枚举/匹配模式校验：枚举违例 → 硬停止（null）；模式不匹配 → nudge 转换一次
+      const validatedC = validatedP ? (await this.validateTaskConstraints(validatedP, ctx)).plan : null;
       // 依赖校验也带 nudge（与行为名/参数一致）
-      const validatedD = validatedP ? await this.validatePlanDeps(validatedP, ctx, executedSeqs) : null;
+      const validatedD = validatedC ? await this.validatePlanDeps(validatedC, ctx, executedSeqs) : null;
       if (validatedD) {
         // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
         nextPending = topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
@@ -833,6 +845,41 @@ ${waveList}
         return `以下子任务的参数不合法：\n${blocks.join('\n\n')}\n\n请逐项修正：必填参数 key 齐全（type/required/description/value 四键）、type 与 value 的类型与声明一致、缺失值留空字符串；保持行为与整体规划不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
       },
     });
+  }
+
+  /**
+   * 枚举/匹配模式校验（校验链尾，仅行为子任务，声明源 = 关联概念属性 constraint 回溯）：
+   * - 枚举违例 = 高风险：不 nudge，直接硬停止整个任务（fatal），交用户确认参数取值；
+   * - 模式不匹配：nudge 父 Agent 转换格式一次（如日期补零），复验仍不过返回失败。
+   * 返回 { plan }；fatal 非空 = 枚举硬停止原因（调用方据此中止 run）。
+   */
+  private async validateTaskConstraints(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<{ plan: SubTaskPlan | null; fatal?: string }> {
+    const stopOnEnum = (enumErrors: string[]): { plan: null; fatal: string } => {
+      ctx.emit.entry({ type: 'subtask_done', name: '枚举值校验', status: 'failed', detail: enumErrors.join('；'), source: 'parent' });
+      return {
+        plan: null,
+        fatal: `枚举值校验失败：${enumErrors.join('；')}。枚举违例为高风险错误，已停止整个任务，请确认参数取值后重新发起。`,
+      };
+    };
+
+    const first = validateAllConstraints(this.ontologyGateway, plan);
+    if (first.enumErrors.length > 0) return stopOnEnum(first.enumErrors);
+    if (first.patternErrors.length === 0) return { plan };
+
+    // 模式不匹配：nudge 父 Agent 转换格式（最多 1 次）
+    ctx.emit.entry({ type: 'subtask_done', name: '匹配模式校验', status: 'failed', detail: first.patternErrors.join('；'), source: 'parent' });
+    ctx.submittedPlan.value = null; // 只认本次修正后的新提交
+    await this.parentPrompt(ctx.parentAgent,
+      `以下子任务的参数值不匹配声明的匹配模式：\n${first.patternErrors.map(e => `· ${e}`).join('\n')}\n\n请将值转换为目标格式（如日期补零、去除多余空格/符号等），保持行为与整体规划不变，然后重新调用 submit_plan 工具提交修正后的规划。`);
+    // 显式断言：submit_plan 回调可能在上一个 await 期间写入了新规划，TS 闭包窄化无法感知
+    const corrected = ctx.submittedPlan.value as SubTaskPlan | null;
+    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return { plan: null };
+
+    const again = validateAllConstraints(this.ontologyGateway, corrected);
+    if (again.enumErrors.length > 0) return stopOnEnum(again.enumErrors);
+    if (again.patternErrors.length > 0) return { plan: null };
+    ctx.emit.entry({ type: 'subtask_done', name: '匹配模式已修正', status: 'done', source: 'parent' });
+    return { plan: corrected };
   }
 
   /**

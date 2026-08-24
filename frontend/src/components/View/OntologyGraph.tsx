@@ -159,13 +159,8 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       });
       nodeIds.add(`function:${f.name}`);
 
-      // Extract unique concept names from related_attributes ("concept.attribute")
-      const conceptSet = new Set<string>();
-      (f.related_attributes || []).forEach(ra => {
-        const dot = ra.lastIndexOf('.');
-        if (dot > 0) conceptSet.add(ra.substring(0, dot));
-      });
-      conceptSet.forEach(conceptName => {
+      // related_concepts：函数 → 概念 虚线边（与行为的关联概念口径一致）
+      (f.related_concepts || []).forEach((conceptName: string) => {
         const targetId = `concept:${conceptName}`;
         if (nodeIds.has(targetId)) {
           edges.push({

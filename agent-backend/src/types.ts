@@ -108,7 +108,13 @@ export interface RuleDetail {
 export interface ConceptInfo {
   name: string;
   display_name: string;
-  attributes: { name: string; type: string; display_name: string }[];
+  attributes: {
+    name: string;
+    type: string;
+    display_name: string;
+    /** 属性约束（唯一/非空/枚举/匹配模式）。规划期枚举/正则校验的权威来源（按属性名回溯，单一事实源）。 */
+    constraint?: { unique?: boolean; required?: boolean; enum?: (string | number)[]; pattern?: string } | null;
+  }[];
 }
 
 /** 行为元信息（OntologyGateway 提取结果） */
@@ -122,6 +128,15 @@ export interface BehaviorMeta {
   concepts: ConceptInfo[];
   /** 是否写操作（API + POST/PATCH/DELETE）。写操作无论有无 security 登记都强制人工确认。 */
   isWrite: boolean;
+}
+
+/** 函数信息合一查询结果（本体函数 functions[] → 公共函数 functions.json，都不在 → null） */
+export interface FunctionInfo {
+  display_name: string;
+  description?: string;
+  params: Record<string, any>;
+  /** 关联概念（含属性 constraint，规划期枚举/正则校验的回溯源）。本体函数按 related_concepts 解析；公共函数恒为 []。 */
+  concepts: ConceptInfo[];
 }
 
 /** 子任务执行结果 */

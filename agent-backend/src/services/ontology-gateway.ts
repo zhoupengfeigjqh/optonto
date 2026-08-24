@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
 import { getCommonFunctionNames, getCommonFunctionInfo } from './common-functions.js';
-import type { BehaviorMeta, RuleDetail, ConceptInfo } from '../types.js';
+import type { BehaviorMeta, RuleDetail, ConceptInfo, FunctionInfo } from '../types.js';
 
 export class OntologyGateway {
   /** 按 (scenario, ontology) 缓存解析结果，用文件 mtime 失效（ontology.yaml + data_engines.yaml 双 mtime），避免编排中反复读盘 */
@@ -51,6 +51,22 @@ export class OntologyGateway {
   getBehaviorNames(scenario: string, ontology: string): string[] {
     const data = this.loadOntologyData(scenario, ontology);
     return (data?.behaviors || []).map((b: any) => b.name).filter(Boolean);
+  }
+
+  /** 按关联概念名解析概念属性（含 constraint）。行为 related_concepts 与函数 related_concepts 同源共用。 */
+  private resolveConcepts(data: any, relatedNames: string[]): ConceptInfo[] {
+    return (data?.concepts || [])
+      .filter((c: any) => relatedNames.includes(c.name))
+      .map((c: any) => ({
+        name: c.name,
+        display_name: c.display_name || c.name,
+        attributes: (c.attributes || []).map((a: any) => ({
+          name: a.name,
+          type: a.type || 'string',
+          display_name: a.display_name || a.name,
+          constraint: a.constraint ?? null,
+        })),
+      }));
   }
 
   /**
@@ -91,18 +107,7 @@ export class OntologyGateway {
     );
 
     // 关联概念属性
-    const relatedConceptNames = behavior?.related_concepts || [];
-    const concepts: ConceptInfo[] = (data?.concepts || [])
-      .filter((c: any) => relatedConceptNames.includes(c.name))
-      .map((c: any) => ({
-        name: c.name,
-        display_name: c.display_name || c.name,
-        attributes: (c.attributes || []).map((a: any) => ({
-          name: a.name,
-          type: a.type || 'string',
-          display_name: a.display_name || a.name,
-        })),
-      }));
+    const concepts = this.resolveConcepts(data, behavior?.related_concepts || []);
 
     // 写操作判定：优先用 op_type（command=写/query=读，显式权威来源）；
     // op_type 为空时兜底到 data_engines 的 HTTP method 推导（防漏填导致写操作跳过安全审核）。
@@ -139,12 +144,12 @@ export class OntologyGateway {
   }
 
   /**
-   * 函数信息合一查询（中文名 + 描述 + 参数声明）：本体函数 functions[] 优先，不在则回查公共函数；
+   * 函数信息合一查询（中文名 + 描述 + 参数声明 + 关联概念）：本体函数 functions[] 优先，不在则回查公共函数；
    * 都不在 → null（函数不在任何文件声明源）。
-   * FunctionCatalog 文件兜底模式的①②数据源；meta/params 单点取数，替代原 getFunctionParams/getFunctionMeta
-   * 双方法各自重复查找（曾导致第三源只并入 params 链、meta 链漏接的漂移）。
+   * FunctionCatalog 文件兜底模式的①②数据源（meta/params），以及规划期约束校验的声明源（concepts：
+   * 本体函数按 related_concepts 解析属性 constraint，公共函数恒为 []——无概念关联，自然跳过校验）。
    */
-  getFunctionInfo(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string; params: Record<string, any> } | null {
+  getFunctionInfo(scenario: string, ontology: string, functionName: string): FunctionInfo | null {
     const data = this.loadOntologyData(scenario, ontology);
     const fn = (data?.functions || []).find((f: any) => f.name === functionName);
     if (fn) {
@@ -152,9 +157,11 @@ export class OntologyGateway {
         display_name: fn?.display_name || fn?.description || '',
         description: fn?.description,
         params: fn?.params || {},
+        concepts: this.resolveConcepts(data, fn?.related_concepts || []),
       };
     }
-    return getCommonFunctionInfo(functionName);
+    const common = getCommonFunctionInfo(functionName);
+    return common ? { ...common, concepts: [] } : null;
   }
 
   /**

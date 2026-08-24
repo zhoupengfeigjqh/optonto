@@ -142,7 +142,7 @@ export interface Function {
   name: string;
   display_name?: string;
   description?: string;
-  related_attributes: string[];
+  related_concepts: string[];
   params?: Record<string, unknown>;
   response?: Record<string, unknown>;
   code_file?: string;

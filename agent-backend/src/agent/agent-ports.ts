@@ -6,7 +6,7 @@
 import type { AgentPort } from './agent-port.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { LegalCalls } from './legal-calls.js';
-import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta } from '../types.js';
+import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta, FunctionInfo } from '../types.js';
 
 /** 可挂载函数/工具目录条目（getMountableToolCatalog 返回）。三类：本体函数 / 公共函数 / 其他MCP工具 */
 export interface MountableToolInfo {
@@ -49,7 +49,7 @@ export interface OntologyGatewayPort {
   getBehaviorNames(scenario: string, ontology: string): string[];
   /** 本体函数名列表（本体函数 ∪ 公共函数；函数子任务名校验的文件兜底数据源，正常模式以 MCP 目录为准） */
   getFunctionNames(scenario: string, ontology: string): string[];
-  /** 函数信息合一查询（中文名 + 描述 + 参数声明）：本体函数 functions[].params → 公共函数 functions.json；
-   *  都不在返回 null。FunctionCatalog 文件兜底模式专用（MCP 目录缺①②时启用）。 */
-  getFunctionInfo(scenario: string, ontology: string, functionName: string): { display_name: string; description?: string; params: Record<string, any> } | null;
+  /** 函数信息合一查询（中文名 + 描述 + 参数声明 + 关联概念）：本体函数 functions[] → 公共函数 functions.json；
+   *  都不在返回 null。FunctionCatalog 文件兜底模式（meta/params）与规划期约束校验（concepts）共用。 */
+  getFunctionInfo(scenario: string, ontology: string, functionName: string): FunctionInfo | null;
 }

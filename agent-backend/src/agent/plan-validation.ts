@@ -5,7 +5,7 @@
 import type { SubTask, SubTaskPlan } from '../types.js';
 import type { OntologyGatewayPort } from './agent-ports.js';
 import type { FunctionCatalogView } from './function-catalog.js';
-import { validateParamStructure } from './param-contract.js';
+import { validateParamStructure, buildAttrConstraintMap, mergeAttrConstraints, validateConstraintValues, type ConstraintViolations } from './param-contract.js';
 
 export interface InvalidTaskName {
   sub: SubTask;
@@ -51,6 +51,41 @@ export function validateAllParams(gateway: OntologyGatewayPort, catalog: Functio
     errors.push(...validateParamStructure(meta.params, st.params || {}, st.seq, st.behavior));
   }
   return errors;
+}
+
+/**
+ * 枚举/匹配模式约束校验（校验链尾）：按"参数名 = 属性名"从关联概念的属性 constraint 回溯
+ * 枚举/正则，对已填非空值递归校验。分类返回——枚举违例（高风险，调用方硬停止整个任务）
+ * 与模式不匹配（可 nudge 父 Agent 转换格式）。
+ * 行为子任务：声明源 = getBehaviorMeta（params + related_concepts 解析的概念属性）；
+ * 函数子任务：声明源 = getFunctionInfo（本体函数按 related_concepts 解析概念属性；
+ * 公共函数 concepts 恒空 → 自然跳过；第三源 MCP 工具 info 为 null → 跳过）。
+ * 子 Agent 执行期不做此类检查。
+ */
+export function validateAllConstraints(gateway: OntologyGatewayPort, plan: SubTaskPlan): ConstraintViolations {
+  const out: ConstraintViolations = { patternErrors: [], enumErrors: [] };
+  for (const st of plan.subtasks) {
+    let declared: Record<string, any> | null;
+    let concepts: Parameters<typeof buildAttrConstraintMap>[0];
+    if (st.function) {
+      const info = gateway.getFunctionInfo(st.scenario_name, st.ontology_name, st.function);
+      if (!info) continue; // 第三源 MCP 工具：无文件声明源，跳过
+      declared = info.params;
+      concepts = info.concepts || [];
+    } else {
+      const meta = gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
+      if (!meta?.params) continue;
+      declared = meta.params;
+      concepts = meta.concepts || [];
+    }
+    const attrMap = buildAttrConstraintMap(concepts);
+    if (attrMap.size === 0) continue; // 关联属性无约束声明 → 无校验依据
+    const merged = mergeAttrConstraints(declared, attrMap);
+    const v = validateConstraintValues(merged, st.params || {}, st.seq, st.function || st.behavior);
+    out.patternErrors.push(...v.patternErrors);
+    out.enumErrors.push(...v.enumErrors);
+  }
+  return out;
 }
 
 /**

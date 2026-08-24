@@ -1,13 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, message, Space, Tag, Tooltip, Tree } from 'antd';
+import { Button, Input, Modal, message, Select, Space, Tag, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined, RobotOutlined } from '@ant-design/icons';
-import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, getCommonFunctions, Function, Concept, Attribute } from '@/api/client';
+import { getFunctions, createFunction, updateFunction, deleteFunction, getConcepts, getFunctionCode, saveFunctionCode, generateFunctionCode, executeFunction, getCommonFunctions, Function, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import PythonEditor from '@/components/PythonEditor';
 import JsonEditor from '@/components/JsonEditor';
-import type { DataNode } from 'antd/es/tree';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -17,10 +16,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
-
-  // attribute tree modal
-  const [treeModalOpen, setTreeModalOpen] = useState(false);
-  const [treeCheckedKeys, setTreeCheckedKeys] = useState<string[]>([]);
 
   // params editor
   const [paramsEditorOpen, setParamsEditorOpen] = useState(false);
@@ -43,7 +38,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       const [fnList, conList, commonFnList] = await Promise.all([getFunctions(ontologyId), getConcepts(ontologyId), getCommonFunctions()]);
       const merged = [
         ...fnList.map((f: any) => ({ ...f, _source: 'ontology' })),
-        ...commonFnList.map((f: any) => ({ ...f, related_attributes: [] as string[], params: f.inputSchema?.properties || {}, _source: 'common' })),
+        ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[], params: f.inputSchema?.properties || {}, _source: 'common' })),
       ];
       setFuncs(merged); setConcepts(conList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
@@ -54,39 +49,15 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const isEditing = (record: Function) => record.name === editingKey;
   const isNewRow = (record: Function) => editingKey === '__new__' && record.name === '__new__';
 
-  // Build tree data from concepts → attributes
-  const buildTreeData = (): DataNode[] => {
-    return concepts.map(c => ({
-      title: c.display_name || c.name,
-      key: c.name,
-      selectable: false,
-      children: (c.attributes || []).map((a: Attribute) => ({
-        title: <span>{a.display_name || a.name} <span className="text-text-muted text-xs">({c.name}.{a.name})</span></span>,
-        key: `${c.name}.${a.name}`,
-        isLeaf: true,
-      })),
-    }));
-  };
-
-  const treeData = buildTreeData();
-
-  const openTreeModal = () => {
-    setTreeCheckedKeys(editData.related_attributes || []);
-    setTreeModalOpen(true);
-  };
-
-  const confirmTreeSelection = () => {
-    setEditData((p: any) => ({ ...p, related_attributes: treeCheckedKeys }));
-    setTreeModalOpen(false);
-  };
+  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', related_attributes: [], params: '{}', response: '{}', code_file: '' });
+    setEditData({ name: '', display_name: '', description: '', related_concepts: [], params: '{}', response: '{}', code_file: '' });
     setEditingKey('__new__');
   };
 
   const handleEdit = (g: Function) => {
-    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_attributes: g.related_attributes || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '' });
+    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_concepts: g.related_concepts || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '' });
     setEditingKey(g.name);
   };
 
@@ -191,7 +162,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         name: editData.name.trim(),
         display_name: editData.display_name?.trim() || '',
         description: editData.description?.trim() || '',
-        related_attributes: editData.related_attributes || [],
+        related_concepts: editData.related_concepts || [],
         params: parsedParams,
         response: parsedResponse,
         code_file: editData.code_file || '',
@@ -227,15 +198,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={setF('name')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={setF('display_name')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'related_attributes') {
-      const selected = editData.related_attributes || [];
-      return (
-        <div className="flex items-center gap-1 flex-wrap">
-          <Button size="small" onClick={openTreeModal}>选择概念属性</Button>
-          {selected.length > 0 && <span className="text-accent-blue text-xs">已选 {selected.length} 项</span>}
-        </div>
-      );
-    }
+    if (dataIndex === 'related_concepts') return <Select size="small" mode="multiple" placeholder="选" value={editData.related_concepts || []} onChange={setF('related_concepts')} options={conceptOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
     if (dataIndex === 'code') return <Button size="small" icon={<CodeOutlined />} onClick={openCodeEditor}>编辑</Button>;
@@ -243,43 +206,13 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   };
 
   const dataSource = funcs.map(g => ({ ...g, _key: g.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_attributes: [] } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_concepts: [] } as any);
 
   const columns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Function) => renderCell(v, r, 'name') },
     { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '计算逻辑', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'description') },
-    { title: '关联概念属性', dataIndex: 'related_attributes', key: 'related_attributes', width: 300, render: (v: any, r: Function) => {
-      if (isEditing(r) || isNewRow(r)) {
-        const selected = editData.related_attributes || [];
-        return (
-          <div className="flex items-center gap-1 flex-wrap">
-            <Button size="small" onClick={openTreeModal}>选择概念属性</Button>
-            {selected.length > 0 && <span className="text-accent-blue text-xs">已选 {selected.length} 项</span>}
-          </div>
-        );
-      }
-      const list: string[] = v || [];
-      if (list.length === 0) return '-';
-      const MAX_VISIBLE = 4;
-      const visible = list.slice(0, MAX_VISIBLE);
-      const rest = list.length - MAX_VISIBLE;
-      return (
-        <div className="flex flex-wrap gap-1 items-center">
-          {visible.map((item: string) => {
-            const dot = item.lastIndexOf('.');
-            const concept = dot > 0 ? item.substring(0, dot) : '';
-            const attr = dot > 0 ? item.substring(dot + 1) : item;
-            return (
-              <Tooltip key={item} title={`${concept}.${attr}`}>
-                <Tag color="blue" className="mb-0.5">{attr}<span className="text-text-muted ml-1 text-xs">{concept}</span></Tag>
-              </Tooltip>
-            );
-          })}
-          {rest > 0 && <span className="text-accent-blue text-xs cursor-pointer ml-1" onClick={() => openTreeModal()}>+{rest}...</span>}
-        </div>
-      );
-    }},
+    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
       const raw = r.params || {};
@@ -347,43 +280,6 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
       </div>
       <p className="text-text-muted text-xs mb-3">定义可复用的属性计算函数（根据现有接口的输出做一些简单的计算或统计，不用单独开发新接口）</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
-
-      {/* ─── Attribute Tree Selection Modal ───────────────────────────── */}
-      <Modal
-        title={`选择关联概念属性 - ${editData.display_name || editData.name || ''}`}
-        open={treeModalOpen}
-        onOk={confirmTreeSelection}
-        onCancel={() => setTreeModalOpen(false)}
-        okText="确认"
-        cancelText="取消"
-        width={640}
-      >
-        <div className="mb-3">
-          <span className="text-text-muted text-xs">勾选需要关联的属性，格式为 概念名.属性名</span>
-        </div>
-        <div className="border border-dark-border rounded max-h-96 overflow-y-auto p-2">
-          {treeData.length === 0 ? (
-            <p className="text-text-muted text-sm p-4">暂无概念数据</p>
-          ) : (
-            <Tree
-              checkable
-              defaultExpandAll
-              treeData={treeData}
-              checkedKeys={treeCheckedKeys}
-              onCheck={(checked) => setTreeCheckedKeys(checked as string[])}
-              className="bg-transparent text-text-primary"
-            />
-          )}
-        </div>
-        {treeCheckedKeys.length > 0 && (
-          <div className="mt-3 pt-2 border-t border-dark-border">
-            <span className="text-text-muted text-xs mb-1 block">已选 ({treeCheckedKeys.length})：</span>
-            <div className="flex flex-wrap gap-1">
-              {treeCheckedKeys.map(k => <Tag key={k}>{k}</Tag>)}
-            </div>
-          </div>
-        )}
-      </Modal>
 
       {/* ─── Params Editor Modal ───────────────────────────────────── */}
       <Modal title="编辑输入参数" open={paramsEditorOpen} onOk={() => { try { JSON.parse(editData.params || '{}'); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={700}>
