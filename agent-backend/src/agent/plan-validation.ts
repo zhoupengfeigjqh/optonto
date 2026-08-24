@@ -55,8 +55,8 @@ export function validateAllParams(gateway: OntologyGatewayPort, catalog: Functio
 
 /**
  * 枚举/匹配模式约束校验（校验链尾）：按"参数名 = 属性名"从关联概念的属性 constraint 回溯
- * 枚举/正则，对已填非空值递归校验。分类返回——枚举违例（高风险，调用方硬停止整个任务）
- * 与模式不匹配（可 nudge 父 Agent 转换格式）。
+ * 枚举/正则，对已填非空值递归校验。分类返回（枚举/模式），调用方统一 nudge 父 Agent 修正
+ * 一次，复验仍不过判失败（不硬停）。
  * 行为子任务：声明源 = getBehaviorMeta（params + related_concepts 解析的概念属性）；
  * 函数子任务：声明源 = getFunctionInfo（本体函数按 related_concepts 解析概念属性；
  * 公共函数 concepts 恒空 → 自然跳过；第三源 MCP 工具 info 为 null → 跳过）。

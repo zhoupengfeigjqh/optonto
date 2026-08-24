@@ -184,8 +184,7 @@ export class AgentFactory {
    */
   async createChildAgent(
     context: SkillContext,
-    primaryBehavior?: string,
-    requiredParams?: string[],
+    requiredParamsMap?: Record<string, string[]>,
     errorBudget?: ToolErrorBudget,
     legalCalls?: LegalCalls,
   ): Promise<AgentPort> {
@@ -196,7 +195,7 @@ export class AgentFactory {
     // 剔除本体浏览工具（list*）——子 Agent 只执行业务，合法行为列表已在指令中渲染。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
     // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
-    // requiredParams：主行为执行前的硬检查——必填参数必须有值，缺失拒绝执行。
+    // requiredParamsMap：行为名 → 必填参数名表——凡 executeOntoBehavior 调用按表硬检查，缺失拒绝执行（不限主行为）。
     // legalCalls：executeOntoBehavior 白名单（非法行为名在工具层拒绝）；本体函数工具（schema 带 ontology_id）与公共函数均按 legalCalls.functions 挂载期过滤。
     // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
     const legal = legalCalls ?? { behaviors: [], functions: [] };
@@ -209,7 +208,7 @@ export class AgentFactory {
       })
       .map(({ tool }) => this.scopeToOntology(
         tool,
-        { ontologyId, primaryBehavior, requiredParams, legalCalls: legal },
+        { ontologyId, requiredParamsMap, legalCalls: legal },
         errorBudget,
       ));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
@@ -249,17 +248,17 @@ export class AgentFactory {
    * 将执行类工具限定到指定本体：
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
-   * - 主行为（subTask.behavior）额外做必填参数硬检查（见 execute 内）
+   * - 凡 executeOntoBehavior 调用做必填硬检查：按 behavior_name 查 requiredParamsMap，缺失拒绝执行（见 execute 内）
    * - executeOntoBehavior 做白名单硬检查：非法行为名在工具层拒绝（见 execute 内）
    *   （本体函数工具已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门）
    * 无 ontology_id 的工具（如公共函数/新增 MCP）原样返回。
    */
   private scopeToOntology(
     tool: AgentTool,
-    scope: { ontologyId: number; primaryBehavior?: string; requiredParams?: string[]; legalCalls: LegalCalls },
+    scope: { ontologyId: number; requiredParamsMap?: Record<string, string[]>; legalCalls: LegalCalls },
     errorBudget?: ToolErrorBudget,
   ): AgentTool {
-    const { ontologyId, primaryBehavior, requiredParams, legalCalls } = scope;
+    const { ontologyId, requiredParamsMap, legalCalls } = scope;
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     // 本体锁定对象：executeOntoBehavior（行为执行）+ 发布方标记的本体函数（scope.category const）。
@@ -292,13 +291,18 @@ export class AgentFactory {
         }
       }
 
-      if (primaryBehavior && p?.behavior_name === primaryBehavior) {
-        // 硬检查：主行为执行前，必填参数必须已有值。缺失则抛异常（pi-agent 以抛异常识别工具错误并触发子 Agent 重试；
-        // 返回 isError 字段会被 pi-agent 吞掉——executePreparedToolCall 硬编码 isError:false，重试永不触发）。
-        // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
-        const missing = (requiredParams || []).filter(key => isParamValueEmpty((p.params ?? {})[key]));
-        if (missing.length > 0) {
-          throw new Error(`禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。`);
+      // ── 必填硬检查：凡 executeOntoBehavior 调用，按 behavior_name 查必填表（不限主行为）──
+      // 缺失则抛异常（pi-agent 以抛异常识别工具错误并触发子 Agent 重试；
+      // 返回 isError 字段会被 pi-agent 吞掉——executePreparedToolCall 硬编码 isError:false，重试永不触发）。
+      // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
+      // 查询行为缺必填同样会被 core 端拒绝——提前在工具层拦下，错误消息与重试方向更清晰。
+      if (tool.name === 'executeOntoBehavior' && p?.behavior_name) {
+        const required = requiredParamsMap?.[p.behavior_name];
+        if (required) {
+          const missing = required.filter(key => isParamValueEmpty((p.params ?? {})[key]));
+          if (missing.length > 0) {
+            throw new Error(`禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。`);
+          }
         }
       }
       return originalExecute(toolCallId, p);
@@ -306,7 +310,7 @@ export class AgentFactory {
     return {
       ...tool,
       ...(nextParameters !== schema ? { parameters: nextParameters } : {}),
-      // 有预算时包上报错计数（含白名单/主行为硬检查抛错）；无预算向后兼容，不包
+      // 有预算时包上报错计数（含白名单/必填硬检查抛错）；无预算向后兼容，不包
       execute: errorBudget ? wrapExecuteWithErrorBudget(execute, errorBudget) : execute,
     };
   }

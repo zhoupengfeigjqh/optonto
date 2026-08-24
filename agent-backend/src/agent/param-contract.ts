@@ -28,8 +28,8 @@ export interface ParamSpec {
   pattern?: string;
 }
 
-/** 从行为元信息提取必填参数名列表 */
-export function requiredParamNames(meta: BehaviorMeta): string[] {
+/** 从行为声明中的参数结构提取必填参数名列表（入参放宽为 { params } 形态，BehaviorMeta 结构兼容） */
+export function requiredParamNames(meta: { params: Record<string, any> }): string[] {
   return Object.entries(meta.params || {})
     .filter(([, s]) => (s as ParamSpec)?.required)
     .map(([k]) => k);
@@ -304,9 +304,9 @@ function fullMatchPattern(pattern: string, v: string): boolean {
 }
 
 export interface ConstraintViolations {
-  /** 模式不匹配（可 nudge 父 Agent 转换格式修复） */
+  /** 模式不匹配（nudge 父 Agent 转换格式修复） */
   patternErrors: string[];
-  /** 枚举违例（高风险——调用方应硬停止整个任务，交由用户确认） */
+  /** 枚举违例（与模式统一 nudge 处理；分类保留供消息/后续差异化使用） */
   enumErrors: string[];
 }
 

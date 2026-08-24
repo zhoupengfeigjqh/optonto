@@ -328,7 +328,7 @@ describe('validateConstraintValues · 枚举/模式分类校验', () => {
     expect(v.patternErrors).toEqual([]);
   });
 
-  it('枚举违例 → enumErrors（高风险硬停止类）；数字枚举严格比对', () => {
+  it('枚举违例 → enumErrors；数字枚举严格比对', () => {
     const v = validateConstraintValues(declared, {
       status: { value: '未知' }, level: { value: 9 },
     }, 1, 'B');

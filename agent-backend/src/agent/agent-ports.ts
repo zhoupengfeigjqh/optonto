@@ -31,8 +31,7 @@ export interface AgentFactoryPort {
   ): Promise<AgentPort>;
   createChildAgent(
     context: SkillContext,
-    primaryBehavior?: string,
-    requiredParams?: string[],
+    requiredParamsMap?: Record<string, string[]>,
     errorBudget?: ToolErrorBudget,
     legalCalls?: LegalCalls,
   ): Promise<AgentPort>;

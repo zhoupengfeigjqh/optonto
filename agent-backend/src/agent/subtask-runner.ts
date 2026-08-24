@@ -21,7 +21,7 @@ const MAX_LLM_EXCEPTION_RETRIES = 2;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmPort;
-  createChildAgent: (context: SkillContext, primaryBehavior: string, requiredParams?: string[], errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls) => Promise<AgentPort>;
+  createChildAgent: (context: SkillContext, requiredParamsMap?: Record<string, string[]>, errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls) => Promise<AgentPort>;
   /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
   childAgents: Set<AgentPort>;
   /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
@@ -83,13 +83,19 @@ export class SubtaskRunner {
     let lastError = '';
 
     // 复用同一个子 Agent 实例：失败原因、工具结果保留在上下文中（异常重试时参考）
-    // 主行为必填参数名（来自行为元信息）：工具层硬检查用，缺失则拒绝执行
-    const requiredParams = requiredParamNames(meta);
     // 合法调用名集合（主行为 + 规则关联行为/函数 + 父 Agent 指定的 related_functions）：工具层白名单硬检查用
     const legalCalls = legalCallNames(meta, subTask.behavior, subTask.related_functions);
+    // 必填参数名表（所有合法行为）：工具层硬检查用——凡 executeOntoBehavior 调用，按 behavior_name 查表，
+    // 必填参数必须有值，缺失则拒绝执行（不限主行为；查询行为缺必填同样会被 core 拒绝，提前拦消息更清晰）
+    const requiredParamsMap: Record<string, string[]> = {};
+    for (const bn of legalCalls.behaviors) {
+      requiredParamsMap[bn] = bn === subTask.behavior
+        ? requiredParamNames(meta)
+        : requiredParamNames({ params: this.deps.getBehaviorParams(subTask.scenario_name, subTask.ontology_name, bn) });
+    }
     // 工具报错预算：连续报错达上限即中断（pi-agent 内层循环被 terminate 停住），不再无限试错
     const errorBudget = createToolErrorBudget();
-    const childAgent = await this.deps.createChildAgent(context, subTask.behavior, requiredParams, errorBudget, legalCalls);
+    const childAgent = await this.deps.createChildAgent(context, requiredParamsMap, errorBudget, legalCalls);
     this.deps.childAgents.add(childAgent);
     try {
       // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。

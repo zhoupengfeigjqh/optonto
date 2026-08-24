@@ -66,7 +66,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _pb, _rp, errorBudget) => {
+    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
       capturedBudget = errorBudget;
       const wrapped = throwingTool(errorBudget!);
       return {
@@ -110,7 +110,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _pb, _rp, errorBudget) => {
+    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
       capturedBudget = errorBudget;
       return {
         prompt: async () => { promptCalls++; },
@@ -133,7 +133,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _pb, _rp, errorBudget) => {
+    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
       capturedBudget = errorBudget;
       const wrapped = throwingTool(errorBudget!);
       return {
@@ -162,7 +162,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _pb, _rp, errorBudget) => {
+    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
       capturedBudget = errorBudget;
       const wrapped = throwingTool(errorBudget!);
       return {
@@ -188,7 +188,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
   it('prompt() 抛异常（LLM API 错误）→ 重试后成功', async () => {
     let promptCalls = 0;
 
-    const deps = makeDeps(async (_ctx, _pb, _rp) => ({
+    const deps = makeDeps(async (_ctx, _rpMap) => ({
       prompt: async () => {
         promptCalls++;
         if (promptCalls === 1) throw new Error('LLM API 503: Service Unavailable');
@@ -209,7 +209,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
   it('prompt() 持续抛异常 → 重试达上限后失败', async () => {
     let promptCalls = 0;
 
-    const deps = makeDeps(async (_ctx, _pb, _rp) => ({
+    const deps = makeDeps(async (_ctx, _rpMap) => ({
       prompt: async () => {
         promptCalls++;
         throw new Error('LLM API 503: Service Unavailable');
@@ -315,5 +315,39 @@ describe('SubtaskRunner · 工具报错预算', () => {
     expect(result.success).toBe(true);
     // 规则声明 getCurrentDate、calcSafetyStock + 父 Agent 补充 sumRawNotArrivalQty → 并集（单一「可用函数/工具」行）
     expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: getCurrentDate、calcSafetyStock、sumRawNotArrivalQty');
+  });
+
+  it('必填参数名表覆盖所有合法行为：主行为取 meta，规则关联行为取 getBehaviorParams', async () => {
+    let capturedMap: Record<string, string[]> | undefined;
+    const metaWithRules: BehaviorMeta = {
+      display_name: '创建采购记录',
+      params: { rawMaterialId: { required: true }, note: { required: false } },
+      preRules: [
+        { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: ['QueryRawMaterials'], related_functions: [] },
+      ],
+      postRules: [],
+      concepts: [],
+      isWrite: true,
+    };
+    const deps = makeDeps(async (_ctx, rpMap) => {
+      capturedMap = rpMap;
+      return {
+        prompt: async () => {},
+        abort: () => {},
+        subscribe: () => {},
+        state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
+      } satisfies AgentPort;
+    });
+    deps.getBehaviorParams = (_s, _o, bn) =>
+      bn === 'QueryRawMaterials' ? { materialName: { required: true }, pageSize: { required: false } } : {};
+
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(subTask, metaWithRules, context, noopChannel);
+
+    expect(result.success).toBe(true);
+    expect(capturedMap).toEqual({
+      CreatePurchaseRecord: ['rawMaterialId'],   // 主行为：只收 required
+      QueryRawMaterials: ['materialName'],       // 规则关联行为：同样入表（必填检查不限主行为）
+    });
   });
 });

@@ -116,18 +116,22 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
  * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → scopeToOntology）。
  * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
  * legalCalls 默认含主行为 + 一个规则关联行为 + 一个关联函数，供白名单/硬检查测试共用。
+ * requiredParamsMap 覆盖两个行为（含规则查询行为），验证必填硬检查不限主行为。
  */
-async function captureChildTools(legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] }) {
+async function captureChildTools(
+  legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] },
+  requiredParamsMap: Record<string, string[]> = { CreatePurchaseRecord: ['rawMaterialId', 'qty'], QuerySupplier: ['supplierName'] },
+) {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
-    'CreatePurchaseRecord', ['rawMaterialId', 'qty'], undefined, legalCalls,
+    requiredParamsMap, undefined, legalCalls,
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
 }
 
-describe('AgentFactory.scopeToOntology 主行为必填参数硬检查', () => {
+describe('AgentFactory.scopeToOntology 必填参数硬检查（所有 executeOntoBehavior 调用）', () => {
   beforeEach(() => mockedAgent.mockClear());
 
   it('必填参数缺失时 executeOntoBehavior 抛异常（pi-agent 以抛异常识别工具错误 → 触发子 Agent 重试）', async () => {
@@ -146,10 +150,25 @@ describe('AgentFactory.scopeToOntology 主行为必填参数硬检查', () => {
     expect(result).toBeTruthy();
   });
 
-  it('非主行为调用不触发硬检查（规则查询行为）', async () => {
+  it('规则查询行为缺必填同样被拦（必填硬检查不限主行为）', async () => {
     const tools = await captureChildTools();
     const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    const result = await tool.execute('call-3', { behavior_name: 'QuerySupplier', params: {} });
+    await expect(
+      tool.execute('call-3', { behavior_name: 'QuerySupplier', params: {} }),
+    ).rejects.toThrow(/禁止执行：必填参数缺失 supplierName/);
+  });
+
+  it('规则查询行为必填齐全 → 放行', async () => {
+    const tools = await captureChildTools();
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-4', { behavior_name: 'QuerySupplier', params: { supplierName: '宝钢' } });
+    expect(result).toBeTruthy();
+  });
+
+  it('行为不在必填表中（无声明）→ 跳过检查放行', async () => {
+    const tools = await captureChildTools({ behaviors: ['QuerySupplier'], functions: [] }, {});
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-5', { behavior_name: 'QuerySupplier', params: {} });
     expect(result).toBeTruthy();
   });
 });
@@ -358,7 +377,8 @@ describe('AgentFactory 子 Agent 白名单闸门', () => {
   it('executeOntoBehavior 调用合法规则关联行为（data_supplements）→ 放行', async () => {
     const tools = await captureChildTools();
     const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    const result = await tool.execute('call-2', { behavior_name: 'QuerySupplier', params: {} });
+    // 白名单放行后还要过必填硬检查（默认 map 中 QuerySupplier 必填 supplierName），带上必填参数
+    const result = await tool.execute('call-2', { behavior_name: 'QuerySupplier', params: { supplierName: '宝钢' } });
     expect(result).toBeTruthy();
   });
 
