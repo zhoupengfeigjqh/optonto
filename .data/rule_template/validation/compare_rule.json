@@ -18,7 +18,7 @@
               "left": {
                 "type": "object",
                 "properties": {
-                  "type": { "type": "string", "enum": ["concept", "function"] },
+                  "type": { "type": "string", "enum": ["instance", "function"], "description": "instance=实例（概念的一个实例的属性），function=函数返回字段" },
                   "concept": { "type": "string", "description": "概念名称" },
                   "attribute": { "type": "string", "description": "属性名称" },
                   "function": { "type": "string", "description": "函数名称" },
@@ -29,13 +29,15 @@
               "operator": {
                 "type": "string",
                 "enum": ["eq", "ne", "in", "not in", "like", "lt", "gt", "le", "ge"],
-                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如单位一致、名称匹配）应使用 eq，不要使用 ne"
+                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如单位一致、名称匹配）应使用 eq，不要使用 ne。in/not in 的右侧必须是 instanceSet 或 valueSet；其他操作符的右侧不能是集合类型"
               },
               "right": {
                 "type": "object",
                 "properties": {
-                  "type": { "type": "string", "enum": ["value", "concept", "set", "function"] },
-                  "value": { "description": "字面值" },
+                  "type": { "type": "string", "enum": ["value", "valueSet", "instance", "instanceSet", "function"], "description": "value=字面值，valueSet=字面值集（仅 in/not in），instance=实例，instanceSet=实例集（仅 in/not in），function=函数返回字段" },
+                  "valueType": { "type": "string", "enum": ["string", "number", "integer", "boolean", "null"], "description": "type=value 时必填：字面值的类型，与左侧操作数类型一致。空值时 value 填 null（仅 eq/ne 可用），valueType 仍保持与左侧一致；左侧类型无法确定时 valueType 才用 null" },
+                  "value": { "description": "type=value 时的字面值（按 valueType 给原生类型：string 不带引号、number/integer 给数字、boolean 给 true/false；空值给 null）；type=valueSet 时为同型元素数组" },
+                  "elementType": { "type": "string", "enum": ["string", "number", "integer", "boolean"], "description": "type=valueSet 时必填：集合元素的类型，value 数组元素必须与之一致" },
                   "concept": { "type": "string", "description": "概念名称" },
                   "attribute": { "type": "string", "description": "属性名称" },
                   "function": { "type": "string", "description": "函数名称" },

@@ -16,7 +16,7 @@ concepts:
     display_name: 原材料编号
     example: RM-001
     constraint:
-      unique: false
+      unique: true
       required: true
       enum: []
       pattern: ''
@@ -212,36 +212,40 @@ relations:
   source: RawMaterial
   target: RawMaterialInventory
   cardinality: '1:1'
+  source_attr: rawMaterialId
+  target_attr: rawMaterialId
   description: 每个原材料有且仅有一条对应的最新库存快照。
   display_name: 拥有库存
 - name: recordsRawMaterial
   source: PurchaseRecord
   target: RawMaterial
   cardinality: N:1
+  source_attr: rawMaterialId
+  target_attr: rawMaterialId
   description: 多个采购记录可以指向同一种原材料，但一个采购记录只采购一种原材料。
   display_name: 记录原材料
 - name: orderedFromSupplier
   source: PurchaseRecord
   target: Supplier
   cardinality: N:1
+  source_attr: supplierName
+  target_attr: supplierName
   description: 多个采购记录可以从同一个供应商采购，但一个采购记录只对应一个供应商。
   display_name: 从...采购
-- name: suppliesRawMaterial
-  source: Supplier
-  target: RawMaterial
-  cardinality: N:M
-  description: 一个供应商可以供应多种原材料，一种原材料也可以由多个供应商供应。
-  display_name: 供应原材料
 - name: containsPurchaseRecord
   source: CustomerOrder
   target: PurchaseRecord
   cardinality: 1:N
+  source_attr: customerOrderId
+  target_attr: relatedOrderId
   description: 一个客户订单可以包含多个采购记录，但一个采购记录最多只能关联一个客户订单。
   display_name: 包含采购记录
 - name: hasCapability
   source: Supplier
   target: DeliveryCapability
   cardinality: 1:N
+  source_attr: supplierId
+  target_attr: supplierId
   description: 一个供应商可以包含多个原材料的供应能力，但一个交货能力只对应一个供应商
   display_name: 拥有供应能力
 functions:
@@ -399,9 +403,6 @@ behaviors:
           example: 待入库
   related_concepts:
   - PurchaseRecord
-  - RawMaterial
-  - Supplier
-  - CustomerOrder
   display_name: 创建原材料采购单
 - name: CancelPurchaseRecord
   description: 取消一笔已创建但尚未入库的采购记录。
@@ -525,7 +526,6 @@ behaviors:
             example: 吨
   related_concepts:
   - RawMaterialInventory
-  - RawMaterial
   display_name: 查询原材料库存信息
 - name: QueryPurchaseRecords
   description: 根据采购单/原材料/关联客单来查询采购记录列表。
@@ -602,7 +602,6 @@ behaviors:
             example: 14
   related_concepts:
   - PurchaseRecord
-  - RawMaterial
   display_name: 查询原材料采购单信息
 - name: QueryRawMaterials
   description: 根据原材料ID或名称查询原材料的基础信息。
@@ -791,24 +790,25 @@ rules:
       logic: and
       conditions:
       - left:
-          type: concept
+          type: instance
           concept: PurchaseRecord
           attribute: rawMaterialId
-        operator: eq
+        operator: in
         right:
-          type: concept
+          type: instanceSet
           concept: RawMaterial
           attribute: rawMaterialId
       - left:
-          type: concept
+          type: instance
           concept: PurchaseRecord
           attribute: unit
-        operator: eq
+        operator: in
         right:
-          type: concept
+          type: instanceSet
           concept: RawMaterial
           attribute: unit
   data_supplements:
+  - QueryPurchaseRecords
   - QueryRawMaterials
 - name: V03_ArrivalTimeValidity
   description: 创建采购单时，输入的到位时间（arrivalTime）必须晚于采购时间（purchaseTime）。
@@ -831,7 +831,8 @@ rules:
           type: concept
           concept: PurchaseRecord
           attribute: purchaseTime
-  data_supplements: []
+  data_supplements:
+  - QueryPurchaseRecords
 - name: V05_SupplierExistence
   description: 创建采购单时，提供的供应商名称（supplierName）必须存在，不能随便杜撰。
   related_behaviors:
@@ -854,6 +855,7 @@ rules:
           concept: Supplier
           attribute: supplierName
   data_supplements:
+  - QueryPurchaseRecords
   - QuerySuppliers
 - name: I01_SafetyStockAlert
   description: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
@@ -878,7 +880,8 @@ rules:
           attribute: safetyStock
     then: 可用库存低于安全库存，建议创建采购单或关注库存
     else: 库存正常，无需操作
-  data_supplements: []
+  data_supplements:
+  - QueryRawMaterials
 - name: I02_ArrivalOverdueAlert
   description: IF 当前日期 >= 采购单arrivalTime  THEN 提示用户是否启动入库操作。
   related_behaviors:
@@ -893,14 +896,14 @@ rules:
       logic: and
       conditions:
       - left:
-          type: function
-          function: getCurrentDate
-          returnField: date
-        operator: ge
-        right:
           type: concept
           concept: PurchaseRecord
           attribute: arrivalTime
+        operator: le
+        right:
+          type: function
+          function: getCurrentDate
+          returnField: date
     then: 采购单已到位，请考虑是否进行入库操作
     else: 采购单尚未到位，无需操作
   data_supplements: []
@@ -917,16 +920,18 @@ rules:
       logic: and
       conditions:
       - left:
-          type: concept
+          type: instance
           concept: PurchaseRecord
           attribute: relatedOrderId
         operator: eq
         right:
           type: value
-          value: '""'
+          valueType: string
+          value: null
     then: 该采购单未关联具体的客户订单，因此可视为“补充库存”
     else: 该采购单有关联订单，采购目的视为生产订单备料
-  data_supplements: []
+  data_supplements:
+  - QueryPurchaseRecords
 - name: I04_RelatedOrderValidation
   description: 创建采购单时，如果客户订单relatedOrderId不为空，则必须存在于客户订单中
   related_behaviors:
@@ -940,25 +945,27 @@ rules:
       logic: and
       conditions:
       - left:
-          type: concept
+          type: instance
           concept: PurchaseRecord
           attribute: relatedOrderId
-        operator: ne
+        operator: eq
         right:
           type: value
-          value: '""'
+          valueType: string
+          value: null
       - left:
-          type: concept
+          type: instance
           concept: PurchaseRecord
           attribute: relatedOrderId
         operator: not in
         right:
-          type: set
+          type: instanceSet
           concept: CustomerOrder
           attribute: customerOrderId
     then: 由于关联订单编号不存在于客户订单中，因此该订单创建无效，请中止
     else: 关联订单编号存在或未填写，校验通过
-  data_supplements: []
+  data_supplements:
+  - QueryPurchaseRecords
 processes:
 - name: ProcureAndReceiveRawMaterial
   display_name: 原材料采购到入库

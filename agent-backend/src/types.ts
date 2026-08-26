@@ -112,8 +112,8 @@ export interface ConceptInfo {
     name: string;
     type: string;
     display_name: string;
-    /** 属性约束（唯一/非空/枚举/匹配模式）。规划期枚举/正则校验的权威来源（按属性名回溯，单一事实源）。 */
-    constraint?: { unique?: boolean; required?: boolean; enum?: (string | number)[]; pattern?: string } | null;
+    /** 属性约束（唯一/非空/枚举/匹配模式/取值范围）。规划期枚举/正则/取值范围校验的权威来源（按属性名回溯，单一事实源）。 */
+    constraint?: { unique?: boolean; required?: boolean; enum?: (string | number)[]; pattern?: string; min?: number; max?: number } | null;
   }[];
 }
 

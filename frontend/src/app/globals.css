@@ -67,6 +67,23 @@ html, body {
   border-color: var(--border-color) !important;
   color: var(--text-primary) !important;
 }
+/* InputNumber：常态/悬停/聚焦统一暗色，无悬停变白效果 */
+.ant-input-number,
+.ant-input-number:hover,
+.ant-input-number:focus,
+.ant-input-number-focused,
+.ant-input-number-focused:hover {
+  background-color: var(--bg-primary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+.ant-input-number .ant-input-number-input {
+  background-color: transparent !important;
+  color: var(--text-primary) !important;
+}
+.ant-input-number .ant-input-number-input::placeholder {
+  color: var(--text-muted) !important;
+}
 .ant-input::placeholder {
   color: var(--text-muted) !important;
 }

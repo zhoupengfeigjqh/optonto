@@ -1,16 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, message, Tag, Space, Table, Select } from 'antd';
+import { Button, Input, InputNumber, Modal, message, Tag, Space, Table, Select } from 'antd';
 import { PlusOutlined, DeleteOutlined, SettingOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { getConcepts, createConcept, updateConcept, deleteConcept, updateAttributes, Concept, Attribute, AttributeConstraint } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 const ATTR_TYPES = ['string', 'number', 'integer', 'boolean', 'object', 'array'];
-// 类型-约束矩阵：唯一/枚举仅 string|number|integer；匹配模式仅 string；非空全类型可填
+// 类型-约束矩阵：唯一/枚举仅 string|number|integer；匹配模式仅 string；非空全类型可填；取值范围仅 number|integer
 const canUnique = (t: string) => ['string', 'number', 'integer'].includes(t);
 const canEnum = canUnique;
 const canPattern = (t: string) => t === 'string';
+const canRange = (t: string) => ['number', 'integer'].includes(t);
 
 const BOOL_OPTS = [{ value: 'false', label: '否' }, { value: 'true', label: '是' }];
 
@@ -106,6 +107,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       if (!canUnique(next.type)) { delete c.unique; }
       if (!canEnum(next.type)) { delete c.enum; }
       if (!canPattern(next.type)) { delete c.pattern; }
+      if (!canRange(next.type)) { delete c.min; delete c.max; }
       next.constraint = Object.keys(c).length ? c : null;
     }
     if (patch.constraint !== undefined) {
@@ -132,6 +134,9 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       if (canEnum(a.type) && a.type !== 'string' && (a.constraint?.enum || []).some(v => isNaN(Number(v)))) {
         message.warning(`属性「${a.name}」的枚举值必须是数字`); return;
       }
+      if (canRange(a.type) && a.constraint?.min != null && a.constraint?.max != null && a.constraint.min > a.constraint.max) {
+        message.warning(`属性「${a.name}」的取值范围最小值不能大于最大值`); return;
+      }
     }
     // 收敛 constraint：清不适用项、数字枚举解析、全缺省置 null（不落盘）
     const payload = attributes.map(a => {
@@ -145,6 +150,11 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
         out.enum = a.type === 'string' ? c.enum.map(String) : c.enum.map(Number);
       }
       if (canPattern(a.type) && c.pattern?.trim()) out.pattern = c.pattern.trim();
+      if (canRange(a.type)) {
+        // integer 兜底取整（InputNumber precision=0 已四舍五入，此处双保险）
+        if (c.min != null) out.min = a.type === 'integer' ? Math.round(Number(c.min)) : Number(c.min);
+        if (c.max != null) out.max = a.type === 'integer' ? Math.round(Number(c.max)) : Number(c.max);
+      }
       return { ...base, constraint: Object.keys(out).length ? out : null };
     });
     try { await updateAttributes(ontologyId, attrConcept.name, payload); message.success('属性已保存'); setAttrDialogOpen(false); await load(); }
@@ -228,7 +238,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           rowKey="_idx"
           size="small"
           pagination={false}
-          scroll={{ x: 1090 }}
+          scroll={{ x: 1240 }}
           columns={[
             { title: '属性名', width: 130, render: (_: any, r: any) => (
               <Input size="small" value={r.name} onChange={e => updateAttr(r._idx, { name: e.target.value })} placeholder="属性名" className="bg-dark-bg border-dark-border text-text-primary" />
@@ -258,6 +268,18 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
                 status={patternInvalid(r.constraint?.pattern) ? 'error' : ''}
                 onChange={e => updateAttr(r._idx, { constraint: { pattern: e.target.value } })}
                 className="bg-dark-bg border-dark-border text-text-primary" />
+            ) : <span className="text-text-muted">-</span> },
+            { title: '取值范围', width: 150, render: (_: any, r: any) => canRange(r.type) ? (
+              <Space.Compact block>
+                <InputNumber size="small" placeholder="最小" style={{ width: '50%' }}
+                  value={r.constraint?.min ?? null} precision={r.type === 'integer' ? 0 : undefined}
+                  onChange={v => updateAttr(r._idx, { constraint: { min: v ?? undefined } })}
+                  className="bg-dark-bg border-dark-border text-text-primary" />
+                <InputNumber size="small" placeholder="最大" style={{ width: '50%' }}
+                  value={r.constraint?.max ?? null} precision={r.type === 'integer' ? 0 : undefined}
+                  onChange={v => updateAttr(r._idx, { constraint: { max: v ?? undefined } })}
+                  className="bg-dark-bg border-dark-border text-text-primary" />
+              </Space.Compact>
             ) : <span className="text-text-muted">-</span> },
             { title: '示例', width: 110, render: (_: any, r: any) => (
               <Input size="small" value={r.example || ''} onChange={e => updateAttr(r._idx, { example: e.target.value })} placeholder="示例" className="bg-dark-bg border-dark-border text-text-primary" />

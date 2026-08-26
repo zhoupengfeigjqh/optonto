@@ -165,7 +165,7 @@ export class OntologyGateway {
   }
 
   /**
-   * 从 rule_detail 中递归扫描 type:concept 节点，
+   * 从 rule_detail 中递归扫描 type:concept/instance 节点（instance 为 2026-08-26 改名后的新名，concept 为存量兼容），
    * 通过 related_concepts 反推需要调用的查询行为。
    */
   private inferNeededApis(ruleDetail: any, behaviors: any[]): string[] {
@@ -173,7 +173,7 @@ export class OntologyGateway {
     const conceptNames = new Set<string>();
     const walk = (node: any) => {
       if (!node || typeof node !== 'object') return;
-      if (node.type === 'concept' && node.concept) {
+      if ((node.type === 'concept' || node.type === 'instance') && node.concept) {
         conceptNames.add(node.concept);
       }
       Object.values(node).forEach(v => walk(v));

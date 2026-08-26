@@ -11,6 +11,8 @@ class ConstraintItem(BaseModel):
     required: bool = Field(False, description="是否非空")
     enum: list = Field(default_factory=list, description="枚举值")
     pattern: str = Field("", description="匹配模式（正则，仅 string 类型）")
+    min: float | None = Field(None, description="取值范围-最小值（仅 number/integer 类型）")
+    max: float | None = Field(None, description="取值范围-最大值（仅 number/integer 类型）")
 
     @field_validator('required', mode='before')
     @classmethod
@@ -45,7 +47,7 @@ class AttributeItem(BaseModel):
         if v is not None and v.unique:
             v.required = True
         # 全缺省视为无约束，避免 YAML 落一串默认值噪音
-        if v is not None and not v.unique and not v.required and not v.enum and not v.pattern:
+        if v is not None and not v.unique and not v.required and not v.enum and not v.pattern and v.min is None and v.max is None:
             return None
         return v
 
@@ -62,6 +64,8 @@ class RelationItem(BaseModel):
     source: str = Field(..., description="源概念")
     target: str = Field(..., description="目标概念")
     cardinality: str = Field("1:N", description="基数 (1:N, N:1, N:M)")
+    source_attr: str = Field("", description="关联概念属性-源端（源概念.属性）")
+    target_attr: str = Field("", description="关联概念属性-目标端（目标概念.属性）")
     description: str = Field("", description="关系说明")
     display_name: str = Field("", description="展示名称")
 

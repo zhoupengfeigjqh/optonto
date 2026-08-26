@@ -338,6 +338,14 @@ async def validate_analysis(thread_id: str, body: dict):
             SystemMessage(content=VALIDATION_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])
-        return {"result": response.content.strip()}
+        result_text = response.content.strip()
+        # 临时保存最新一次分析结果到对话文件：前端「分析结果」按钮可随时回看，无需重新验证
+        thread["validate_result"] = {
+            "result": result_text,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        thread["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_thread(thread)
+        return {"result": result_text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"验证失败: {str(e)}")

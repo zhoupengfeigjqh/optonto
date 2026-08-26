@@ -14,12 +14,22 @@ concepts:
     description: 属性详细描述
     example: 示例值
     constraint: ''
+  - name: numericAttrName
+    type: number
+    display_name: 数值属性示例
+    description: number/integer类型属性可在constraint中填写取值范围（min/max可只填其一，无范围则constraint为''）
+    example: 50
+    constraint:
+      min: 0
+      max: 100
   display_name: 概念展示名称
 relations:
 - name: relationName
   source: SourceConcept
   target: TargetConcept
   cardinality: 1:N
+  source_attr: attrName
+  target_attr: attrName
   description: 关系描述
   display_name: 关系展示名称
 functions:

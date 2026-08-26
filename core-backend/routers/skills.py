@@ -144,15 +144,37 @@ async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
 
 # ─── Generate Skill ─────────────────────────────────────────────────────────
 
+def _fmt_constraint(c) -> str:
+    """属性约束压缩为一段可读文本（与 SKILL.md 属性表"约束"列同口径）；无约束返回 '-'。"""
+    if c is None:
+        return "-"
+    parts = []
+    if c.unique:
+        parts.append("唯一")
+    if c.required:
+        parts.append("必填")
+    if c.enum:
+        parts.append(f"枚举=[{', '.join(str(v) for v in c.enum)}]")
+    if c.pattern:
+        parts.append(f"模式={c.pattern}")
+    if c.min is not None or c.max is not None:
+        lo = str(c.min) if c.min is not None else "-∞"
+        hi = str(c.max) if c.max is not None else "+∞"
+        parts.append(f"范围={lo}~{hi}")
+    return "；".join(parts) if parts else "-"
+
+
 def _build_ontology_summary(data) -> str:
     lines = []
     lines.append(f"概念（{len(data.concepts)}个）:")
     for c in data.concepts:
-        attr_str = ", ".join(f"{a.name} ({a.type})" for a in (c.attributes or []))
-        lines.append(f"  - {c.name}（{c.display_name or ''}）: {attr_str}")
+        lines.append(f"  - {c.name}（{c.display_name or ''}）: {c.description or ''}")
+        for a in (c.attributes or []):
+            lines.append(f"    属性: {a.name} ({a.type}) 展示名={a.display_name or '-'} 约束={_fmt_constraint(a.constraint)}")
     lines.append(f"\n关系（{len(data.relations)}个）:")
     for r in data.relations:
-        lines.append(f"  - {r.name}: {r.source} -> {r.target} ({r.cardinality})")
+        link = f", 关联: {r.source}.{r.source_attr} = {r.target}.{r.target_attr}" if r.source_attr and r.target_attr else ""
+        lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.source} -> {r.target} ({r.cardinality}{link}) {r.description or ''}")
     lines.append(f"\n行为（{len(data.behaviors)}个）:")
     for b in data.behaviors:
         lines.append(f"  - {b.name}（{b.display_name or ''}）: {b.description or ''}")

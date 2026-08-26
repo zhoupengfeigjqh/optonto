@@ -12,11 +12,8 @@ COPY frontend/ ./
 
 RUN npm run build
 
-# ─── Production stage (Nginx + Next.js) ───
+# ─── Production stage (纯 Next.js；Nginx 已拆分为独立容器 optonto-nginx) ───
 FROM node:20-alpine
-
-# 安装 Nginx
-RUN apk add --no-cache nginx
 
 WORKDIR /app
 
@@ -25,11 +22,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# 复制 Nginx 配置和启动脚本
-COPY frontend/nginx.conf /etc/nginx/http.d/default.conf
-COPY frontend/entrypoint.sh /entrypoint.sh
-RUN sed -i 's/\r//' /entrypoint.sh && chmod +x /entrypoint.sh
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-EXPOSE 81
+EXPOSE 3000
 
-CMD ["/entrypoint.sh"]
+CMD ["node", "server.js"]

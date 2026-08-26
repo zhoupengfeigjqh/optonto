@@ -71,17 +71,33 @@ services:
     networks:
       - optonto-net
 
-  # ─── 前端 (Nginx + Next.js 合并) ───────────────────────────────
+  # ─── 前端 (纯 Next.js，经 optonto-nginx 对外) ────────────────────
   optonto-frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
     image: optonto-frontend
     container_name: optonto-frontend
+    expose:
+      - "3000"
+    depends_on:
+      - optonto-core-backend
+    networks:
+      - optonto-net
+
+  # ─── Nginx 入口（全站唯一对外端口 :81） ─────────────────────────
+  optonto-nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: optonto-nginx
+    container_name: optonto-nginx
     ports:
       - "81:81"
     depends_on:
+      - optonto-frontend
       - optonto-core-backend
+      - optonto-agent-backend
     networks:
       - optonto-net
 

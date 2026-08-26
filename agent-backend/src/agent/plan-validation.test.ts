@@ -234,6 +234,9 @@ describe('validateAllConstraints · 行为/函数统一约束校验', () => {
       { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['有效', '无效'] } },
       { name: 'arrivalTime', type: 'string', display_name: '到位时间', constraint: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
       { name: 'rawMaterialName', type: 'string', display_name: '原料名', constraint: { enum: ['钢板'] } },
+      { name: 'qty', type: 'number', display_name: '数量', constraint: { min: 0, max: 100 } },
+      { name: 'leadTime', type: 'integer', display_name: '交期', constraint: { min: 1 } },
+      { name: 'note', type: 'string', display_name: '备注', constraint: { required: true } }, // 无范围：不查
     ],
   };
   const gw = (): OntologyGatewayPort => ({
@@ -241,7 +244,7 @@ describe('validateAllConstraints · 行为/函数统一约束校验', () => {
     getFunctionNames: () => ['sumRawNotArrivalQty'],
     getBehaviorMeta: (_s, _o, b) => ({
       display_name: '',
-      params: { status: { type: 'string' }, arrivalTime: { type: 'string' } },
+      params: { status: { type: 'string' }, arrivalTime: { type: 'string' }, qty: { type: 'number' }, leadTime: { type: 'integer' }, note: { type: 'string' } },
       preRules: [], postRules: [],
       concepts: b === 'CreatePurchaseRecord' ? [CONCEPT] : [],
       isWrite: false,
@@ -305,5 +308,48 @@ describe('validateAllConstraints · 行为/函数统一约束校验', () => {
     const v = validateAllConstraints(gw(), plan([sub]));
     expect(v.enumErrors).toEqual([]);
     expect(v.patternErrors).toEqual([]);
+  });
+
+  // ─── 取值范围（number/integer，min/max 非空才查） ─────────────────────────
+
+  it('number 低于最小值 → rangeErrors（含范围文本）', () => {
+    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: -5 } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.rangeErrors).toHaveLength(1);
+    expect(v.rangeErrors[0]).toContain('qty');
+    expect(v.rangeErrors[0]).toContain('低于最小值 0');
+    expect(v.rangeErrors[0]).toContain('0 ~ 100');
+  });
+
+  it('number 高于最大值 → rangeErrors', () => {
+    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: 500 } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.rangeErrors).toHaveLength(1);
+    expect(v.rangeErrors[0]).toContain('高于最大值 100');
+  });
+
+  it('integer 单边范围（仅 min）：低于报错 / 高于不限', () => {
+    const bad = { ...behSubtask('CreatePurchaseRecord'), params: { leadTime: { value: 0 } } };
+    const good = { ...behSubtask('CreatePurchaseRecord'), params: { leadTime: { value: 9999 } } };
+    expect(validateAllConstraints(gw(), plan([bad])).rangeErrors).toHaveLength(1);
+    expect(validateAllConstraints(gw(), plan([good])).rangeErrors).toEqual([]);
+  });
+
+  it('范围内 / 无范围声明（note） → 不查不报', () => {
+    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: 50 }, note: { value: '任意文本' } } };
+    const v = validateAllConstraints(gw(), plan([sub]));
+    expect(v.rangeErrors).toEqual([]);
+  });
+
+  it('数字字符串纳入校验（"500" 超界报错）；非数字字符串跳过（类型校验负责）', () => {
+    const strBad = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: '500' } } };
+    const strSkip = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: 'abc' } } };
+    expect(validateAllConstraints(gw(), plan([strBad])).rangeErrors).toHaveLength(1);
+    expect(validateAllConstraints(gw(), plan([strSkip])).rangeErrors).toEqual([]);
+  });
+
+  it('空值放行（缺值非本校验职责）', () => {
+    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: '' } } };
+    expect(validateAllConstraints(gw(), plan([sub])).rangeErrors).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { Button, Input, Modal, message, Space, Spin, Switch, Tooltip } from 'antd';
-import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, FileSearchOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined } from '@ant-design/icons';
 import { getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
 
@@ -28,6 +28,8 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [validating, setValidating] = useState(false);
   const [validateResult, setValidateResult] = useState('');
   const [showValidateModal, setShowValidateModal] = useState(false);
+  const [validateTime, setValidateTime] = useState('');
+  const [savedValidate, setSavedValidate] = useState<{ result: string; updated_at: string } | null>(null);
   const [grilling, setGrilling] = useState(true);
 
   const load = async () => {
@@ -36,6 +38,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       const thread = await getThread(threadId, scenarioName, ontologyName);
       setTitle(thread.title);
       setMessages(thread.messages || []);
+      setSavedValidate(thread.validate_result || null);
     } catch (e: any) {
       message.error('加载对话失败: ' + e.message);
     } finally {
@@ -142,16 +145,30 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const handleValidate = async () => {
     setValidating(true);
     setValidateResult('');
+    setValidateTime('');
     setShowValidateModal(true);
     try {
       const selectedList = selectedIndex !== null ? [selectedIndex] : [];
       const result = await validateAnalysis(threadId, selectedList);
       setValidateResult(result.result);
+      // 后端已临时保存最新结果，前端同步缓存（时间以本地近似即可，仅展示用）
+      const saved = { result: result.result, updated_at: new Date().toISOString() };
+      setSavedValidate(saved);
+      setValidateTime(saved.updated_at);
     } catch (e: any) {
       setValidateResult(`验证失败: ${e.message}`);
     } finally {
       setValidating(false);
     }
+  };
+
+  // 「分析结果」：回看最近一次已保存的验证结果，不重新触发验证
+  const handleViewValidate = () => {
+    if (!savedValidate) return;
+    setValidating(false);
+    setValidateResult(savedValidate.result);
+    setValidateTime(savedValidate.updated_at);
+    setShowValidateModal(true);
   };
 
   const handleClear = () => {
@@ -239,9 +256,18 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
           <h3 className="text-base font-semibold text-text-primary truncate max-w-md">{title || '新对话'}</h3>
         </div>
         <Space>
-          <Button icon={<AuditOutlined />} onClick={handleValidate} disabled={!hasSelected} size="small">验证</Button>
-          <Button icon={<FileTextOutlined />} onClick={handleExport} disabled={!hasSelected} size="small">导出文档</Button>
-          <Button icon={<ClearOutlined />} onClick={handleClear} disabled={messages.length === 0} size="small">清空对话</Button>
+          <Tooltip title={hasSelected ? '对选中的助手回复做一致性和逻辑自洽性检查' : '请先点击助手回复右下角的 ○ 选中内容'}>
+            <Button icon={<AuditOutlined />} onClick={handleValidate} disabled={!hasSelected} size="small">验证</Button>
+          </Tooltip>
+          <Tooltip title={savedValidate ? '查看最近一次验证的分析结果' : '暂无分析结果，请先选中助手回复并点击「验证」'}>
+            <Button icon={<FileSearchOutlined />} onClick={handleViewValidate} disabled={!savedValidate} size="small">分析结果</Button>
+          </Tooltip>
+          <Tooltip title={hasSelected ? '将选中的助手回复导出为需求文档（保存到本体输出）' : '请先点击助手回复右下角的 ○ 选中内容'}>
+            <Button icon={<FileTextOutlined />} onClick={handleExport} disabled={!hasSelected} size="small">导出需求</Button>
+          </Tooltip>
+          <Tooltip title="清空当前对话的所有消息，此操作不可恢复">
+            <Button icon={<ClearOutlined />} onClick={handleClear} disabled={messages.length === 0} size="small">清空对话</Button>
+          </Tooltip>
         </Space>
       </div>
 
@@ -261,7 +287,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       {/* Footer hint */}
       {messages.length > 0 && !hasSelected && (
         <div className="text-center text-text-muted text-xs mb-2">
-          点击助手回复右下角的 ○ 选中内容，然后点击「导出文档」
+          点击助手回复右下角的 ○ 选中内容，然后点击「导出需求」
         </div>
       )}
 
@@ -350,8 +376,13 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
               <p className="text-text-muted text-xs">从本体建模角度检查概念重叠、规则冲突等问题</p>
             </div>
           ) : (
-            <div className="text-text-secondary text-sm whitespace-pre-wrap max-h-96 overflow-y-auto">
-              {validateResult || '无验证结果'}
+            <div>
+              {validateTime && (
+                <div className="text-text-muted text-xs mb-2">分析时间：{new Date(validateTime).toLocaleString()}</div>
+              )}
+              <div className="text-text-secondary text-sm whitespace-pre-wrap max-h-96 overflow-y-auto">
+                {validateResult || '无验证结果'}
+              </div>
             </div>
           )}
         </div>

@@ -206,18 +206,24 @@ relations:
   source: ProcessRoute
   target: RouteMaterialReq
   cardinality: 1:N
+  source_attr: 工艺路径编号
+  target_attr: 工艺路径编号
   description: 1条工艺路径可关联多个原料需求
   display_name: 需要原料
 - name: routeRequiresEquip
   source: ProcessRoute
   target: RouteEquipReq
   cardinality: 1:N
+  source_attr: 工艺路径编号
+  target_attr: 工艺路径编号
   description: 1条工艺路径可关联多个设备组需求
   display_name: 需要设备组
 - name: routeRequiresPerson
   source: ProcessRoute
   target: RoutePersonReq
   cardinality: 1:N
+  source_attr: 工艺路径编号
+  target_attr: 工艺路径编号
   description: 1条工艺路径可关联多个人组需求
   display_name: 需要人员组
 functions: []

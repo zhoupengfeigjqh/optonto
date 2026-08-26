@@ -346,48 +346,64 @@ relations:
   source: Order
   target: OrderDetail
   cardinality: 1:N
+  source_attr: 订单编号
+  target_attr: 订单编号
   description: 1个订单含多个明细项
   display_name: 包含明细
 - name: hasProduct
   source: OrderDetail
   target: Product
   cardinality: N:1
+  source_attr: 货品编号
+  target_attr: 货品编号
   description: 1个订单明细只包含1个货品
   display_name: 关联货品
 - name: hasBOM
   source: Product
   target: BOMInfo
   cardinality: '1:1'
+  source_attr: 货品编号
+  target_attr: 货品编号
   description: 1个货品有1个BOM
   display_name: 包含BOM
 - name: drivesScheduling
   source: Order
   target: SchedTask
   cardinality: 1:N
+  source_attr: 订单编号
+  target_attr: 订单编号
   description: 1个订单可以产生多个排产任务
   display_name: 驱动排产
 - name: producesPlan
   source: SchedTask
   target: SchedResult
   cardinality: '1:1'
+  source_attr: 排产任务编号
+  target_attr: 排产任务编号
   description: 1个排产任务产出1个排产结果
   display_name: 产出结果
 - name: hasShortageDetail
   source: SchedResult
   target: ShortageDetail
   cardinality: 1:N
+  source_attr: 排产任务编号
+  target_attr: 排产任务编号
   description: 1个排产结果对应多个原料欠料明细
   display_name: 包含欠料
 - name: hasScheduleParams
   source: SchedTask
   target: AlgoParams
   cardinality: '1:1'
+  source_attr: 排产任务编号
+  target_attr: 排产任务编号
   description: 1个排产任务有1组算法参数
   display_name: 包含参数
 - name: hasVersion
   source: SchedTask
   target: SchedTask
   cardinality: 1:N
+  source_attr: 排产任务编号
+  target_attr: 排产任务编号
   description: 排产任务的版本派生关系
   display_name: 版本派生
 functions: []

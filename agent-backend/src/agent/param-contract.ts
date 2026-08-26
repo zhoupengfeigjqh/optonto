@@ -26,6 +26,10 @@ export interface ParamSpec {
   enum?: (string | number)[];
   /** 匹配模式约束（正则，仅 string；同上回溯合并） */
   pattern?: string;
+  /** 取值范围约束（最小值，仅 number/integer；同上回溯合并） */
+  min?: number;
+  /** 取值范围约束（最大值，仅 number/integer；同上回溯合并） */
+  max?: number;
 }
 
 /** 从行为声明中的参数结构提取必填参数名列表（入参放宽为 { params } 形态，BehaviorMeta 结构兼容） */
@@ -258,10 +262,10 @@ export function unwrapParamValues(params: Record<string, any>): Record<string, a
 // 同名属性取第一个（建模约定同名属性定义完全一致），不 warn。
 // 子 Agent 执行期不做此类检查（保持原状）；公共函数/第三源 MCP 工具无概念关联，自然跳过。
 
-export interface AttrConstraint { enum?: (string | number)[]; pattern?: string }
+export interface AttrConstraint { enum?: (string | number)[]; pattern?: string; min?: number; max?: number }
 export type AttrConstraintMap = Map<string, AttrConstraint>;
 
-/** 关联概念属性 → 约束查找表（只收有 enum/pattern 的；同名取第一个）。 */
+/** 关联概念属性 → 约束查找表（只收有 enum/pattern/min/max 的；同名取第一个）。 */
 export function buildAttrConstraintMap(concepts: ConceptInfo[]): AttrConstraintMap {
   const map: AttrConstraintMap = new Map();
   for (const c of concepts || []) {
@@ -269,8 +273,15 @@ export function buildAttrConstraintMap(concepts: ConceptInfo[]): AttrConstraintM
       if (map.has(a.name)) continue; // 同名取第一个
       const enumVals = a.constraint?.enum;
       const pattern = a.constraint?.pattern;
-      if ((enumVals && enumVals.length > 0) || pattern) {
-        map.set(a.name, { enum: enumVals?.length ? enumVals : undefined, pattern: pattern || undefined });
+      const min = a.constraint?.min;
+      const max = a.constraint?.max;
+      if ((enumVals && enumVals.length > 0) || pattern || min != null || max != null) {
+        map.set(a.name, {
+          enum: enumVals?.length ? enumVals : undefined,
+          pattern: pattern || undefined,
+          min: min ?? undefined,
+          max: max ?? undefined,
+        });
       }
     }
   }
@@ -286,6 +297,8 @@ export function mergeAttrConstraints(declared: Record<string, any>, attrMap: Att
       const c = attrMap.get(k);
       if (c?.enum?.length && !spec.enum?.length) spec.enum = c.enum;
       if (c?.pattern && !spec.pattern) spec.pattern = c.pattern;
+      if (c?.min != null && spec.min == null) spec.min = c.min;
+      if (c?.max != null && spec.max == null) spec.max = c.max;
       if (spec.items && typeof spec.items === 'object') {
         spec.items = { ...spec.items };
         if (spec.items.properties) spec.items.properties = mergeLevel(spec.items.properties);
@@ -308,6 +321,8 @@ export interface ConstraintViolations {
   patternErrors: string[];
   /** 枚举违例（与模式统一 nudge 处理；分类保留供消息/后续差异化使用） */
   enumErrors: string[];
+  /** 取值范围违例（number/integer，min/max 声明非空才查；硬中断，不 nudge） */
+  rangeErrors: string[];
 }
 
 /**
@@ -322,6 +337,7 @@ export function validateConstraintValues(
 ): ConstraintViolations {
   const patternErrors: string[] = [];
   const enumErrors: string[] = [];
+  const rangeErrors: string[] = [];
 
   const walkValue = (value: unknown, spec: ParamSpec, path: string): void => {
     if (value === undefined || value === null || value === '') return;
@@ -346,6 +362,20 @@ export function validateConstraintValues(
     if (spec.pattern && typeof value === 'string' && !fullMatchPattern(spec.pattern, value)) {
       patternErrors.push(`子任务${seq}(${name}) 参数 ${path} 值 ${JSON.stringify(value)} 不匹配模式 ${spec.pattern}`);
     }
+    // 取值范围：仅 number/integer 且 min/max 声明非空才查；数字字符串一并纳入（类型错位由类型校验负责），非数字跳过
+    if ((spec.type === 'number' || spec.type === 'integer') && (spec.min != null || spec.max != null)) {
+      const num = typeof value === 'number' ? value
+        : (typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN);
+      if (!Number.isNaN(num)) {
+        const rangeText = `${spec.min ?? '-∞'} ~ ${spec.max ?? '+∞'}`;
+        if (spec.min != null && num < spec.min) {
+          rangeErrors.push(`子任务${seq}(${name}) 参数 ${path} 值 ${num} 低于最小值 ${spec.min}（取值范围 ${rangeText}）`);
+        }
+        if (spec.max != null && num > spec.max) {
+          rangeErrors.push(`子任务${seq}(${name}) 参数 ${path} 值 ${num} 高于最大值 ${spec.max}（取值范围 ${rangeText}）`);
+        }
+      }
+    }
   };
 
   for (const [key, spec] of Object.entries(declared || {})) {
@@ -355,5 +385,5 @@ export function validateConstraintValues(
     if (value === undefined || value === null || value === '') continue; // 空值放行（缺值非本校验职责）
     walkValue(value, spec as ParamSpec, key);
   }
-  return { patternErrors, enumErrors };
+  return { patternErrors, enumErrors, rangeErrors };
 }

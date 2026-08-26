@@ -304,10 +304,10 @@ export class Orchestrator {
       }
       plan = paramValidated;
 
-      // 枚举/匹配模式校验（校验链尾）：违例不中断，nudge 父Agent 修正一次；复验仍不过判失败
+      // 约束校验（校验链尾）：取值范围违例 → 直接中断报错提交明细；枚举/匹配模式违例 → nudge 修正一次，复验仍不过判失败
       const constraintChecked = await this.validateTaskConstraints(plan, planCtx);
       if (!constraintChecked.plan) {
-        const reason = '参数值不满足枚举/匹配模式约束，修正失败';
+        const reason = constraintChecked.fatalReason ?? '参数值不满足枚举/匹配模式约束，修正失败';
         emit.raw({ type: 'error', message: `⚠️ ${reason}` });
         emit.raw({ type: 'done' });
         return { reply: `⚠️ ${reason}` };
@@ -705,8 +705,9 @@ ${waveList}
       const validatedB = validatedS ? await this.validateTaskBehaviorNames(validatedS, ctx) : null;
       const validatedF = validatedB ? await this.validateTaskFunctionNames(validatedB, ctx) : null;
       const validatedP = validatedF ? await this.validateTaskParams(validatedF, ctx) : null;
-      // 枚举/匹配模式校验：违例不中断，nudge 修正一次；复验仍不过 → null
-      const validatedC = validatedP ? (await this.validateTaskConstraints(validatedP, ctx)).plan : null;
+      // 约束校验：取值范围违例 → 硬中断（fatalReason 带明细）；枚举/匹配模式违例 → nudge 修正一次，复验仍不过 → null
+      const constraintChecked: { plan: SubTaskPlan | null; fatalReason?: string } = validatedP ? await this.validateTaskConstraints(validatedP, ctx) : { plan: null };
+      const validatedC = constraintChecked.plan;
       // 依赖校验也带 nudge（与行为名/参数一致）
       const validatedD = validatedC ? await this.validatePlanDeps(validatedC, ctx, executedSeqs) : null;
       if (validatedD) {
@@ -718,7 +719,9 @@ ${waveList}
       } else {
         // 校验（含 nudge 修正）仍未通过 → 不沿用原计划让下游带空参数裸奔：主动中止，总结阶段点破残留副作用
         session.terminate('adjustmentInvalid');
-        analysisDetail = `本波次调整规划校验失败，流程已中止（避免后续子任务缺失中继数据继续执行）`;
+        analysisDetail = constraintChecked.fatalReason
+          ? `本波次调整规划已中止：${constraintChecked.fatalReason}`
+          : `本波次调整规划校验失败，流程已中止（避免后续子任务缺失中继数据继续执行）`;
       }
     }
 
@@ -848,13 +851,21 @@ ${waveList}
   }
 
   /**
-   * 枚举/匹配模式约束校验（校验链尾，声明源 = 关联概念属性 constraint 回溯）：
-   * 枚举违例与模式不匹配统一处理——不中断任务，nudge 父 Agent 修正一次
-   * （枚举从消息给出的合法清单中改选；模式转换格式，如日期补零），复验仍不过返回失败。
-   * 返回 { plan }（null = 修正失败，调用方中止 run）。
+   * 约束校验（校验链尾，声明源 = 关联概念属性 constraint 回溯）：
+   * - 取值范围（number/integer 的 min/max，为空不查）：违例**直接中断报错**，不 nudge、不修复，
+   *   fatalReason 携带明细提交给用户（2026-08-25 拍板：范围违例是数据可信度问题，不让 LLM 自修）。
+   * - 枚举/匹配模式：违例不中断，nudge 父 Agent 修正一次，复验仍不过返回失败。
+   * 返回 { plan, fatalReason? }（plan = null 时：有 fatalReason = 范围硬中断，无 = 枚举/模式修正失败）。
    */
-  private async validateTaskConstraints(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<{ plan: SubTaskPlan | null }> {
+  private async validateTaskConstraints(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<{ plan: SubTaskPlan | null; fatalReason?: string }> {
+    const rangeFatal = (rangeErrors: string[]): string => {
+      ctx.emit.entry({ type: 'subtask_done', name: '取值范围校验', status: 'failed', detail: rangeErrors.join('；'), source: 'parent' });
+      return `参数值超出取值范围：${rangeErrors.join('；')}`;
+    };
+
     const first = validateAllConstraints(this.ontologyGateway, plan);
+    if (first.rangeErrors.length > 0) return { plan: null, fatalReason: rangeFatal(first.rangeErrors) };
+
     const firstErrors = [...first.enumErrors, ...first.patternErrors];
     if (firstErrors.length === 0) return { plan };
 
@@ -868,6 +879,7 @@ ${waveList}
     if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return { plan: null };
 
     const again = validateAllConstraints(this.ontologyGateway, corrected);
+    if (again.rangeErrors.length > 0) return { plan: null, fatalReason: rangeFatal(again.rangeErrors) };
     if (again.enumErrors.length > 0 || again.patternErrors.length > 0) return { plan: null };
     ctx.emit.entry({ type: 'subtask_done', name: '枚举/匹配模式已修正', status: 'done', source: 'parent' });
     return { plan: corrected };

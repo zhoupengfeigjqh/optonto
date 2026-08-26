@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Button, Input, Select, Modal, message, Space } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, FileTextOutlined, RobotOutlined } from '@ant-design/icons';
-import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, generateRule, Rule, Behavior, Function, Concept } from '@/api/client';
+import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, getRelations, generateRule, Rule, Behavior, Function, Concept, Relation } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -25,191 +25,260 @@ function getReturnFields(funcs: any[], funcName: string | undefined): { label: s
   }));
 }
 
-function ValidationRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {
-  const cfg = config || {};
-  const ifBlock = cfg.if || { logic: 'and', conditions: [{ left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] };
+// ─── 操作数类型与字面值解析（2026-08-26 定稿：A2 + valueSet + instance 改名） ───
+// 操作数类型：value(字面值)/valueSet(字面值集)/instance(实例)/instanceSet(实例集)/function(函数)
+// 旧名兼容：concept→instance、set→instanceSet（存量 yaml 打开设计器时映射，保存时写新名，自然迁移）
 
-  const setIf = (patch: any) => onChange({ ...cfg, if: { ...ifBlock, ...patch } });
+function normalizeOperandType(t: any): string {
+  if (t === 'concept') return 'instance';
+  if (t === 'set') return 'instanceSet';
+  return t || '';
+}
 
-  const updateCondition = (idx: number, patch: any) => {
-    const conditions = [...(ifBlock.conditions || [])];
-    conditions[idx] = { ...conditions[idx], ...patch };
-    setIf({ ...ifBlock, conditions });
-  };
+const SET_OPERAND_TYPES = ['instanceSet', 'valueSet'];
+const SET_OPERATORS = ['in', 'not in'];
 
-  const addCondition = () => {
-    setIf({ ...ifBlock, conditions: [...(ifBlock.conditions || []), { left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] });
-  };
+type LiteralParseResult = { ok: true; node: any } | { ok: false; error: string };
 
-  const removeCondition = (idx: number) => {
-    setIf({ ...ifBlock, conditions: (ifBlock.conditions || []).filter((_: any, i: number) => i !== idx) });
-  };
+/**
+ * A2 字面值解析：引号语法输入 → 类型化存储节点 {type:'value', valueType, value?}
+ * - string：必须引号包裹（'有效'/"有效"），存储不带引号；'' = 空串
+ * - number/integer：裸写数字；boolean：true/false
+ * - 空输入 = 空值节点：valueType 与左侧类型一致、value 为 null（左侧类型未知时 valueType 为 null；操作符是否允许由调用方校验）
+ * - expectedType 为左侧操作数类型，传 null 表示未知（宁漏勿拦，按输入形态推断）
+ */
+function parseLiteralInput(rawIn: any, expectedType: string | null): LiteralParseResult {
+  const raw = rawIn === undefined || rawIn === null ? '' : String(rawIn).trim();
+  if (raw === '') return { ok: true, node: { type: 'value', valueType: expectedType || 'null', value: null } };
+  const isQuoted = (q: string) => raw.length >= 2 && raw.startsWith(q) && raw.endsWith(q);
+  if (isQuoted("'") || isQuoted('"')) {
+    if (expectedType && expectedType !== 'string') {
+      return { ok: false, error: `左侧为 ${expectedType} 类型，字面值${expectedType === 'boolean' ? '请写 true/false' : '请直接写数字'}，不要加引号` };
+    }
+    return { ok: true, node: { type: 'value', valueType: 'string', value: raw.slice(1, -1) } };
+  }
+  if (raw === 'true' || raw === 'false') {
+    if (expectedType && expectedType !== 'boolean') return { ok: false, error: `左侧为 ${expectedType} 类型，但输入的是布尔值 ${raw}` };
+    return { ok: true, node: { type: 'value', valueType: 'boolean', value: raw === 'true' } };
+  }
+  if (/^-?\d+$/.test(raw)) {
+    if (expectedType === 'string') return { ok: false, error: `左侧为 string 类型，字面值需用引号包裹，如 '${raw}'` };
+    if (expectedType === 'boolean') return { ok: false, error: `左侧为 boolean 类型，字面值请写 true/false` };
+    // 左侧为 number 时按 number 存（整数是 number 的子集）；未知时按 integer
+    return { ok: true, node: { type: 'value', valueType: expectedType === 'number' ? 'number' : 'integer', value: Number(raw) } };
+  }
+  if (/^-?\d*\.\d+$/.test(raw)) {
+    if (expectedType === 'integer') return { ok: false, error: `左侧为 integer 类型，字面值不能带小数` };
+    if (expectedType === 'string') return { ok: false, error: `左侧为 string 类型，字面值需用引号包裹，如 '${raw}'` };
+    if (expectedType === 'boolean') return { ok: false, error: `左侧为 boolean 类型，字面值请写 true/false` };
+    return { ok: true, node: { type: 'value', valueType: 'number', value: Number(raw) } };
+  }
+  if (expectedType === 'string') return { ok: false, error: `string 字面值需用引号包裹，如 '${raw}'` };
+  if (expectedType) return { ok: false, error: `左侧为 ${expectedType} 类型，无法识别的字面值「${raw}」` };
+  // 类型未知：宁漏勿拦，按 string 原文接受
+  return { ok: true, node: { type: 'value', valueType: 'string', value: raw } };
+}
 
-  const leftRightEditor = (cond: any, idx: number, side: 'left' | 'right', sideLabel: string) => {
-    const obj = cond[side] || { type: side === 'left' ? 'concept' : 'value' };
-    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '对象集', value: 'set' }, { label: '函数', value: 'function' }];
-    const types = side === 'left' ? [{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }] : rightTypes;
-    return (
-      <div className="flex items-start gap-2">
-        <span className="text-text-muted text-xs w-12 mt-1">{sideLabel}</span>
-        <div className="flex-1 space-y-1">
-          <Select size="small" value={obj.type} onChange={v => updateCondition(idx, { [side]: { type: v } })}
-            options={types} style={{ width: 120 }} popupClassName="!bg-dark-card" />
-          {obj.type === 'concept' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
-                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
-                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : obj.type === 'function' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="函数" value={obj.function} onChange={v => updateCondition(idx, { [side]: { ...obj, function: v } })}
-                options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="返回字段" value={obj.returnField} onChange={v => updateCondition(idx, { [side]: { ...obj, returnField: v } })}
-                options={getReturnFields(funcs, obj.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : obj.type === 'set' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
-                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
-                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : (
-            <Input size="small" placeholder="字面值" value={obj.value || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, value: e.target.value } })}
-              className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
-          )}
-        </div>
-      </div>
-    );
-  };
+/** 字面值集解析：`[...]` 语法，元素按 parseLiteralInput 逐个解析，同型（number/integer 混合归一为 number），非空 */
+function parseLiteralSetInput(rawIn: any, expectedType: string | null): LiteralParseResult {
+  const raw = rawIn === undefined || rawIn === null ? '' : String(rawIn).trim();
+  if (!raw.startsWith('[') || !raw.endsWith(']')) {
+    return { ok: false, error: `字面值集需用方括号包裹，如 ['有效', '无效'] 或 [1, 2, 3]` };
+  }
+  const inner = raw.slice(1, -1).trim();
+  if (!inner) return { ok: false, error: '字面值集不能为空集 []' };
+  // 按顶层逗号切分（引号内的逗号不切）
+  const tokens: string[] = [];
+  let cur = ''; let quote = '';
+  for (const ch of inner) {
+    if (quote) { cur += ch; if (ch === quote) quote = ''; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; cur += ch; continue; }
+    if (ch === ',') { tokens.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  tokens.push(cur);
+  const values: any[] = [];
+  const types = new Set<string>();
+  for (const tok of tokens) {
+    if (!tok.trim()) return { ok: false, error: '字面值集存在空元素（多余的逗号？）' };
+    const r = parseLiteralInput(tok, expectedType);
+    if (!r.ok) return r;
+    if (r.node.value === null || r.node.value === undefined) return { ok: false, error: '字面值集不允许空元素' };
+    types.add(r.node.valueType);
+    values.push(r.node.value);
+  }
+  let elementType = '';
+  if (types.size === 1) elementType = [...types][0];
+  else if ([...types].every(t => t === 'number' || t === 'integer')) elementType = 'number';
+  else return { ok: false, error: `字面值集元素类型不一致（${[...types].join('、')}）` };
+  return { ok: true, node: { type: 'valueSet', elementType, value: values } };
+}
 
+/** 存储形态 → 编辑框文本：typed 字面值还原引号语法；null 值 → 空框；存量无 valueType 的原文显示 */
+function literalNodeToText(node: any): string {
+  if (node.valueType === undefined) return node.value !== undefined && node.value !== null ? String(node.value) : '';
+  if (node.value === null || node.value === undefined) return '';
+  if (node.valueType === 'string') return `'${node.value}'`;
+  return String(node.value);
+}
+
+function literalSetNodeToText(node: any): string {
+  const vals = Array.isArray(node.value) ? node.value : [];
+  if (node.elementType === 'string') return `[${vals.map((v: any) => `'${v}'`).join(', ')}]`;
+  return `[${vals.join(', ')}]`;
+}
+
+/** 存储形态 → 编辑形态：旧类型名映射新名；typed 字面值/字面值集 → 输入框文本 */
+function storageToEditing(cfg: any): any {
+  if (!cfg || typeof cfg !== 'object') return cfg;
+  const clone = JSON.parse(JSON.stringify(cfg));
+  const conditions = clone?.if?.conditions;
+  if (!Array.isArray(conditions)) return clone;
+  for (const c of conditions) {
+    for (const side of ['left', 'right'] as const) {
+      const op = c?.[side];
+      if (!op || typeof op !== 'object') continue;
+      // 存量语义修复：in/not in 右侧的 concept 实为集合语义 → instanceSet
+      if (side === 'right' && normalizeOperandType(op.type) === 'instance' && SET_OPERATORS.includes(c?.operator)) {
+        op.type = 'instanceSet';
+      } else {
+        op.type = normalizeOperandType(op.type);
+      }
+      if (op.type === 'value' && 'valueType' in op) { const text = literalNodeToText(op); delete op.valueType; op.value = text; }
+      if (op.type === 'valueSet' && 'elementType' in op) { const text = literalSetNodeToText(op); delete op.elementType; op.value = text; }
+    }
+  }
+  return clone;
+}
+
+// ─── 共享操作数编辑器（左/右侧共用） ─────────────────────────────────────────
+
+const OPERAND_TYPE_OPTIONS_LEFT = [
+  { label: '实例', value: 'instance' },
+  { label: '函数', value: 'function' },
+];
+const OPERAND_TYPE_OPTIONS_RIGHT = [
+  { label: '字面值', value: 'value' },
+  { label: '字面值集', value: 'valueSet' },
+  { label: '实例', value: 'instance' },
+  { label: '实例集', value: 'instanceSet' },
+  { label: '函数', value: 'function' },
+];
+
+function OperandEditor({ obj, side, leftValueType, onPatch, conceptOptions, attributeOptions, funcOptions, funcs }: any) {
+  const t = obj?.type || (side === 'left' ? 'instance' : 'value');
+  const literalPlaceholder =
+    leftValueType === 'string' ? `字符串用引号包裹，如 '有效'；留空 = null（空值）` :
+    leftValueType === 'number' || leftValueType === 'integer' ? '数字，如 100；留空 = null（空值）' :
+    leftValueType === 'boolean' ? 'true / false；留空 = null（空值）' :
+    `字面值（字符串请加引号，如 '有效'）；留空 = null（空值）`;
   return (
-    <div className="space-y-4">
-      <p className="text-text-muted text-xs mb-2">配置验证条件，支持 AND/OR 多条件组合，所有字段均为必填</p>
+    <div className="flex items-start gap-2">
+      <span className="text-text-muted text-xs w-12 mt-1">{side === 'left' ? '左侧' : '右侧'}</span>
+      <div className="flex-1 space-y-1">
+        <Select size="small" value={t} onChange={v => onPatch({ type: v })}
+          options={side === 'left' ? OPERAND_TYPE_OPTIONS_LEFT : OPERAND_TYPE_OPTIONS_RIGHT} style={{ width: 120 }} popupClassName="!bg-dark-card" />
+        {(t === 'instance' || t === 'instanceSet') && (
+          <div className="flex gap-2">
+            <Select size="small" allowClear placeholder="概念" value={obj?.concept} onChange={v => onPatch({ ...obj, type: t, concept: v, attribute: undefined })}
+              options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+            <Select size="small" allowClear placeholder="属性" value={obj?.attribute} onChange={v => onPatch({ ...obj, type: t, attribute: v })}
+              options={obj?.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+          </div>
+        )}
+        {t === 'function' && (
+          <div className="flex gap-2">
+            <Select size="small" allowClear placeholder="函数" value={obj?.function} onChange={v => onPatch({ ...obj, type: t, function: v })}
+              options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+            <Select size="small" allowClear placeholder="返回字段" value={obj?.returnField} onChange={v => onPatch({ ...obj, type: t, returnField: v })}
+              options={getReturnFields(funcs, obj?.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
+          </div>
+        )}
+        {t === 'value' && (
+          <Input size="small" placeholder={literalPlaceholder} value={obj?.value ?? ''}
+            onChange={e => onPatch({ type: 'value', value: e.target.value })} className="bg-dark-bg border-dark-border" style={{ width: 280 }} />
+        )}
+        {t === 'valueSet' && (
+          <Input size="small" placeholder={`字面值集，如 ['有效', '无效'] 或 [1, 2, 3]`} value={obj?.value ?? ''}
+            onChange={e => onPatch({ type: 'valueSet', value: e.target.value })} className="bg-dark-bg border-dark-border" style={{ width: 280 }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── 共享条件列表编辑器（验证/推理规则共用） ─────────────────────────────────
+
+function ConditionList({ ifBlock, setIf, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs, getOperandType }: any) {
+  const conditions = ifBlock.conditions || [];
+  const updateCondition = (idx: number, patch: any) => {
+    const next = [...conditions];
+    next[idx] = { ...next[idx], ...patch };
+    setIf({ conditions: next });
+  };
+  const addCondition = () => setIf({ conditions: [...conditions, { left: { type: 'instance' }, operator: 'eq', right: { type: 'value' } }] });
+  const removeCondition = (idx: number) => setIf({ conditions: conditions.filter((_: any, i: number) => i !== idx) });
+  return (
+    <>
       <div className="flex items-center gap-2">
         <span className="text-text-muted text-xs">条件逻辑</span>
-        <Select size="small" value={ifBlock.logic || 'and'} onChange={v => setIf({ ...ifBlock, logic: v })}
+        <Select size="small" value={ifBlock.logic || 'and'} onChange={v => setIf({ logic: v })}
           options={[{ label: '且 (AND)', value: 'and' }, { label: '或 (OR)', value: 'or' }]} style={{ width: 140 }} popupClassName="!bg-dark-card" />
       </div>
       <div className="space-y-2">
-        {(ifBlock.conditions || []).map((cond: any, idx: number) => (
+        {conditions.map((cond: any, idx: number) => (
           <div key={idx} className="bg-dark-card border border-dark-border rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-text-muted text-xs">条件 {idx + 1}</span>
-              {(ifBlock.conditions || []).length > 1 && (
+              {conditions.length > 1 && (
                 <Button type="link" size="small" danger onClick={() => removeCondition(idx)}>删除</Button>
               )}
             </div>
-            {leftRightEditor(cond, idx, 'left', '左侧')}
+            <OperandEditor obj={cond.left} side="left" onPatch={(p: any) => updateCondition(idx, { left: p })}
+              conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={funcOptions} funcs={funcs} />
             <div className="flex items-center gap-2">
               <span className="text-text-muted text-xs w-12">操作符</span>
               <Select size="small" value={cond.operator || 'eq'} onChange={v => updateCondition(idx, { operator: v })}
-                options={cond.right?.type === 'set' ? operatorOptions.filter((o: any) => o.value === 'in' || o.value === 'not in') : operatorOptions} style={{ width: 140 }} popupClassName="!bg-dark-card" />
+                options={SET_OPERAND_TYPES.includes(normalizeOperandType(cond.right?.type)) ? operatorOptions.filter((o: any) => o.value === 'in' || o.value === 'not in') : operatorOptions}
+                style={{ width: 140 }} popupClassName="!bg-dark-card" />
             </div>
-            {leftRightEditor(cond, idx, 'right', '右侧')}
+            <OperandEditor obj={cond.right} side="right" leftValueType={getOperandType(cond.left)} onPatch={(p: any) => updateCondition(idx, { right: p })}
+              conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={funcOptions} funcs={funcs} />
           </div>
         ))}
       </div>
       <Button size="small" type="dashed" onClick={addCondition} block>+ 添加条件</Button>
+    </>
+  );
+}
+
+// ─── Validation Rule Editor ───────────────────────────────────────────────
+
+function ValidationRuleEditor({ config, onChange, ...rest }: any) {
+  const cfg = config || {};
+  const ifBlock = cfg.if || { logic: 'and', conditions: [{ left: { type: 'instance' }, operator: 'eq', right: { type: 'value' } }] };
+  const setIf = (patch: any) => onChange({ ...cfg, if: { ...ifBlock, ...patch } });
+  return (
+    <div className="space-y-4">
+      <p className="text-text-muted text-xs mb-2">配置验证条件，支持 AND/OR 多条件组合；字面值按左侧类型校验（字符串需引号包裹，留空 = null 仅"等于/不等于"可用）</p>
+      <ConditionList ifBlock={ifBlock} setIf={setIf} {...rest} />
     </div>
   );
 }
 
 // ─── Inference Rule Editor ────────────────────────────────────────────────
 
-function InferenceRuleEditor({ config, onChange, conceptOptions, attributeOptions, funcOptions, operatorOptions, funcs }: any) {
+function InferenceRuleEditor({ config, onChange, ...rest }: any) {
   const cfg = config || {};
-  const ifBlock = cfg.if || { logic: 'and', conditions: [{ left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] };
-
+  const ifBlock = cfg.if || { logic: 'and', conditions: [{ left: { type: 'instance' }, operator: 'eq', right: { type: 'value' } }] };
   const setIf = (patch: any) => onChange({ ...cfg, if: { ...ifBlock, ...patch } });
-
-  const updateCondition = (idx: number, patch: any) => {
-    const conditions = [...(ifBlock.conditions || [])];
-    conditions[idx] = { ...conditions[idx], ...patch };
-    setIf({ ...ifBlock, conditions });
-  };
-
-  const addCondition = () => {
-    setIf({ ...ifBlock, conditions: [...(ifBlock.conditions || []), { left: { type: 'concept' }, operator: 'eq', right: { type: 'value' } }] });
-  };
-
-  const removeCondition = (idx: number) => {
-    setIf({ ...ifBlock, conditions: (ifBlock.conditions || []).filter((_: any, i: number) => i !== idx) });
-  };
-
-  const leftRightEditor = (cond: any, idx: number, side: 'left' | 'right', sideLabel: string) => {
-    const obj = cond[side] || { type: side === 'left' ? 'concept' : 'value' };
-    const rightTypes = [{ label: '字面值', value: 'value' }, { label: '对象', value: 'concept' }, { label: '对象集', value: 'set' }, { label: '函数', value: 'function' }];
-    const types = side === 'left' ? [{ label: '对象', value: 'concept' }, { label: '函数', value: 'function' }] : rightTypes;
-    return (
-      <div className="flex items-start gap-2">
-        <span className="text-text-muted text-xs w-12 mt-1">{sideLabel}</span>
-        <div className="flex-1 space-y-1">
-          <Select size="small" value={obj.type} onChange={v => updateCondition(idx, { [side]: { type: v } })}
-            options={types} style={{ width: 120 }} popupClassName="!bg-dark-card" />
-          {obj.type === 'concept' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
-                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
-                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : obj.type === 'function' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="函数" value={obj.function} onChange={v => updateCondition(idx, { [side]: { ...obj, function: v } })}
-                options={funcOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="返回字段" value={obj.returnField} onChange={v => updateCondition(idx, { [side]: { ...obj, returnField: v } })}
-                options={getReturnFields(funcs, obj.function)} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : obj.type === 'set' ? (
-            <div className="flex gap-2">
-              <Select size="small" allowClear placeholder="概念" value={obj.concept} onChange={v => updateCondition(idx, { [side]: { ...obj, concept: v, attribute: undefined } })}
-                options={conceptOptions} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-              <Select size="small" allowClear placeholder="属性" value={obj.attribute} onChange={v => updateCondition(idx, { [side]: { ...obj, attribute: v } })}
-                options={obj.concept ? attributeOptions(obj.concept) : []} style={{ width: 150 }} popupClassName="!bg-dark-card" />
-            </div>
-          ) : (
-            <Input size="small" placeholder="字面值" value={obj.value || ''} onChange={e => updateCondition(idx, { [side]: { ...obj, value: e.target.value } })}
-              className="bg-dark-bg border-dark-border" style={{ width: 200 }} />
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-4">
-      <p className="text-text-muted text-xs mb-2">配置推理条件，所有字段均为必填</p>
+      <p className="text-text-muted text-xs mb-2">配置推理条件；字面值按左侧类型校验（字符串需引号包裹，留空 = null 仅"等于/不等于"可用）</p>
       <div>
         <div className="text-text-primary text-sm font-semibold mb-2">IF</div>
         <div className="pl-4 border-l-2 border-accent-blue/30 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-text-muted text-xs">条件逻辑</span>
-            <Select size="small" value={ifBlock.logic || 'and'} onChange={v => setIf({ ...ifBlock, logic: v })}
-              options={[{ label: '且 (AND)', value: 'and' }, { label: '或 (OR)', value: 'or' }]} style={{ width: 140 }} popupClassName="!bg-dark-card" />
-          </div>
-          <div className="space-y-2">
-            {(ifBlock.conditions || []).map((cond: any, idx: number) => (
-              <div key={idx} className="bg-dark-card border border-dark-border rounded p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-text-muted text-xs">条件 {idx + 1}</span>
-                  {(ifBlock.conditions || []).length > 1 && (
-                    <Button type="link" size="small" danger onClick={() => removeCondition(idx)}>删除</Button>
-                  )}
-                </div>
-                {leftRightEditor(cond, idx, 'left', '左侧')}
-                <div className="flex items-center gap-2">
-                  <span className="text-text-muted text-xs w-12">操作符</span>
-                  <Select size="small" value={cond.operator || 'eq'} onChange={v => updateCondition(idx, { operator: v })}
-                    options={cond.right?.type === 'set' ? operatorOptions.filter((o: any) => o.value === 'in' || o.value === 'not in') : operatorOptions} style={{ width: 140 }} popupClassName="!bg-dark-card" />
-                </div>
-                {leftRightEditor(cond, idx, 'right', '右侧')}
-              </div>
-            ))}
-          </div>
-          <Button size="small" type="dashed" onClick={addCondition} block>+ 添加条件</Button>
+          <ConditionList ifBlock={ifBlock} setIf={setIf} {...rest} />
         </div>
       </div>
 
@@ -238,6 +307,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
   const [concepts, setConcepts] = useState<Concept[]>([]);
+  const [relations, setRelations] = useState<Relation[]>([]);
 
   // rule design modal state
   const [ruleDesignModalOpen, setRuleDesignModalOpen] = useState(false);
@@ -251,11 +321,11 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [ruleList, behList, fnList, types, conList, commonFnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId), getCommonFunctions()]);
+      const [ruleList, behList, fnList, types, conList, commonFnList, relList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getRuleTemplateTypes(), getConcepts(ontologyId), getCommonFunctions(), getRelations(ontologyId)]);
       const allFuncs = [...fnList, ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[] }))];
       setRules(ruleList); setBehaviors(behList); setFuncs(allFuncs);
       setRuleTypeOptions([...types.map(t => ({ label: t, value: t })), { label: '其他规则', value: '其他规则' }]);
-      setConcepts(conList);
+      setConcepts(conList); setRelations(relList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
@@ -288,7 +358,22 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const handleSave = async (record: Rule) => {
     if (!editData.name?.trim()) { message.warning('请输入规则名称'); return; }
     try {
-      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], data_supplements: editData.data_supplements || [], rule_detail: normalizeDetail(editData.rule_detail) };
+      // 数据补充自动推导（2026-08-25 终版v3：以规则结构实际引用的概念为准，不再跑图导航）：
+      // 收集 rule_detail 里引用到的概念 → 取关联这些概念的 query 行为（只读接口）→
+      // 剔除规则自身关联行为（主行为结果已在手，不做自己的补充）。
+      const deriveSupplements = (): string[] => {
+        const mains: string[] = editData.related_behaviors || [];
+        const usedConcepts = collectRuleRefs(editData.rule_detail).concepts;
+        if (usedConcepts.size === 0) return [];
+        return behaviors
+          .filter(b => b.op_type === 'query'
+            && !mains.includes(b.name)
+            && (b.related_concepts || []).some(c => usedConcepts.has(c)))
+          .map(b => b.name);
+      };
+      const derivedSupplements = deriveSupplements();
+
+      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], data_supplements: derivedSupplements, rule_detail: normalizeDetail(editData.rule_detail) };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (rules.some(r => r.name === data.name)) { message.warning('规则名称已存在'); return; }
@@ -309,12 +394,17 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   };
 
   // Normalize undefined/null values to empty string
+  // 例外：字面值/字面值集节点的 value 允许为 null（空值语义），必须原样保留不被洗成空串
   const normalizeDetail = (obj: any): any => {
     if (obj === null || obj === undefined) return '';
     if (Array.isArray(obj)) return obj.map(normalizeDetail);
     if (typeof obj === 'object') {
       const cleaned: any = {};
       for (const [k, v] of Object.entries(obj)) {
+        if (k === 'value' && ['value', 'valueSet'].includes((obj as any).type)) {
+          if (v !== undefined) cleaned[k] = v;
+          continue;
+        }
         cleaned[k] = normalizeDetail(v);
       }
       return cleaned;
@@ -322,9 +412,116 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     return obj;
   };
 
+  // 规则结构（rule_detail 树）实际引用的 函数/概念 收集——
+  // saveRuleDesign 的陈旧引用警告、handleSave 的数据补充推导共用同一份，保证口径一致。
+  const collectRuleRefs = (cfg: any): { funcs: Set<string>; concepts: Set<string> } => {
+    const funcs = new Set<string>();
+    const concepts = new Set<string>();
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (typeof node.function === 'string' && node.function) funcs.add(node.function);
+      if (typeof node.concept === 'string' && node.concept) concepts.add(node.concept);
+      for (const v of Object.values(node)) walk(v);
+    };
+    walk(cfg);
+    return { funcs, concepts };
+  };
+
+  // 规则设计器选项收窄（2026-08-25 拍板v2）：函数限定于规则「关联函数」；
+  // 实例/实例集的概念 = 规则「关联行为」的关联概念（种子）∪ 种子沿关系图的一阶邻居
+  // （仅走 source_attr/target_attr 两端都填了关联字段的边）——设计时引用的，运行时必然已挂载/可回溯。
+  const designFuncOptions = functionOptions.filter(o => (editData.related_functions || []).includes(o.value));
+  const designSeedConcepts = new Set(
+    behaviors.filter(b => (editData.related_behaviors || []).includes(b.name))
+      .flatMap(b => b.related_concepts || [])
+  );
+  const designConceptNameSet = new Set(designSeedConcepts);
+  for (const r of relations) {
+    if (!r.source_attr || !r.target_attr) continue; // 无 join 键的边不参与导航
+    if (designSeedConcepts.has(r.source)) designConceptNameSet.add(r.target);
+    if (designSeedConcepts.has(r.target)) designConceptNameSet.add(r.source);
+  }
+  const designConceptOptions = conceptOptions.filter(o => designConceptNameSet.has(o.value));
+
+  // 操作数的值类型：instance/instanceSet 查概念属性类型；function 查返回字段类型；未知返回 null（宁漏勿拦）
+  const getOperandType = (op: any): string | null => {
+    if (!op || typeof op !== 'object') return null;
+    const t = normalizeOperandType(op.type);
+    if (t === 'instance' || t === 'instanceSet') {
+      const c = concepts.find(c => c.name === op.concept);
+      const attr = (c?.attributes || []).find((a: any) => a.name === op.attribute);
+      return attr?.type || null;
+    }
+    if (t === 'function') {
+      const fn = funcs.find(f => f.name === op.function);
+      const resp: any = fn?.response;
+      const props: any = resp?.result?.properties || resp?.properties || {};
+      return op.returnField ? (props[op.returnField]?.type || null) : null;
+    }
+    return null;
+  };
+
+  /**
+   * 编辑形态 → 存储形态：逐条件校验并转换字面值/字面值集。
+   * 返回 { ok:true, cfg } 或 { ok:false, error }（error 已含条件序号）。
+   * 校验矩阵：instanceSet/valueSet 只能配 in/not in；in/not in 右侧只能是集合类型。
+   */
+  const buildStorageConditions = (conditions: any[]): { ok: true; conditions: any[] } | { ok: false; error: string } => {
+    const out: any[] = [];
+    for (let i = 0; i < conditions.length; i++) {
+      const c = conditions[i];
+      const left = c.left || {};
+      const leftType = normalizeOperandType(left.type);
+      if (leftType === 'instance' && (!left.concept || !left.attribute)) {
+        return { ok: false, error: `条件 ${i + 1} 左侧不完整，请选择概念和属性` };
+      }
+      if (leftType === 'function' && (!left.function || !left.returnField)) {
+        return { ok: false, error: `条件 ${i + 1} 左侧不完整，请选择函数并填写返回字段` };
+      }
+      if (!c.operator) return { ok: false, error: `条件 ${i + 1} 未选择操作符` };
+      const right = c.right || {};
+      const rightType = normalizeOperandType(right.type);
+      // 操作符 ↔ 右侧类型矩阵
+      if (SET_OPERAND_TYPES.includes(rightType) && !SET_OPERATORS.includes(c.operator)) {
+        return { ok: false, error: `条件 ${i + 1}：右侧为${rightType === 'instanceSet' ? '实例集' : '字面值集'}，操作符只能用"属于/不属于"` };
+      }
+      if (SET_OPERATORS.includes(c.operator) && !SET_OPERAND_TYPES.includes(rightType)) {
+        return { ok: false, error: `条件 ${i + 1}："属于/不属于"的右侧必须是实例集或字面值集` };
+      }
+      let rightOut: any;
+      if (rightType === 'value') {
+        const r = parseLiteralInput(right.value, getOperandType(left));
+        if (!r.ok) return { ok: false, error: `条件 ${i + 1} 右侧：${r.error}` };
+        // 空值（value 为 null）仅 eq/ne 放行（判空语义）；其他操作符对空值比较基本是笔误
+        if (r.node.value === null && c.operator !== 'eq' && c.operator !== 'ne') {
+          return { ok: false, error: `条件 ${i + 1} 右侧字面值为空（仅"等于/不等于"允许空值，用于判空）` };
+        }
+        rightOut = r.node;
+      } else if (rightType === 'valueSet') {
+        const r = parseLiteralSetInput(right.value, getOperandType(left));
+        if (!r.ok) return { ok: false, error: `条件 ${i + 1} 右侧：${r.error}` };
+        rightOut = r.node;
+      } else if (rightType === 'instance' || rightType === 'instanceSet') {
+        if (!right.concept || !right.attribute) {
+          return { ok: false, error: `条件 ${i + 1} 右侧不完整，请选择概念和属性` };
+        }
+        rightOut = { ...right, type: rightType };
+      } else if (rightType === 'function') {
+        if (!right.function || !right.returnField) {
+          return { ok: false, error: `条件 ${i + 1} 右侧不完整，请选择函数并填写返回字段` };
+        }
+        rightOut = { ...right, type: rightType };
+      } else {
+        return { ok: false, error: `条件 ${i + 1} 右侧类型无效` };
+      }
+      out.push({ ...c, left: { ...left, type: leftType }, right: rightOut });
+    }
+    return { ok: true, conditions: out };
+  };
+
   const openRuleDesign = async () => {
     if (!editData.rule_type || editData.rule_type === '其他规则') return;
-    setRuleConfig(editData.rule_detail ? normalizeDetail(JSON.parse(JSON.stringify(editData.rule_detail))) : null);
+    setRuleConfig(editData.rule_detail ? storageToEditing(normalizeDetail(JSON.parse(JSON.stringify(editData.rule_detail)))) : null);
     setRuleDesignModalOpen(true);
     if (!editData.rule_type) return;
     setTemplateLoading(true);
@@ -343,58 +540,26 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     const cfg = ruleConfig || {};
     if (!editData.rule_type) { message.warning('请先选择规则类型'); return; }
 
-    if (editData.rule_type === '验证规则') {
-      const ifBlock = cfg.if || {};
-      const conditions = ifBlock.conditions || [];
+    if (editData.rule_type === '验证规则' || editData.rule_type === '推理规则') {
+      const conditions = cfg.if?.conditions || [];
       if (conditions.length === 0) { message.warning('请至少添加一个条件'); return; }
-      for (let i = 0; i < conditions.length; i++) {
-        const c = conditions[i];
-        const left = c.left || {};
-        if (left.type === 'concept' && (!left.concept || !left.attribute)) {
-          message.warning(`条件 ${i+1} 左侧不完整，请选择概念和属性`); return;
-        }
-        if (left.type === 'function' && (!left.function || !left.returnField)) {
-          message.warning(`条件 ${i+1} 左侧不完整，请选择函数并填写返回字段`); return;
-        }
-        if (!c.operator) { message.warning(`条件 ${i+1} 未选择操作符`); return; }
-        const right = c.right || {};
-        if (right.type === 'value' && (right.value === undefined || right.value === '')) {
-          message.warning(`条件 ${i+1} 右侧字面值为空`); return;
-        }
-        if ((right.type === 'concept' || right.type === 'set') && (!right.concept || !right.attribute)) {
-          message.warning(`条件 ${i+1} 右侧不完整，请选择概念和属性`); return;
-        }
-        if (right.type === 'function' && (!right.function || !right.returnField)) {
-          message.warning(`条件 ${i+1} 右侧不完整，请选择函数并填写返回字段`); return;
-        }
-      }
-    }
+      // 编辑形态 → 存储形态：字面值按左侧类型解析，操作符↔右侧类型矩阵校验
+      const built = buildStorageConditions(conditions);
+      if (!built.ok) { message.warning(built.error); return; }
+      const storageCfg = { ...cfg, if: { ...(cfg.if || {}), conditions: built.conditions } };
 
-    if (editData.rule_type === '推理规则') {
-      const ifBlock = cfg.if || {};
-      const conditions = ifBlock.conditions || [];
-      if (conditions.length === 0) { message.warning('请至少添加一个条件'); return; }
-      for (let i = 0; i < conditions.length; i++) {
-        const c = conditions[i];
-        const left = c.left || {};
-        if (left.type === 'concept' && (!left.concept || !left.attribute)) {
-          message.warning(`条件 ${i+1} 左侧不完整，请选择概念和属性`); return;
-        }
-        if (left.type === 'function' && (!left.function || !left.returnField)) {
-          message.warning(`条件 ${i+1} 左侧不完整，请选择函数并填写返回字段`); return;
-        }
-        if (!c.operator) { message.warning(`条件 ${i+1} 未选择操作符`); return; }
-        const right = c.right || {};
-        if (right.type === 'value' && (right.value === undefined || right.value === '')) {
-          message.warning(`条件 ${i+1} 右侧字面值为空`); return;
-        }
-        if ((right.type === 'concept' || right.type === 'set') && (!right.concept || !right.attribute)) {
-          message.warning(`条件 ${i+1} 右侧不完整，请选择概念和属性`); return;
-        }
-        if (right.type === 'function' && (!right.function || !right.returnField)) {
-          message.warning(`条件 ${i+1} 右侧不完整，请选择函数并填写返回字段`); return;
-        }
+      // 存量兼容：已设计的引用可能超出收窄后的选项集——保留并警告，不静默清掉
+      const { funcs: usedFuncs, concepts: usedConcepts } = collectRuleRefs(storageCfg);
+      const badFuncs = [...usedFuncs].filter(f => !(editData.related_functions || []).includes(f));
+      const badConcepts = [...usedConcepts].filter(c => !designConceptNameSet.has(c));
+      if (badFuncs.length > 0 || badConcepts.length > 0) {
+        message.warning(`以下引用不在关联声明内，运行时可能无法求值（建议调整）：${badFuncs.length ? `函数[${badFuncs.join('、')}]` : ''}${badFuncs.length && badConcepts.length ? '；' : ''}${badConcepts.length ? `概念[${badConcepts.join('、')}]` : ''}`);
       }
+
+      setEditData(p => ({ ...p, rule_detail: normalizeDetail(storageCfg) }));
+      message.success('规则结构已保存到编辑缓存');
+      setRuleDesignModalOpen(false);
+      return;
     }
 
     setEditData(p => ({ ...p, rule_detail: normalizeDetail(ruleConfig) }));
@@ -413,7 +578,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behaviors') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_behaviors || []} onChange={v => setEditData(p => ({...p, related_behaviors: v}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'related_functions') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_functions || []} onChange={v => setEditData(p => ({...p, related_functions: v}))} options={functionOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
-    if (dataIndex === 'data_supplements') return <Select size="small" mode="multiple" placeholder="选择" value={editData.data_supplements || []} onChange={v => setEditData(p => ({...p, data_supplements: v}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    // 数据补充：保存时按规则结构实际引用的概念自动推导（见 handleSave），列只读展示
     return render ? render(val) : (val || '-');
   };
 
@@ -486,7 +651,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
                 related_behaviors: editData.related_behaviors || [],
                 related_functions: editData.related_functions || [],
               });
-              setRuleConfig(result.rule_detail);
+              setRuleConfig(storageToEditing(result.rule_detail));
               message.success('规则已智能生成，请确认后保存');
             } catch (e: any) { message.error('生成失败: ' + e.message); }
             finally { setGenLoading(false); }
@@ -499,9 +664,23 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         ) : !ruleTemplate ? (
           <p className="text-text-muted">未找到规则模板</p>
         ) : ruleTemplate.ruleName === '验证规则' ? (
-          <ValidationRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={functionOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} />
+          <>
+            <p className="text-text-muted text-xs mb-3">
+              函数选项限定于「关联函数」，实例/实例集限定于「关联行为」的关联概念及其一阶关联概念（沿关联概念属性齐全的关系走一跳）
+              {!(editData.related_functions || []).length && <span className="text-yellow-500">；当前未选关联函数，函数不可选，请先在表格中填写</span>}
+              {!(editData.related_behaviors || []).length && <span className="text-yellow-500">；当前未选关联行为，实例/实例集不可选，请先在表格中填写</span>}
+            </p>
+            <ValidationRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={designConceptOptions} attributeOptions={attributeOptions} funcOptions={designFuncOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} getOperandType={getOperandType} />
+          </>
         ) : ruleTemplate.ruleName === '推理规则' ? (
-          <InferenceRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={functionOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} />
+          <>
+            <p className="text-text-muted text-xs mb-3">
+              函数选项限定于「关联函数」，实例/实例集限定于「关联行为」的关联概念及其一阶关联概念（沿关联概念属性齐全的关系走一跳）
+              {!(editData.related_functions || []).length && <span className="text-yellow-500">；当前未选关联函数，函数不可选，请先在表格中填写</span>}
+              {!(editData.related_behaviors || []).length && <span className="text-yellow-500">；当前未选关联行为，实例/实例集不可选，请先在表格中填写</span>}
+            </p>
+            <InferenceRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={designConceptOptions} attributeOptions={attributeOptions} funcOptions={designFuncOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} getOperandType={getOperandType} />
+          </>
         ) : (
           <p className="text-text-muted">不支持的规则模板: {ruleTemplate.ruleName}</p>
         )}

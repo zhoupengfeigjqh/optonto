@@ -63,7 +63,7 @@ export function validateAllParams(gateway: OntologyGatewayPort, catalog: Functio
  * 子 Agent 执行期不做此类检查。
  */
 export function validateAllConstraints(gateway: OntologyGatewayPort, plan: SubTaskPlan): ConstraintViolations {
-  const out: ConstraintViolations = { patternErrors: [], enumErrors: [] };
+  const out: ConstraintViolations = { patternErrors: [], enumErrors: [], rangeErrors: [] };
   for (const st of plan.subtasks) {
     let declared: Record<string, any> | null;
     let concepts: Parameters<typeof buildAttrConstraintMap>[0];
@@ -84,6 +84,7 @@ export function validateAllConstraints(gateway: OntologyGatewayPort, plan: SubTa
     const v = validateConstraintValues(merged, st.params || {}, st.seq, st.function || st.behavior);
     out.patternErrors.push(...v.patternErrors);
     out.enumErrors.push(...v.enumErrors);
+    out.rangeErrors.push(...v.rangeErrors);
   }
   return out;
 }

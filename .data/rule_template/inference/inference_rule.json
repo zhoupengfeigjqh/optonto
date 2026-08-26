@@ -27,10 +27,10 @@
                   "type": {
                     "type": "string",
                     "enum": [
-                      "concept",
+                      "instance",
                       "function"
                     ],
-                    "description": "左侧数据来源类型"
+                    "description": "左侧数据来源类型：instance=实例（概念的一个实例的属性），function=函数返回字段"
                   },
                   "concept": {
                     "type": "string",
@@ -57,7 +57,7 @@
                     "if": {
                       "properties": {
                         "type": {
-                          "const": "concept"
+                          "const": "instance"
                         }
                       }
                     },
@@ -98,7 +98,7 @@
                   "le",
                   "ge"
                 ],
-                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如名称匹配）应使用 eq，不要使用 ne"
+                "description": "比较操作符：eq=等于, ne=不等于, in=属于, not in=不属于, like=模糊匹配, lt=小于, gt=大于, le=小于等于, ge=大于等于。注意：字段一致性校验（如名称匹配）应使用 eq，不要使用 ne。in/not in 的右侧必须是 instanceSet 或 valueSet；其他操作符的右侧不能是集合类型"
               },
               "right": {
                 "type": "object",
@@ -107,22 +107,44 @@
                     "type": "string",
                     "enum": [
                       "value",
-                      "concept",
-                      "set",
+                      "valueSet",
+                      "instance",
+                      "instanceSet",
                       "function"
                     ],
-                    "description": "右侧数据来源类型"
+                    "description": "右侧数据来源类型：value=字面值，valueSet=字面值集（仅 in/not in），instance=实例，instanceSet=实例集（仅 in/not in），function=函数返回字段"
+                  },
+                  "valueType": {
+                    "type": "string",
+                    "enum": [
+                      "string",
+                      "number",
+                      "integer",
+                      "boolean",
+                      "null"
+                    ],
+                    "description": "type=value 时必填：字面值的类型，与左侧操作数类型一致。空值时 value 填 null（仅 eq/ne 可用），valueType 仍保持与左侧一致；左侧类型无法确定时 valueType 才用 null"
                   },
                   "value": {
-                    "description": "字面值，当 type=value 时使用，支持 string/number/boolean"
+                    "description": "type=value 时的字面值（按 valueType 给原生类型：string 不带引号、number/integer 给数字、boolean 给 true/false；空值给 null）；type=valueSet 时为同型元素数组"
+                  },
+                  "elementType": {
+                    "type": "string",
+                    "enum": [
+                      "string",
+                      "number",
+                      "integer",
+                      "boolean"
+                    ],
+                    "description": "type=valueSet 时必填：集合元素的类型，value 数组元素必须与之一致"
                   },
                   "concept": {
                     "type": "string",
-                    "description": "概念名称，当 type=concept 时使用"
+                    "description": "概念名称，当 type=instance/instanceSet 时使用"
                   },
                   "attribute": {
                     "type": "string",
-                    "description": "属性名称，当 type=concept 时使用"
+                    "description": "属性名称，当 type=instance/instanceSet 时使用"
                   },
                   "function": {
                     "type": "string",
@@ -147,6 +169,21 @@
                     },
                     "then": {
                       "required": [
+                        "valueType"
+                      ]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "type": {
+                          "const": "valueSet"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "elementType",
                         "value"
                       ]
                     }
@@ -155,7 +192,22 @@
                     "if": {
                       "properties": {
                         "type": {
-                          "const": "concept"
+                          "const": "instance"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "concept",
+                        "attribute"
+                      ]
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "type": {
+                          "const": "instanceSet"
                         }
                       }
                     },
@@ -178,21 +230,6 @@
                       "required": [
                         "function",
                         "returnField"
-                      ]
-                    }
-                  },
-                  {
-                    "if": {
-                      "properties": {
-                        "type": {
-                          "const": "set"
-                        }
-                      }
-                    },
-                    "then": {
-                      "required": [
-                        "concept",
-                        "attribute"
                       ]
                     }
                   }

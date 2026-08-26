@@ -81,6 +81,8 @@ export interface AttributeConstraint {
   required?: boolean;
   enum?: (string | number)[];
   pattern?: string;
+  min?: number;
+  max?: number;
 }
 
 export interface Attribute {
@@ -120,6 +122,8 @@ export interface Relation {
   source: string;
   target: string;
   cardinality: string;
+  source_attr?: string;
+  target_attr?: string;
   description: string;
   display_name?: string;
 }
@@ -401,6 +405,8 @@ export interface Thread {
   created_at: string;
   updated_at: string;
   messages: ThreadMessage[];
+  /** 最新一次「验证」的分析结果（后端临时保存，仅保留最新一次） */
+  validate_result?: { result: string; updated_at: string } | null;
 }
 
 export const getThreads = (query: string = '') =>
