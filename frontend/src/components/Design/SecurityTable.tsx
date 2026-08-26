@@ -1,21 +1,48 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, Modal, message, Space } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { getSecurities, createSecurity, updateSecurity, deleteSecurity, getBehaviors, Security, Behavior } from '@/api/client';
+import { Button, Input, Select, message, Space, Tag } from 'antd';
+import { EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import {
+  getSecurities, createSecurity, updateSecurity, deleteSecurity,
+  getPermissions, createPermission, updatePermission, deletePermission,
+  getBehaviors, getDataEngines,
+  Security, Permission, Behavior, DataEngine,
+} from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
-const AUDIT_OPTIONS = [
-  { label: '前置', value: '前置' },
-  { label: '后置', value: '后置' },
+/** 权限范围特殊值：everyone=所有用户（默认，不落盘）、disable=全部禁用。将来用户表落地后追加用户/组织选项。 */
+const SCOPE_OPTIONS = [
+  { label: '所有用户（默认）', value: 'everyone' },
+  { label: '全部禁用', value: 'disable' },
 ];
+const SCOPE_LABELS: Record<string, string> = { everyone: '所有用户', disable: '全部禁用' };
+
+const CONFIRM_OPTIONS = [
+  { label: '是', value: '是' },
+  { label: '否', value: '否' },
+];
+
+/** 与 agent 端 ontology-gateway 的 isWrite 推导保持一致：op_type 优先，空则按数据引擎 HTTP method 兜底（SQL 推不出写，视为读）。 */
+const WRITE_METHODS = ['POST', 'PATCH', 'DELETE', 'PUT'];
+const resolveOpType = (b: Behavior, engines: DataEngine[]): { type: 'command' | 'query'; derived: boolean } => {
+  if (b.op_type === 'command' || b.op_type === 'query') return { type: b.op_type, derived: false };
+  const eng = engines.find(d => d.behavior_name === b.name);
+  const isWrite = !!eng && eng.engine_type !== 'SQL'
+    && WRITE_METHODS.includes((eng.target?.method || '').toUpperCase());
+  return { type: isWrite ? 'command' : 'query', derived: true };
+};
+
+const scopeOf = (perm?: Permission): string[] =>
+  perm ? (Array.isArray(perm.scope) ? perm.scope : [perm.scope]) : ['everyone'];
 
 export default function SecurityTable({ ontologyId, activeTab }: Props) {
   const [securities, setSecurities] = useState<Security[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
+  const [dataEngines, setDataEngines] = useState<DataEngine[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
@@ -23,72 +50,143 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [secList, behList] = await Promise.all([getSecurities(ontologyId), getBehaviors(ontologyId)]);
-      setSecurities(secList); setBehaviors(behList);
+      const [secList, permList, behList, engList] = await Promise.all([
+        getSecurities(ontologyId), getPermissions(ontologyId), getBehaviors(ontologyId), getDataEngines(ontologyId),
+      ]);
+      setSecurities(secList); setPermissions(permList); setBehaviors(behList); setDataEngines(engList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
   useEffect(() => { if (activeTab === 'securities') load(); }, [ontologyId, activeTab]);
 
-  const isEditing = (record: Security) => record.action_name === editingKey;
+  const isEditing = (name: string) => name === editingKey;
 
-  const handleAdd = () => { setEditData({ action_name: undefined, audit_node: '前置', audit_content: '' }); setEditingKey('__new__'); };
-  const handleEdit = (s: Security) => { setEditData({ action_name: s.action_name, audit_node: s.audit_node, audit_content: s.audit_content || '' }); setEditingKey(s.action_name); };
+  const handleEdit = (b: Behavior) => {
+    const sec = securities.find(s => s.action_name === b.name);
+    const perm = permissions.find(p => p.action_name === b.name);
+    const { type } = resolveOpType(b, dataEngines);
+    setEditData({
+      scope: scopeOf(perm),
+      // command 默认是；sec.confirm === false 为显式关闭。query 行锁定否（不可编辑）。
+      confirm: type === 'command' ? (sec?.confirm === false ? '否' : '是') : '否',
+      audit_content: sec?.audit_content || '',
+    });
+    setEditingKey(b.name);
+  };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
-  const handleSave = async (record: Security) => {
-    if (!editData.action_name) { message.warning('请选择行为名称'); return; }
+  const handleSave = async (b: Behavior) => {
+    const sec = securities.find(s => s.action_name === b.name);
+    const perm = permissions.find(p => p.action_name === b.name);
+    const { type } = resolveOpType(b, dataEngines);
     try {
-      const data: Security = { action_name: editData.action_name, audit_node: editData.audit_node || '前置', audit_content: editData.audit_content || '' };
-      const isNew = editingKey === '__new__';
-      if (isNew) {
-        if (securities.some(s => s.action_name === data.action_name)) { message.warning('该动作已存在'); return; }
-        await createSecurity(ontologyId, data); message.success('安全审核已添加');
-      } else {
-        await updateSecurity(ontologyId, record.action_name, data); message.success('安全审核已更新');
+      // ── 权限范围：everyone 为默认不落盘；非 everyone 落盘（稀疏）──
+      const vals: string[] = (editData.scope || ['everyone']).filter((v: string) => v !== 'everyone');
+      if (vals.length > 0) {
+        const scope = vals.length === 1 ? vals[0] : vals;
+        if (perm) await updatePermission(ontologyId, b.name, { action_name: b.name, scope });
+        else await createPermission(ontologyId, { action_name: b.name, scope });
+      } else if (perm) {
+        await deletePermission(ontologyId, b.name);
       }
+
+      // ── 人工确认（仅 command 可编辑；query 锁定否不落盘）──
+      if (type === 'command') {
+        if (editData.confirm === '否') {
+          // 显式关闭：confirm=false 落盘（audit_content 保留，重新开启时不丢）
+          const payload: Security = { action_name: b.name, audit_node: sec?.audit_node || '前置', audit_content: editData.audit_content || '', confirm: false };
+          if (sec) await updateSecurity(ontologyId, b.name, payload);
+          else await createSecurity(ontologyId, payload);
+        } else if ((editData.audit_content || '').trim()) {
+          // 是 + 有确认内容：条目落盘，confirm 置 null 清除可能的显式关闭
+          const payload: Security = { action_name: b.name, audit_node: sec?.audit_node || '前置', audit_content: editData.audit_content.trim(), confirm: null };
+          if (sec) await updateSecurity(ontologyId, b.name, payload);
+          else await createSecurity(ontologyId, payload);
+        } else if (sec) {
+          // 是 + 无内容：删条目，回到默认（运行面 isWrite 强制确认 + 通用文案）
+          await deleteSecurity(ontologyId, b.name);
+        }
+      }
+
+      message.success('安全设置已保存');
       setEditingKey(''); setEditData({}); await load();
     } catch (e: any) { message.error(e.message); }
   };
 
-  const handleDelete = (action_name: string) => {
-    Modal.confirm({
-      title: <span style={{color:'#fff'}}>确认删除</span>, content: <span style={{color:'#ef4444'}}>删除安全审核「<strong>{action_name}</strong>」后不可恢复，确定要删除吗？</span>,
-      okText: '确认删除', cancelText: '取消', okButtonProps: { danger: true },
-      onOk: async () => { try { await deleteSecurity(ontologyId, action_name); message.success('安全审核已删除'); await load(); } catch (e: any) { message.error(e.message); } },
-    });
+  /** everyone/disable 与任何其他值互斥（将来用户选项之间可共存）；清空视为 everyone。 */
+  const onScopeChange = (vals: string[]) => {
+    let v = [...vals];
+    if (v.length > 1) {
+      const last = v[v.length - 1];
+      if (last === 'everyone' || last === 'disable') v = [last];
+      else v = v.filter(x => x !== 'everyone' && x !== 'disable');
+    }
+    if (v.length === 0) v = ['everyone'];
+    setEditData(p => ({ ...p, scope: v }));
   };
 
-  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
+  const renderScope = (vals: string[]) => (
+    <Space size={4} wrap>
+      {vals.map(v => (
+        <Tag key={v} color={v === 'disable' ? 'red' : v === 'everyone' ? 'green' : 'blue'} style={{ marginInlineEnd: 0 }}>
+          {SCOPE_LABELS[v] || v}
+        </Tag>
+      ))}
+    </Space>
+  );
 
-  const renderCell = (val: any, record: Security, dataIndex: string) => {
-    const editing = isEditing(record);
-    const isNew = editingKey === '__new__' && record.action_name === '__new__';
-    if (!editing && !isNew) return val || '-';
-
-    if (dataIndex === 'action_name') return <Select size="small" placeholder="选择行为" options={behaviorOptions} value={editData.action_name} onChange={v => setEditData(p => ({...p, action_name: v}))} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
-    if (dataIndex === 'audit_content') return <Input size="small" value={editData.audit_content || ''} onChange={e => setEditData(p => ({...p, audit_content: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'audit_node') return <Select size="small" value={editData.audit_node || '前置'} onChange={v => setEditData(p => ({...p, audit_node: v}))} options={AUDIT_OPTIONS} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
-    return val || '-';
-  };
-
-  const dataSource = securities.map(s => ({ ...s, _key: s.action_name }));
-  if (editingKey === '__new__') dataSource.push({ action_name: '__new__', audit_node: '前置', audit_content: '' } as any);
+  const dataSource = behaviors.map(b => ({ ...b, _key: b.name }));
 
   const columns = [
-    { title: '行为名称', dataIndex: 'action_name', key: 'action_name', width: 200, render: (v: any, r: Security) => {
-      if (isEditing(r) || (editingKey === '__new__' && r.action_name === '__new__')) return renderCell(v, r, 'action_name');
-      return behaviors.find(b => b.name === v)?.display_name || v || '-';
+    { title: '名称', dataIndex: 'name', key: 'name', width: 180, render: (v: any) => v || '-' },
+    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 150, render: (v: any) => v || '-' },
+    { title: '操作类型', key: 'op_type', width: 110, render: (_: any, r: Behavior) => {
+      const { type, derived } = resolveOpType(r, dataEngines);
+      return (
+        <span>
+          <Tag color={type === 'command' ? 'orange' : 'cyan'}>{type}</Tag>
+          {derived && <span className="text-text-muted text-xs">（推导）</span>}
+        </span>
+      );
     }},
-    { title: '人工确认内容', dataIndex: 'audit_content', key: 'audit_content', width: 200, ellipsis: true, render: (v: any, r: Security) => renderCell(v, r, 'audit_content') },
-    { title: '介入位置', dataIndex: 'audit_node', key: 'audit_node', width: 100, render: (v: any, r: Security) => renderCell(v, r, 'audit_node') },
+    { title: '权限范围', key: 'scope', width: 200, render: (_: any, r: Behavior) => {
+      if (isEditing(r.name)) {
+        return <Select size="small" mode="multiple" placeholder="选择权限范围" options={SCOPE_OPTIONS}
+          value={editData.scope} onChange={onScopeChange} style={{ width: '100%' }} popupClassName="!bg-dark-card" />;
+      }
+      return renderScope(scopeOf(permissions.find(p => p.action_name === r.name)));
+    }},
+    { title: '人工确认', key: 'confirm', width: 90, render: (_: any, r: Behavior) => {
+      const { type } = resolveOpType(r, dataEngines);
+      if (type !== 'command') return <span className="text-text-muted">否</span>;
+      const sec = securities.find(s => s.action_name === r.name);
+      if (isEditing(r.name)) {
+        return <Select size="small" value={editData.confirm} options={CONFIRM_OPTIONS}
+          onChange={v => setEditData(p => ({ ...p, confirm: v }))} style={{ width: '100%' }} popupClassName="!bg-dark-card" />;
+      }
+      return sec?.confirm === false ? <Tag color="default">否</Tag> : <Tag color="orange">是</Tag>;
+    }},
+    { title: '确认内容', dataIndex: 'audit_content', key: 'audit_content', width: 240, ellipsis: true, render: (_: any, r: Behavior) => {
+      const { type } = resolveOpType(r, dataEngines);
+      if (type !== 'command') return <span className="text-text-muted">-</span>;
+      const sec = securities.find(s => s.action_name === r.name);
+      if (isEditing(r.name)) {
+        // 人工确认=否时内容保留但不生效（置灰），重新开启时不丢
+        return <Input size="small" value={editData.audit_content || ''} disabled={editData.confirm === '否'}
+          placeholder="弹窗确认时展示的提示内容；留空则用通用文案"
+          onChange={e => setEditData(p => ({ ...p, audit_content: e.target.value }))}
+          className="bg-dark-bg border-dark-border text-text-primary" />;
+      }
+      if (sec?.confirm === false) return <span className="text-text-muted">{sec?.audit_content || '-'}</span>;
+      return sec?.audit_content || '-';
+    }},
     {
-      title: '操作', key: 'actions', width: 100,
-      render: (_: any, record: Security) => {
-        if (editingKey === record.action_name || (editingKey === '__new__' && record.action_name === '__new__')) {
-          return <Space><Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} /><Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} /></Space>;
+      title: '操作', key: 'actions', width: 80,
+      render: (_: any, r: Behavior) => {
+        if (isEditing(r.name)) {
+          return <Space><Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(r)} /><Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} /></Space>;
         }
-        return <Space><Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} /><Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.action_name)} /></Space>;
+        return <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)} disabled={editingKey !== ''} />;
       },
     },
   ];
@@ -96,10 +194,9 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold text-text-primary">安全审核</h3>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增审核</Button>
+        <h3 className="text-base font-semibold text-text-primary">安全管控</h3>
       </div>
-      <p className="text-text-muted text-xs mb-3">设置关键操作的人工审核确认的节点与内容</p>
+      <p className="text-text-muted text-xs mb-1">对本体的所有行为设置权限范围与人工确认。权限范围：所有用户=默认可用、全部禁用=禁止使用。</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
     </div>
   );

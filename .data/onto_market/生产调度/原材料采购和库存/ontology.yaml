@@ -998,3 +998,4 @@ securities:
 - action_name: ReceiveRawMaterial
   audit_node: 前置
   audit_content: 确认入库的准确性：请确认到货的原材料、数量、供应商是否与采购单一致。
+permissions: []

@@ -273,6 +273,8 @@ export interface Security {
   action_name: string;
   audit_node: string;
   audit_content?: string;
+  /** 人工确认开关：缺省=默认（command=是），false=显式关闭（仅 command 可配；运行面待后续改造生效） */
+  confirm?: boolean | null;
 }
 
 export const getSecurities = (ontologyId: number) =>
@@ -286,6 +288,26 @@ export const deleteSecurity = (ontologyId: number, action_name: string) =>
 
 export const updateSecurity = (ontologyId: number, action_name: string, data: Security) =>
   request<Security>(`/api/ontologies/${ontologyId}/securities/${encodeURIComponent(action_name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── Permission（行为权限范围，稀疏：everyone 默认不落盘） ─────────────────────
+
+export interface Permission {
+  action_name: string;
+  /** disable=全部禁用；字符串/数组=用户或组织白名单（后续用户表落地后使用） */
+  scope: string | string[];
+}
+
+export const getPermissions = (ontologyId: number) =>
+  request<Permission[]>(`/api/ontologies/${ontologyId}/permissions`);
+
+export const createPermission = (ontologyId: number, data: Permission) =>
+  request<Permission>(`/api/ontologies/${ontologyId}/permissions`, { method: 'POST', body: JSON.stringify(data) });
+
+export const deletePermission = (ontologyId: number, action_name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/permissions/${encodeURIComponent(action_name)}`, { method: 'DELETE' });
+
+export const updatePermission = (ontologyId: number, action_name: string, data: Permission) =>
+  request<Permission>(`/api/ontologies/${ontologyId}/permissions/${encodeURIComponent(action_name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // ─── Data Engine ──────────────────────────────────────────────────────────────
 

@@ -126,6 +126,8 @@ class SecurityItem(BaseModel):
     action_name: str = Field(..., description="行为名称（选自行为列表）")
     audit_node: str = Field("前置", description="介入位置（前置/后置）")
     audit_content: str = Field("", description="审核内容")
+    # None=默认（command 行为默认需要确认）；False=显式关闭（仅 command 可配，运行面待后续改造后生效）
+    confirm: bool | None = Field(None, description="人工确认开关：缺省=默认，False=显式关闭")
 
     @field_validator('audit_node', mode='before')
     @classmethod
@@ -133,6 +135,12 @@ class SecurityItem(BaseModel):
         valid = {'前置', '后置'}
         s = str(v) if v is not None else "前置"
         return s if s in valid else "前置"
+
+
+class PermissionItem(BaseModel):
+    """行为权限范围。稀疏存储：默认 everyone（所有人可用）不落盘，仅非默认行落盘。"""
+    action_name: str = Field(..., description="行为名称（选自行为列表）")
+    scope: str | list[str] = Field("disable", description="权限范围：disable=全部禁用；字符串/列表=用户或组织白名单（后续用户表落地后使用）")
 
 
 class FunctionItem(BaseModel):
@@ -177,6 +185,7 @@ class OntologyData(BaseModel):
     rules: list[RuleItem] = Field(default_factory=list)
     processes: list[ProcessItem] = Field(default_factory=list)
     securities: list[SecurityItem] = Field(default_factory=list)
+    permissions: list[PermissionItem] = Field(default_factory=list, description="行为权限范围（稀疏：仅非 everyone 落盘）")
     data_engines: list[DataEngineItem] = Field(default_factory=list)
 
 
