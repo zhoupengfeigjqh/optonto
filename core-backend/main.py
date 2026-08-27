@@ -12,7 +12,6 @@ from routers import (
     rules_router,
     processes_router,
     securities_router,
-    permissions_router,
     functions_router,
     files_router,
     threads_router,
@@ -50,7 +49,6 @@ app.include_router(behaviors_router)
 app.include_router(rules_router)
 app.include_router(processes_router)
 app.include_router(securities_router)
-app.include_router(permissions_router)
 app.include_router(functions_router)
 app.include_router(mcp_ctl_router)
 app.include_router(files_router)

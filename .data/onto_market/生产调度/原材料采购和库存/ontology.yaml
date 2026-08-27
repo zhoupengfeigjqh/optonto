@@ -988,14 +988,3 @@ processes:
     previous_action: QueryPurchaseRecords
     description: 确认原材料到货，执行入库操作，更新库存。
     connection_type: 串行
-securities:
-- action_name: CreatePurchaseRecord
-  audit_node: 前置
-  audit_content: 确认采购信息正确性：请再次确认该采购信息，例如关联的客户订单是否真实有效，采购数量和到位时间是否合理。
-- action_name: CancelPurchaseRecord
-  audit_node: 前置
-  audit_content: 确认采购取消的原因：确认取消采购单是否合理，是否存在违约风险。
-- action_name: ReceiveRawMaterial
-  audit_node: 前置
-  audit_content: 确认入库的准确性：请确认到货的原材料、数量、供应商是否与采购单一致。
-permissions: []

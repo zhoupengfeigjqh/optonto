@@ -247,7 +247,7 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="listOntoSecurities",
-            description="列出指定本体的安全审核信息。返回 action_name（关联行为）、audit_node（前置/后置）、audit_content（审核内容）。",
+            description="列出指定本体的行为安全管控配置（全行为花名册）。返回每行为的 action_name（行为名称）、display_name（展示名称）、op_type（操作类型 command/query）、scope（权限范围：everyone 所有用户 / disable 全部禁用 / 用户或组织列表）、confirm（执行前是否需人工确认）、confirm_content（确认弹窗提示文案）。",
             inputSchema={
                 "type": "object",
                 "properties": {

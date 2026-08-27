@@ -16,29 +16,35 @@ import { getCommonFunctionNames, getCommonFunctionInfo } from './common-function
 import type { BehaviorMeta, RuleDetail, ConceptInfo, FunctionInfo } from '../types.js';
 
 export class OntologyGateway {
-  /** 按 (scenario, ontology) 缓存解析结果，用文件 mtime 失效（ontology.yaml + data_engines.yaml 双 mtime），避免编排中反复读盘 */
-  private cache = new Map<string, { data: any; mtimeMs: number; enginesMtimeMs: number }>();
+  /** 按 (scenario, ontology) 缓存解析结果，用文件 mtime 失效（ontology.yaml + data_engines.yaml + securities.yaml 三 mtime），避免编排中反复读盘 */
+  private cache = new Map<string, { data: any; mtimeMs: number; enginesMtimeMs: number; securitiesMtimeMs: number }>();
 
   constructor(private pac: PathAccessController) {}
 
-  /** 读取并缓存本体配置；ontology.yaml 与 data_engines.yaml 任一 mtime 变化时自动重读。
-   *  数据引擎已剥离为独立文件：存在则覆盖 data.data_engines，不存在回退 ontology.yaml 旧段（读时兼容）。 */
+  /** 读取并缓存本体配置；ontology.yaml / data_engines.yaml / securities.yaml 任一 mtime 变化时自动重读。
+   *  数据引擎与安全管控已剥离为独立文件：存在则覆盖 data.data_engines / data.securities，不存在回退 ontology.yaml 旧段（读时兼容）。 */
   private loadOntologyData(scenario: string, ontology: string): any | null {
     const key = `${scenario}\u0000${ontology}`;
     const yamlPath = join(this.pac.resolveConfigDir(scenario, ontology), 'ontology.yaml');
     const enginesPath = join(this.pac.resolveConfigDir(scenario, ontology), 'data_engines.yaml');
+    const securitiesPath = join(this.pac.resolveConfigDir(scenario, ontology), 'securities.yaml');
     if (!existsSync(yamlPath)) return null;
     try {
       const mtimeMs = statSync(yamlPath).mtimeMs;
       const enginesMtimeMs = existsSync(enginesPath) ? statSync(enginesPath).mtimeMs : 0;
+      const securitiesMtimeMs = existsSync(securitiesPath) ? statSync(securitiesPath).mtimeMs : 0;
       const hit = this.cache.get(key);
-      if (hit && hit.mtimeMs === mtimeMs && hit.enginesMtimeMs === enginesMtimeMs) return hit.data;
+      if (hit && hit.mtimeMs === mtimeMs && hit.enginesMtimeMs === enginesMtimeMs && hit.securitiesMtimeMs === securitiesMtimeMs) return hit.data;
       const data = load(readFileSync(yamlPath, 'utf-8'));
       if (enginesMtimeMs && data && typeof data === 'object') {
         const enginesDoc: any = load(readFileSync(enginesPath, 'utf-8'));
         (data as any).data_engines = Array.isArray(enginesDoc) ? enginesDoc : (enginesDoc?.data_engines ?? []);
       }
-      this.cache.set(key, { data, mtimeMs, enginesMtimeMs });
+      if (securitiesMtimeMs && data && typeof data === 'object') {
+        const securitiesDoc: any = load(readFileSync(securitiesPath, 'utf-8'));
+        (data as any).securities = Array.isArray(securitiesDoc) ? securitiesDoc : (securitiesDoc?.securities ?? []);
+      }
+      this.cache.set(key, { data, mtimeMs, enginesMtimeMs, securitiesMtimeMs });
       return data;
     } catch {
       return null;
@@ -125,8 +131,16 @@ export class OntologyGateway {
       // 每条规则只保留自己声明的 data_supplements（过滤私有 _ 前缀接口），不做跨规则并集
       preRules: preRules.map(r => ({ ...r, data_supplements: (r.data_supplements || []).filter(a => !a.startsWith('_')) })),
       postRules: postRules.map(r => ({ ...r, data_supplements: (r.data_supplements || []).filter(a => !a.startsWith('_')) })),
+      // securities 新格式 {confirm, confirm_content, scope}；旧格式 audit_content 兼容读取（下次保存自动迁移）；
+      // scope 恒数组（core 端 coerce 后落盘），旧标量形态这里同样兜底包成单元素数组
       security: security
-        ? { audit_node: security.audit_node || '前置', audit_content: security.audit_content || '' }
+        ? {
+            confirm: security.confirm !== false,
+            confirm_content: security.confirm_content ?? security.audit_content ?? '',
+            scope: security.scope
+              ? (Array.isArray(security.scope) ? security.scope : [security.scope])
+              : ['everyone'],
+          }
         : undefined,
       concepts,
       isWrite,

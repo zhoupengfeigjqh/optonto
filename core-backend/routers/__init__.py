@@ -6,7 +6,6 @@ from .behaviors import router as behaviors_router
 from .rules import router as rules_router
 from .processes import router as processes_router
 from .securities import router as securities_router
-from .permissions import router as permissions_router
 from .functions import router as functions_router
 from .files import router as files_router
 from .threads import router as threads_router

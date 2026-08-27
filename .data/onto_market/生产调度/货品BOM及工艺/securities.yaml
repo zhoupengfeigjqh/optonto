@@ -1,0 +1,78 @@
+securities:
+- action_name: QueryProduct
+  display_name: 查询货品信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryProductInv
+  display_name: 查询货品库存
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryBOMInfo
+  display_name: 查询BOM信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryBOMMaterialReq
+  display_name: 查询BOM原料需求
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryBOMEquipReq
+  display_name: 查询BOM设备需求
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryBOMPersonReq
+  display_name: 查询BOM人员需求
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryBOMDetail
+  display_name: 查询BOM明细
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryProcessRoute
+  display_name: 查询工艺路径
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryRouteMatReq
+  display_name: 查询工艺原料需求
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryRouteEquipReq
+  display_name: 查询工艺设备需求
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryRoutePersonReq
+  display_name: 查询工艺人员需求
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''

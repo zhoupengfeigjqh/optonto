@@ -1,0 +1,99 @@
+securities:
+- action_name: CreateOrder
+  display_name: 创建订单
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: UpdateOrder
+  display_name: 更新订单
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: DeleteOrder
+  display_name: 删除订单
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryOrder
+  display_name: 查询订单
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: CreateSchedTask
+  display_name: 创建排产任务
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: AddSchedTask
+  display_name: 新增排产任务
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: CreateAlgoParams
+  display_name: 创建算法参数
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: StartSchedTask
+  display_name: 启动排产任务
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QuerySchedTask
+  display_name: 查询排产任务
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QuerySchedResult
+  display_name: 查询排产结果
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: DeploySchedResult
+  display_name: 排产结果下发
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: RecallSchedResult
+  display_name: 排产结果撤回
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: QueryShortage
+  display_name: 查询欠料明细
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: StartPollingTask
+  display_name: 启动定时查询
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''

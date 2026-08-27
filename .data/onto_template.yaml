@@ -212,7 +212,3 @@ processes:
     previous_action: ''
     description: 步骤描述
     connection_type: 串行
-securities:
-- action_name: behaviorName
-  audit_node: 前置
-  audit_content: 审核内容描述

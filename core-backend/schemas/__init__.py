@@ -1,6 +1,6 @@
 """Pydantic schemas for ontology YAML data structures."""
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ─── Ontology Components (YAML-based) ─────────────────────────────────────────
@@ -123,24 +123,48 @@ class ProcessItem(BaseModel):
 
 
 class SecurityItem(BaseModel):
-    action_name: str = Field(..., description="行为名称（选自行为列表）")
-    audit_node: str = Field("前置", description="介入位置（前置/后置）")
-    audit_content: str = Field("", description="审核内容")
-    # None=默认（command 行为默认需要确认）；False=显式关闭（仅 command 可配，运行面待后续改造后生效）
-    confirm: bool | None = Field(None, description="人工确认开关：缺省=默认，False=显式关闭")
+    """行为安全管控配置（独立存放于 securities.yaml，与安全页签列一一对应，六字段齐全）。
 
-    @field_validator('audit_node', mode='before')
+    display_name/op_type 为反范式快照字段：保存时由后端从 behaviors + data_engines 重新推导
+    覆盖写入（只读，API 传入值无效），保证与行为定义永不漂移。
+    scope: 权限范围，恒为数组（类型稳定）：['everyone']=所有用户（默认）、['disable']=全部禁用、
+    ['用户名', ...]=用户或组织白名单（后续用户表落地后使用）。旧标量形态（scope: everyone）加载时自动包成单元素数组。
+    confirm: true=执行前弹窗人工确认（command 行为默认），false=显式关闭。
+    文件为全花名册：每个行为恒定一条记录（保存时自动增删同步），全字段恒落盘。
+    旧格式加载时自动迁移：audit_content→confirm_content，audit_node 废弃；
+    ontology.yaml 旧 securities 段在 securities.yaml 缺失时读时回退，保存后彻底剥离。
+    """
+    action_name: str = Field(..., description="行为名称（选自行为列表）")
+    display_name: str = Field("", description="行为展示名称（保存时后端从行为定义刷新，只读快照）")
+    op_type: str = Field("", description="操作类型 command/query（保存时后端推导刷新，只读快照）")
+    scope: list[str] = Field(default_factory=lambda: ["everyone"], description="权限范围（恒数组）：everyone=所有用户（默认）/disable=全部禁用/用户或组织白名单（后续）")
+    confirm: bool = Field(True, description="人工确认：true=执行前弹窗确认，false=显式关闭")
+    confirm_content: str = Field("", description="确认内容（弹窗提示文案，留空用通用文案）")
+
+    @field_validator('scope', mode='before')
     @classmethod
-    def coerce_audit_node(cls, v: any) -> str:
-        valid = {'前置', '后置'}
-        s = str(v) if v is not None else "前置"
-        return s if s in valid else "前置"
+    def coerce_scope(cls, v: any) -> any:
+        # 兼容旧标量形态：str → 单元素数组
+        if isinstance(v, str):
+            return [v]
+        return v
 
+    @field_validator('scope')
+    @classmethod
+    def validate_scope(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("权限范围不能为空：至少保留 everyone")
+        # everyone/disable 为互斥特殊值：只能单独选择，不得与其他值（含彼此）共存；用户名之间可多选
+        if len(v) > 1 and {'everyone', 'disable'} & set(v):
+            raise ValueError("权限范围非法：everyone/disable 只能单独选择，不能与其他值共存")
+        return v
 
-class PermissionItem(BaseModel):
-    """行为权限范围。稀疏存储：默认 everyone（所有人可用）不落盘，仅非默认行落盘。"""
-    action_name: str = Field(..., description="行为名称（选自行为列表）")
-    scope: str | list[str] = Field("disable", description="权限范围：disable=全部禁用；字符串/列表=用户或组织白名单（后续用户表落地后使用）")
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_legacy(cls, v: any) -> any:
+        if isinstance(v, dict) and 'audit_content' in v and 'confirm_content' not in v:
+            v = {**v, 'confirm_content': v.get('audit_content') or ''}
+        return v
 
 
 class FunctionItem(BaseModel):
@@ -185,7 +209,6 @@ class OntologyData(BaseModel):
     rules: list[RuleItem] = Field(default_factory=list)
     processes: list[ProcessItem] = Field(default_factory=list)
     securities: list[SecurityItem] = Field(default_factory=list)
-    permissions: list[PermissionItem] = Field(default_factory=list, description="行为权限范围（稀疏：仅非 everyone 落盘）")
     data_engines: list[DataEngineItem] = Field(default_factory=list)
 
 
