@@ -11,6 +11,8 @@ import type { ToolErrorBudget } from './error-budget.js';
 import type { AgentPort } from './agent-port.js';
 import { legalCallNames } from './legal-calls.js';
 import type { LegalCalls } from './legal-calls.js';
+import { needsSecurityConfirm } from './security-policy.js';
+import type { ChildSecurityCtx, SecurityGate } from './security-policy.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult } from '../types.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import type { EventChannel } from './event-channel.js';
@@ -21,7 +23,7 @@ const MAX_LLM_EXCEPTION_RETRIES = 2;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmPort;
-  createChildAgent: (context: SkillContext, requiredParamsMap?: Record<string, string[]>, errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls) => Promise<AgentPort>;
+  createChildAgent: (context: SkillContext, requiredParamsMap?: Record<string, string[]>, errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls, security?: ChildSecurityCtx) => Promise<AgentPort>;
   /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
   childAgents: Set<AgentPort>;
   /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
@@ -30,6 +32,10 @@ export interface SubtaskRunnerDeps {
   getFunctionDisplayName: (scenario: string, ontology: string, functionName: string) => string;
   /** 按 (scenario, ontology, behavior) 解析行为参数结构（规则取数接口 data_supplements 渲染用） */
   getBehaviorParams: (scenario: string, ontology: string, behaviorName: string) => Record<string, any>;
+  /** 按 (scenario, ontology, behavior) 解析权限范围 scope（恒数组；工具层 disable 闸的禁用集合数据源） */
+  getBehaviorScope: (scenario: string, ontology: string, behaviorName: string) => string[];
+  /** run 级安全闸（全 run 共享）：工具层 disable 命中置位后，本 runner 据此返回 securityViolation 失败 */
+  securityGate: SecurityGate;
 }
 
 /**
@@ -56,11 +62,12 @@ export class SubtaskRunner {
   ): Promise<SubTaskResult> {
     const display = entryDisplay(meta.display_name, subTask.behavior, subTask.description);
     const pushEntry = emit.entry;
-    // 安全管控（含参数审核）。写操作一律强制确认：有 securities 登记用登记内容，未登记用通用提示。
-    const auditContent = meta.security?.audit_content || '此行为是写操作，请确认执行';
+    // 安全管控（含参数审核）。判定单一事实源 needsSecurityConfirm：有 securities 登记按 confirm（false=显式关闭），
+    // 无登记时写操作默认强制确认；有登记用登记内容，未登记/无内容用通用提示。
+    const auditContent = meta.security?.confirm_content || '此行为是写操作，请确认执行';
     // 中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值），避免只给 id 等无语义内容
     const confirmContent = this.buildSecurityContent(subTask, auditContent);
-    if (meta.security || meta.isWrite) {
+    if (needsSecurityConfirm(meta)) {
       emit.entry({ type: 'security_confirm', name: subTask.behavior, status: 'running', detail: confirmContent, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
       const confirmResult = await this.deps.confirmManager.requestConfirm(subTask.behavior, confirmContent, subTask.params, emit);
       if (!confirmResult.approved) {
@@ -95,7 +102,19 @@ export class SubtaskRunner {
     }
     // 工具报错预算：连续报错达上限即中断（pi-agent 内层循环被 terminate 停住），不再无限试错
     const errorBudget = createToolErrorBudget();
-    const childAgent = await this.deps.createChildAgent(context, requiredParamsMap, errorBudget, legalCalls);
+    // 禁用集合（工具层 disable 闸输入）：合法清单内 scope 含 disable 的行为（含主行为与规则补充行为）。
+    // 子任务启动时新鲜计算（gateway mtime 缓存保证规划确认后被禁也能拦）；执行中不追热更新。
+    // 值带 display_name（报错文案用）；主行为取 meta，补充行为走 getBehaviorDisplayName。
+    const disabled = new Map<string, string>();
+    for (const bn of legalCalls.behaviors) {
+      if (this.deps.getBehaviorScope(subTask.scenario_name, subTask.ontology_name, bn).includes('disable')) {
+        disabled.set(bn, bn === subTask.behavior
+          ? (meta.display_name || '')
+          : this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, bn));
+      }
+    }
+    const childAgent = await this.deps.createChildAgent(context, requiredParamsMap, errorBudget, legalCalls,
+      { disabled, gate: this.deps.securityGate });
     this.deps.childAgents.add(childAgent);
     try {
       // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
@@ -141,6 +160,14 @@ export class SubtaskRunner {
           // 必须显式检测，否则中断会被 extractResult 误判为成功。
           if (userAborted || isChildAborted(childAgent)) {
             return { seq: subTask.seq, task: subTask.behavior, success: false, error: '⏹ 用户中断执行', summary: '', aborted: true };
+          }
+          // 工具层 disable 闸命中（run 级共享 gate 置位）：先于预算/结果解析判定。
+          // 返回 securityViolation 失败——orchestrator 据此以 securityBlocked 中断整个 run（区别于常规失败/用户中断）。
+          if (this.deps.securityGate.violation) {
+            return {
+              seq: subTask.seq, task: subTask.behavior, success: false,
+              error: this.deps.securityGate.violation, summary: '', securityViolation: true,
+            };
           }
           // 工具连续报错达上限：pi-agent 内层循环已被 terminate 停住，直接判失败收尾。
           // 记为失败+明确原因（不置 aborted —— aborted 语义是用户中断/拒绝）。
@@ -258,10 +285,10 @@ export class SubtaskRunner {
       });
     }
 
-    // if (meta.security || meta.isWrite) {
-    //   text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n审核内容: ${meta.security?.audit_content || '写操作确认'}\n`;
+    // if (needsSecurityConfirm(meta)) {
+    //   text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n审核内容: ${meta.security?.confirm_content || '写操作确认'}\n`;
     // }
-    if (meta.security || meta.isWrite) {
+    if (needsSecurityConfirm(meta)) {
       text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n`;
     }
 

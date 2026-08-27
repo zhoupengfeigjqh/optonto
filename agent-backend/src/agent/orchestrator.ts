@@ -23,6 +23,8 @@ import { isParamValueEmpty, renderParamStructure, unwrapParamValues, validatePar
 import { ConfirmManager } from './confirm-manager.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
+import { needsSecurityConfirm } from './security-policy.js';
+import type { SecurityGate } from './security-policy.js';
 import { RunSession } from './run-session.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
@@ -86,7 +88,7 @@ export class Orchestrator {
   private createSubtaskRunner(session: RunSession): SubtaskRunner {
     return new SubtaskRunner({
       confirmManager: this.confirmManager,
-      createChildAgent: (ctx, rpMap, budget, legalCalls) => this.agentFactory.createChildAgent(ctx, rpMap, budget, legalCalls),
+      createChildAgent: (ctx, rpMap, budget, legalCalls, security) => this.agentFactory.createChildAgent(ctx, rpMap, budget, legalCalls, security),
       childAgents: session.childAgents,
       getBehaviorDisplayName: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
@@ -94,6 +96,11 @@ export class Orchestrator {
         session.catalogView?.functionInfo(scenario, ontology, functionName)?.displayName ?? '',
       getBehaviorParams: (scenario, ontology, behaviorName) =>
         this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).params || {},
+      // 工具层 disable 闸数据源：securities 登记的 scope（恒数组）；无登记（旧本体回退）视为 everyone 放行
+      getBehaviorScope: (scenario, ontology, behaviorName) =>
+        this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).security?.scope ?? ['everyone'],
+      // run 级共享安全闸：工具层 disable 命中置位 → 本 run 所有子任务停摆（securityBlocked）
+      securityGate: session.securityGate,
     });
   }
 
@@ -458,12 +465,22 @@ export class Orchestrator {
       if (ready.length === 0) { session.terminate('blocked'); break; }
 
       // 执行本波：无确认子任务并行（MAX_PARALLEL 限流分块），需确认子任务逐个串行（前端单弹窗）
-      const waveResults = await this.runBatch(ready, emit, runner, session.catalogView!);
+      const waveResults = await this.runBatch(ready, emit, runner, session.catalogView!, session.securityGate);
       session.results.push(...waveResults);
 
       // 已执行子任务移出待执行列表
       const executedSeqs = new Set(waveResults.map(r => r.seq));
       pending = pending.filter(st => !executedSeqs.has(st.seq));
+
+      // 工具层 disable 闸命中（run 级共享 gate 置位）→ 安全管控中断：
+      // 不开新波、不反馈重规划，整个 run 以 securityBlocked 收尾（先于普通失败分支判定）。
+      if (session.securityGate.violation) {
+        for (const r of waveResults) {
+          if (!r.success) emit.raw({ type: 'token', token: `\r📋 **子任务 ${r.seq} ${r.task}** ❌ ${r.error}\n` });
+        }
+        session.terminate('securityBlocked');
+        break;
+      }
 
       // 波内任一子任务失败/被中断 → 终止（同波其余子任务已随 Promise.all 完成，结果保留）
       if (session.isAborted()) break;
@@ -560,12 +577,14 @@ export class Orchestrator {
    * 执行一波子任务。
    * 无确认子任务（读操作）并行，按 MAX_PARALLEL 限流分块避免并发打爆 LLM/MCP；
    * 需确认子任务（写操作/security）逐个串行——前端 confirmModal 是单状态，并行弹多个确认窗会互相覆盖。
+   * 块间/串行间检查 run 级安全闸：工具层 disable 命中（violation 置位）后本波剩余子任务不再启动。
    */
   private async runBatch(
     batch: SubTask[],
     emit: EventChannel,
     runner: SubtaskRunner,
     catalog: FunctionCatalogView,
+    gate: SecurityGate,
   ): Promise<SubTaskResult[]> {
     const secured: { st: SubTask; meta: BehaviorMeta }[] = [];
     const plain: { st: SubTask; meta: BehaviorMeta }[] = [];
@@ -573,20 +592,22 @@ export class Orchestrator {
     for (const st of batch) {
       if (st.function) { functions.push(st); continue; }
       const meta = this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
-      (meta.security || meta.isWrite ? secured : plain).push({ st, meta });
+      (needsSecurityConfirm(meta) ? secured : plain).push({ st, meta });
     }
 
     const results: SubTaskResult[] = [];
     // 函数子任务：确定性直连调用（无 LLM、无安全确认、无规则），与行为子任务并行
     results.push(...await Promise.all(functions.map(st => this.runFunctionEntry(st, emit, catalog))));
-    // 并行分块：每块内 Promise.all 并发执行
+    // 并行分块：每块内 Promise.all 并发执行；块间安全闸截断
     for (let i = 0; i < plain.length; i += MAX_PARALLEL) {
+      if (gate.violation) break;
       const chunk = plain.slice(i, i + MAX_PARALLEL);
       const chunkResults = await Promise.all(chunk.map(({ st, meta }) => this.runSubtaskEntry(st, meta, emit, runner)));
       results.push(...chunkResults);
     }
-    // 需确认子任务串行执行
+    // 需确认子任务串行执行；逐个之间安全闸截断
     for (const { st, meta } of secured) {
+      if (gate.violation) break;
       results.push(await this.runSubtaskEntry(st, meta, emit, runner));
     }
     return results;

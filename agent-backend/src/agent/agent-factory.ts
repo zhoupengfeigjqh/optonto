@@ -11,6 +11,8 @@ import { toolResultToText } from '../utils/text-utils.js';
 import { isParamValueEmpty } from './param-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
+import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
+import type { ChildSecurityCtx } from './security-policy.js';
 import type { AgentPort } from './agent-port.js';
 import type { MountableToolInfo } from './agent-ports.js';
 import type { LegalCalls } from './legal-calls.js';
@@ -187,6 +189,7 @@ export class AgentFactory {
     requiredParamsMap?: Record<string, string[]>,
     errorBudget?: ToolErrorBudget,
     legalCalls?: LegalCalls,
+    security?: ChildSecurityCtx,
   ): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
@@ -198,6 +201,7 @@ export class AgentFactory {
     // requiredParamsMap：行为名 → 必填参数名表——凡 executeOntoBehavior 调用按表硬检查，缺失拒绝执行（不限主行为）。
     // legalCalls：executeOntoBehavior 白名单（非法行为名在工具层拒绝）；本体函数工具（schema 带 ontology_id）与公共函数均按 legalCalls.functions 挂载期过滤。
     // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
+    // security：工具层 disable 闸输入（禁用集合 + run 级共享闸）——命中置 violation + terminate，中断整个 run。
     const legal = legalCalls ?? { behaviors: [], functions: [] };
     const mcpTools = allMcp
       .filter(({ tool }) => {
@@ -208,7 +212,7 @@ export class AgentFactory {
       })
       .map(({ tool }) => this.scopeToOntology(
         tool,
-        { ontologyId, requiredParamsMap, legalCalls: legal },
+        { ontologyId, requiredParamsMap, legalCalls: legal, security },
         errorBudget,
       ));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
@@ -248,17 +252,20 @@ export class AgentFactory {
    * 将执行类工具限定到指定本体：
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
-   * - 凡 executeOntoBehavior 调用做必填硬检查：按 behavior_name 查 requiredParamsMap，缺失拒绝执行（见 execute 内）
-   * - executeOntoBehavior 做白名单硬检查：非法行为名在工具层拒绝（见 execute 内）
+   * - executeOntoBehavior 四道闸（按序，见 execute 内）：
+   *   闸0 入口短路（violation 已置位 → 一律 terminate，中断信号广播到全 run）→
+   *   闸1 disable（策略级拒绝：置 violation + terminate，不抛错不走预算，无自纠空间）→
+   *   闸2 白名单（非法行为名，抛错给 LLM 自纠 + 报错预算兜底）→
+   *   闸3 必填硬检查（必填参数缺失，抛错给 LLM 自纠 + 报错预算兜底）
    *   （本体函数工具已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门）
    * 无 ontology_id 的工具（如公共函数/新增 MCP）原样返回。
    */
   private scopeToOntology(
     tool: AgentTool,
-    scope: { ontologyId: number; requiredParamsMap?: Record<string, string[]>; legalCalls: LegalCalls },
+    scope: { ontologyId: number; requiredParamsMap?: Record<string, string[]>; legalCalls: LegalCalls; security?: ChildSecurityCtx },
     errorBudget?: ToolErrorBudget,
   ): AgentTool {
-    const { ontologyId, requiredParamsMap, legalCalls } = scope;
+    const { ontologyId, requiredParamsMap, legalCalls, security } = scope;
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     // 本体锁定对象：executeOntoBehavior（行为执行）+ 发布方标记的本体函数（scope.category const）。
@@ -278,20 +285,36 @@ export class AgentFactory {
     }
     const originalExecute = tool.execute;
     const execute = async (toolCallId: string, params: any) => {
+      // ── 闸0 入口短路（所有工具）：run 内任一调用已命中 disable（violation 置位）→ 一律 terminate ──
+      // 中断信号的广播器：兄弟子 Agent 共享同一 gate，一个出事全场后续工具调用零执行；
+      // 并行批场景下同批后续调用也全带 terminate，shouldTerminateToolBatch 的 every() 整批命中硬停。
+      if (security?.gate.violation) {
+        return securityTerminateResult(security.gate.violation);
+      }
       const p = needLock ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
 
-      // ── 白名单闸门：业务执行面（executeOntoBehavior）的 behavior 名只允许合法集合 ──
-      // 与父 Agent 工具边界同源：只靠提示词"未列入一律不得调用"挡不住幻觉（历史教训：父 Agent 双重执行）。
-      // 抛错落进 wrapExecuteWithErrorBudget → 连续 3 次 terminate 停循环，子任务判失败（与必填参数硬检查同一套语义）。
-      // 本体函数工具（函数名即工具名）已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门。
       if (tool.name === 'executeOntoBehavior') {
         const bn = p?.behavior_name;
+
+        // ── 闸1 disable（策略级拒绝，先于白名单/必填——先资格后形状）──
+        // 命中：置 run 级 violation（first-writer-wins）+ 返回 terminate:true，真实 MCP 调用零发生。
+        // 不抛错、不计报错预算：策略拒绝无自纠空间（重试必败），terminate 当场停内层循环（与预算超限同机制），
+        // SubtaskRunner 见 violation 返回 securityViolation 失败 → orchestrator 以 securityBlocked 中断整个 run。
+        if (bn && security?.disabled.has(bn)) {
+          security.gate.violation ??= buildDisableMessage(bn, security.disabled.get(bn));
+          return securityTerminateResult(security.gate.violation!);
+        }
+
+        // ── 闸2 白名单：业务执行面（executeOntoBehavior）的 behavior 名只允许合法集合 ──
+        // 与父 Agent 工具边界同源：只靠提示词"未列入一律不得调用"挡不住幻觉（历史教训：父 Agent 双重执行）。
+        // 抛错落进 wrapExecuteWithErrorBudget → 报错自带合法清单，LLM 可自纠；连续 3 次 terminate 停循环，子任务判失败。
+        // 本体函数工具（函数名即工具名）已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门。
         if (bn && !legalCalls.behaviors.includes(bn)) {
           throw new Error(`禁止执行：behavior "${bn}" 不在本子任务合法行为列表（合法：${legalCalls.behaviors.join('、')}）。`);
         }
       }
 
-      // ── 必填硬检查：凡 executeOntoBehavior 调用，按 behavior_name 查必填表（不限主行为）──
+      // ── 闸3 必填硬检查：凡 executeOntoBehavior 调用，按 behavior_name 查必填表（不限主行为）──
       // 缺失则抛异常（pi-agent 以抛异常识别工具错误并触发子 Agent 重试；
       // 返回 isError 字段会被 pi-agent 吞掉——executePreparedToolCall 硬编码 isError:false，重试永不触发）。
       // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。

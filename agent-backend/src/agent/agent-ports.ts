@@ -6,6 +6,7 @@
 import type { AgentPort } from './agent-port.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { LegalCalls } from './legal-calls.js';
+import type { ChildSecurityCtx } from './security-policy.js';
 import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta, FunctionInfo } from '../types.js';
 
 /** 可挂载函数/工具目录条目（getMountableToolCatalog 返回）。三类：本体函数 / 公共函数 / 其他MCP工具 */
@@ -34,6 +35,7 @@ export interface AgentFactoryPort {
     requiredParamsMap?: Record<string, string[]>,
     errorBudget?: ToolErrorBudget,
     legalCalls?: LegalCalls,
+    security?: ChildSecurityCtx,
   ): Promise<AgentPort>;
   /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
   callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;

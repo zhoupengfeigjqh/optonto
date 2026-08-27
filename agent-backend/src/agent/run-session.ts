@@ -14,6 +14,7 @@
  */
 import type { AgentPort } from './agent-port.js';
 import type { FunctionCatalogView } from './function-catalog.js';
+import { createSecurityGate } from './security-policy.js';
 import type { SubTaskResult, SubTaskPlan } from '../types.js';
 
 /**
@@ -23,8 +24,9 @@ import type { SubTaskResult, SubTaskPlan } from '../types.js';
  *  - failed：波内子任务普通执行失败
  *  - waveCapped：波数触顶仍有未执行子任务
  *  - adjustmentInvalid：波次反馈的调整规划校验（含修正）仍未通过——不沿用原计划裸奔，主动中止
+ *  - securityBlocked：工具层 disable 闸命中（权限范围策略级拒绝）——不开新波、不反馈重规划，整个 run 中止
  */
-export type WaveOutcome = 'aborted' | 'blocked' | 'failed' | 'waveCapped' | 'adjustmentInvalid';
+export type WaveOutcome = 'aborted' | 'blocked' | 'failed' | 'waveCapped' | 'adjustmentInvalid' | 'securityBlocked';
 
 export class RunSession {
   /** 在途子 Agent 集合：并行子任务各自创建子 Agent，abort 时逐个中断 */
@@ -35,6 +37,9 @@ export class RunSession {
   readonly submittedPlan: { value: SubTaskPlan | null } = { value: null };
   /** 本 run 的父 Agent（规划/波次反馈/总结复用同一实例） */
   parentAgent: AgentPort | null = null;
+  /** run 级安全闸（权限范围 disable 硬中断的共享信号）：全 run 所有子 Agent 的工具包装共享，
+   *  任一命中置位 → 兄弟子 Agent 后续工具调用入口短路 + 波次截断（securityBlocked） */
+  readonly securityGate = createSecurityGate();
   /** run 级函数目录快照（runExecute 开头建一次）：规划校验（函数名/参数）与执行展示（中文名）
    *  同源同时刻——一次 run 内函数信息一致，不随 MCP 目录中途变化而漂移 */
   catalogView: FunctionCatalogView | null = null;
@@ -88,6 +93,7 @@ export class RunSession {
       case 'blocked': return '因前置依赖未完成而终止';
       case 'waveCapped': return `执行波数已达上限，仍有 ${pendingCount} 个子任务未执行`;
       case 'adjustmentInvalid': return '波次反馈的调整规划校验未通过，为避免后续子任务缺失中继数据继续执行，已主动中止';
+      case 'securityBlocked': return this.securityGate.violation ?? '行为已被安全管控禁用（权限范围 disable），任务已中止';
       default: return null;
     }
   }

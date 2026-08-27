@@ -101,3 +101,50 @@ describe('Orchestrator.execute — 单 run 互斥', () => {
     expect(() => orch.abort()).not.toThrow();
   });
 });
+
+// ─── securityBlocked：工具层 disable 闸全场中断 ─────────────────────
+
+describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中断整个 run）', () => {
+  it('子任务1 的工具层闸命中 → 依赖它的子任务2 不再启动，总结携带禁用原因', async () => {
+    const parent = fakeParentAgent();
+    const factory: AgentFactoryPort = {
+      createParentAgent: vi.fn().mockImplementation(async (_s, _h, _onSkill, onPlanSubmitted) => {
+        // 首次 prompt（规划阶段）提交规划：子任务2 依赖子任务1（跨波，验证"不开新波"）
+        (parent.prompt as any).mockImplementationOnce(async () => {
+          onPlanSubmitted?.({ subtasks: [{ ...mkSubtask(1) }, { ...mkSubtask(2), depends_on: [1] }] });
+        });
+        return parent;
+      }),
+      // 子 Agent fake：prompt 时模拟工具层闸1 命中——置 run 级 violation（真实判定在 scopeToOntology）
+      createChildAgent: vi.fn().mockImplementation(async (_ctx, _rp, _budget, _legal, security) => ({
+        prompt: async () => { security!.gate.violation = '🔒 行为已被禁用：Behavior1 的权限范围为 disable，已中断执行。'; },
+        abort: () => {},
+        subscribe: () => {},
+        state: { messages: [] },
+      })),
+      callFunctionTool: vi.fn(),
+      getMountableToolCatalog: vi.fn().mockResolvedValue([]),
+      closeAll: vi.fn().mockResolvedValue(undefined),
+    };
+    const gateway = {
+      getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
+      getBehaviorNames: () => ['Behavior1', 'Behavior2'],
+      getFunctionNames: () => [],
+      getFunctionInfo: () => null,
+    } as unknown as OntologyGatewayPort;
+    const confirm = {
+      requestConfirm: vi.fn(),
+      requestPlanConfirm: vi.fn().mockResolvedValue({ approved: true }),
+      abortAll: vi.fn(),
+    };
+    const orch = new Orchestrator(factory, gateway, confirm as any);
+
+    await orch.execute('测试 disable 中断', [], [], () => {});
+
+    // 子任务2 从未启动（violation → securityBlocked → 不开新波、不反馈重规划）
+    expect(factory.createChildAgent).toHaveBeenCalledTimes(1);
+    // 总结阶段父 Agent 收到的终止原因 = 工具层闸的 disable 文案
+    const prompts = (parent.prompt as any).mock.calls.map((c: any[]) => String(c[0]));
+    expect(prompts.some(p => p.includes('权限范围为 disable'))).toBe(true);
+  });
+});

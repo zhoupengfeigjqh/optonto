@@ -124,7 +124,9 @@ export interface BehaviorMeta {
   params: Record<string, any>;
   preRules: RuleDetail[];
   postRules: RuleDetail[];
-  security?: { audit_node: string; audit_content: string };
+  /** 安全管控。confirm=false 为显式关闭，覆盖 isWrite 强制确认（判定见 security-policy.needsSecurityConfirm）；
+   *  scope 为权限范围（恒数组）：含 'disable' 时行为被禁用，executeOntoBehavior 工具层硬中断（security-policy.SecurityGate）。 */
+  security?: { confirm: boolean; confirm_content: string; scope: string[] };
   concepts: ConceptInfo[];
   /** 是否写操作（API + POST/PATCH/DELETE）。写操作无论有无 security 登记都强制人工确认。 */
   isWrite: boolean;
@@ -148,6 +150,8 @@ export interface SubTaskResult {
   error?: string;
   /** 是否因用户中断/拒绝而终止（区别于常规失败） */
   aborted?: boolean;
+  /** 是否因安全管控（权限范围 disable）在工具层硬中断——orchestrator 据此判 securityBlocked 结局、中断整个 run（区别于常规失败/用户中断） */
+  securityViolation?: boolean;
   summary: string;
 }
 

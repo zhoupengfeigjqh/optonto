@@ -54,6 +54,8 @@ vi.mock('../services/llm.js', () => ({
 import { AgentFactory } from './agent-factory.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
+import { createSecurityGate } from './security-policy.js';
+import type { ChildSecurityCtx } from './security-policy.js';
 import type { ThreadMessage } from '../types.js';
 
 const mockedAgent = vi.mocked(Agent);
@@ -121,11 +123,12 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
 async function captureChildTools(
   legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] },
   requiredParamsMap: Record<string, string[]> = { CreatePurchaseRecord: ['rawMaterialId', 'qty'], QuerySupplier: ['supplierName'] },
+  security?: ChildSecurityCtx,
 ) {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
-    requiredParamsMap, undefined, legalCalls,
+    requiredParamsMap, undefined, legalCalls, security,
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
@@ -417,6 +420,78 @@ describe('AgentFactory 子 Agent 白名单闸门', () => {
     expect(required).not.toContain('ontology_id');
     const result = await tool.execute('call-5', { currentStock: 10, safetyStock: 5 });
     expect(result).toBeTruthy();
+  });
+});
+
+describe('AgentFactory 子 Agent disable 硬闸（工具层单点，terminate + run 级共享闸）', () => {
+  beforeEach(() => mockedAgent.mockClear());
+
+  const mkSecurity = (disabled: [string, string][] = []): ChildSecurityCtx => ({
+    disabled: new Map<string, string>(disabled),
+    gate: createSecurityGate(),
+  });
+
+  it('闸1：调用禁用行为 → 真实工具零执行，返回 terminate + 置 run 级 violation（不抛错、不走报错预算）', async () => {
+    const security = mkSecurity([['CreatePurchaseRecord', '创建采购记录']]);
+    const tools = await captureChildTools(undefined, undefined, security);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-d1', { behavior_name: 'CreatePurchaseRecord', params: { rawMaterialId: 1, qty: 10 } });
+    expect(result.terminate).toBe(true);                       // pi-agent 内层循环当场停
+    expect(result.content[0].text).toContain('权限范围为 disable');
+    expect(result.content[0].text).toContain('创建采购记录（CreatePurchaseRecord）');
+    expect(security.gate.violation).toContain('权限范围为 disable'); // run 级信号已广播
+  });
+
+  it('闸0 入口短路：violation 已置位 → 任意工具调用（合法行为/本体函数）一律 terminate，真实执行零发生', async () => {
+    const security = mkSecurity();
+    security.gate.violation = '🔒 行为已被禁用：其他子任务命中';
+    const tools = await captureChildTools(undefined, undefined, security);
+    const execTool = tools.find(t => t.name === 'executeOntoBehavior');
+    const r1 = await execTool.execute('call-s1', { behavior_name: 'QuerySupplier', params: { supplierName: '宝钢' } });
+    expect(r1.terminate).toBe(true);
+    expect(r1.content[0].text).toContain('其他子任务命中');
+    const fnTool = tools.find(t => t.name === 'calcSafetyStock');
+    const r2 = await fnTool.execute('call-s2', { currentStock: 1, safetyStock: 2 });
+    expect(r2.terminate).toBe(true);                           // 函数工具同样被短路
+  });
+
+  it('闸序：disable 先于白名单/必填——禁用行为即使缺必填也命中 disable（策略拒绝优先，返回 terminate 而非抛错）', async () => {
+    const security = mkSecurity([['CreatePurchaseRecord', '创建采购记录']]);
+    const tools = await captureChildTools(undefined, undefined, security);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    // 缺必填参数：若必填闸先判会抛错；disable 优先 → terminate
+    const result = await tool.execute('call-o1', { behavior_name: 'CreatePurchaseRecord', params: {} });
+    expect(result.terminate).toBe(true);
+    expect(security.gate.violation).toContain('CreatePurchaseRecord');
+  });
+
+  it('first-writer-wins：violation 只记首次命中文案（后续调用走闸0 原样回显）', async () => {
+    const security = mkSecurity([['CreatePurchaseRecord', '创建采购记录'], ['QuerySupplier', '查询供应商']]);
+    const tools = await captureChildTools(undefined, undefined, security);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    await tool.execute('call-f1', { behavior_name: 'CreatePurchaseRecord', params: {} });
+    const r2 = await tool.execute('call-f2', { behavior_name: 'QuerySupplier', params: {} });
+    expect(security.gate.violation).toContain('CreatePurchaseRecord');
+    expect(security.gate.violation).not.toContain('查询供应商');
+    expect(r2.content[0].text).toContain('CreatePurchaseRecord'); // 闸0 回显首次文案
+  });
+
+  it('非禁用行为正常放行，gate 不置位（白名单/必填语义不变）', async () => {
+    const security = mkSecurity([['CreatePurchaseRecord', '创建采购记录']]);
+    const tools = await captureChildTools(undefined, undefined, security);
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-p1', { behavior_name: 'QuerySupplier', params: { supplierName: '宝钢' } });
+    expect(result).toBeTruthy();
+    expect(result.terminate).toBeUndefined();
+    expect(security.gate.violation).toBeNull();
+  });
+
+  it('未注入 security（向后兼容）→ 行为照常放行', async () => {
+    const tools = await captureChildTools();
+    const tool = tools.find(t => t.name === 'executeOntoBehavior');
+    const result = await tool.execute('call-n1', { behavior_name: 'QuerySupplier', params: { supplierName: '宝钢' } });
+    expect(result).toBeTruthy();
+    expect(result.terminate).toBeUndefined();
   });
 });
 

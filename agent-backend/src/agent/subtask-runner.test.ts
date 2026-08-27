@@ -7,6 +7,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SubtaskRunner, type SubtaskRunnerDeps } from './subtask-runner.js';
 import { wrapExecuteWithErrorBudget, type ToolErrorBudget } from './error-budget.js';
+import { createSecurityGate, buildDisableMessage } from './security-policy.js';
+import type { ChildSecurityCtx } from './security-policy.js';
 import type { AgentPort } from './agent-port.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import { createEventChannel } from './event-channel.js';
@@ -51,6 +53,8 @@ function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): Subt
     getBehaviorDisplayName: () => '',
     getFunctionDisplayName: () => '',
     getBehaviorParams: () => ({}),
+    getBehaviorScope: () => ['everyone'],
+    securityGate: createSecurityGate(),
   };
 }
 
@@ -349,5 +353,106 @@ describe('SubtaskRunner · 工具报错预算', () => {
       CreatePurchaseRecord: ['rawMaterialId'],   // 主行为：只收 required
       QueryRawMaterials: ['materialName'],       // 规则关联行为：同样入表（必填检查不限主行为）
     });
+  });
+});
+
+describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
+  it('合法清单内行为 scope 含 disable → 禁用集合（带 display_name）随第 5 参注入 createChildAgent', async () => {
+    let captured: ChildSecurityCtx | undefined;
+    const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => {
+      captured = security;
+      return {
+        prompt: async () => {},
+        abort: () => {},
+        subscribe: () => {},
+        state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok\n【状态】成功' }] }] },
+      } satisfies AgentPort;
+    });
+    deps.getBehaviorScope = (_s, _o, bn) => bn === 'CreatePurchaseRecord' ? ['disable'] : ['everyone'];
+    deps.getBehaviorDisplayName = () => '创建采购记录';
+
+    const runner = new SubtaskRunner(deps);
+    // 闸在工具层（scopeToOntology）：runner 不拦截，正常装配并跑通
+    const result = await runner.run(subTask, meta, context, noopChannel);
+
+    expect(result.success).toBe(true);
+    expect(captured).toBeDefined();
+    expect(captured!.disabled.has('CreatePurchaseRecord')).toBe(true);
+    expect(captured!.disabled.get('CreatePurchaseRecord')).toBe('创建采购记录');
+    expect(captured!.gate).toBe(deps.securityGate); // run 级共享闸透传
+  });
+
+  it('规则补充行为被禁也入禁用集合（data_supplements 覆盖——工具层单点的核心价值）', async () => {
+    let captured: ChildSecurityCtx | undefined;
+    const metaWithRules: BehaviorMeta = {
+      ...meta,
+      preRules: [
+        { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: ['QueryRawMaterials'], related_functions: [] },
+      ],
+    };
+    const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => {
+      captured = security;
+      return {
+        prompt: async () => {},
+        abort: () => {},
+        subscribe: () => {},
+        state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok\n【状态】成功' }] }] },
+      } satisfies AgentPort;
+    });
+    deps.getBehaviorScope = (_s, _o, bn) => bn === 'QueryRawMaterials' ? ['disable'] : ['everyone'];
+    deps.getBehaviorDisplayName = (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '';
+    deps.getBehaviorParams = () => ({});
+
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(subTask, metaWithRules, context, noopChannel);
+
+    expect(result.success).toBe(true);
+    expect(captured!.disabled.has('QueryRawMaterials')).toBe(true);   // 补充行为被禁 → 进集合
+    expect(captured!.disabled.get('QueryRawMaterials')).toBe('查询原材料');
+    expect(captured!.disabled.has('CreatePurchaseRecord')).toBe(false); // 主行为未禁
+  });
+
+  it('工具层闸命中（violation 置位）→ 返回 securityViolation 失败：先于预算/结果解析，即使 LLM 自报成功', async () => {
+    const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => ({
+      prompt: async () => {
+        // 模拟工具层闸1 命中：置 run 级 violation + terminate（真实判定在 scopeToOntology）
+        security!.gate.violation = buildDisableMessage('CreatePurchaseRecord', '创建采购记录');
+      },
+      abort: () => {},
+      subscribe: () => {},
+      state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
+    } satisfies AgentPort));
+    deps.getBehaviorScope = () => ['disable'];
+
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(subTask, meta, context, noopChannel);
+
+    expect(result).toMatchObject({ seq: 1, task: 'CreatePurchaseRecord', success: false });
+    expect(result.securityViolation).toBe(true);                        // orchestrator 据此中断整个 run
+    expect(result.error).toContain('权限范围为 disable');
+    expect(result.error).toContain('已中断执行');
+    expect(result.error).toContain('创建采购记录');
+    expect(result.aborted).toBeUndefined();                             // 策略中断，非用户中断
+  });
+
+  it('scope 为 everyone / 用户白名单 → 禁用集合为空，正常放行（身份体系落地前不按名过滤）', async () => {
+    for (const scope of [['everyone'], ['zhangsan', 'lisi']]) {
+      let captured: ChildSecurityCtx | undefined;
+      const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => {
+        captured = security;
+        return {
+          prompt: async () => {},
+          abort: () => {},
+          subscribe: () => {},
+          state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok\n【状态】成功' }] }] },
+        } satisfies AgentPort;
+      });
+      deps.getBehaviorScope = () => scope;
+
+      const runner = new SubtaskRunner(deps);
+      const result = await runner.run(subTask, meta, context, noopChannel);
+      expect(result.success).toBe(true);
+      expect(captured!.disabled.size).toBe(0);
+    }
   });
 });
