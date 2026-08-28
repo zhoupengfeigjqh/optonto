@@ -116,8 +116,8 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
         return parent;
       }),
       // 子 Agent fake：prompt 时模拟工具层闸1 命中——置 run 级 violation（真实判定在 scopeToOntology）
-      createChildAgent: vi.fn().mockImplementation(async (_ctx, _rp, _budget, _legal, security) => ({
-        prompt: async () => { security!.gate.violation = '🔒 行为已被禁用：Behavior1 的权限范围为 disable，已中断执行。'; },
+      createChildAgent: vi.fn().mockImplementation(async (_ctx, policy) => ({
+        prompt: async () => { policy.security.gate.violation = '🔒 行为已被禁用：Behavior1 的权限范围为 disable，已中断执行。'; },
         abort: () => {},
         subscribe: () => {},
         state: { messages: [] },
@@ -146,5 +146,126 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
     // 总结阶段父 Agent 收到的终止原因 = 工具层闸的 disable 文案
     const prompts = (parent.prompt as any).mock.calls.map((c: any[]) => String(c[0]));
     expect(prompts.some(p => p.includes('权限范围为 disable'))).toBe(true);
+  });
+});
+
+// ─── 言行不一闸：声称已提交规划但未调用 submit_plan ─────────────────────
+
+describe('Orchestrator · 言行不一闸（假提交声明检测 → nudge 一次 → 诚实兜底）', () => {
+  const claimGateway = {
+    getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
+    getBehaviorNames: () => ['Behavior1'],
+    getFunctionNames: () => [],
+    getFunctionInfo: () => null,
+  } as unknown as OntologyGatewayPort;
+  const claimConfirm = {
+    requestConfirm: vi.fn(),
+    requestPlanConfirm: vi.fn().mockResolvedValue({ approved: true }),
+    abortAll: vi.fn(),
+  };
+
+  /**
+   * 父 Agent fake：第 1 次 prompt 输出虚假提交声明；第 2 次（nudge）按 afterNudge 分岔：
+   *  plan   → 真的调用 onPlanSubmitted 提交单子任务规划（自救成功）
+   *  claim  → 仍输出虚假声明（死不悔改）
+   *  answer → 改为诚实直答（自救转直答）
+   */
+  function mkClaimFactory(afterNudge: 'plan' | 'claim' | 'answer') {
+    const parent = {
+      prompt: vi.fn(),
+      abort: vi.fn(),
+      subscribe: vi.fn(),
+      state: { messages: [] as any[] },
+    } as unknown as AgentPort;
+    const factory: AgentFactoryPort = {
+      createParentAgent: vi.fn().mockImplementation(async (_s, _h, _onSkill, onPlanSubmitted) => {
+        let calls = 0;
+        (parent.prompt as any).mockImplementation(async () => {
+          calls++;
+          const push = (content: string) => parent.state.messages.push({ role: 'assistant', content });
+          if (calls === 1) { push('好的，我已提交了执行计划，共 2 个子任务，即将开始执行。'); return; }
+          if (calls === 2) {
+            if (afterNudge === 'plan') {
+              onPlanSubmitted?.({ subtasks: [{ ...mkSubtask(1) }] });
+              push('规划已重新提交。');
+            } else if (afterNudge === 'claim') {
+              push('执行计划已提交，请稍等。');
+            } else {
+              push('当前原材料库存 35 吨，无需执行操作。');
+            }
+          }
+          // 第 3 次起（总结阶段等）：不再新增消息
+        });
+        return parent;
+      }),
+      createChildAgent: vi.fn().mockImplementation(async () => ({
+        prompt: async () => {},
+        abort: () => {},
+        subscribe: () => {},
+        state: { messages: [{ role: 'assistant', content: '子任务执行完成' }] },
+      })),
+      callFunctionTool: vi.fn(),
+      getMountableToolCatalog: vi.fn().mockResolvedValue([]),
+      closeAll: vi.fn().mockResolvedValue(undefined),
+    };
+    return { parent, factory };
+  }
+
+  it('声称已提交 → nudge 后真提交规划 → 无缝自救进入正常校验链并执行', async () => {
+    const { parent, factory } = mkClaimFactory('plan');
+    const orch = new Orchestrator(factory, claimGateway, claimConfirm as any);
+    const events: SSEEvent[] = [];
+    const reply = await orch.execute('查一下库存', [], [], e => events.push(e));
+
+    // nudge 文案确实发给了父 Agent
+    const prompts = (parent.prompt as any).mock.calls.map((c: any[]) => String(c[0]));
+    expect(prompts.some(p => p.includes('系统未收到你的 submit_plan 工具调用'))).toBe(true);
+    // 留痕：检测条目已推送
+    expect(events.some(e => e.type === 'exec_entry' && (e as any).entry?.name === '规划提交校验')).toBe(true);
+    // 自救成功：子 Agent 真的启动了，未走"规划提交失败"兜底
+    expect(factory.createChildAgent).toHaveBeenCalledTimes(1);
+    expect(reply).not.toContain('规划提交失败');
+  });
+
+  it('声称已提交 → nudge 后仍声称已提交 → 诚实报错，虚假声明原文不进正文', async () => {
+    const { parent, factory } = mkClaimFactory('claim');
+    const orch = new Orchestrator(factory, claimGateway, claimConfirm as any);
+    const events: SSEEvent[] = [];
+    const reply = await orch.execute('查一下库存', [], [], e => events.push(e));
+
+    expect(reply).toContain('规划提交失败');
+    expect(events.some(e => e.type === 'error' && (e as any).message?.includes('规划提交失败'))).toBe(true);
+    // 虚假声明原文未作为正文 token 回流给用户
+    const tokens = events.filter(e => e.type === 'token').map(e => (e as any).token).join('');
+    expect(tokens).not.toContain('我已提交了执行计划');
+    expect(tokens).not.toContain('执行计划已提交，请稍等');
+    // 只 nudge 一次：初始 1 次 + nudge 1 次，不无限循环
+    expect((parent.prompt as any).mock.calls).toHaveLength(2);
+    expect(factory.createChildAgent).not.toHaveBeenCalled();
+  });
+
+  it('声称已提交 → nudge 后改为诚实直答 → 直答路径放行新回答', async () => {
+    const { parent, factory } = mkClaimFactory('answer');
+    const orch = new Orchestrator(factory, claimGateway, claimConfirm as any);
+    const events: SSEEvent[] = [];
+    const reply = await orch.execute('查一下库存', [], [], e => events.push(e));
+
+    expect(reply).toBe('当前原材料库存 35 吨，无需执行操作。');
+    const tokens = events.filter(e => e.type === 'token').map(e => (e as any).token).join('');
+    expect(tokens).toContain('当前原材料库存 35 吨');
+    expect(factory.createChildAgent).not.toHaveBeenCalled();
+  });
+
+  it('非声明直答 → 不触发 nudge，原样直通（回归：正常直答零影响）', async () => {
+    const parent = fakeParentAgent();
+    (parent.prompt as any).mockImplementation(async () => {
+      parent.state.messages.push({ role: 'assistant', content: '当前库存 35 吨，如需调整计划，请重新提交需求。' });
+    });
+    const factory = mkFactory(vi.fn().mockResolvedValue(parent));
+    const orch = new Orchestrator(factory, noopGateway);
+    const reply = await orch.execute('库存多少', [], [], () => {});
+
+    expect(reply).toContain('当前库存 35 吨');
+    expect((parent.prompt as any).mock.calls).toHaveLength(1); // 无 nudge
   });
 });

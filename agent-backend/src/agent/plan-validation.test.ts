@@ -3,7 +3,7 @@
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
  */
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validateAllConstraints, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
+import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validateAllConstraints, validatePlanStructure, validateSeqConflicts, looksLikePlanClaim } from './plan-validation.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
@@ -351,5 +351,36 @@ describe('validateAllConstraints · 行为/函数统一约束校验', () => {
   it('空值放行（缺值非本校验职责）', () => {
     const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: '' } } };
     expect(validateAllConstraints(gw(), plan([sub])).rangeErrors).toEqual([]);
+  });
+});
+
+// ─── looksLikePlanClaim — 言行不一检测（假提交声明） ─────────────────────
+
+describe('looksLikePlanClaim — 言行不一检测', () => {
+  it('命中：完成态/宣告态措辞', () => {
+    expect(looksLikePlanClaim('已提交计划，共3个子任务。')).toBe(true);
+    expect(looksLikePlanClaim('我已为您提交了执行计划。')).toBe(true);
+    expect(looksLikePlanClaim('好的，我提交了规划。')).toBe(true);
+    expect(looksLikePlanClaim('执行计划已提交，即将开始执行子任务。')).toBe(true);
+    expect(looksLikePlanClaim('执行计划已生成，共两步。')).toBe(true);
+    expect(looksLikePlanClaim('现在我将通过 submit_plan 提交规划：')).toBe(true);
+    expect(looksLikePlanClaim('规划已成功提交。')).toBe(true);
+    expect(looksLikePlanClaim('即将开始执行以下子任务。')).toBe(true);
+  });
+
+  it('不命中：条件要约与建议性表述（防误杀正常直答）', () => {
+    expect(looksLikePlanClaim('如果您需要，我可以提交执行计划，请确认。')).toBe(false);
+    expect(looksLikePlanClaim('您可以先提交计划，确认无误后再执行。')).toBe(false);
+    expect(looksLikePlanClaim('如需调整计划，请重新提交需求。')).toBe(false);
+    expect(looksLikePlanClaim('当前库存35吨，供应商A本月到货2批。')).toBe(false);
+  });
+
+  it('不命中：业务数据直答里的"计划已完成"（生产调度域高频合法表述）', () => {
+    expect(looksLikePlanClaim('该生产计划已完成，共入库 500 件。')).toBe(false);
+    expect(looksLikePlanClaim('计划已完成 80%，剩余部分预计明天完成。')).toBe(false);
+  });
+
+  it('空文本安全', () => {
+    expect(looksLikePlanClaim('')).toBe(false);
   });
 });

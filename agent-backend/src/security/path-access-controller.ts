@@ -6,18 +6,21 @@ import { existsSync } from 'node:fs';
  *
  * 所有文件 IO 必须经过此控制器，严格限制为：
  *   - 只读：{dataDir}/onto_market/{scenario}/{ontology}/skills/**   (技能文件)
- *   - 读写：{threadsDir}/agent/**                                    (对话线程，平铺按线程ID存放)
+ *   - 读写：{threadsDir}/agent/{threadId}/**                        (对话线程，全局平铺按线程ID存放)
  *
  * 任何路径穿越（..）或越权操作都会被拒绝。
+ *
+ * 名实约定：线程目录是【全局平铺】的——线程路径方法只收 threadId，不假装按场景/本体分层；
+ * 线程的场景/本体【归属校验】在 ThreadStore.readThread（读 json 内记录比对），不在路径层。
  */
 export class PathAccessController {
   constructor(private readonly dataDir: string, private readonly threadsDir: string) {}
 
   /**
-   * 解析可读路径，仅允许读取 skills/ 目录下的文件。
+   * 解析技能文件可读路径，仅允许读取 skills/ 目录下的文件。
    * @throws {ForbiddenError} 如果路径越权
    */
-  resolveReadPath(type: 'skill', scenario: string, ontology: string, skillName: string, filename?: string): string {
+  resolveReadPath(scenario: string, ontology: string, skillName: string, filename?: string): string {
     this.assertValidPathComponent(scenario, '场景');
     this.assertValidPathComponent(ontology, '本体');
     this.assertValidPathComponent(skillName, '技能名');
@@ -31,12 +34,10 @@ export class PathAccessController {
   }
 
   /**
-   * 解析可读写路径，仅允许 threads/agent/ 目录下的操作（平铺按线程ID存放）。
+   * 解析线程目录可读写路径（全局平铺：{threadsDir}/agent/{threadId}，不按场景/本体分层）。
    * @throws {ForbiddenError} 如果路径越权
    */
-  resolveWritePath(type: 'thread', scenario: string, ontology: string, threadId: string, ...rest: string[]): string {
-    this.assertValidPathComponent(scenario, '场景');
-    this.assertValidPathComponent(ontology, '本体');
+  resolveWritePath(threadId: string, ...rest: string[]): string {
     this.assertValidPathComponent(threadId, '线程 ID');
 
     const base = resolve(this.threadsDir, 'agent', threadId);
@@ -47,11 +48,9 @@ export class PathAccessController {
   }
 
   /**
-   * 解析只读的线程目录检查（用于读取 .data.json）
+   * 解析线程 .data.json 只读路径（全局平铺；归属校验由调用方读 json 比对场景/本体）
    */
-  resolveThreadReadPath(scenario: string, ontology: string, threadId: string): string {
-    this.assertValidPathComponent(scenario, '场景');
-    this.assertValidPathComponent(ontology, '本体');
+  resolveThreadReadPath(threadId: string): string {
     this.assertValidPathComponent(threadId, '线程 ID');
 
     const base = resolve(this.threadsDir, 'agent', threadId);
@@ -72,13 +71,10 @@ export class PathAccessController {
   }
 
   /**
-   * 列出 agent 线程根目录（平铺，不再按场景/本体分目录）
+   * agent 线程根目录（全局平铺，不按场景/本体分目录；按本体过滤由调用方读 json 实现）
    */
-  listThreadDirs(scenario: string, ontology: string): string {
-    this.assertValidPathComponent(scenario, '场景');
-    this.assertValidPathComponent(ontology, '本体');
-    const dir = resolve(this.threadsDir, 'agent');
-    return dir;
+  listThreadDirs(): string {
+    return resolve(this.threadsDir, 'agent');
   }
 
   /** 校验 hasPermission 和场景本体值（用于 mcp-config.json） */

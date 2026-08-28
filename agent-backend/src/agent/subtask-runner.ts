@@ -1,18 +1,19 @@
 /**
- * 子任务执行器 —— 单个子任务的完整执行：安全确认 → 指令组装 → 子Agent 重试 → 结果提取。
+ * 子任务执行器 —— 单个子任务的完整执行统一入口（行为与函数子任务同口）：
+ *  - 行为子任务：安全确认 → 指令组装 → 子Agent 重试 → 结果提取（+ 起止执行记录）
+ *  - 函数子任务：确定性直连调用（无子 Agent LLM、无安全确认、无规则，+ 起止执行记录）
  * childAgent 通过 createChildAgent 工厂注入，测试时可用 fake 替换 pi-agent，
  * 确定性验证重试 / 安全门 / 中断逻辑。
  */
 import { contentToText, toolResultToText } from '../utils/text-utils.js';
 import { parseResultStatus, stripResultStatus } from './result-protocol.js';
-import { requiredParamNames, renderParam } from './param-contract.js';
-import { createToolErrorBudget } from './error-budget.js';
-import type { ToolErrorBudget } from './error-budget.js';
+import { renderParam, unwrapParamValues } from './param-contract.js';
 import type { AgentPort } from './agent-port.js';
-import { legalCallNames } from './legal-calls.js';
 import type { LegalCalls } from './legal-calls.js';
 import { needsSecurityConfirm } from './security-policy.js';
-import type { ChildSecurityCtx, SecurityGate } from './security-policy.js';
+import type { SecurityGate } from './security-policy.js';
+import { buildSubtaskPolicy } from './execution-policy.js';
+import type { SubtaskInfoPort, SubtaskPolicy } from './execution-policy.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult } from '../types.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import type { EventChannel } from './event-channel.js';
@@ -23,19 +24,16 @@ const MAX_LLM_EXCEPTION_RETRIES = 2;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmPort;
-  createChildAgent: (context: SkillContext, requiredParamsMap?: Record<string, string[]>, errorBudget?: ToolErrorBudget, legalCalls?: LegalCalls, security?: ChildSecurityCtx) => Promise<AgentPort>;
+  /** 创建子 Agent：policy 由 buildSubtaskPolicy 一处派生的完整策略对象（不存在半设防形态） */
+  createChildAgent: (context: SkillContext, policy: SubtaskPolicy) => Promise<AgentPort>;
   /** 在途子 Agent 集合（供外层 abort() 中断所有并行子 Agent） */
   childAgents: Set<AgentPort>;
-  /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示用） */
-  getBehaviorDisplayName: (scenario: string, ontology: string, behaviorName: string) => string;
-  /** 按 (scenario, ontology, function) 解析函数中文名 display_name（工具调用展示用） */
-  getFunctionDisplayName: (scenario: string, ontology: string, functionName: string) => string;
-  /** 按 (scenario, ontology, behavior) 解析行为参数结构（规则取数接口 data_supplements 渲染用） */
-  getBehaviorParams: (scenario: string, ontology: string, behaviorName: string) => Record<string, any>;
-  /** 按 (scenario, ontology, behavior) 解析权限范围 scope（恒数组；工具层 disable 闸的禁用集合数据源） */
-  getBehaviorScope: (scenario: string, ontology: string, behaviorName: string) => string[];
+  /** 子任务元数据查询口（策略派生 + 工具调用展示的全部元数据投影，orchestrator 一次性接线） */
+  info: SubtaskInfoPort;
   /** run 级安全闸（全 run 共享）：工具层 disable 命中置位后，本 runner 据此返回 securityViolation 失败 */
   securityGate: SecurityGate;
+  /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
+  callFunctionTool: (functionName: string, ontologyId: number, params: Record<string, any>) => Promise<{ text: string; isError: boolean }>;
 }
 
 /**
@@ -54,13 +52,62 @@ export function isChildAborted(agent: AgentPort): boolean {
 export class SubtaskRunner {
   constructor(private deps: SubtaskRunnerDeps) {}
 
-  /** 执行单个子任务 */
-  async run(
+  /**
+   * 执行单个子任务（统一入口）：函数子任务直连，行为子任务走子 Agent。
+   * meta 仅行为子任务需要（波次调度三分类时已取，透传避免二次查询）；函数子任务传 null。
+   * 行为子任务的起止执行记录在此统一打（函数路径在 runFunctionEntry 内自打，两条路径同一形态）。
+   */
+  async run(subTask: SubTask, meta: BehaviorMeta | null, emit: EventChannel): Promise<SubTaskResult> {
+    if (subTask.function) return this.runFunctionEntry(subTask, emit);
+    // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体
+    const context: SkillContext = {
+      scenario_name: subTask.scenario_name,
+      scenario_id: subTask.scenario_id ?? 0,
+      ontology_name: subTask.ontology_name,
+      ontology_id: subTask.ontology_id,
+    };
+    // 展示三元组（中文（英文）/纯中文/描述）与执行记录同源于 entryDisplay
+    const display = entryDisplay(meta!.display_name, subTask.behavior, subTask.description);
+    emit.entry({ type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
+    const result = await this.runBehavior(subTask, meta!, context, emit, display);
+    emit.entry({ type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, ...display });
+    return result;
+  }
+
+  /** 执行单个函数子任务：确定性直连调用 MCP 函数（无子 Agent LLM、无安全确认、无规则）。 */
+  private async runFunctionEntry(subTask: SubTask, emit: EventChannel): Promise<SubTaskResult> {
+    const functionName = subTask.function!;
+    // 中文名走元数据查询口（三源含其他MCP工具），无则空串由 entryDisplay 兜底子任务描述
+    const fnDisplay = this.deps.info.functionDisplayName(subTask.scenario_name, subTask.ontology_name, functionName);
+    const display = entryDisplay(fnDisplay, functionName, subTask.description);
+
+    // 直连执行前深展开计划期 {type/required/description/value} 包装为纯值（真实 LLM 中继会把包装递归嵌套进数组项）
+    const args = unwrapParamValues(subTask.params || {});
+
+    emit.entry({ type: 'subtask_start', name: functionName, status: 'running', detail: `${functionName}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
+    emit.entry({ type: 'tool_call', name: functionName, status: 'running', params: args, source: 'child', seq: subTask.seq, ...display });
+
+    const { text, isError } = await this.deps.callFunctionTool(functionName, subTask.ontology_id, args);
+
+    emit.entry({ type: 'tool_call', name: functionName, status: isError ? 'failed' : 'done', params: args, result: text, source: 'child', seq: subTask.seq, ...display });
+
+    if (isError) {
+      emit.entry({ type: 'subtask_done', name: functionName, status: 'failed', detail: `${functionName}｜子任务 ${subTask.seq}`, result: text, source: 'child', seq: subTask.seq, ...display });
+      return { seq: subTask.seq, task: functionName, success: false, error: `❌ 函数执行失败：${text}`, summary: '' };
+    }
+
+    emit.entry({ type: 'subtask_done', name: functionName, status: 'done', detail: `${functionName}｜子任务 ${subTask.seq}`, result: text, source: 'child', seq: subTask.seq, ...display });
+    // summary 直接放函数原始结果 JSON——它是 L0 波次反馈中继给后续子任务的一等值
+    return { seq: subTask.seq, task: functionName, success: true, summary: text };
+  }
+
+  /** 执行单个行为子任务：安全确认 → 指令组装 → 子Agent 重试 → 结果提取。 */
+  private async runBehavior(
     subTask: SubTask, meta: BehaviorMeta,
     context: SkillContext,
     emit: EventChannel,
+    display: ReturnType<typeof entryDisplay>,
   ): Promise<SubTaskResult> {
-    const display = entryDisplay(meta.display_name, subTask.behavior, subTask.description);
     const pushEntry = emit.entry;
     // 安全管控（含参数审核）。判定单一事实源 needsSecurityConfirm：有 securities 登记按 confirm（false=显式关闭），
     // 无登记时写操作默认强制确认；有登记用登记内容，未登记/无内容用通用提示。
@@ -85,36 +132,14 @@ export class SubtaskRunner {
     }
 
     // 组装指令（参数在规划确认/数据传播阶段已定死，安全确认只做批准/拒绝，不改参数）
-    const instruction = this.buildInstruction(subTask, meta);
+    // 执行策略一处派生：合法清单（白名单闸+挂载过滤+指令渲染同源）、必填表、禁用集合、报错预算
+    const policy = buildSubtaskPolicy(subTask, meta, this.deps.info, this.deps.securityGate);
+    const instruction = this.buildInstruction(subTask, meta, policy.legalCalls);
     emit.entry({ type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
     let lastError = '';
 
     // 复用同一个子 Agent 实例：失败原因、工具结果保留在上下文中（异常重试时参考）
-    // 合法调用名集合（主行为 + 规则关联行为/函数 + 父 Agent 指定的 related_functions）：工具层白名单硬检查用
-    const legalCalls = legalCallNames(meta, subTask.behavior, subTask.related_functions);
-    // 必填参数名表（所有合法行为）：工具层硬检查用——凡 executeOntoBehavior 调用，按 behavior_name 查表，
-    // 必填参数必须有值，缺失则拒绝执行（不限主行为；查询行为缺必填同样会被 core 拒绝，提前拦消息更清晰）
-    const requiredParamsMap: Record<string, string[]> = {};
-    for (const bn of legalCalls.behaviors) {
-      requiredParamsMap[bn] = bn === subTask.behavior
-        ? requiredParamNames(meta)
-        : requiredParamNames({ params: this.deps.getBehaviorParams(subTask.scenario_name, subTask.ontology_name, bn) });
-    }
-    // 工具报错预算：连续报错达上限即中断（pi-agent 内层循环被 terminate 停住），不再无限试错
-    const errorBudget = createToolErrorBudget();
-    // 禁用集合（工具层 disable 闸输入）：合法清单内 scope 含 disable 的行为（含主行为与规则补充行为）。
-    // 子任务启动时新鲜计算（gateway mtime 缓存保证规划确认后被禁也能拦）；执行中不追热更新。
-    // 值带 display_name（报错文案用）；主行为取 meta，补充行为走 getBehaviorDisplayName。
-    const disabled = new Map<string, string>();
-    for (const bn of legalCalls.behaviors) {
-      if (this.deps.getBehaviorScope(subTask.scenario_name, subTask.ontology_name, bn).includes('disable')) {
-        disabled.set(bn, bn === subTask.behavior
-          ? (meta.display_name || '')
-          : this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, bn));
-      }
-    }
-    const childAgent = await this.deps.createChildAgent(context, requiredParamsMap, errorBudget, legalCalls,
-      { disabled, gate: this.deps.securityGate });
+    const childAgent = await this.deps.createChildAgent(context, policy);
     this.deps.childAgents.add(childAgent);
     try {
       // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
@@ -133,14 +158,14 @@ export class SubtaskRunner {
             ? (event.args?.params ?? event.args)
             : event.args;
           // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名（无中文映射 → undefined，前端用工具原名兜底）
-          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, legalCalls.functions);
+          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, policy.legalCalls.functions);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
           toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
           pushEntry({ type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         } else if (event.type === 'tool_execution_end') {
           const text = toolResultToText(event.result?.content);
           const display = toolDisplayNames.get(event.toolCallId);
-          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, legalCalls.functions);
+          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, policy.legalCalls.functions);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
           pushEntry({ type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         }
@@ -171,10 +196,10 @@ export class SubtaskRunner {
           }
           // 工具连续报错达上限：pi-agent 内层循环已被 terminate 停住，直接判失败收尾。
           // 记为失败+明确原因（不置 aborted —— aborted 语义是用户中断/拒绝）。
-          if (errorBudget.exceeded) {
+          if (policy.errorBudget.exceeded) {
             return {
               seq: subTask.seq, task: subTask.behavior, success: false,
-              error: `⏹ 子任务连续报错已达 ${errorBudget.limit} 次，已中断执行（不再重试）`, summary: '',
+              error: `⏹ 子任务连续报错已达 ${policy.errorBudget.limit} 次，已中断执行（不再重试）`, summary: '',
             };
           }
           // 结果以 LLM 的【状态】标记为准：内层自纠（工具报错→修正→成功）算成功，不再被"途中报过错"判失败
@@ -230,14 +255,14 @@ export class SubtaskRunner {
     if (toolName === 'executeOntoBehavior' && args?.behavior_name) {
       return {
         name: args.behavior_name,
-        display: this.deps.getBehaviorDisplayName(subTask.scenario_name, subTask.ontology_name, args.behavior_name),
+        display: this.deps.info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, args.behavior_name),
       };
     }
     // 本体函数是一等工具（函数名即工具名），用合法函数名判定是函数而非公共函数/新增 MCP
     if (functionNames.includes(toolName)) {
       return {
         name: toolName,
-        display: this.deps.getFunctionDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
+        display: this.deps.info.functionDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
       };
     }
     return { name: '', display: '' };
@@ -249,8 +274,8 @@ export class SubtaskRunner {
     return toolName;
   }
 
-  /** 组装子任务指令 */
-  private buildInstruction(subTask: SubTask, meta: BehaviorMeta): string {
+  /** 组装子任务指令（legalCalls 与策略/工具层闸门同源——buildSubtaskPolicy 派生后传入，不再重算） */
+  private buildInstruction(subTask: SubTask, meta: BehaviorMeta, legal: LegalCalls): string {
     let text = `## 子任务 ${subTask.seq}\n`;
     text += `描述: ${subTask.description}\n`;
     text += `行为: ${subTask.behavior}\n`;
@@ -316,12 +341,11 @@ export class SubtaskRunner {
       });
     }
 
-    // 合法行为列表：本子任务唯一可调用的行为/函数/工具范围。与工具层白名单闸门 + 挂载期过滤同源于 legalCallNames，
-    // 保证"文案展示的合法集合"与"工具层强制的合法集合"永远一致（单一事实源）。
+    // 合法行为列表：本子任务唯一可调用的行为/函数/工具范围。与工具层白名单闸门 + 挂载期过滤同源
+    // （同一份 policy.legalCalls 传入），保证"文案展示的合法集合"与"工具层强制的合法集合"永远一致（单一事实源）。
     // 主行为 + 规则关联行为（data_supplements 取数接口）+ 可用函数/工具：
     //   规则声明 ∪ 父 Agent 指定的 related_functions（本体函数 / 公共函数 / 其他 MCP 工具三合一，均按名挂载）。
     // 无规则且父 Agent 未指定时列表只有主行为——子 Agent 无查询/计算依据，从源头杜绝臆造行为名/函数名/工具名。
-    const legal = legalCallNames(meta, subTask.behavior, subTask.related_functions);
     text += `\n### 本子任务合法行为列表（只能调用以下行为/函数/工具，严禁调用未列出的）\n`;
     text += `- 主行为: ${subTask.behavior}\n`;
     text += `- 规则关联行为: ${legal.behaviors.filter(b => b !== subTask.behavior).join('、') || '（无）'}\n`;
@@ -356,7 +380,7 @@ export class SubtaskRunner {
     const lines: string[] = [];
     for (const api of apis) {
       if (!api) continue;
-      const params = this.deps.getBehaviorParams(scenario, ontology, api);
+      const params = this.deps.info.behaviorParams(scenario, ontology, api);
       const keys = params && typeof params === 'object' ? Object.keys(params) : [];
       if (keys.length === 0) {
         lines.push(`  ${api}（未声明参数）`);

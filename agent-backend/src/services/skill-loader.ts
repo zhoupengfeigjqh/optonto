@@ -41,7 +41,7 @@ export class SkillLoader {
 
   /** 加载单个技能的 SKILL.md 完整内容（按显式位置） */
   loadSkill(scenario: string, ontology: string, skillName: string): string {
-    const path = this.pac.resolveReadPath('skill', scenario, ontology, skillName, 'SKILL.md');
+    const path = this.pac.resolveReadPath(scenario, ontology, skillName, 'SKILL.md');
     return readFileSync(path, 'utf-8');
   }
 

@@ -6,16 +6,15 @@ import type { Thread, ThreadSummary, ThreadMessage, SkillSelection } from '../ty
 
 /**
  * ThreadStore — 对话线程数据的读写。
- * 所有操作都经过 PathAccessController 权限校验，
- * 严格限制在 {threadsDir}/agent/ 目录下（平铺按线程ID存放）。
- * 线程文件内记录 scenario_name/ontology_name，用于归属校验。
+ * 线程目录全局平铺（{threadsDir}/agent/{threadId}），路径安全经 PathAccessController 校验；
+ * 场景/本体【归属校验】在本层：读线程 json 内记录的 scenario_name/ontology_name 与请求比对（readThread）。
  */
 export class ThreadStore {
   constructor(private pac: PathAccessController) {}
 
   /** 列出某本体下所有 agent 线程（平铺扫描，按线程 json 内记录的场景/本体过滤） */
   list(scenario: string, ontology: string): ThreadSummary[] {
-    const baseDir = this.pac.listThreadDirs(scenario, ontology);
+    const baseDir = this.pac.listThreadDirs();
     if (!existsSync(baseDir)) return [];
 
     const entries = readdirSync(baseDir, { withFileTypes: true });
@@ -65,8 +64,8 @@ export class ThreadStore {
       skill_names: skillNames,
     };
 
-    // 通过 PAC 校验路径并获取可写路径
-    const dirPath = this.pac.resolveWritePath('thread', scenario, ontology, threadId);
+    // 新建线程：UUID 全新，无归属可校验，经 PAC 取可写路径
+    const dirPath = this.pac.resolveWritePath(threadId);
     mkdirSync(dirPath, { recursive: true });
 
     const dataPath = join(dirPath, '.data.json');
@@ -81,9 +80,10 @@ export class ThreadStore {
     return thread;
   }
 
-  /** 删除线程及其目录 */
+  /** 删除线程及其目录（先经 readThread 做归属校验，与读路径同口径） */
   delete(scenario: string, ontology: string, threadId: string): void {
-    const dirPath = this.pac.resolveWritePath('thread', scenario, ontology, threadId);
+    this.readThread(scenario, ontology, threadId); // 归属校验：不属于当前场景/本体 → ForbiddenError
+    const dirPath = this.pac.resolveWritePath(threadId);
     if (existsSync(dirPath)) {
       rmSync(dirPath, { recursive: true, force: true });
     }
@@ -103,10 +103,10 @@ export class ThreadStore {
     this.persist(thread, scenario, ontology, threadId);
   }
 
-  /** 写回线程 json（更新 updated_at） */
+  /** 写回线程 json（更新 updated_at）。调用前必经 readThread（append/replace），归属已校验 */
   private persist(thread: Thread, scenario: string, ontology: string, threadId: string): void {
     thread.updated_at = new Date().toISOString();
-    const dirPath = this.pac.resolveWritePath('thread', scenario, ontology, threadId);
+    const dirPath = this.pac.resolveWritePath(threadId);
     const dataPath = join(dirPath, '.data.json');
     writeFileSync(dataPath, JSON.stringify(thread, null, 2), 'utf-8');
   }
@@ -123,7 +123,7 @@ export class ThreadStore {
 
   /** 读取线程并校验归属（场景/本体必须与请求一致，防跨本体访问） */
   private readThread(scenario: string, ontology: string, threadId: string): Thread {
-    const dataPath = this.pac.resolveThreadReadPath(scenario, ontology, threadId);
+    const dataPath = this.pac.resolveThreadReadPath(threadId);
     if (!existsSync(dataPath)) {
       throw new ForbiddenError('对话不存在');
     }

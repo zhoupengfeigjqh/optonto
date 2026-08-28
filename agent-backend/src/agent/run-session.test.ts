@@ -116,3 +116,61 @@ describe('RunSession — adjustmentInvalid（调整规划校验失败主动中�
     expect(s.terminalReason(2)).toContain('主动中止');
   });
 });
+
+describe('RunSession — 规划提交口（PlanSubmission 复位-重提协议）', () => {
+  it('submit 后 peek 取回；reset 后 peek 为 null（只认下一次新提交）', () => {
+    const s = new RunSession();
+    expect(s.submittedPlan.peek()).toBeNull();
+    const plan = { subtasks: [] };
+    s.submittedPlan.submit(plan);
+    expect(s.submittedPlan.peek()).toBe(plan);
+    s.submittedPlan.reset();
+    expect(s.submittedPlan.peek()).toBeNull();
+    const plan2 = { subtasks: [{ seq: 1 }] };
+    s.submittedPlan.submit(plan2 as never);
+    expect(s.submittedPlan.peek()).toBe(plan2);
+  });
+});
+
+describe('RunSession — 规划叙事通道', () => {
+  it('默认开启；closePlanningNarrative 后关闭（总结阶段走 token 正文）', () => {
+    const s = new RunSession();
+    expect(s.isPlanningNarrative()).toBe(true);
+    s.closePlanningNarrative();
+    expect(s.isPlanningNarrative()).toBe(false);
+  });
+});
+
+describe('RunSession — 父 Agent 上下文手术', () => {
+  it('injectFinalPlan 向父 Agent 注入最终规划消息（user 角色 + 模板文案）', () => {
+    const s = new RunSession();
+    const p = fakeAgent();
+    s.parentAgent = p;
+    s.injectFinalPlan('1. QueryA（场景/本体）');
+    expect(p.state.messages).toHaveLength(1);
+    const msg = p.state.messages[0] as { role: string; content: string };
+    expect(msg.role).toBe('user');
+    expect(msg.content).toContain('用户在确认时修改了执行计划');
+    expect(msg.content).toContain('1. QueryA（场景/本体）');
+  });
+
+  it('父 Agent 缺失时 injectFinalPlan/markFeedbackStart/dropFeedbackRound 均安全空转', () => {
+    const s = new RunSession();
+    expect(() => s.injectFinalPlan('x')).not.toThrow();
+    expect(s.markFeedbackStart()).toBe(0);
+    expect(() => s.dropFeedbackRound(0)).not.toThrow();
+  });
+
+  it('markFeedbackStart/dropFeedbackRound：剔除标记之后的反馈轮上下文，之前的保留', () => {
+    const s = new RunSession();
+    const p = fakeAgent();
+    s.parentAgent = p;
+    p.state.messages.push({ role: 'user', content: '规划' }, { role: 'assistant', content: '规划已提交' });
+    const mark = s.markFeedbackStart();
+    p.state.messages.push({ role: 'user', content: '反馈prompt' }, { role: 'assistant', content: '继续执行原计划' });
+    expect(p.state.messages).toHaveLength(4);
+    s.dropFeedbackRound(mark);
+    expect(p.state.messages).toHaveLength(2);
+    expect((p.state.messages[1] as { content: string }).content).toBe('规划已提交');
+  });
+});

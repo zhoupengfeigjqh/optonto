@@ -24,7 +24,6 @@ describe('compressHistory — 短期记忆压缩纯逻辑', () => {
     const r = compressHistory(mk(30));
     expect(r.toSummarize).toHaveLength(0);
     expect(r.kept).toHaveLength(30);
-    expect(r.messages).toHaveLength(30);
   });
 
   it('>50 条：截断前部（不进上下文也不摘要），窗口内保留最近 30', () => {
@@ -32,7 +31,7 @@ describe('compressHistory — 短期记忆压缩纯逻辑', () => {
     // 51 条 → 窗口取最近 50 → 保留 30 + 压缩 20（被截断的最早 1 条不进上下文）
     expect(r.toSummarize).toHaveLength(20);
     expect(r.kept).toHaveLength(30);
-    expect(r.messages[0]?.role).toBe('summary');
+    expect(r.kept[0].content).toBe('msg-22'); // 窗口 = msg-2..msg-51，kept = 窗口尾 30 条
   });
 
   it('>30min 断点且尾部 ≤30：采用断点，断点前压缩', () => {
@@ -56,13 +55,6 @@ describe('compressHistory — 短期记忆压缩纯逻辑', () => {
     expect(r.toSummarize).toHaveLength(10);
     expect(r.kept).toHaveLength(30);
     expect(r.kept[0].content).toBe('msg-11');
-  });
-
-  it('summary 占位位于最前，时间戳 = 压缩区首条（断点锚）', () => {
-    const r = compressHistory(mk(40));
-    expect(r.messages[0]?.role).toBe('summary');
-    expect(r.messages[0]?.content).toBe('');
-    expect(r.messages[0]?.timestamp).toBe(r.toSummarize[0].timestamp);
   });
 
   it('非法时间戳安全处理（不抛错）', () => {

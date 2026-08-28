@@ -14,11 +14,10 @@ const KEEP_TAIL = 30;
 const GAP_MS = 30 * 60 * 1000;
 
 export interface CompressResult {
-  /** 压缩后的完整消息（含 summary 占位；上层据 toSummarize 是否非空决定是否生成摘要并替换占位） */
-  messages: ThreadMessage[];
   /** 保留的原文尾部 */
   kept: ThreadMessage[];
-  /** 需要 LLM 生成摘要的压缩区原文（空 = 无需压缩） */
+  /** 需要 LLM 生成摘要的压缩区原文（空 = 无需压缩）。摘要消息由上层组装：
+   *  role=summary、时间戳取压缩区首条（便于后续断点判定）——见 memory-service */
   toSummarize: ThreadMessage[];
 }
 
@@ -31,7 +30,7 @@ function ts(m: ThreadMessage): number {
 export function compressHistory(messages: ThreadMessage[]): CompressResult {
   const n = messages.length;
   if (n <= KEEP_TAIL) {
-    return { messages, kept: messages, toSummarize: [] };
+    return { kept: messages, toSummarize: [] };
   }
 
   // 规则1：> MAX_WINDOW 截断前部（太旧，不进上下文也不摘要）
@@ -52,12 +51,5 @@ export function compressHistory(messages: ThreadMessage[]): CompressResult {
   const splitAt = cutoff >= 0 ? cutoff : window.length - KEEP_TAIL - 1;
   const toSummarize = window.slice(0, splitAt + 1);
   const kept = window.slice(splitAt + 1);
-
-  // summary 占位（内容由上层 LLM 生成后替换）；时间戳取压缩区首条，便于后续断点判定
-  const placeholder: ThreadMessage = {
-    role: 'summary',
-    content: '',
-    timestamp: toSummarize[0]?.timestamp ?? '',
-  };
-  return { messages: [placeholder, ...kept], kept, toSummarize };
+  return { kept, toSummarize };
 }

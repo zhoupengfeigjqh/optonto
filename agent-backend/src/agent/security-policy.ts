@@ -30,7 +30,7 @@ export function createSecurityGate(): SecurityGate {
   return { violation: null };
 }
 
-/** 子 Agent 安全上下文：工具层 disable 闸的输入（禁用集合 + run 级共享闸），createChildAgent 第 5 参 */
+/** 子 Agent 安全上下文：工具层 disable 闸的输入（禁用集合 + run 级共享闸），由 buildSubtaskPolicy 派生并进 SubtaskPolicy */
 export interface ChildSecurityCtx {
   /** 禁用行为集合：behavior_name → display_name（报错文案展示用）；子任务启动时从合法清单内筛 scope 含 disable 者 */
   disabled: ReadonlyMap<string, string>;

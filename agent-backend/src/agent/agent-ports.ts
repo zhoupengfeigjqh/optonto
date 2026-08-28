@@ -4,9 +4,7 @@
  * 结构化满足这些接口，测试可用 fake 替换，主循环（分波/终止/反馈/总结）可脱离真实 SDK 单测。
  */
 import type { AgentPort } from './agent-port.js';
-import type { ToolErrorBudget } from './error-budget.js';
-import type { LegalCalls } from './legal-calls.js';
-import type { ChildSecurityCtx } from './security-policy.js';
+import type { SubtaskPolicy } from './execution-policy.js';
 import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta, FunctionInfo } from '../types.js';
 
 /** 可挂载函数/工具目录条目（getMountableToolCatalog 返回）。三类：本体函数 / 公共函数 / 其他MCP工具 */
@@ -30,13 +28,8 @@ export interface AgentFactoryPort {
     onSkillLoaded: (skillName: string) => void,
     onPlanSubmitted?: (plan: SubTaskPlan) => void,
   ): Promise<AgentPort>;
-  createChildAgent(
-    context: SkillContext,
-    requiredParamsMap?: Record<string, string[]>,
-    errorBudget?: ToolErrorBudget,
-    legalCalls?: LegalCalls,
-    security?: ChildSecurityCtx,
-  ): Promise<AgentPort>;
+  /** 创建子 Agent（执行专家）。policy 由 buildSubtaskPolicy 一处派生（完整策略对象，不存在半设防形态） */
+  createChildAgent(context: SkillContext, policy: SubtaskPolicy): Promise<AgentPort>;
   /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
   callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;
   /** 可挂载函数/工具目录（本体函数/公共函数/其他MCP工具三类），父 Agent listAllMcpFunctions 工具与规划校验共用 */

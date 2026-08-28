@@ -9,13 +9,12 @@ import { resolveDeepSeekModel } from '../services/llm.js';
 import { buildParentPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from '../utils/text-utils.js';
 import { isParamValueEmpty } from './param-contract.js';
+import { subtaskFieldsSchema } from './subtask-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
-import type { ToolErrorBudget } from './error-budget.js';
 import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
-import type { ChildSecurityCtx } from './security-policy.js';
 import type { AgentPort } from './agent-port.js';
 import type { MountableToolInfo } from './agent-ports.js';
-import type { LegalCalls } from './legal-calls.js';
+import type { SubtaskPolicy } from './execution-policy.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
@@ -180,17 +179,13 @@ export class AgentFactory {
 
   /**
    * 创建子 Agent（执行专家）。
-   * 挂载业务执行工具集：executeOntoBehavior（恒在）+ 本体函数/公共函数/其他 MCP 工具（一律按 legalCalls.functions = 规则声明 ∪ 父 Agent related_functions 挂载，默认不挂），
+   * 挂载业务执行工具集：executeOntoBehavior（恒在）+ 本体函数/公共函数/其他 MCP 工具（一律按 policy.legalCalls.functions = 规则声明 ∪ 父 Agent related_functions 挂载）。
    * 不挂 load_skill / submit_plan / list* 本体浏览工具——合法行为列表已在指令中渲染，无需自行浏览本体元数据。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
+   * policy 为 buildSubtaskPolicy 派生的完整执行策略（合法清单/必填表/安全上下文/报错预算），
+   * 四道闸与预算包装恒在——不存在"半设防"形态，缺哪样都编译不过。
    */
-  async createChildAgent(
-    context: SkillContext,
-    requiredParamsMap?: Record<string, string[]>,
-    errorBudget?: ToolErrorBudget,
-    legalCalls?: LegalCalls,
-    security?: ChildSecurityCtx,
-  ): Promise<AgentPort> {
+  async createChildAgent(context: SkillContext, policy: SubtaskPolicy): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
@@ -198,23 +193,15 @@ export class AgentFactory {
     // 剔除本体浏览工具（list*）——子 Agent 只执行业务，合法行为列表已在指令中渲染。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
     // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
-    // requiredParamsMap：行为名 → 必填参数名表——凡 executeOntoBehavior 调用按表硬检查，缺失拒绝执行（不限主行为）。
-    // legalCalls：executeOntoBehavior 白名单（非法行为名在工具层拒绝）；本体函数工具（schema 带 ontology_id）与公共函数均按 legalCalls.functions 挂载期过滤。
-    // errorBudget：工具报错预算——连续报错达上限返回 terminate:true，停止 pi-agent 内层空转。
-    // security：工具层 disable 闸输入（禁用集合 + run 级共享闸）——命中置 violation + terminate，中断整个 run。
-    const legal = legalCalls ?? { behaviors: [], functions: [] };
+    const legal = policy.legalCalls;
     const mcpTools = allMcp
       .filter(({ tool }) => {
         if (PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name)) return false; // 剔除 list*
         if (tool.name === 'executeOntoBehavior') return true; // 行为执行
-        // 本体函数 / 公共函数 / 其他 MCP 工具：一律按 legalCalls.functions（规则声明 ∪ 父 Agent related_functions）挂载，默认不挂
+        // 本体函数 / 公共函数 / 其他 MCP 工具：一律按 legalCalls.functions（规则声明 ∪ 父 Agent related_functions）挂载
         return legal.functions.includes(tool.name);
       })
-      .map(({ tool }) => this.scopeToOntology(
-        tool,
-        { ontologyId, requiredParamsMap, legalCalls: legal, security },
-        errorBudget,
-      ));
+      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, policy));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'off' },
@@ -260,12 +247,8 @@ export class AgentFactory {
    *   （本体函数工具已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门）
    * 无 ontology_id 的工具（如公共函数/新增 MCP）原样返回。
    */
-  private scopeToOntology(
-    tool: AgentTool,
-    scope: { ontologyId: number; requiredParamsMap?: Record<string, string[]>; legalCalls: LegalCalls; security?: ChildSecurityCtx },
-    errorBudget?: ToolErrorBudget,
-  ): AgentTool {
-    const { ontologyId, requiredParamsMap, legalCalls, security } = scope;
+  private scopeToOntology(tool: AgentTool, ontologyId: number, policy: SubtaskPolicy): AgentTool {
+    const { requiredParamsMap, legalCalls, security, errorBudget } = policy;
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
     // 本体锁定对象：executeOntoBehavior（行为执行）+ 发布方标记的本体函数（scope.category const）。
@@ -288,7 +271,7 @@ export class AgentFactory {
       // ── 闸0 入口短路（所有工具）：run 内任一调用已命中 disable（violation 置位）→ 一律 terminate ──
       // 中断信号的广播器：兄弟子 Agent 共享同一 gate，一个出事全场后续工具调用零执行；
       // 并行批场景下同批后续调用也全带 terminate，shouldTerminateToolBatch 的 every() 整批命中硬停。
-      if (security?.gate.violation) {
+      if (security.gate.violation) {
         return securityTerminateResult(security.gate.violation);
       }
       const p = needLock ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
@@ -300,9 +283,9 @@ export class AgentFactory {
         // 命中：置 run 级 violation（first-writer-wins）+ 返回 terminate:true，真实 MCP 调用零发生。
         // 不抛错、不计报错预算：策略拒绝无自纠空间（重试必败），terminate 当场停内层循环（与预算超限同机制），
         // SubtaskRunner 见 violation 返回 securityViolation 失败 → orchestrator 以 securityBlocked 中断整个 run。
-        if (bn && security?.disabled.has(bn)) {
+        if (bn && security.disabled.has(bn)) {
           security.gate.violation ??= buildDisableMessage(bn, security.disabled.get(bn));
-          return securityTerminateResult(security.gate.violation!);
+          return securityTerminateResult(security.gate.violation);
         }
 
         // ── 闸2 白名单：业务执行面（executeOntoBehavior）的 behavior 名只允许合法集合 ──
@@ -320,7 +303,7 @@ export class AgentFactory {
       // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
       // 查询行为缺必填同样会被 core 端拒绝——提前在工具层拦下，错误消息与重试方向更清晰。
       if (tool.name === 'executeOntoBehavior' && p?.behavior_name) {
-        const required = requiredParamsMap?.[p.behavior_name];
+        const required = requiredParamsMap[p.behavior_name];
         if (required) {
           const missing = required.filter(key => isParamValueEmpty((p.params ?? {})[key]));
           if (missing.length > 0) {
@@ -333,8 +316,8 @@ export class AgentFactory {
     return {
       ...tool,
       ...(nextParameters !== schema ? { parameters: nextParameters } : {}),
-      // 有预算时包上报错计数（含白名单/必填硬检查抛错）；无预算向后兼容，不包
-      execute: errorBudget ? wrapExecuteWithErrorBudget(execute, errorBudget) : execute,
+      // 恒包上报错计数（含白名单/必填硬检查抛错）——预算由策略对象保证存在，不再有"无预算"形态
+      execute: wrapExecuteWithErrorBudget(execute, errorBudget),
     };
   }
 
@@ -379,24 +362,8 @@ export class AgentFactory {
       label: '提交子任务规划',
       description: '当用户需求属于业务操作、需要拆分为多个子任务执行时，调用本工具提交完整的子任务执行规划。',
       parameters: Type.Object({
-        subtasks: Type.Array(Type.Object({
-          // 数值字段放宽为 number|string：TypeBox 不做字符串数字强转，
-          // 由 execute 回调统一规整为 number（规避 LLM 输出 "1" 导致校验失败的场景）
-          seq: Type.Union([Type.Number(), Type.String()]),
-          // behavior/function 均为可选键：互斥是跨字段语义，由 execute 硬门判定；
-          // 若 schema 强制 behavior 必填，LLM 对函数子任务会本能省略该键（而非填空串），schema 层直接拒绝
-          behavior: Type.Optional(Type.String()),
-          function: Type.Optional(Type.String()),
-          params: Type.Record(Type.String(), Type.Any()),
-          description: Type.String(),
-          guidance: Type.Optional(Type.String()),
-          scenario_name: Type.String(),
-          scenario_id: Type.Union([Type.Number(), Type.String()]),
-          ontology_name: Type.String(),
-          ontology_id: Type.Union([Type.Number(), Type.String()]),
-          depends_on: Type.Optional(Type.Array(Type.Union([Type.Number(), Type.String()]))),
-          related_functions: Type.Optional(Type.Array(Type.String())),
-        })),
+        // 子任务字段单一事实源：subtask-contract 声明表（提示词字段表与本 schema 同源，必填性不再漂移）
+        subtasks: Type.Array(Type.Object(subtaskFieldsSchema())),
         reasoning: Type.Optional(Type.String()),
       }),
       execute: async (toolCallId, params) => {

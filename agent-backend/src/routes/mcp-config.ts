@@ -41,15 +41,17 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
       return;
     }
 
-    // 超时控制
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), 15000);
+    // 真实超时：MCPClient 不接收 AbortSignal（此前 abortController 从未接线，超时是假的），
+    // 用 Promise.race 限时 15s；超时/失败后 close 兜底释放底层连接
+    const client = new MCPClient(url);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('连接超时（15 秒）')), 15000));
 
     try {
-      const client = new MCPClient(url);
-      await client.connect();
-
-      const result = await client.listTools();
+      const result = await Promise.race([
+        (async () => { await client.connect(); return client.listTools(); })(),
+        timeout,
+      ]);
 
       // 整理工具信息
       const tools = (result.tools || []).map((tool: any) => ({
@@ -63,13 +65,12 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
 
       res.json({ success: true, tools });
     } catch (e: any) {
+      try { await client.close(); } catch {}
       res.json({
         success: false,
         error: e.message || '连接失败',
         tools: [],
       });
-    } finally {
-      clearTimeout(timeout);
     }
   });
 

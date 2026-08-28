@@ -56,6 +56,9 @@ import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { createSecurityGate } from './security-policy.js';
 import type { ChildSecurityCtx } from './security-policy.js';
+import { createToolErrorBudget } from './error-budget.js';
+import type { SubtaskPolicy } from './execution-policy.js';
+import type { LegalCalls } from './legal-calls.js';
 import type { ThreadMessage } from '../types.js';
 
 const mockedAgent = vi.mocked(Agent);
@@ -117,18 +120,28 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
 /**
  * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → scopeToOntology）。
  * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
- * legalCalls 默认含主行为 + 一个规则关联行为 + 一个关联函数，供白名单/硬检查测试共用。
+ * policy 完整策略对象直造（生产路径由 buildSubtaskPolicy 派生；工厂只消费不派生）：
+ * legalCalls 默认含主行为 + 一个规则关联行为 + 一个关联函数，供白名单/硬检查测试共用；
  * requiredParamsMap 覆盖两个行为（含规则查询行为），验证必填硬检查不限主行为。
  */
+function mkPolicy(over?: { legalCalls?: LegalCalls; requiredParamsMap?: Record<string, string[]>; security?: ChildSecurityCtx }): SubtaskPolicy {
+  return {
+    legalCalls: over?.legalCalls ?? { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] },
+    requiredParamsMap: over?.requiredParamsMap ?? { CreatePurchaseRecord: ['rawMaterialId', 'qty'], QuerySupplier: ['supplierName'] },
+    errorBudget: createToolErrorBudget(),
+    security: over?.security ?? { disabled: new Map<string, string>(), gate: createSecurityGate() },
+  };
+}
+
 async function captureChildTools(
-  legalCalls = { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] },
-  requiredParamsMap: Record<string, string[]> = { CreatePurchaseRecord: ['rawMaterialId', 'qty'], QuerySupplier: ['supplierName'] },
+  legalCalls?: LegalCalls,
+  requiredParamsMap?: Record<string, string[]>,
   security?: ChildSecurityCtx,
 ) {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
-    requiredParamsMap, undefined, legalCalls, security,
+    mkPolicy({ legalCalls, requiredParamsMap, security }),
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
@@ -484,14 +497,6 @@ describe('AgentFactory 子 Agent disable 硬闸（工具层单点，terminate + 
     expect(result).toBeTruthy();
     expect(result.terminate).toBeUndefined();
     expect(security.gate.violation).toBeNull();
-  });
-
-  it('未注入 security（向后兼容）→ 行为照常放行', async () => {
-    const tools = await captureChildTools();
-    const tool = tools.find(t => t.name === 'executeOntoBehavior');
-    const result = await tool.execute('call-n1', { behavior_name: 'QuerySupplier', params: { supplierName: '宝钢' } });
-    expect(result).toBeTruthy();
-    expect(result.terminate).toBeUndefined();
   });
 });
 

@@ -8,11 +8,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SubtaskRunner, type SubtaskRunnerDeps } from './subtask-runner.js';
 import { wrapExecuteWithErrorBudget, type ToolErrorBudget } from './error-budget.js';
 import { createSecurityGate, buildDisableMessage } from './security-policy.js';
-import type { ChildSecurityCtx } from './security-policy.js';
+import type { SubtaskPolicy } from './execution-policy.js';
 import type { AgentPort } from './agent-port.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import { createEventChannel } from './event-channel.js';
-import type { SubTask, BehaviorMeta, SkillContext } from '../types.js';
+import type { SubTask, BehaviorMeta } from '../types.js';
 
 /** 静默事件通道（测试不关心事件流，只关心返回值） */
 const noopChannel = createEventChannel(() => {});
@@ -39,10 +39,6 @@ const meta: BehaviorMeta = {
   isWrite: true,
 };
 
-const context: SkillContext = {
-  scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1,
-};
-
 /** 构造最小 deps：confirm 自动批准；createChildAgent 由各测试注入 */
 function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): SubtaskRunnerDeps {
   const confirm = vi.fn(async () => ({ approved: true }));
@@ -50,11 +46,14 @@ function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): Subt
     confirmManager: { requestConfirm: confirm } as unknown as ConfirmPort,
     createChildAgent,
     childAgents: new Set(),
-    getBehaviorDisplayName: () => '',
-    getFunctionDisplayName: () => '',
-    getBehaviorParams: () => ({}),
-    getBehaviorScope: () => ['everyone'],
+    info: {
+      behaviorDisplayName: () => '',
+      functionDisplayName: () => '计算安全库存',
+      behaviorParams: () => ({}),
+      behaviorScope: () => ['everyone'],
+    },
     securityGate: createSecurityGate(),
+    callFunctionTool: vi.fn(async () => ({ text: '{"ok":true}', isError: false })),
   };
 }
 
@@ -70,9 +69,9 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
-      capturedBudget = errorBudget;
-      const wrapped = throwingTool(errorBudget!);
+    const deps = makeDeps(async (_ctx, policy) => {
+      capturedBudget = policy.errorBudget;
+      const wrapped = throwingTool(policy.errorBudget);
       return {
         prompt: async () => {
           promptCalls++;
@@ -92,7 +91,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     // createChildAgent 确实收到了预算
     expect(capturedBudget).toBeDefined();
@@ -114,8 +113,8 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
-      capturedBudget = errorBudget;
+    const deps = makeDeps(async (_ctx, policy) => {
+      capturedBudget = policy.errorBudget;
       return {
         prompt: async () => { promptCalls++; },
         abort: () => {},
@@ -125,7 +124,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     expect(capturedBudget!.exceeded).toBe(false);
     expect(capturedBudget!.count).toBe(0);
@@ -137,9 +136,9 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
-      capturedBudget = errorBudget;
-      const wrapped = throwingTool(errorBudget!);
+    const deps = makeDeps(async (_ctx, policy) => {
+      capturedBudget = policy.errorBudget;
+      const wrapped = throwingTool(policy.errorBudget);
       return {
         prompt: async () => {
           promptCalls++;
@@ -153,7 +152,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     // 结果以【状态】标记为准：工具报过 1 次错（预算未达上限）但最终成功 → 成功
     expect(result.success).toBe(true);
@@ -166,9 +165,9 @@ describe('SubtaskRunner · 工具报错预算', () => {
     let promptCalls = 0;
     let capturedBudget: ToolErrorBudget | undefined;
 
-    const deps = makeDeps(async (_ctx, _rpMap, errorBudget) => {
-      capturedBudget = errorBudget;
-      const wrapped = throwingTool(errorBudget!);
+    const deps = makeDeps(async (_ctx, policy) => {
+      capturedBudget = policy.errorBudget;
+      const wrapped = throwingTool(policy.errorBudget);
       return {
         prompt: async () => {
           promptCalls++;
@@ -181,7 +180,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     });
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('前置规则验证失败');
@@ -192,7 +191,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
   it('prompt() 抛异常（LLM API 错误）→ 重试后成功', async () => {
     let promptCalls = 0;
 
-    const deps = makeDeps(async (_ctx, _rpMap) => ({
+    const deps = makeDeps(async (_ctx, _policy) => ({
       prompt: async () => {
         promptCalls++;
         if (promptCalls === 1) throw new Error('LLM API 503: Service Unavailable');
@@ -204,7 +203,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     expect(result.success).toBe(true);
     expect(promptCalls).toBe(2);                 // 1 次初始 + 1 次异常重试
@@ -213,7 +212,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
   it('prompt() 持续抛异常 → 重试达上限后失败', async () => {
     let promptCalls = 0;
 
-    const deps = makeDeps(async (_ctx, _rpMap) => ({
+    const deps = makeDeps(async (_ctx, _policy) => ({
       prompt: async () => {
         promptCalls++;
         throw new Error('LLM API 503: Service Unavailable');
@@ -224,7 +223,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('LLM 调用异常');
@@ -249,7 +248,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaNoRules, context, noopChannel);
+    const result = await runner.run(subTask, metaNoRules, noopChannel);
 
     expect(result.success).toBe(true);
     expect(instruction).toContain('### 本子任务合法行为列表');
@@ -283,7 +282,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaWithRules, context, noopChannel);
+    const result = await runner.run(subTask, metaWithRules, noopChannel);
 
     expect(result.success).toBe(true);
     expect(instruction).toContain('- 规则关联行为: QueryRawMaterials');
@@ -314,14 +313,14 @@ describe('SubtaskRunner · 工具报错预算', () => {
     } satisfies AgentPort));
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTaskWithFuncs, metaWithRules, context, noopChannel);
+    const result = await runner.run(subTaskWithFuncs, metaWithRules, noopChannel);
 
     expect(result.success).toBe(true);
     // 规则声明 getCurrentDate、calcSafetyStock + 父 Agent 补充 sumRawNotArrivalQty → 并集（单一「可用函数/工具」行）
     expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: getCurrentDate、calcSafetyStock、sumRawNotArrivalQty');
   });
 
-  it('必填参数名表覆盖所有合法行为：主行为取 meta，规则关联行为取 getBehaviorParams', async () => {
+  it('必填参数名表覆盖所有合法行为：主行为取 meta，规则关联行为取 info.behaviorParams', async () => {
     let capturedMap: Record<string, string[]> | undefined;
     const metaWithRules: BehaviorMeta = {
       display_name: '创建采购记录',
@@ -333,8 +332,8 @@ describe('SubtaskRunner · 工具报错预算', () => {
       concepts: [],
       isWrite: true,
     };
-    const deps = makeDeps(async (_ctx, rpMap) => {
-      capturedMap = rpMap;
+    const deps = makeDeps(async (_ctx, policy) => {
+      capturedMap = policy.requiredParamsMap;
       return {
         prompt: async () => {},
         abort: () => {},
@@ -342,11 +341,11 @@ describe('SubtaskRunner · 工具报错预算', () => {
         state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
       } satisfies AgentPort;
     });
-    deps.getBehaviorParams = (_s, _o, bn) =>
+    deps.info.behaviorParams = (_s, _o, bn) =>
       bn === 'QueryRawMaterials' ? { materialName: { required: true }, pageSize: { required: false } } : {};
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaWithRules, context, noopChannel);
+    const result = await runner.run(subTask, metaWithRules, noopChannel);
 
     expect(result.success).toBe(true);
     expect(capturedMap).toEqual({
@@ -357,10 +356,10 @@ describe('SubtaskRunner · 工具报错预算', () => {
 });
 
 describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
-  it('合法清单内行为 scope 含 disable → 禁用集合（带 display_name）随第 5 参注入 createChildAgent', async () => {
-    let captured: ChildSecurityCtx | undefined;
-    const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => {
-      captured = security;
+  it('合法清单内行为 scope 含 disable → 禁用集合（带 display_name）随策略注入 createChildAgent', async () => {
+    let captured: SubtaskPolicy | undefined;
+    const deps = makeDeps(async (_ctx, policy) => {
+      captured = policy;
       return {
         prompt: async () => {},
         abort: () => {},
@@ -368,30 +367,30 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
         state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok\n【状态】成功' }] }] },
       } satisfies AgentPort;
     });
-    deps.getBehaviorScope = (_s, _o, bn) => bn === 'CreatePurchaseRecord' ? ['disable'] : ['everyone'];
-    deps.getBehaviorDisplayName = () => '创建采购记录';
+    deps.info.behaviorScope = (_s, _o, bn) => bn === 'CreatePurchaseRecord' ? ['disable'] : ['everyone'];
+    deps.info.behaviorDisplayName = () => '创建采购记录';
 
     const runner = new SubtaskRunner(deps);
     // 闸在工具层（scopeToOntology）：runner 不拦截，正常装配并跑通
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     expect(result.success).toBe(true);
     expect(captured).toBeDefined();
-    expect(captured!.disabled.has('CreatePurchaseRecord')).toBe(true);
-    expect(captured!.disabled.get('CreatePurchaseRecord')).toBe('创建采购记录');
-    expect(captured!.gate).toBe(deps.securityGate); // run 级共享闸透传
+    expect(captured!.security.disabled.has('CreatePurchaseRecord')).toBe(true);
+    expect(captured!.security.disabled.get('CreatePurchaseRecord')).toBe('创建采购记录');
+    expect(captured!.security.gate).toBe(deps.securityGate); // run 级共享闸透传
   });
 
   it('规则补充行为被禁也入禁用集合（data_supplements 覆盖——工具层单点的核心价值）', async () => {
-    let captured: ChildSecurityCtx | undefined;
+    let captured: SubtaskPolicy | undefined;
     const metaWithRules: BehaviorMeta = {
       ...meta,
       preRules: [
         { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: ['QueryRawMaterials'], related_functions: [] },
       ],
     };
-    const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => {
-      captured = security;
+    const deps = makeDeps(async (_ctx, policy) => {
+      captured = policy;
       return {
         prompt: async () => {},
         abort: () => {},
@@ -399,33 +398,33 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
         state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok\n【状态】成功' }] }] },
       } satisfies AgentPort;
     });
-    deps.getBehaviorScope = (_s, _o, bn) => bn === 'QueryRawMaterials' ? ['disable'] : ['everyone'];
-    deps.getBehaviorDisplayName = (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '';
-    deps.getBehaviorParams = () => ({});
+    deps.info.behaviorScope = (_s, _o, bn) => bn === 'QueryRawMaterials' ? ['disable'] : ['everyone'];
+    deps.info.behaviorDisplayName = (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '';
+    deps.info.behaviorParams = () => ({});
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaWithRules, context, noopChannel);
+    const result = await runner.run(subTask, metaWithRules, noopChannel);
 
     expect(result.success).toBe(true);
-    expect(captured!.disabled.has('QueryRawMaterials')).toBe(true);   // 补充行为被禁 → 进集合
-    expect(captured!.disabled.get('QueryRawMaterials')).toBe('查询原材料');
-    expect(captured!.disabled.has('CreatePurchaseRecord')).toBe(false); // 主行为未禁
+    expect(captured!.security.disabled.has('QueryRawMaterials')).toBe(true);   // 补充行为被禁 → 进集合
+    expect(captured!.security.disabled.get('QueryRawMaterials')).toBe('查询原材料');
+    expect(captured!.security.disabled.has('CreatePurchaseRecord')).toBe(false); // 主行为未禁
   });
 
   it('工具层闸命中（violation 置位）→ 返回 securityViolation 失败：先于预算/结果解析，即使 LLM 自报成功', async () => {
-    const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => ({
+    const deps = makeDeps(async (_ctx, policy) => ({
       prompt: async () => {
         // 模拟工具层闸1 命中：置 run 级 violation + terminate（真实判定在 scopeToOntology）
-        security!.gate.violation = buildDisableMessage('CreatePurchaseRecord', '创建采购记录');
+        policy.security.gate.violation = buildDisableMessage('CreatePurchaseRecord', '创建采购记录');
       },
       abort: () => {},
       subscribe: () => {},
       state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
     } satisfies AgentPort));
-    deps.getBehaviorScope = () => ['disable'];
+    deps.info.behaviorScope = () => ['disable'];
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, meta, context, noopChannel);
+    const result = await runner.run(subTask, meta, noopChannel);
 
     expect(result).toMatchObject({ seq: 1, task: 'CreatePurchaseRecord', success: false });
     expect(result.securityViolation).toBe(true);                        // orchestrator 据此中断整个 run
@@ -437,9 +436,9 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
 
   it('scope 为 everyone / 用户白名单 → 禁用集合为空，正常放行（身份体系落地前不按名过滤）', async () => {
     for (const scope of [['everyone'], ['zhangsan', 'lisi']]) {
-      let captured: ChildSecurityCtx | undefined;
-      const deps = makeDeps(async (_ctx, _rpMap, _budget, _legal, security) => {
-        captured = security;
+      let captured: SubtaskPolicy | undefined;
+      const deps = makeDeps(async (_ctx, policy) => {
+        captured = policy;
         return {
           prompt: async () => {},
           abort: () => {},
@@ -447,12 +446,58 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
           state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok\n【状态】成功' }] }] },
         } satisfies AgentPort;
       });
-      deps.getBehaviorScope = () => scope;
+      deps.info.behaviorScope = () => scope;
 
       const runner = new SubtaskRunner(deps);
-      const result = await runner.run(subTask, meta, context, noopChannel);
+      const result = await runner.run(subTask, meta, noopChannel);
       expect(result.success).toBe(true);
-      expect(captured!.disabled.size).toBe(0);
+      expect(captured!.security.disabled.size).toBe(0);
     }
+  });
+});
+
+describe('SubtaskRunner · 函数子任务（统一入口的直连路径）', () => {
+  const fnTask: SubTask = {
+    seq: 5, behavior: '', function: 'calcSafetyStock',
+    params: { currentStock: { type: 'number', value: 10 }, nested: { type: 'array', value: [{ type: 'object', value: { qty: { value: 3 } } }] } },
+    description: '计算安全库存',
+    scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1,
+  };
+
+  it('直连调用：params 深展开为纯值，成功 → summary 为原始结果文本；不走子 Agent、不弹安全确认', async () => {
+    const createChildAgent = vi.fn();
+    const deps = makeDeps(createChildAgent);
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(fnTask, null, noopChannel);
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('{"ok":true}');
+    // 深展开：{value} 包装（含数组项内嵌套）全部剥成纯值
+    expect(deps.callFunctionTool).toHaveBeenCalledWith('calcSafetyStock', 1, { currentStock: 10, nested: [{ qty: 3 }] });
+    expect(createChildAgent).not.toHaveBeenCalled();                       // 无子 Agent
+    expect(deps.confirmManager.requestConfirm).not.toHaveBeenCalled();     // 无安全确认
+  });
+
+  it('直连失败（isError）→ 记失败不抛错，error 带函数执行失败前缀', async () => {
+    const deps = makeDeps(vi.fn());
+    (deps.callFunctionTool as any).mockResolvedValue({ text: 'MCP error -32000', isError: true });
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(fnTask, null, noopChannel);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('函数执行失败');
+    expect(result.error).toContain('MCP error -32000');
+    expect(result.aborted).toBeUndefined();
+  });
+
+  it('函数中文名走 info.functionDisplayName（执行记录展示三元组同源）', async () => {
+    const events: any[] = [];
+    const channel = createEventChannel(e => events.push(e));
+    const deps = makeDeps(vi.fn());
+    const runner = new SubtaskRunner(deps);
+    await runner.run(fnTask, null, channel);
+
+    const start = events.find(e => e.type === 'exec_entry' && e.entry.type === 'subtask_start');
+    expect(start.entry.displayName).toBe('计算安全库存（calcSafetyStock）');
   });
 });
