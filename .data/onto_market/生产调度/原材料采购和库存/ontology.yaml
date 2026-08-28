@@ -50,10 +50,20 @@ concepts:
     type: string
     display_name: 供应商编号
     example: SUP-001
+    constraint:
+      unique: true
+      required: true
+      enum: []
+      pattern: ''
   - name: supplierName
     type: string
     display_name: 供应商名称
     example: XX钢铁集团
+    constraint:
+      unique: true
+      required: true
+      enum: []
+      pattern: ''
   - name: address
     type: string
     display_name: 地址
@@ -74,6 +84,11 @@ concepts:
     type: string
     display_name: 采购单号
     example: PO-20231027-001
+    constraint:
+      unique: true
+      required: true
+      enum: []
+      pattern: ''
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
@@ -122,6 +137,11 @@ concepts:
     type: string
     display_name: 库存编号
     example: INV-RM-001
+    constraint:
+      unique: true
+      required: true
+      enum: []
+      pattern: ''
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
@@ -158,6 +178,11 @@ concepts:
     type: string
     display_name: 订单编号
     example: SO-20231025-001
+    constraint:
+      unique: true
+      required: true
+      enum: []
+      pattern: ''
   - name: customerOrderName
     type: string
     display_name: 订单名称

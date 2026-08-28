@@ -16,6 +16,11 @@ interface Props {
   ontologyId: number;
 }
 
+// ─── 属性展示名：优先中文 display_name，缺失回退英文属性名 ──────────────────
+
+const attrLabel = (a: { name: string; display_name?: string }): string =>
+  a.display_name || a.name;
+
 interface GraphNode {
   id: string;
   name: string;
@@ -24,7 +29,7 @@ interface GraphNode {
   symbolSize: number;
   itemStyle?: any;
   description?: string;
-  attributes?: { name: string; type: string }[];
+  attributes?: { name: string; type: string; display_name?: string }[];
 }
 
 interface GraphEdge {
@@ -228,7 +233,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
             if (node.attributes && node.attributes.length > 0) {
               html += `<br/><br/><span style="color:#64748b">属性：</span>`;
               node.attributes.forEach(a => {
-                html += `<br/><span style="color:#94a3b8">  ${a.name} (${a.type})</span>`;
+                html += `<br/><span style="color:#94a3b8">  ${attrLabel(a)} (${a.type})</span>`;
               });
             }
             html += '</div>';
@@ -352,7 +357,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
                 <div className="mt-2 space-y-1">
                   {selectedConcept.attributes.map((attr, idx) => (
                     <div key={idx} className="flex items-center gap-2">
-                      <Tag color="blue">{attr.name}</Tag>
+                      <Tag color="blue">{attrLabel(attr)}</Tag>
                       <span className="text-text-secondary text-sm">{attr.type}</span>
                     </div>
                   ))}

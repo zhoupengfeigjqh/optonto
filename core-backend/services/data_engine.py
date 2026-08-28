@@ -48,27 +48,43 @@ def _translate_input_value(value, input_mapping: dict, onto_path: str):
     return value
 
 
-def _translate_output(data, output_mapping: dict, _orig_path: str = "", _reverse: dict | None = None):
+def _translate_output(data, output_mapping: dict, _orig_path: str = "", _ctx: tuple | None = None):
     """Recursively rename keys in target response back to ontology names via output_mapping.
 
     查表一律用目标原始路径（_orig_path 由响应里的真实 key 拼成），与父节点是否改名无关——
     因此数组/对象节点换名与其内部字段换名可共存（如 {"items": "data", "items[*].name": "data[*].prod_name"}）。
+
+    白名单语义：映射非空时，未被任何映射目标路径覆盖（精确命中或作为祖先前缀）的字段
+    一律丢弃，不再原样透传——实例视图/连接测试/智能体应用三端同口径，只暴露本体契约字段。
+    映射为空（如 SQL 引擎）时不过滤，原样返回。空串映射值（"本体属性在目标无来源"）
+    不产生目标路径，天然不参与白名单。
     """
     if not output_mapping or not data:
         return data
-    reverse_map = _reverse if _reverse is not None else {v: k for k, v in output_mapping.items() if v}
+    if _ctx is None:
+        reverse_map = {v: k for k, v in output_mapping.items() if v}
+        _ctx = (reverse_map, set(reverse_map.keys()))
+    reverse_map, target_paths = _ctx
+
+    def _covered(path: str) -> bool:
+        """目标路径被映射覆盖：精确命中，或作为某个映射路径的祖先（容器节点）。"""
+        if path in target_paths:
+            return True
+        return any(t.startswith(path + ".") or t.startswith(path + "[*]") for t in target_paths)
 
     if isinstance(data, dict):
         result = {}
         for k, v in data.items():
             orig_path = f"{_orig_path}.{k}" if _orig_path else k
+            if not _covered(orig_path):
+                continue  # 未映射字段：丢弃，不透传
             onto_full = reverse_map.get(orig_path, k)
             new_key = onto_full.rsplit(".", 1)[-1]
-            result[new_key] = _translate_output(v, output_mapping, orig_path, reverse_map)
+            result[new_key] = _translate_output(v, output_mapping, orig_path, _ctx)
         return result
     if isinstance(data, list):
         orig_path = f"{_orig_path}[*]" if _orig_path else "[*]"
-        return [_translate_output(item, output_mapping, orig_path, reverse_map) for item in data]
+        return [_translate_output(item, output_mapping, orig_path, _ctx) for item in data]
     return data
 
 

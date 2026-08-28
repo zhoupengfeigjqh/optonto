@@ -25,6 +25,7 @@ import FileViewer from '@/components/Design/FileViewer';
 import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementConfirm from '@/components/Design/RequirementConfirm';
 import OntologyGraph from '@/components/View/OntologyGraph';
+import InstanceGraph from '@/components/View/InstanceGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
 import DBMappingTable from '@/components/Design/DBMappingTable';
 import MCPService from '@/components/Design/MCPService';
@@ -116,8 +117,8 @@ export default function DesignPage() {
     <div className="h-full">
       {/* ── 本体展示：轻量，保留 display:none ── */}
       <div style={{ display: activeSection === 'view' && activeTab === 'view' ? '' : 'none' }} className="h-full"><OntologyGraph ontologyId={ontologyId} /></div>
-      <div style={{ display: activeSection === 'view' && activeTab === 'instance' ? '' : 'none' }}>
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>实例视图 — 开发中</p></div>
+      <div style={{ display: activeSection === 'view' && activeTab === 'instance' ? '' : 'none' }} className="h-full">
+        <InstanceGraph ontologyId={ontologyId} />
       </div>
 
       {/* ── 本体构建（需求）：条件渲染，避免常驻内存 ── */}
