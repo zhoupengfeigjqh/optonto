@@ -16,7 +16,8 @@
  */
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
-import { getLastAssistantMessage } from '../utils/text-utils.js';
+import { getLastAssistantMessage, toolResultToText } from '../utils/text-utils.js';
+import { PARENT_TOOL_LABELS } from './agent-factory.js';
 import { validatePlanStructure, validateSeqConflicts, topologicalSort, looksLikePlanClaim } from './plan-validation.js';
 import { isParamValueEmpty, renderParamStructure, type ParamSpec } from './param-contract.js';
 import { ConfirmManager } from './confirm-manager.js';
@@ -225,7 +226,36 @@ export class Orchestrator {
       (plan) => session.submittedPlan.submit(plan),
     );
     session.parentAgent = parentAgent;
+    // 父Agent 工具调用留痕（执行记录）：load_skill 仅完成时推一条（不带 SKILL 全文，只记技能名）；
+    // list* 本体查询 running→done 成对推（结果不截断）。submit_plan / listAllMcpFunctions 不推——
+    // 规划有 plan_confirm/plan_received 专属通道，目录查询按约定不展示。
+    // toolCallId 桥接：start 带 args、end 不带，靠桥接保证同名同参数（与子 Agent 侧同一模式）。
+    const parentToolCalls = new Map<string, { params: any }>();
     parentAgent.subscribe((event: any) => {
+      if (event.type === 'tool_execution_start') {
+        if (event.toolName === 'load_skill') {
+          parentToolCalls.set(event.toolCallId, { params: event.args }); // 暂存技能名，end 时推
+          return;
+        }
+        const label = PARENT_TOOL_LABELS[event.toolName];
+        if (!label) return;
+        parentToolCalls.set(event.toolCallId, { params: event.args });
+        emit.entry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'parent', displayName: `${label}（${event.toolName}）`, displayLabel: label });
+        return;
+      }
+      if (event.type === 'tool_execution_end') {
+        const held = parentToolCalls.get(event.toolCallId);
+        parentToolCalls.delete(event.toolCallId);
+        if (event.toolName === 'load_skill') {
+          const skillName = held?.params?.skill_name ?? '';
+          emit.entry({ type: 'tool_call', name: 'load_skill', status: 'done', source: 'parent', displayName: '加载技能知识（load_skill）', displayLabel: '加载技能知识', detail: `已加载技能：${skillName}` });
+          return;
+        }
+        const label = PARENT_TOOL_LABELS[event.toolName];
+        if (!label) return;
+        emit.entry({ type: 'tool_call', name: event.toolName, status: 'done', params: held?.params, result: toolResultToText(event.result?.content), source: 'parent', displayName: `${label}（${event.toolName}）`, displayLabel: label });
+        return;
+      }
       if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && session.tokensEnabled()) {
         // 此 subscribe 贯穿整个 run（规划/反馈/总结共用同一父Agent），按阶段分流：
         // 规划阶段 → narrative 折叠块（submit_plan 提交后即断流，防编造执行叙事/假总结进正文）；

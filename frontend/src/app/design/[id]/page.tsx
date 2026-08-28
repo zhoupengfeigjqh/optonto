@@ -38,8 +38,8 @@ const DESIGN_TABS = [
   { key: 'behaviors', label: '行为' },
   { key: 'functions', label: '函数' },
   { key: 'rules', label: '规则' },
-  { key: 'securities', label: '安全' },
   { key: 'processes', label: '流程' },
+  { key: 'securities', label: '安全' },
 ];
 
 export default function DesignPage() {

@@ -25,11 +25,21 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '.
  * 函数/外部工具由 listAllMcpFunctions 实时发现（本体函数/公共函数/其他MCP工具三类），父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务；executeOntoBehavior 由子 Agent 独占。
  * 注：load_skill / submit_plan / listAllMcpFunctions 是 agent-backend 本地内部工具，只挂父 Agent，
  * 不注册进任何 MCP server、不暴露给子 Agent 与外部消费方。
+ *
+ * 单源形态 = 工具名 → 中文标签：本文件用作挂载/剔除白名单（keys），
+ * orchestrator 用作执行记录展示名（"中文（英文）"格式）。
  */
-const PARENT_ONTOLOGY_QUERY_TOOLS = [
-  'listScenarios', 'listOntologies', 'listOntoBehaviors', 'listOntoConcepts',
-  'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities', 'listOntoProcesses',
-];
+export const PARENT_TOOL_LABELS: Record<string, string> = {
+  listScenarios: '查询场景清单',
+  listOntologies: '查询本体清单',
+  listOntoBehaviors: '查询行为清单',
+  listOntoConcepts: '查询概念清单',
+  listOntoRelations: '查询关系清单',
+  listOntoFunctions: '查询函数清单',
+  listOntoSecurities: '查询安全清单',
+  listOntoProcesses: '查询流程清单',
+};
+const PARENT_ONTOLOGY_QUERY_TOOLS = Object.keys(PARENT_TOOL_LABELS);
 
 /**
  * 本体函数工具 schema 前置的作用域块键（MCP server 在 inputSchema.properties.scope 注入所属场景/本体的真实值）。
