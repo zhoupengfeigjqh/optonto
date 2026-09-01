@@ -225,7 +225,7 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { navigateTo('requirements', 'requirement-confirm'); }}
                 >
-                  <span>本体输出</span>
+                  <span>需求汇总</span>
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
@@ -450,7 +450,7 @@ export default function DesignPage() {
             {activeSection === 'design'
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
-              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '本体输出' : '本体文件'
+              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '需求汇总' : '本体文件'
               : activeSection === 'data-engine'
               ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
               : activeSection === 'agent'

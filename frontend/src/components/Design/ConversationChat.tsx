@@ -262,7 +262,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
           <Tooltip title={savedValidate ? '查看最近一次验证的分析结果' : '暂无分析结果，请先选中助手回复并点击「验证」'}>
             <Button icon={<FileSearchOutlined />} onClick={handleViewValidate} disabled={!savedValidate} size="small">分析结果</Button>
           </Tooltip>
-          <Tooltip title={hasSelected ? '将选中的助手回复导出为需求文档（保存到本体输出）' : '请先点击助手回复右下角的 ○ 选中内容'}>
+          <Tooltip title={hasSelected ? '将选中的助手回复导出为需求文档（保存到需求汇总）' : '请先点击助手回复右下角的 ○ 选中内容'}>
             <Button icon={<FileTextOutlined />} onClick={handleExport} disabled={!hasSelected} size="small">导出需求</Button>
           </Tooltip>
           <Tooltip title="清空当前对话的所有消息，此操作不可恢复">
@@ -295,7 +295,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       <div className="flex gap-2 items-end border-t border-dark-border pt-3">
         <div className="flex-1">
           <div className="flex items-center gap-1 mb-1 px-0.5">
-            <Tooltip title="开启后，助手会先对模糊点、矛盾点和关键决策逐个发问（每题附推荐答案），收敛后再输出；同一主题最多追问 3 轮">
+            <Tooltip title="开启后，助手会先对模糊点、矛盾点和关键决策逐个发问（每题附推荐答案），收敛后再输出；同一小问题最多追问 3 轮">
               <span className="text-xs text-text-muted select-none">拷问模式</span>
             </Tooltip>
             <Switch size="small" checked={grilling} onChange={setGrilling} />
@@ -332,7 +332,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
         cancelText="取消"
       >
         <div className="py-3">
-          <label className="text-text-secondary text-sm block mb-2">请输入文档标题（导出后请到本体输出查看）</label>
+          <label className="text-text-secondary text-sm block mb-2">请输入文档标题（导出后请到需求汇总查看）</label>
           <Input
             placeholder="例如：原材料采购需求分析"
             value={docTitle}

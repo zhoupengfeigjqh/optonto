@@ -52,8 +52,8 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
       render: (v: string) => <span className="text-text-secondary text-sm">{v ? new Date(v).toLocaleString() : '-'}</span> },
     { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 200,
       render: (v: string) => <span className="text-text-secondary text-sm">{v ? new Date(v).toLocaleString() : '-'}</span> },
-    { title: '本体输出', dataIndex: 'has_ontology', key: 'has_ontology', width: 100,
-      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '已输出' : '未输出'}</Tag> },
+    { title: '本体生成', dataIndex: 'has_ontology', key: 'has_ontology', width: 100,
+      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '已生成' : '未生成'}</Tag> },
     {
       title: '操作', key: 'actions', width: 140,
       render: (_: any, r: RequirementItem) => (
