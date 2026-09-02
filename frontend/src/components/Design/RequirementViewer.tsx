@@ -1,11 +1,57 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { Button, Modal, message, Spin } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, RobotOutlined } from '@ant-design/icons';
-import { getRequirementFile, saveRequirementFile, generateOntology } from '@/api/client';
+import { Button, Modal, Select, message, Spin } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, RobotOutlined, EyeOutlined } from '@ant-design/icons';
+import { getRequirementFile, saveRequirementFile, generateOntology, getOntologyTemplateSections } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
 import MarkdownEditor from '@/components/MarkdownEditor';
+import CodeMirror from '@uiw/react-codemirror';
+import { yaml as yamlLang } from '@codemirror/lang-yaml';
+
+/** 一级目录段（与 FileViewer 保持一致的展示逻辑） */
+interface Seg { key: string; text: string }
+interface Doc { header: string; segs: Seg[] }
+
+const ALL = '__all__';
+
+const KEY_LABELS: Record<string, string> = {
+  metadata: '元数据',
+  concepts: '概念',
+  relations: '关系',
+  behaviors: '行为',
+  functions: '函数',
+  rules: '规则',
+  processes: '流程',
+  securities: '安全',
+  data_engines: '数据引擎',
+};
+
+/** 生成范围（勾选的一级目录）记忆键 */
+const SECTIONS_STORAGE_KEY = 'optonto.generate.sections';
+
+/** 按"0 缩进 + key: 形态"切分顶层段；第一个 key 之前的内容归入 header */
+function splitDoc(content: string): Doc {
+  const lines = content.split('\n');
+  const boundaries: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (l && !/^\s/.test(l) && !l.startsWith('#') && /^[A-Za-z_][\w-]*:/.test(l)) boundaries.push(i);
+  }
+  if (!boundaries.length) return { header: content, segs: [] };
+  const header = lines.slice(0, boundaries[0]).join('\n');
+  const segs: Seg[] = [];
+  for (let b = 0; b < boundaries.length; b++) {
+    const end = b + 1 < boundaries.length ? boundaries[b + 1] : lines.length;
+    const segLines = lines.slice(boundaries[b], end);
+    segs.push({ key: segLines[0].split(':')[0].trim(), text: segLines.join('\n') });
+  }
+  return { header, segs };
+}
+
+function assemble(doc: Doc): string {
+  return [doc.header, ...doc.segs.map(s => s.text)].filter(p => p !== '').join('\n');
+}
 
 interface Props {
   threadId: string;
@@ -23,6 +69,31 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
   const [generating, setGenerating] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [ontologyDoc, setOntologyDoc] = useState<Doc | null>(null);
+  const [activeKey, setActiveKey] = useState<string>(ALL);
+  const [ontologyLoading, setOntologyLoading] = useState(false);
+  const [sections, setSections] = useState<string[]>([]);
+  const [selectedSections, setSelectedSections] = useState<string[]>([]);
+
+  // 模板一级目录（后端动态解析）；默认全选，并用 localStorage 记忆上次勾选
+  useEffect(() => {
+    let cancelled = false;
+    getOntologyTemplateSections()
+      .then(res => {
+        if (cancelled) return;
+        const all = res.sections.filter(s => s !== 'metadata');
+        setSections(all);
+        let saved: string[] = [];
+        try {
+          const raw = localStorage.getItem(SECTIONS_STORAGE_KEY);
+          if (raw) saved = (JSON.parse(raw) as string[]).filter(s => all.includes(s));
+        } catch { /* ignore */ }
+        setSelectedSections(saved.length ? saved : all);
+      })
+      .catch(() => { /* 模板不可用时静默降级为「不限」 */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -52,16 +123,46 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
     }
   };
 
+  // 目标 yaml 文件名（与本体生成输出到同一目录）
+  const yamlFilename = filename.replace(/\.md$/, '.yaml');
+
   const handleGenerate = async () => {
     setShowConfirm(false);
     setGenerating(true);
     try {
-      const result = await generateOntology(threadId, filename);
-      message.success(`本体已生成！概念:${result.concepts} 关系:${result.relations} 行为:${result.behaviors} 规则:${result.rules}`);
+      localStorage.setItem(SECTIONS_STORAGE_KEY, JSON.stringify(selectedSections));
+    } catch { /* ignore */ }
+    try {
+      const result = await generateOntology(threadId, filename, selectedSections);
+      const parts = Object.entries(result.stats)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${KEY_LABELS[k] ?? k}:${v}`);
+      const detail = parts.length ? `（${parts.join(' ')}）` : '（各一级目录均无内容）';
+      message.success(`已生成 ${result.filename}${detail}`);
     } catch (e: any) {
       message.error('生成本体失败: ' + e.message);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleViewOntology = async () => {
+    // 查看当前需求文档生成的 yaml（与本体生成输出到同一 thread 目录）
+    setViewOpen(true);
+    setOntologyLoading(true);
+    setOntologyDoc(null);
+    setActiveKey(ALL);
+    try {
+      const file = await getRequirementFile(threadId, yamlFilename, scenarioName, ontologyName);
+      setOntologyDoc(splitDoc(file.content));
+    } catch (e: any) {
+      if (e.message.includes('不存在')) {
+        setOntologyDoc(null);
+      } else {
+        message.error('加载本体失败: ' + e.message);
+      }
+    } finally {
+      setOntologyLoading(false);
     }
   };
 
@@ -88,7 +189,8 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
           >
             {previewMode ? '编辑模式' : '预览模式'}
           </Button>
-          <Button icon={<RobotOutlined />} onClick={() => setShowConfirm(true)} loading={generating} size="small">本体智能生成</Button>
+          <Button icon={<RobotOutlined />} onClick={() => setShowConfirm(true)} loading={generating} size="small">本体生成</Button>
+          <Button icon={<EyeOutlined />} onClick={handleViewOntology} size="small">本体文件</Button>
           {!previewMode && (
             <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving} disabled={!dirty} size="small">保存</Button>
           )}
@@ -121,19 +223,37 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
 
       {/* Confirm generate ontology */}
       <Modal
-        title="本体智能生成"
+        title="本体生成"
         open={showConfirm}
         onOk={handleGenerate}
         onCancel={() => setShowConfirm(false)}
         okText="确认生成"
         cancelText="取消"
-        okButtonProps={{ danger: true }}
+        okButtonProps={{ danger: true, disabled: selectedSections.length === 0 }}
       >
         <div className="py-3 space-y-3">
-          <p className="text-text-secondary text-sm">将根据当前需求文档，使用 AI 自动生成 <strong>ontology.yaml</strong> 文件。</p>
+          <p className="text-text-secondary text-sm">将根据当前需求文档，使用 AI 自动生成 <strong>{yamlFilename}</strong> 文件。</p>
+          <div>
+            <p className="text-text-secondary text-sm mb-1">
+              生成范围（模板一级目录）<span className="text-text-muted text-xs"> · 只加载勾选的目录，避免生成与本文件无关的内容</span>
+            </p>
+            <Select
+              mode="multiple"
+              style={{ width: '100%' }}
+              placeholder="选择要生成的一级目录"
+              value={selectedSections}
+              onChange={setSelectedSections}
+              loading={sections.length === 0}
+              maxTagCount="responsive"
+              options={sections.map(s => ({ value: s, label: KEY_LABELS[s] ? `${KEY_LABELS[s]}（${s}）` : s }))}
+            />
+            <p className="text-text-muted text-xs mt-1">
+              metadata（元数据）恒生成，无需勾选；至少选择一项（默认全选，等价加载完整模板）。
+            </p>
+          </div>
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
             <p className="text-amber-400 text-sm font-semibold">⚠ 警告</p>
-            <p className="text-text-secondary text-sm mt-1">生成后将<strong className="text-red-400">覆盖替换</strong>当前本体目录下的 ontology.yaml 文件，此操作不可恢复！</p>
+            <p className="text-text-secondary text-sm mt-1">生成后将<strong className="text-red-400">覆盖替换</strong>当前目录下的 {yamlFilename} 文件，此操作不可恢复！</p>
           </div>
           <p className="text-text-muted text-xs">请确认需求文档内容已完成后再生成。</p>
         </div>
@@ -141,7 +261,7 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
 
       {/* Generating modal */}
       <Modal
-        title="生成本体"
+        title="本体生成"
         open={generating}
         footer={null}
         closable={false}
@@ -151,8 +271,67 @@ export default function RequirementViewer({ threadId, filename, onBack, scenario
         <div className="flex flex-col items-center py-6 gap-3">
           <Spin size="large" />
           <p className="text-text-secondary text-sm">AI 正在根据需求文档生成本体...</p>
-          <p className="text-text-muted text-xs">请稍候，生成完成后将自动覆盖原文件</p>
+          <p className="text-text-muted text-xs">请稍候，生成完成后将自动覆盖 {yamlFilename}</p>
         </div>
+      </Modal>
+
+      {/* View ontology modal */}
+      <Modal
+        title="本体文件"
+        open={viewOpen}
+        onCancel={() => setViewOpen(false)}
+        footer={null}
+        centered
+        width={900}
+      >
+        {ontologyLoading ? (
+          <div className="flex flex-col items-center py-10 gap-3">
+            <Spin />
+            <p className="text-text-muted text-sm">正在加载本体 YAML...</p>
+          </div>
+        ) : ontologyDoc === null ? (
+          <div className="py-10 text-center text-text-muted text-sm">
+            当前本体尚未生成或文件不存在，请先点击「本体生成」。
+          </div>
+        ) : (
+          <div className="flex border border-dark-border rounded-lg overflow-hidden bg-dark-bg">
+            {ontologyDoc.segs.length > 0 && (
+              <div className="w-28 shrink-0 border-r border-dark-border py-2 overflow-y-auto">
+                {[ALL, ...ontologyDoc.segs.map(s => s.key)].map(k => (
+                  <button
+                    key={k}
+                    onClick={() => setActiveKey(k)}
+                    className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                      activeKey === k
+                        ? 'text-accent-blue bg-accent-blue/5 border-r-2 border-accent-blue'
+                        : 'text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    {k === ALL ? '全部' : (KEY_LABELS[k] || k)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <CodeMirror
+                value={activeKey === ALL
+                  ? assemble(ontologyDoc)
+                  : (ontologyDoc.segs.find(s => s.key === activeKey)?.text ?? '')}
+                extensions={[yamlLang()]}
+                theme="dark"
+                height="60vh"
+                editable={false}
+                style={{ fontSize: 13 }}
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: true,
+                  highlightActiveLine: true,
+                  autocompletion: false,
+                }}
+              />
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -24,7 +24,9 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showTitleModal, setShowTitleModal] = useState(false);
-  const [docTitle, setDocTitle] = useState('');
+  const [exportOntoName, setExportOntoName] = useState('');
+  const [exportContent, setExportContent] = useState('');
+  const [exportVersion, setExportVersion] = useState('');
   const [validating, setValidating] = useState(false);
   const [validateResult, setValidateResult] = useState('');
   const [showValidateModal, setShowValidateModal] = useState(false);
@@ -122,17 +124,21 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   };
 
   const handleExport = () => {
-    setDocTitle('');
+    setExportOntoName(ontologyName || '');
+    setExportContent('');
+    setExportVersion('');
     setShowTitleModal(true);
   };
 
   const handleConfirmExport = async () => {
-    if (!docTitle.trim()) { message.warning('请输入文档标题'); return; }
+    if (!exportOntoName.trim()) { message.warning('请输入本体名'); return; }
+    if (!exportContent.trim()) { message.warning('请输入内容'); return; }
+    if (!exportVersion.trim()) { message.warning('请输入版本'); return; }
     setShowTitleModal(false);
     setExporting(true);
     try {
       const selectedList = selectedIndex !== null ? [selectedIndex] : [];
-      const result = await exportThread(threadId, docTitle.trim(), selectedList);
+      const result = await exportThread(threadId, exportOntoName.trim(), exportContent.trim(), exportVersion.trim(), selectedList);
       message.success(`文档已生成: ${result.filename}`);
       setSelectedIndex(null);
     } catch (e: any) {
@@ -322,7 +328,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
         </Button>
       </div>
 
-      {/* Title input modal */}
+      {/* Export modal */}
       <Modal
         title="导出需求文档"
         open={showTitleModal}
@@ -332,16 +338,29 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
         cancelText="取消"
       >
         <div className="py-3">
-          <label className="text-text-secondary text-sm block mb-2">请输入文档标题（导出后请到需求汇总查看）</label>
+          <label className="text-text-secondary text-sm block mb-2">本体名</label>
           <Input
-            placeholder="例如：原材料采购需求分析"
-            value={docTitle}
-            onChange={e => setDocTitle(e.target.value)}
-            onPressEnter={handleConfirmExport}
-            className="bg-dark-bg border-dark-border text-text-primary"
+            value={exportOntoName}
+            readOnly
+            className="bg-dark-bg border-dark-border text-text-primary mb-4"
+          />
+          <label className="text-text-secondary text-sm block mb-2">内容</label>
+          <Input
+            placeholder="例如：行为"
+            value={exportContent}
+            onChange={e => setExportContent(e.target.value)}
+            className="bg-dark-bg border-dark-border text-text-primary mb-4"
             autoFocus
           />
-          <p className="text-text-muted text-xs mt-2">已选中 1 条助手回复</p>
+          <label className="text-text-secondary text-sm block mb-2">版本</label>
+          <Input
+            placeholder="例如：v1.0"
+            value={exportVersion}
+            onChange={e => setExportVersion(e.target.value)}
+            onPressEnter={handleConfirmExport}
+            className="bg-dark-bg border-dark-border text-text-primary"
+          />
+          <p className="text-text-muted text-xs mt-2">已选中 1 条助手回复 · 同名文件将覆盖 · 导出后请到需求汇总查看</p>
         </div>
       </Modal>
 

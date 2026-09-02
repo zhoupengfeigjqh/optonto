@@ -1,7 +1,7 @@
 """Chat API — streaming conversation using LangChain."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
 
 from config import (
@@ -20,10 +20,21 @@ import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from routers.threads import _load_thread, _save_thread, _thread_dir
+from routers.threads import _load_thread, _save_thread, _thread_dir, _resolve_ids
 from llm_utils import load_env, build_llm, strip_code_fence
 
 router = APIRouter(prefix="/api/threads", tags=["对话"])
+
+# 「本体生成」可按用户勾选裁剪的一级目录（metadata 恒输出，不在此列）
+_FILTERABLE_SECTIONS = (
+    "concepts", "relations", "functions", "behaviors",
+    "rules", "processes", "securities", "data_engines",
+)
+
+# 北京时间（固定 +08:00 偏移；不依赖 tzdata，容器内同样可用）
+# 仅用于对外展示型时间（如 ontology.yaml 的 metadata.created_at）；
+# 内部排序/缓存用的 updated_at 等仍统一用 UTC。
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 # ─── Load .env ────────────────────────────────────────────────────────────
 load_env()
@@ -169,39 +180,56 @@ async def chat(thread_id: str, body: dict):
 
 @router.post("/{thread_id}/export")
 async def export_thread(thread_id: str, body: dict):
-    """Export selected assistant messages directly as a markdown document without AI processing."""
+    """Export selected assistant messages directly as a markdown document without AI processing.
+
+    需求：弹窗填「本体名」「内容」，md 文件名固定为 {本体名}_{内容}.md，同名覆盖。
+    """
     thread, sc, onto = _load_thread(thread_id)
 
     selected_indices = body.get("selected_indices", [])
     if not selected_indices:
         raise HTTPException(status_code=400, detail="请先选择要导出的助手回复内容")
 
+    ontology_name = body.get("ontology_name", "").strip()
+    content = body.get("content", "").strip()
+    version = body.get("version", "").strip()
+    if not ontology_name or not content:
+        raise HTTPException(status_code=400, detail="本体名与内容均不能为空")
+    if not version:
+        raise HTTPException(status_code=400, detail="版本不能为空")
+
+    # 文件名合法性校验：禁路径分隔符、禁与线程元数据冲突的保留名、长度上限
+    doc_name = f"{ontology_name}_{content}"
+    if "/" in doc_name or "\\" in doc_name or doc_name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="本体名或内容包含非法字符")
+    if content.lower() == "data":
+        raise HTTPException(status_code=400, detail="内容不能使用保留名 data（与线程元数据冲突）")
+    if len(doc_name) > 120:
+        raise HTTPException(status_code=400, detail="本体名+内容过长（超过120字符）")
+
     # Get selected assistant messages
     selected_content: list[str] = []
     for idx in selected_indices:
         if idx < len(thread["messages"]) and thread["messages"][idx]["role"] == "assistant":
-            content = thread["messages"][idx].get("content", "").strip()
-            if content:
-                selected_content.append(content)
+            msg_content = thread["messages"][idx].get("content", "").strip()
+            if msg_content:
+                selected_content.append(msg_content)
 
     if not selected_content:
         raise HTTPException(status_code=400, detail="选中的内容为空，无法导出")
 
-    # Use title from request or default
-    doc_title = body.get("title", "requirement").strip() or "requirement"
-
-    # Build markdown content directly from selected messages
-    lines = [f"# {doc_title}\n"]
-    for i, content in enumerate(selected_content):
+    # Build markdown content directly from selected messages；注明版本
+    lines = [f"# {ontology_name}·{content}", f"", f"版本：{version}", f""]
+    for i, c in enumerate(selected_content):
         lines.append(f"\n## {i + 1}\n")
-        lines.append(content.strip())
+        lines.append(c.strip())
         lines.append("\n")
     markdown_content = "\n".join(lines)
 
-    # Save to thread directory
+    # Save to thread directory；同名覆盖
     dir_path = _thread_dir(thread_id)
     dir_path.mkdir(parents=True, exist_ok=True)
-    filename = f"{doc_title}.md"
+    filename = f"{doc_name}.md"
     file_path = dir_path / filename
 
     with open(file_path, "w", encoding="utf-8") as f:
@@ -221,12 +249,16 @@ async def export_thread(thread_id: str, body: dict):
 
 @router.post("/{thread_id}/generate-ontology")
 async def generate_ontology(thread_id: str, body: dict):
-    """Generate ontology.yaml from requirement markdown using LLM + template, then overwrite the ontology YAML."""
-    from services import save_ontology_data, OntologyData
+    """Generate a partial ontology yaml from the requirement markdown, and save it
+    to the SAME thread directory as the md (同名覆盖), NOT overwrite the ontology."""
+    from services import OntologyData, slice_yaml_sections
 
     thread, sc, onto = _load_thread(thread_id)
     if not sc or not onto:
         raise HTTPException(status_code=400, detail="对话未关联到本体，无法生成本体文件")
+
+    # 用户勾选的一级目录（顶层节名）；空 = 不限（加载完整模板）
+    selected = [s for s in (body.get("sections") or []) if isinstance(s, str) and s.strip()]
 
     # Read the requirement markdown file
     filename = body.get("filename", "")
@@ -243,18 +275,31 @@ async def generate_ontology(thread_id: str, body: dict):
         raise HTTPException(status_code=500, detail="本体模板文件不存在")
     template_content = tp.read_text(encoding="utf-8")
 
+    # 模板只加载勾选的一级目录（metadata 恒含）：避免模型看到无关节后被诱导生成无关内容
+    if selected:
+        template_content = slice_yaml_sections(template_content, ["metadata"] + selected)
+
     llm = build_llm()
     if llm is None:
         raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法自动生成本体")
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
+    # metadata 的场景/本体名称与 id 直接引用 meta.json（权威来源），不交给模型猜测
+    created_at = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    scenario_id, ontology_id = _resolve_ids(sc, onto)
+
     prompt = ONTOLOGY_GENERATE_PROMPT_TEMPLATE.format(
         template_content=template_content,
         markdown_content=markdown_content,
         source_file=filename,
         source_thread=thread.get("title", ""),
-        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        created_at=created_at,
+        scenario_name=sc,
+        scenario_id=scenario_id if scenario_id is not None else "",
+        ontology_name=onto,
+        ontology_id=ontology_id if ontology_id is not None else "",
+        allowed_sections="、".join(selected) if selected else "不限",
     )
 
     try:
@@ -271,9 +316,45 @@ async def generate_ontology(thread_id: str, body: dict):
         if not isinstance(parsed, dict):
             raise ValueError("生成的YAML不是有效的字典结构")
 
-        # Save as OntologyData
+        # Validate structure (OntologyData allows partial: missing top-level sections default to empty)
         ontology_data = OntologyData(**parsed)
-        save_ontology_data(sc, onto, ontology_data)
+
+        # metadata 结构固化：7 个约定字段，顺序固定；scenario/ontology 名称与 id 取自 meta.json；移除已废弃的 name
+        meta_in = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
+        ontology_data.metadata = {
+            "source_file": str(meta_in.get("source_file") or filename),
+            "source_thread": str(meta_in.get("source_thread") or thread.get("title", "")),
+            "created_at": str(meta_in.get("created_at") or created_at),
+            "scenario_name": sc,
+            "scenario_id": scenario_id,
+            "ontology_name": onto,
+            "ontology_id": ontology_id,
+        }
+
+        ontology_dict = ontology_data.model_dump(exclude_none=True)
+        # 空节整节省略，不再输出 `functions: []` 这类空列表
+        for key in ("concepts", "relations", "functions", "behaviors", "rules",
+                    "processes", "securities", "data_engines"):
+            if not ontology_dict.get(key):
+                ontology_dict.pop(key, None)
+        # 兜底硬过滤：模型若仍输出了未勾选的一级目录，直接丢弃（metadata 恒保留）
+        if selected:
+            for key in list(ontology_dict):
+                if key in _FILTERABLE_SECTIONS and key not in selected:
+                    ontology_dict.pop(key)
+
+        # Output to the SAME directory as the md: {本体名}_{内容}.yaml, 同名覆盖
+        req_name = filename[:-3] if filename.endswith(".md") else filename
+        yaml_filename = f"{req_name}.yaml"
+        yaml_path = _thread_dir(thread_id) / yaml_filename
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                ontology_dict,
+                f,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False,
+            )
 
         # Update thread status
         thread["status"] = "documented"
@@ -281,13 +362,20 @@ async def generate_ontology(thread_id: str, body: dict):
         _save_thread(thread)
 
         return {
-            "message": "本体已生成并覆盖原文件",
+            "message": f"已生成 {yaml_filename}",
+            "filename": yaml_filename,
             "scenario": sc,
             "ontology": onto,
-            "concepts": len(ontology_data.concepts),
-            "relations": len(ontology_data.relations),
-            "behaviors": len(ontology_data.behaviors),
-            "rules": len(ontology_data.rules),
+            "stats": {
+                "concepts": len(ontology_data.concepts),
+                "relations": len(ontology_data.relations),
+                "functions": len(ontology_data.functions),
+                "behaviors": len(ontology_data.behaviors),
+                "rules": len(ontology_data.rules),
+                "processes": len(ontology_data.processes),
+                "securities": len(ontology_data.securities),
+                "data_engines": len(ontology_data.data_engines),
+            },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成本体失败: {str(e)}")

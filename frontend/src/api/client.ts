@@ -444,13 +444,17 @@ export const clearChat = (id: string) =>
 export const validateAnalysis = (threadId: string, selectedIndices: number[]) =>
   request<{ result: string }>(`/api/threads/${threadId}/validate`, { method: 'POST', body: JSON.stringify({ selected_indices: selectedIndices }) });
 
-export const generateOntology = (threadId: string, filename: string) =>
-  request<{ message: string; scenario: string; ontology: string; concepts: number; relations: number; behaviors: number; rules: number }>(
-    `/api/threads/${threadId}/generate-ontology`, { method: 'POST', body: JSON.stringify({ filename }) }
+export const generateOntology = (threadId: string, filename: string, sections: string[] = []) =>
+  request<{ message: string; filename: string; scenario: string; ontology: string; stats: Record<string, number> }>(
+    `/api/threads/${threadId}/generate-ontology`, { method: 'POST', body: JSON.stringify({ filename, sections }) }
   );
 
-export const exportThread = (id: string, title: string = 'requirement', selectedIndices: number[] = []) =>
-  request<{ message: string; path: string; filename: string }>(`/api/threads/${id}/export`, { method: 'POST', body: JSON.stringify({ title, selected_indices: selectedIndices }) });
+/** 本体模板的一级目录（后端从 onto_template.yaml 动态解析） */
+export const getOntologyTemplateSections = () =>
+  request<{ sections: string[] }>('/api/threads/ontology-template/sections');
+
+export const exportThread = (id: string, ontologyName: string, content: string, version: string, selectedIndices: number[] = []) =>
+  request<{ message: string; path: string; filename: string }>(`/api/threads/${id}/export`, { method: 'POST', body: JSON.stringify({ ontology_name: ontologyName, content, version, selected_indices: selectedIndices }) });
 
 export const chatStream = (threadId: string, message: string, grilling: boolean = false): Promise<Response> =>
   fetch(`/api/threads/${threadId}/chat`, {
@@ -464,11 +468,16 @@ export const chatStream = (threadId: string, message: string, grilling: boolean 
 export interface RequirementItem {
   filename: string;
   req_name: string;
+  onto_name: string;
+  content_name: string;
+  version: string;
   thread_id: string;
   thread_title: string;
   created_at: string;
   updated_at: string;
   has_ontology: boolean;
+  /** 已生成时匹配到的本体 yaml 文件名（判定依据，便于核对配对关系） */
+  ontology_file?: string;
   scenario_name?: string;
   ontology_name?: string;
 }

@@ -23,7 +23,7 @@ import ProcessTable from '@/components/Design/ProcessTable';
 import SecurityTable from '@/components/Design/SecurityTable';
 import FileViewer from '@/components/Design/FileViewer';
 import ConversationManager from '@/components/Design/ConversationManager';
-import RequirementConfirm from '@/components/Design/RequirementConfirm';
+import RequirementSummary from '@/components/Design/RequirementSummary';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import InstanceGraph from '@/components/View/InstanceGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
@@ -125,8 +125,8 @@ export default function DesignPage() {
       {activeSection === 'requirements' && activeTab === 'requirements' && (
         <ConversationManager activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} />
       )}
-      {activeSection === 'requirements' && activeTab === 'requirement-confirm' && (
-        <RequirementConfirm ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} ontologyName={ontology?.name || ''} />
+      {activeSection === 'requirements' && activeTab === 'requirement-summary' && (
+        <RequirementSummary ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} ontologyName={ontology?.name || ''} />
       )}
       {activeSection === 'requirements' && activeTab === 'files' && (
         <FileViewer ontologyId={ontologyId} activeTab={activeTab} />
@@ -219,11 +219,11 @@ export default function DesignPage() {
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'requirement-confirm'
+                    activeTab === 'requirement-summary'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { navigateTo('requirements', 'requirement-confirm'); }}
+                  onClick={() => { navigateTo('requirements', 'requirement-summary'); }}
                 >
                   <span>需求汇总</span>
                 </button>
@@ -450,7 +450,7 @@ export default function DesignPage() {
             {activeSection === 'design'
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
-              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-confirm' ? '需求汇总' : '本体文件'
+              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-summary' ? '需求汇总' : '本体文件'
               : activeSection === 'data-engine'
               ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
               : activeSection === 'agent'

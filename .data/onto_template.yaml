@@ -1,8 +1,11 @@
 metadata:
-  name: ''
   source_file: ''
   source_thread: ''
   created_at: ''
+  scenario_name: ''
+  scenario_id: 0
+  ontology_name: ''
+  ontology_id: 0
 concepts:
 - name: ConceptName
   description: 概念描述

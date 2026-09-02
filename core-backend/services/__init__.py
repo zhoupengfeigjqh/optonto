@@ -1,6 +1,7 @@
 """Service for reading/writing ontology YAML files."""
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +9,39 @@ import yaml
 
 from config import ONTO_MARKET_DIR
 from schemas import DataEngineItem, OntologyData, SecurityItem
+
+# 顶层节名：`key:` 且顶格（无缩进），排除注释行
+_TOP_KEY_RE = re.compile(r"^[A-Za-z_][\w-]*:", re.MULTILINE)
+
+
+def split_yaml_top_sections(text: str) -> list[tuple[str, str]]:
+    """按顶层 `key:` 切分 YAML 文本，返回 [(节名, 该节完整原文)]。
+
+    首个顶层 key 之前的内容（文件头注释等）忽略。用文本切分而非 yaml.load+dump，
+    以保留模板原始排版与注释。
+    """
+    lines = text.split("\n")
+    bounds = [i for i, line in enumerate(lines)
+              if line and not line[0].isspace() and _TOP_KEY_RE.match(line)]
+    sections: list[tuple[str, str]] = []
+    for n, start in enumerate(bounds):
+        end = bounds[n + 1] if n + 1 < len(bounds) else len(lines)
+        seg = "\n".join(lines[start:end]).rstrip("\n")
+        sections.append((seg.split(":", 1)[0].strip(), seg))
+    return sections
+
+
+def slice_yaml_sections(text: str, keep: list[str]) -> str:
+    """只保留 keep 中的顶层节（按模板原有顺序）；keep 为空或无一命中时回退原文。
+
+    用于「本体生成」时按用户勾选的一级目录裁剪提示词模板，避免模型看到无关节
+    后被诱导输出与本次需求文档无关的内容。
+    """
+    sections = split_yaml_top_sections(text)
+    if not sections:
+        return text
+    kept = [seg for key, seg in sections if key in keep]
+    return "\n".join(kept) if kept else text
 
 
 def _get_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
@@ -198,6 +232,8 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
                 break
     if not isinstance(data.metadata, dict):
         data.metadata = {}
+    # name 已废弃（本体名以 meta.json / metadata.ontology_name 为准），保存时清除历史遗留值
+    data.metadata.pop("name", None)
     data.metadata["scenario_name"] = scenario_name
     data.metadata["scenario_id"] = scenario_id
     data.metadata["ontology_name"] = ontology_name

@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Table, Modal, message, Tag, Space } from 'antd';
-import { EyeOutlined, DeleteOutlined, MessageOutlined } from '@ant-design/icons';
+import { Button, Table, Modal, message, Tag, Space, Tooltip } from 'antd';
+import { EyeOutlined, DeleteOutlined } from '@ant-design/icons';
 import { listRequirements, deleteRequirementFile, RequirementItem } from '@/api/client';
 import RequirementViewer from './RequirementViewer';
 
 interface Props { ontologyId: number; activeTab?: string; scenarioName?: string; ontologyName?: string; }
 
-export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenarioName, ontologyName }: Props) {
+export default function RequirementSummary({ ontologyId: _oid, activeTab, scenarioName, ontologyName }: Props) {
   const [items, setItems] = useState<RequirementItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewing, setViewing] = useState<{ threadId: string; filename: string; scenarioName?: string; ontologyName?: string } | null>(null);
@@ -21,7 +21,7 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (activeTab === 'requirement-confirm') load(); }, [activeTab, scenarioName, ontologyName]);
+  useEffect(() => { if (activeTab === 'requirement-summary') load(); }, [activeTab, scenarioName, ontologyName]);
 
   const handleDelete = (threadId: string, filename: string) => {
     Modal.confirm({
@@ -40,20 +40,28 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
   }
 
   const columns = [
-    { title: '需求文件名', dataIndex: 'req_name', key: 'req_name', render: (v: string, r: RequirementItem) => (
+    { title: '本体名', dataIndex: 'onto_name', key: 'onto_name', render: (v: string) => (
       <span className="text-text-primary">{v}</span>
     )},
-    { title: '会话名称', dataIndex: 'thread_title', key: 'thread_title', width: 200, render: (v: string, r: RequirementItem) => (
-      <a className="text-accent-blue hover:underline cursor-pointer" onClick={() => window.location.href = `/design/${_oid}?thread=${r.thread_id}`}>
-        <MessageOutlined className="mr-1" />{v || '未命名'}
-      </a>
+    { title: '内容', dataIndex: 'content_name', key: 'content_name', render: (v: string) => (
+      <span className="text-text-primary">{v}</span>
+    )},
+    { title: '版本', dataIndex: 'version', key: 'version', width: 90, render: (v: string) => (
+      <span className="text-text-primary">{v || '-'}</span>
+    )},
+    { title: '会话名称', dataIndex: 'thread_title', key: 'thread_title', width: 200, render: (v: string) => (
+      <span className="text-text-primary">{v || '未命名'}</span>
     )},
     { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 200,
       render: (v: string) => <span className="text-text-secondary text-sm">{v ? new Date(v).toLocaleString() : '-'}</span> },
     { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 200,
       render: (v: string) => <span className="text-text-secondary text-sm">{v ? new Date(v).toLocaleString() : '-'}</span> },
-    { title: '本体生成', dataIndex: 'has_ontology', key: 'has_ontology', width: 100,
-      render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '已生成' : '未生成'}</Tag> },
+    { title: '本体生成', dataIndex: 'has_ontology', key: 'has_ontology', width: 110,
+      render: (v: boolean, r: RequirementItem) => (
+        <Tooltip title={v ? `关联本体文件：${r.ontology_file || '-'}` : '未找到同名本体文件，也未找到 source_file 指向本文档的本体文件'}>
+          <Tag color={v ? 'green' : 'default'} style={{ cursor: 'help' }}>{v ? '已生成' : '未生成'}</Tag>
+        </Tooltip>
+      ) },
     {
       title: '操作', key: 'actions', width: 140,
       render: (_: any, r: RequirementItem) => (
@@ -67,7 +75,7 @@ export default function RequirementConfirm({ ontologyId: _oid, activeTab, scenar
 
   return (
     <div>
-      <h3 className="text-base font-semibold text-text-primary mb-4">需求确认</h3>
+      <h3 className="text-base font-semibold text-text-primary mb-4">需求汇总</h3>
       <p className="text-text-muted text-xs mb-3">查看和管理所有已导出的需求文档。点击「查看」进入文档详情，可进行修改和智能生成本体。输出的本体文件，可通过点击任务栏「本体文件」进行浏览。</p>
       <Table
         dataSource={items}

@@ -9,11 +9,23 @@ from typing import Optional
 
 from fastapi import APIRouter, Body, HTTPException
 
-from config import DEMAND_THREADS_DIR, ONTO_MARKET_DIR
+from config import DATA_DIR, DEMAND_THREADS_DIR, ONTO_MARKET_DIR
 from metadata import get_scenario_by_name, list_ontologies_by_scenario
-from services import load_ontology_data
+from services import load_ontology_data, split_yaml_top_sections
 
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
+
+
+@router.get("/ontology-template/sections")
+async def list_ontology_template_sections():
+    """返回 .data/onto_template.yaml 的一级目录名，供「本体生成」勾选模板加载范围。
+
+    动态解析而非前端硬编码：模板增删节时前端选项自动同步。
+    """
+    tp = DATA_DIR / "onto_template.yaml"
+    if not tp.exists():
+        raise HTTPException(status_code=500, detail="本体模板文件不存在")
+    return {"sections": [key for key, _ in split_yaml_top_sections(tp.read_text(encoding="utf-8"))]}
 
 
 def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path, str, str]]:
@@ -208,11 +220,56 @@ async def update_thread(thread_id: str, body: dict = Body(default={})):
 
 # ─── Requirement files ─────────────────────────────────────────────────────────
 
+def _yaml_source_map(tdir: Path) -> dict[str, str]:
+    """扫描线程目录内的 yaml，返回 {yaml 文件名（含扩展名）: metadata.source_file}。
+
+    解析失败/无 metadata 时值为 ""，供 has_ontology 的 source_file 回退判定使用。
+    """
+    import yaml
+
+    mapping: dict[str, str] = {}
+    for y in sorted(tdir.glob("*.yaml")):
+        source_file = ""
+        try:
+            with open(y, encoding="utf-8") as fp:
+                raw = yaml.safe_load(fp)
+            if isinstance(raw, dict):
+                meta = raw.get("metadata")
+                if isinstance(meta, dict):
+                    source_file = str(meta.get("source_file") or "")
+        except Exception:
+            source_file = ""
+        mapping[y.name] = source_file
+    return mapping
+
+
+def _match_ontology_yaml(tdir: Path, req_name: str, filename: str, source_map: dict[str, str]) -> str:
+    """判定该需求 md 对应的本体 yaml 是否已生成，返回匹配的 yaml 文件名（无则空串）。
+
+    两级判定：
+    1. 同名优先：{req_name}.yaml 存在（本体生成接口的落盘规则）；
+    2. source_file 回退：任一 yaml 的 metadata.source_file 指向本 md。
+       覆盖 yaml 被改名/手工迁移、或导出时内容名变更导致文件名不再同名的场景。
+
+    注意：两条都不中即视为未生成。若 md 被改名且旧 yaml 的 source_file 仍指向
+    已不存在的旧 md 名，则该 yaml 成为孤儿，不会被任何行认领——此时应重新生成。
+    """
+    same_name = f"{req_name}.yaml"
+    if (tdir / same_name).exists():
+        return same_name
+    for yaml_name, source_file in source_map.items():
+        if source_file == filename:
+            return yaml_name
+    return ""
+
+
 @router.get("/requirements/list")
 async def list_requirements(scenario: str = "", ontology: str = ""):
-    """Scan thread directories for .md files. Optionally filter by scenario/ontology."""
-    # 同一本体可能对应多个线程目录，缓存 ontology 解析结果避免重复读盘
-    ontology_cache: dict[tuple[str, str], str] = {}
+    """Scan thread directories for .md files. Optionally filter by scenario/ontology.
+
+    has_ontology 为实时推导（无持久化状态）：同名 yaml 存在、或 yaml 内
+    metadata.source_file 指向该 md，两者之一命中即为已生成。
+    """
     items = []
     for tdir, sc_name, onto_name in _all_thread_dirs(scenario, ontology):
         thread_id = tdir.name
@@ -225,30 +282,45 @@ async def list_requirements(scenario: str = "", ontology: str = ""):
             except (json.JSONDecodeError, KeyError):
                 continue
 
-        # Check if this scenario/ontology has been generated from a requirement
-        onto_source_file = None
-        if sc_name and onto_name:
-            key = (sc_name, onto_name)
-            if key not in ontology_cache:
-                try:
-                    onto_data = load_ontology_data(sc_name, onto_name)
-                    ontology_cache[key] = onto_data.metadata.get("source_file", "") if onto_data.metadata else ""
-                except Exception:
-                    ontology_cache[key] = ""
-            onto_source_file = ontology_cache[key] or None
+        source_map = _yaml_source_map(tdir)
 
         for f in sorted(tdir.glob("*.md")):
             stat = f.stat()
             filename = f.name
             req_name = filename[:-3]
+
+            # 按最后一个 _ 拆分为 本体名_内容；无 _ 的旧文件回退为本体名=线程所属本体、内容=文件名
+            if "_" in req_name:
+                doc_onto, _, doc_content = req_name.rpartition("_")
+            else:
+                doc_onto, doc_content = onto_name, req_name
+
+            # 已生成判定：同名 yaml 优先，否则回退 yaml 内 metadata.source_file
+            matched_yaml = _match_ontology_yaml(tdir, req_name, filename, source_map)
+
+            # 从文档头部解析版本行：「版本：xxx」
+            version = ""
+            try:
+                for line in f.read_text(encoding="utf-8").splitlines()[:10]:
+                    stripped = line.strip()
+                    if stripped.startswith("版本："):
+                        version = stripped[len("版本："):].strip()
+                        break
+            except Exception:
+                pass
+
             items.append({
                 "filename": filename,
                 "req_name": req_name,
+                "onto_name": doc_onto,
+                "content_name": doc_content,
+                "version": version,
                 "thread_id": thread_id,
                 "thread_title": thread_data.get("title", "") if thread_data else "",
                 "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
                 "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                "has_ontology": onto_source_file == filename if onto_source_file else False,
+                "has_ontology": bool(matched_yaml),
+                "ontology_file": matched_yaml,
                 "scenario_name": sc_name,
                 "ontology_name": onto_name,
             })
@@ -278,20 +350,20 @@ async def save_requirement_file(thread_id: str, filename: str, body: dict):
 
 @router.delete("/{thread_id}/requirements/{filename}")
 async def delete_requirement_file(thread_id: str, filename: str):
-    """Delete a requirement markdown file and its linked ontology if exists."""
+    """Delete a requirement markdown file and its sibling generated yaml (同名 {本体名}_{内容}.yaml).
+
+    不再连带删除本体目录（原逻辑会按 source_file 删掉整个 onto_market 本体，过于危险，已移除）。
+    """
     tdir, scenario_name, ontology_name = _find_thread(thread_id)
     file_path = tdir / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    # 检查是否为已输出的本体，若是则一并删除本体目录
-    onto_dir = ONTO_MARKET_DIR / scenario_name / ontology_name
-    try:
-        onto_data = load_ontology_data(scenario_name, ontology_name)
-        if onto_data.metadata and onto_data.metadata.get("source_file") == filename:
-            shutil.rmtree(onto_dir)
-    except Exception:
-        pass
+    # 连带删除同目录下由该需求生成的 yaml（若存在）
+    if filename.endswith(".md"):
+        sibling_yaml = tdir / f"{filename[:-3]}.yaml"
+        if sibling_yaml.exists():
+            sibling_yaml.unlink()
 
     file_path.unlink()
     return {"message": "文件已删除"}
