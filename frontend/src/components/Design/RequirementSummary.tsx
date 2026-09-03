@@ -76,7 +76,7 @@ export default function RequirementSummary({ ontologyId: _oid, activeTab, scenar
   return (
     <div>
       <h3 className="text-base font-semibold text-text-primary mb-4">需求汇总</h3>
-      <p className="text-text-muted text-xs mb-3">查看和管理所有已导出的需求文档。点击「查看」进入文档详情，可进行修改和智能生成本体。输出的本体文件，可通过点击任务栏「本体文件」进行浏览。</p>
+      <p className="text-text-muted text-xs mb-3">查看和管理所有已导出的需求文档。点击「查看」进入文档详情，可进行修改和智能生成本体。输出的本体文件，可在「本体部署」中按版本合并部署。</p>
       <Table
         dataSource={items}
         columns={columns}

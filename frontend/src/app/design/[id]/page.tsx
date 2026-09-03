@@ -21,9 +21,10 @@ import BehaviorTable from '@/components/Design/BehaviorTable';
 import RuleTable from '@/components/Design/RuleTable';
 import ProcessTable from '@/components/Design/ProcessTable';
 import SecurityTable from '@/components/Design/SecurityTable';
-import FileViewer from '@/components/Design/FileViewer';
+import OntologyDeployer from '@/components/Design/OntologyDeployer';
 import ConversationManager from '@/components/Design/ConversationManager';
 import RequirementSummary from '@/components/Design/RequirementSummary';
+import DeployedVersionBadge from '@/components/DeployedVersionBadge';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import InstanceGraph from '@/components/View/InstanceGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
@@ -128,8 +129,8 @@ export default function DesignPage() {
       {activeSection === 'requirements' && activeTab === 'requirement-summary' && (
         <RequirementSummary ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} ontologyName={ontology?.name || ''} />
       )}
-      {activeSection === 'requirements' && activeTab === 'files' && (
-        <FileViewer ontologyId={ontologyId} activeTab={activeTab} />
+      {activeSection === 'requirements' && activeTab === 'deployment' && (
+        <OntologyDeployer ontologyId={ontologyId} activeTab={activeTab} />
       )}
 
       {/* ── 本体明细（设计）：display:none，保留编辑状态 ── */}
@@ -229,13 +230,13 @@ export default function DesignPage() {
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'files'
+                    activeTab === 'deployment'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { navigateTo('requirements', 'files'); }}
+                  onClick={() => { navigateTo('requirements', 'deployment'); }}
                 >
-                  <span>本体文件</span>
+                  <span>本体部署</span>
                 </button>
               </div>
             )}
@@ -450,21 +451,24 @@ export default function DesignPage() {
             {activeSection === 'design'
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
-              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-summary' ? '需求汇总' : '本体文件'
+              ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-summary' ? '需求汇总' : '本体部署'
               : activeSection === 'data-engine'
               ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
               : activeSection === 'agent'
               ? activeTab === 'skill-management' ? '技能管理' : activeTab === 'mcp-config' ? 'MCP 配置' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
-          <button
-            className="flex items-center gap-1 text-text-muted hover:text-accent-blue transition-colors text-sm"
-            onClick={() => router.push('/')}
-            title="返回本体市场"
-          >
-            <ArrowLeftOutlined />
-            <span>返回本体市场</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <DeployedVersionBadge ontologyId={ontologyId} deployedVersion={ontology.deployed_version || ''} />
+            <button
+              className="flex items-center gap-1 text-text-muted hover:text-accent-blue transition-colors text-sm"
+              onClick={() => router.push('/')}
+              title="返回本体市场"
+            >
+              <ArrowLeftOutlined />
+              <span>返回本体市场</span>
+            </button>
+          </div>
         </header>
 
         {/* Content */}

@@ -156,7 +156,7 @@ def list_ontologies_by_scenario(scenario_name: str) -> list[dict]:
 
 
 def list_all_ontologies() -> list[dict]:
-    """List all ontologies across all scenarios, enriched with scenario_name."""
+    """List all ontologies across all scenarios, enriched with scenario_name and deployed_version."""
     results = []
     if not ONTO_MARKET_DIR.exists():
         return results
@@ -175,6 +175,19 @@ def list_all_ontologies() -> list[dict]:
                 if "scenario_id" in data:
                     data["scenario_name"] = scenario_dir.name
                     data["ontology_name"] = ontology_dir.name
+                    # 从已部署的 ontology.yaml 解析 deployed_version（无则空串）
+                    ontology_yaml = ontology_dir / "ontology.yaml"
+                    deployed_version = ""
+                    if ontology_yaml.exists():
+                        try:
+                            import yaml
+                            raw = yaml.safe_load(ontology_yaml.read_text(encoding="utf-8")) or {}
+                            meta = raw.get("metadata") if isinstance(raw, dict) else None
+                            if isinstance(meta, dict):
+                                deployed_version = str(meta.get("deployed_version") or "")
+                        except Exception:
+                            pass
+                    data["deployed_version"] = deployed_version
                     results.append(data)
             except (json.JSONDecodeError, KeyError):
                 continue

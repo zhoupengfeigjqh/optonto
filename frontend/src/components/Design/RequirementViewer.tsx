@@ -8,50 +8,10 @@ import { renderMarkdown } from '@/lib/markdown';
 import MarkdownEditor from '@/components/MarkdownEditor';
 import CodeMirror from '@uiw/react-codemirror';
 import { yaml as yamlLang } from '@codemirror/lang-yaml';
-
-/** 一级目录段（与 FileViewer 保持一致的展示逻辑） */
-interface Seg { key: string; text: string }
-interface Doc { header: string; segs: Seg[] }
-
-const ALL = '__all__';
-
-const KEY_LABELS: Record<string, string> = {
-  metadata: '元数据',
-  concepts: '概念',
-  relations: '关系',
-  behaviors: '行为',
-  functions: '函数',
-  rules: '规则',
-  processes: '流程',
-  securities: '安全',
-  data_engines: '数据引擎',
-};
+import { splitDoc, assemble, ALL, KEY_LABELS, Doc } from '@/utils/yaml-segments';
 
 /** 生成范围（勾选的一级目录）记忆键 */
 const SECTIONS_STORAGE_KEY = 'optonto.generate.sections';
-
-/** 按"0 缩进 + key: 形态"切分顶层段；第一个 key 之前的内容归入 header */
-function splitDoc(content: string): Doc {
-  const lines = content.split('\n');
-  const boundaries: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (l && !/^\s/.test(l) && !l.startsWith('#') && /^[A-Za-z_][\w-]*:/.test(l)) boundaries.push(i);
-  }
-  if (!boundaries.length) return { header: content, segs: [] };
-  const header = lines.slice(0, boundaries[0]).join('\n');
-  const segs: Seg[] = [];
-  for (let b = 0; b < boundaries.length; b++) {
-    const end = b + 1 < boundaries.length ? boundaries[b + 1] : lines.length;
-    const segLines = lines.slice(boundaries[b], end);
-    segs.push({ key: segLines[0].split(':')[0].trim(), text: segLines.join('\n') });
-  }
-  return { header, segs };
-}
-
-function assemble(doc: Doc): string {
-  return [doc.header, ...doc.segs.map(s => s.text)].filter(p => p !== '').join('\n');
-}
 
 interface Props {
   threadId: string;

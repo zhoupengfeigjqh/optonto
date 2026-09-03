@@ -16,3 +16,4 @@ from .rule_templates import router as rule_templates_router
 from .common_functions import router as common_functions_router
 from .skills import router as skills_router
 from .db_schema import router as db_schema_router
+from .deploy import router as deploy_router

@@ -61,7 +61,7 @@ export const PARENT_SYSTEM_PROMPT = `
 ### 2.2 submit_plan 参数规范
 
 #### subtasks 子任务数组
-每个子任务需包含以下字段（字段契约见 subtask-contract.ts，与 submit_plan 工具 schema 同源）：
+每个子任务需包含以下字段：
 
 ${renderSubtaskFieldTable()}
 

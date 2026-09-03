@@ -41,6 +41,8 @@ export interface Ontology {
   description: string;
   creator: string;
   scenario_name?: string;
+  /** 已部署版本（从 ontology.yaml metadata.deployed_version 解析，空串表示未部署） */
+  deployed_version?: string;
   created_at: string;
   updated_at: string;
 }
@@ -538,6 +540,27 @@ export const generateSQL = (ontologyId: number, engineName: string) =>
 
 export const saveFileContent = (ontologyId: number, data: YamlFile) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/files/content`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── Ontology Deploy（版本合并预览 + 部署） ──────────────────────────────
+
+export interface DeployDoc { md: string; yaml: string; thread_id: string; thread_title: string }
+
+export const getDeployVersions = (ontologyId: number) =>
+  request<{ versions: { version: string; docs: DeployDoc[]; count: number }[] }>(`/api/ontologies/${ontologyId}/deploy/versions`);
+
+export const getDeployPreview = (ontologyId: number, version: string) =>
+  request<{ version: string; docs: DeployDoc[]; merged: Record<string, any>; stats: Record<string, number> }>(
+    `/api/ontologies/${ontologyId}/deploy/preview?version=${encodeURIComponent(version)}`
+  );
+
+export const deployOntology = (ontologyId: number, version: string) =>
+  request<{ message: string; deployed_version: string; already_deployed: boolean; stats?: Record<string, number> }>(
+    `/api/ontologies/${ontologyId}/deploy/deploy`, { method: 'POST', body: JSON.stringify({ version }) }
+  );
+
+/** 获取当前已部署的 ontology.yaml 内容 */
+export const getDeployedOntology = (ontologyId: number) =>
+  request<{ content: string }>(`/api/ontologies/${ontologyId}/deploy/deployed`);
 
 // ─── Skill ────────────────────────────────────────────────────────────────
 

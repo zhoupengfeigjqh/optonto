@@ -9,6 +9,7 @@ import {
   getOntologyData,
   Scenario, Ontology,
 } from '@/api/client';
+import DeployedVersionBadge from '@/components/DeployedVersionBadge';
 
 export default function HomePage() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -267,7 +268,10 @@ export default function HomePage() {
                       onClick={() => window.open(`/design/${onto.id}`, `design_${onto.id}`)}
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <h3 className="text-base font-medium text-text-primary truncate">{onto.name}</h3>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h3 className="text-base font-medium text-text-primary truncate">{onto.name}</h3>
+                          <DeployedVersionBadge ontologyId={onto.id} deployedVersion={onto.deployed_version || ''} compact />
+                        </div>
                         <div className="flex gap-2 shrink-0">
                           <EditOutlined
                             className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-accent-blue transition-all"

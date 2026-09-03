@@ -96,6 +96,20 @@ async def get_ontology_api(ontology_id: int):
         raise HTTPException(status_code=404, detail="本体不存在")
     ontology, scenario_name, ontology_name = result
     ontology["scenario_name"] = scenario_name
+    # 从已部署的 ontology.yaml 解析 deployed_version（与 list_all_ontologies 一致）
+    from services import _get_yaml_path
+    import yaml
+    ontology_yaml = _get_yaml_path(scenario_name, ontology_name)
+    deployed_version = ""
+    if ontology_yaml.exists():
+        try:
+            raw = yaml.safe_load(ontology_yaml.read_text(encoding="utf-8")) or {}
+            meta = raw.get("metadata") if isinstance(raw, dict) else None
+            if isinstance(meta, dict):
+                deployed_version = str(meta.get("deployed_version") or "")
+        except Exception:
+            pass
+    ontology["deployed_version"] = deployed_version
     return ontology
 
 
