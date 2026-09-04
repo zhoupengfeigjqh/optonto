@@ -21,7 +21,11 @@ async def list_all_ontologies_api():
 
 @router.get("/functions/all")
 async def list_all_functions_api():
-    """跨本体聚合所有本体函数，产出带 inputSchema 的列表（MCP 注册一等函数工具用）。"""
+    """跨本体聚合所有本体函数，产出带 inputSchema 的列表（MCP 注册一等函数工具用）。
+
+    inputSchema 含约束（enum/pattern/min/max 按「参数名=属性名」从 related_concepts 回溯编译）；
+    约束冲突时附带 constraint_conflicts 警告（不阻塞，先扫到的生效）。
+    """
     result = []
     for onto in list_all_ontologies():
         oid = onto.get("id")
@@ -34,7 +38,9 @@ async def list_all_functions_api():
         except Exception:
             continue
         for fn in data.functions:
-            result.append({
+            schema, conflicts = params_to_input_schema(
+                fn.params, _related_concepts(data, fn.related_concepts))
+            item = {
                 "ontology_id": oid,
                 "ontology_name": ontology_name,
                 "scenario_id": onto.get("scenario_id"),
@@ -42,9 +48,65 @@ async def list_all_functions_api():
                 "name": fn.name,
                 "display_name": fn.display_name,
                 "description": fn.description,
-                "inputSchema": params_to_input_schema(fn.params),
-            })
+                "inputSchema": schema,
+            }
+            if conflicts:
+                item["constraint_conflicts"] = conflicts
+            result.append(item)
     return result
+
+
+def _related_concepts(data: OntologyData, names: list[str]):
+    """按 related_concepts 名解析概念对象（约束回溯的数据源）。"""
+    if not names:
+        return []
+    wanted = set(names)
+    return [c for c in data.concepts if c.name in wanted]
+
+
+@router.get("/behaviors/all")
+async def list_all_behaviors_api():
+    """跨本体聚合所有本体行为，产出带 inputSchema 的工具列表（MCP 注册一等行为工具用，facade）。
+
+    tool_name 全局命名：裸名优先；跨本体重名时冲突方加前缀 onto{ontology_id}__
+    （避免中文字符进工具名）。inputSchema 含约束（同 functions/all 口径）。
+    """
+    entries = []
+    for onto in list_all_ontologies():
+        oid = onto.get("id")
+        scenario_name = onto.get("scenario_name")
+        ontology_name = onto.get("ontology_name")
+        if oid is None or not scenario_name or not ontology_name:
+            continue
+        try:
+            data = load_ontology_data(scenario_name, ontology_name)
+        except Exception:
+            continue
+        for b in data.behaviors:
+            schema, conflicts = params_to_input_schema(
+                b.params, _related_concepts(data, b.related_concepts))
+            item = {
+                "ontology_id": oid,
+                "ontology_name": ontology_name,
+                "scenario_id": onto.get("scenario_id"),
+                "scenario_name": scenario_name,
+                "name": b.name,
+                "display_name": b.display_name,
+                "description": b.description,
+                "op_type": b.op_type,
+                "inputSchema": schema,
+            }
+            if conflicts:
+                item["constraint_conflicts"] = conflicts
+            entries.append(item)
+
+    # 全局命名：裸名优先，跨本体重名的冲突方加 onto{ontology_id}__ 前缀
+    name_count: dict[str, int] = {}
+    for e in entries:
+        name_count[e["name"]] = name_count.get(e["name"], 0) + 1
+    for e in entries:
+        e["tool_name"] = e["name"] if name_count[e["name"]] == 1 else f"onto{e['ontology_id']}__{e['name']}"
+    return entries
 
 
 @router.get("/by-scenario/{scenario_id}")

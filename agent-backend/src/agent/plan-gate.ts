@@ -1,14 +1,17 @@
 /**
  * 规划闸门 —— 规划（初始/波次调整共用）进入执行前的完整校验链 + 修复循环。
  *
- * 六个校验器共享同一骨架 repairPlan（校验 → 有错则记录执行流水 + 复位 holder + nudge 父Agent
- * 最多 1 次 → 复验），各自只差校验器与提示文案；约束校验是特例（取值范围硬中断不 nudge）。
+ * 五个校验器共享同一骨架 repairPlan（校验 → 有错则记录执行流水 + 复位 holder + nudge 父Agent
+ * 最多 1 次 → 复验），各自只差校验器与提示文案。
+ * 参数校验（2026-09 facade 化后）一道覆盖类型与约束：core 编译 inputSchema 已含
+ * enum/pattern/min/max/必填约束，违例统一 nudge 一次（取值范围硬中断已随用户拍板退役）。
  *
  * 从 Orchestrator 拆出后本模块即测试面：修复循环的"修正一次/复验不过判废"可脱离 execute() 全路径直测。
  */
-import { validateBehaviorNames, validateFunctionNames, validateAllParams, validateAllConstraints, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
+import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
 import type { InvalidTaskName } from './plan-validation.js';
-import { renderParamStructure, validateParamStructure, type ParamSpec } from './param-contract.js';
+import { renderParamStructure, validateParamsAgainstSchema, type ParamSpec } from './param-contract.js';
+import { schemaToDeclaredParams } from '../services/common-functions.js';
 import type { OntologyGatewayPort } from './agent-ports.js';
 import type { AgentPort } from './agent-port.js';
 import type { EventChannel } from './event-channel.js';
@@ -91,67 +94,37 @@ export class PlanGate {
     });
   }
 
-  /** 参数结构校验：必填参数 key 齐全 + 类型匹配；非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  /**
+   * 参数校验（行为/函数统一）：对 core 编译 inputSchema 跑「必填 key 齐全 + 已填值合规（含 enum/pattern/min/max 约束）」；
+   * 非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。
+   */
   async validateTaskParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
     const catalog = ctx.catalog; // run 级快照（session.catalogView）
+    // 子任务 → 编译 schema（与 validateAllParams 同口径：函数→functionInfo.schema 三源，行为→behaviorSchema）
+    const schemaOf = (st: SubTaskPlan['subtasks'][number]): Record<string, any> | null => st.function
+      ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.schema ?? null)
+      : catalog.behaviorSchema(st.scenario_name, st.ontology_name, st.behavior);
     return this.repairPlan(plan, ctx, {
-      label: '参数结构校验',
-      doneLabel: '参数结构已修正',
-      detailOf: (p) => validateAllParams(this.deps.gateway, catalog, p).join('；'),
-      isClean: (p) => validateAllParams(this.deps.gateway, catalog, p).length === 0,
+      label: '参数校验',
+      doneLabel: '参数已修正',
+      detailOf: (p) => validateAllParams(catalog, p).join('；'),
+      isClean: (p) => validateAllParams(catalog, p).length === 0,
       nudge: (p) => {
-        // 逐子任务取声明源并校验（与 validateAllParams 同口径：行为→gateway 行为声明，函数→catalog 三源），
-        // 按子任务分组输出：错误清单 + 声明结构 sketch。sketch 用中继提示同款 renderParamStructure——
-        // 父 Agent 修正时看到的结构 = 校验器判错的依据 = 中继填值的依据（单一事实源），不再让它绕路 load_skill。
+        // 按子任务分组输出：错误清单 + 声明结构 sketch。sketch 由编译 schema 转声明形后渲染（中继提示同款
+        // renderParamStructure）——父 Agent 修正时看到的结构 = 校验器判错的依据 = 中继填值的依据（单一事实源）。
         const blocks: string[] = [];
         for (const st of p.subtasks) {
-          const declared = st.function
-            ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.params ?? null)
-            : this.deps.gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior)?.params;
-          if (!declared) continue; // 无声明源 → 该校验器本就跳过（MCP 工具 schema 兜底）
-          const errs = validateParamStructure(declared, st.params || {}, st.seq, st.function || st.behavior);
+          const schema = schemaOf(st);
+          if (!schema) continue; // 无 schema → 该校验器本就跳过（执行期 harness schema 兜底）
+          const errs = validateParamsAgainstSchema(schema, st.params || {}, st.seq, st.function || st.behavior);
           if (errs.length === 0) continue; // 只给有错子任务出块
-          const sketch = Object.entries(declared)
+          const sketch = Object.entries(schemaToDeclaredParams(schema))
             .flatMap(([k, s]) => renderParamStructure(k, s as ParamSpec, {}, '  '));
           blocks.push(`- 子任务${st.seq}（${st.function || st.behavior}，${st.scenario_name}/${st.ontology_name}）\n  错误：\n${errs.map(e => `  · ${e}`).join('\n')}\n  参数声明结构（请严格按此修正）：\n${sketch.join('\n')}`);
         }
-        return `以下子任务的参数不合法：\n${blocks.join('\n\n')}\n\n请逐项修正：必填参数 key 齐全（type/required/description/value 四键）、type 与 value 的类型与声明一致、缺失值留空字符串；保持行为与整体规划不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
+        return `以下子任务的参数不合法：\n${blocks.join('\n\n')}\n\n请逐项修正：必填参数 key 齐全（type/required/description/value 四键）、type 与 value 的类型与声明一致；枚举值必须改选为声明的合法值之一；不匹配模式的请将值转换为目标格式（如日期补零、去除多余空格/符号等）；取值范围请调整到声明的区间内；缺失值留空字符串。保持行为与整体规划不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
       },
     });
-  }
-
-  /**
-   * 约束校验（校验链尾，声明源 = 关联概念属性 constraint 回溯）：
-   * - 取值范围（number/integer 的 min/max，为空不查）：违例**直接中断报错**，不 nudge、不修复，
-   *   fatalReason 携带明细提交给用户（2026-08-25 拍板：范围违例是数据可信度问题，不让 LLM 自修）。
-   * - 枚举/匹配模式：违例不中断，nudge 父 Agent 修正一次，复验仍不过返回失败。
-   * 返回 { plan, fatalReason? }（plan = null 时：有 fatalReason = 范围硬中断，无 = 枚举/模式修正失败）。
-   */
-  async validateTaskConstraints(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<{ plan: SubTaskPlan | null; fatalReason?: string }> {
-    const rangeFatal = (rangeErrors: string[]): string => {
-      ctx.emit.entry({ type: 'subtask_done', name: '取值范围校验', status: 'failed', detail: rangeErrors.join('；'), source: 'parent' });
-      return `参数值超出取值范围：${rangeErrors.join('；')}`;
-    };
-
-    const first = validateAllConstraints(this.deps.gateway, plan);
-    if (first.rangeErrors.length > 0) return { plan: null, fatalReason: rangeFatal(first.rangeErrors) };
-
-    const firstErrors = [...first.enumErrors, ...first.patternErrors];
-    if (firstErrors.length === 0) return { plan };
-
-    // 违例不硬停：明细（含合法枚举清单/正则原文/路径/填值）带给父 Agent，修正一次
-    ctx.emit.entry({ type: 'subtask_done', name: '枚举/匹配模式校验', status: 'failed', detail: firstErrors.join('；'), source: 'parent' });
-    ctx.submittedPlan.reset(); // 只认本次修正后的新提交
-    await this.deps.promptParent(ctx.parentAgent,
-      `以下子任务的参数值违反声明的约束：\n${firstErrors.map(e => `· ${e}`).join('\n')}\n\n请逐项修正：枚举值必须改选为消息中列出的合法枚举值之一；不匹配模式的请将值转换为目标格式（如日期补零、去除多余空格/符号等）。保持行为与整体规划不变，然后重新调用 submit_plan 工具提交修正后的规划。`);
-    const corrected = ctx.submittedPlan.peek();
-    if (!corrected || !corrected.subtasks || corrected.subtasks.length === 0) return { plan: null };
-
-    const again = validateAllConstraints(this.deps.gateway, corrected);
-    if (again.rangeErrors.length > 0) return { plan: null, fatalReason: rangeFatal(again.rangeErrors) };
-    if (again.enumErrors.length > 0 || again.patternErrors.length > 0) return { plan: null };
-    ctx.emit.entry({ type: 'subtask_done', name: '枚举/匹配模式已修正', status: 'done', source: 'parent' });
-    return { plan: corrected };
   }
 
   /**

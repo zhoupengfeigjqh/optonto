@@ -1,7 +1,9 @@
 /**
- * SubtaskRunner 集成测试 —— 工具报错预算（errorBudget）接线。
+ * SubtaskRunner 集成测试 —— 工具报错预算（errorBudget）接线 + 指令组装 + disable 闸 + 函数子任务直连。
  * 用真实 wrapExecuteWithErrorBudget + 真实 SubtaskRunner，替换 createChildAgent 返回的 AgentPort，
  * 验证"连续报错 3 次 → 返回失败+明确原因、prompt 只调 1 次不再外层重试"。
+ * （2026-09 facade 化：指令不再渲染合法名单/参数结构——挂载期过滤即白名单，结构约束以工具 schema 为准；
+ *   运行期白名单闸/必填闸/requiredParamsMap 已退役。）
  * 注：vitest4 的 beforeEach mockReset 会让 mock 抛错被误报未捕获，统一用 afterEach 清。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -49,7 +51,6 @@ function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): Subt
     info: {
       behaviorDisplayName: () => '',
       functionDisplayName: () => '计算安全库存',
-      behaviorParams: () => ({}),
       behaviorScope: () => ['everyone'],
     },
     securityGate: createSecurityGate(),
@@ -229,8 +230,37 @@ describe('SubtaskRunner · 工具报错预算', () => {
     expect(result.error).toContain('LLM 调用异常');
     expect(promptCalls).toBe(3);                 // 1 次初始 + MAX_LLM_EXCEPTION_RETRIES=2 次重试
   });
+});
 
-  it('无前置/后置规则时：合法行为列表只含主行为，关联概念属性不渲染', async () => {
+describe('SubtaskRunner · 指令组装（facade 化后：挂载即白名单，结构约束以工具 schema 为准）', () => {
+  it('参数段只渲染已填值（key: value 行）；空值包装渲染（待补充）', async () => {
+    let instruction = '';
+    const subWithParams: SubTask = {
+      ...subTask,
+      params: {
+        rawMaterialId: { type: 'string', value: 'RM-7' },
+        qty: { type: 'integer', value: 10 },
+        note: { type: 'string', value: '' }, // 空 → 待补充
+      },
+    };
+    const deps = makeDeps(async () => ({
+      prompt: async (msg: string) => { instruction = msg; },
+      abort: () => {},
+      subscribe: () => {},
+      state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
+    } satisfies AgentPort));
+
+    const runner = new SubtaskRunner(deps);
+    const result = await runner.run(subWithParams, meta, noopChannel);
+
+    expect(result.success).toBe(true);
+    expect(instruction).toContain('### 参数（值如下；结构与约束以各工具 schema 为准');
+    expect(instruction).toContain('  - rawMaterialId: "RM-7"');
+    expect(instruction).toContain('  - qty: 10');
+    expect(instruction).toContain('  - note: （待补充）');
+  });
+
+  it('可调用范围段：只声明"已挂载工具"事实，不再列合法名单（挂载过滤即白名单，文案-机制同源）', async () => {
     let instruction = '';
     const metaNoRules: BehaviorMeta = {
       display_name: '取消采购记录',
@@ -251,16 +281,17 @@ describe('SubtaskRunner · 工具报错预算', () => {
     const result = await runner.run(subTask, metaNoRules, noopChannel);
 
     expect(result.success).toBe(true);
-    expect(instruction).toContain('### 本子任务合法行为列表');
-    expect(instruction).toContain('- 主行为: CreatePurchaseRecord');
-    expect(instruction).toContain('- 规则关联行为: （无）');
-    // 无规则且父 Agent 未指定时，可用函数/工具为无（不再恒挂公共函数）
-    expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: （无）');
+    expect(instruction).toContain('### 可调用范围');
+    expect(instruction).toContain('主行为 CreatePurchaseRecord 与规则关联行为/函数已挂载为你的工具');
+    expect(instruction).toContain('严禁编造工具名');
+    // 旧分发器时代的名单/结构渲染已退役
+    expect(instruction).not.toContain('合法行为列表');
+    expect(instruction).not.toContain('executeOntoBehavior');
     // 无规则 → 关联概念属性不渲染，避免诱导无谓查证
     expect(instruction).not.toContain('关联概念属性');
   });
 
-  it('有前置/后置规则时：规则关联行为与关联函数填入合法列表，关联概念属性渲染', async () => {
+  it('有前置/后置规则时：需要接口行指向同名工具（参数以其 schema 为准），关联概念属性渲染', async () => {
     let instruction = '';
     const metaWithRules: BehaviorMeta = {
       display_name: '创建采购记录',
@@ -285,15 +316,14 @@ describe('SubtaskRunner · 工具报错预算', () => {
     const result = await runner.run(subTask, metaWithRules, noopChannel);
 
     expect(result.success).toBe(true);
-    expect(instruction).toContain('- 规则关联行为: QueryRawMaterials');
-    // 规则关联函数直接工具调用；可用函数/工具按「规则声明 ∪ 父 Agent 指定」挂载（不再恒挂全部）
-    expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: getCurrentDate、calcSafetyStock');
+    expect(instruction).toContain('需要接口: QueryRawMaterials（已挂载为同名工具，参数以其 schema 为准）');
+    expect(instruction).toContain('关联函数: getCurrentDate, calcSafetyStock');
     // 有规则 → 关联概念属性渲染（规则可能引用属性验证）
     expect(instruction).toContain('### 关联概念属性');
   });
 
-  it('父 Agent 指定 related_functions 时：规则外函数并入合法列表（合并）', async () => {
-    let instruction = '';
+  it('父 Agent 指定 related_functions 时：规则外函数并入合法清单（经 policy 透传给挂载过滤，不再进指令文案）', async () => {
+    let captured: SubtaskPolicy | undefined;
     const subTaskWithFuncs: SubTask = { ...subTask, related_functions: ['sumRawNotArrivalQty'] };
     const metaWithRules: BehaviorMeta = {
       display_name: '创建采购记录',
@@ -305,35 +335,8 @@ describe('SubtaskRunner · 工具报错预算', () => {
       concepts: [],
       isWrite: true,
     };
-    const deps = makeDeps(async () => ({
-      prompt: async (msg: string) => { instruction = msg; },
-      abort: () => {},
-      subscribe: () => {},
-      state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
-    } satisfies AgentPort));
-
-    const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTaskWithFuncs, metaWithRules, noopChannel);
-
-    expect(result.success).toBe(true);
-    // 规则声明 getCurrentDate、calcSafetyStock + 父 Agent 补充 sumRawNotArrivalQty → 并集（单一「可用函数/工具」行）
-    expect(instruction).toContain('- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: getCurrentDate、calcSafetyStock、sumRawNotArrivalQty');
-  });
-
-  it('必填参数名表覆盖所有合法行为：主行为取 meta，规则关联行为取 info.behaviorParams', async () => {
-    let capturedMap: Record<string, string[]> | undefined;
-    const metaWithRules: BehaviorMeta = {
-      display_name: '创建采购记录',
-      params: { rawMaterialId: { required: true }, note: { required: false } },
-      preRules: [
-        { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: ['QueryRawMaterials'], related_functions: [] },
-      ],
-      postRules: [],
-      concepts: [],
-      isWrite: true,
-    };
     const deps = makeDeps(async (_ctx, policy) => {
-      capturedMap = policy.requiredParamsMap;
+      captured = policy;
       return {
         prompt: async () => {},
         abort: () => {},
@@ -341,17 +344,14 @@ describe('SubtaskRunner · 工具报错预算', () => {
         state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
       } satisfies AgentPort;
     });
-    deps.info.behaviorParams = (_s, _o, bn) =>
-      bn === 'QueryRawMaterials' ? { materialName: { required: true }, pageSize: { required: false } } : {};
 
     const runner = new SubtaskRunner(deps);
-    const result = await runner.run(subTask, metaWithRules, noopChannel);
+    const result = await runner.run(subTaskWithFuncs, metaWithRules, noopChannel);
 
     expect(result.success).toBe(true);
-    expect(capturedMap).toEqual({
-      CreatePurchaseRecord: ['rawMaterialId'],   // 主行为：只收 required
-      QueryRawMaterials: ['materialName'],       // 规则关联行为：同样入表（必填检查不限主行为）
-    });
+    // 规则声明 getCurrentDate、calcSafetyStock + 父 Agent 补充 sumRawNotArrivalQty → 并集（挂载过滤依据）
+    expect(captured!.legalCalls.functions).toEqual(['getCurrentDate', 'calcSafetyStock', 'sumRawNotArrivalQty']);
+    expect(captured!.legalCalls.behaviors).toEqual(['CreatePurchaseRecord']);
   });
 });
 
@@ -400,7 +400,6 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
     });
     deps.info.behaviorScope = (_s, _o, bn) => bn === 'QueryRawMaterials' ? ['disable'] : ['everyone'];
     deps.info.behaviorDisplayName = (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '';
-    deps.info.behaviorParams = () => ({});
 
     const runner = new SubtaskRunner(deps);
     const result = await runner.run(subTask, metaWithRules, noopChannel);

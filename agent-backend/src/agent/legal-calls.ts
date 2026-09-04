@@ -1,19 +1,19 @@
 /**
  * 子 Agent 合法调用集合 —— 「本子任务能调哪些 behavior / function」的单一事实源。
- * 机制（scopeToOntology 白名单闸门 + createChildAgent 挂载期过滤）与文案（buildInstruction 合法行为列表）
- * 都从这里取值，避免两份各写一遍导致漂移（历史教训：父 Agent 边界曾因提示词与机制脱节而双重执行）。
+ * 机制（createChildAgent 挂载期过滤：行为工具按 scope.name 裸名匹配 behaviors、函数工具按工具名匹配 functions）
+ * 从这里取值——挂载期过滤即白名单，未挂载的工具子 Agent 物理上不可调用。
  *
  * 语义（与父 Agent 工具边界同源，见 agent-factory.ts）：
- * - 行为（executeOntoBehavior 白名单）：主行为 + 前置/后置规则声明的 data_supplements。
+ * - 行为（本体行为 facade 工具的挂载集合）：主行为 + 前置/后置规则声明的 data_supplements。
  *   data_supplements 是规则取数接口，【约定只读】（前提已文档化；若未来需要防御，
  *   可在建集合时用 getBehaviorMeta(...).isWrite 过滤写行为）。
  * - 函数（本体函数 + 公共函数工具挂载白名单）：规则声明的 related_functions ∪ 父 Agent 指定的 related_functions。
  *   公共函数不再恒挂全部——按「规则声明或父 Agent 指定」的并集挂载（见 agent-factory.ts 子 Agent 挂载过滤）。
- * - 新增 MCP 工具不在此集合：它们不承载 behavior/function 名，仍恒挂（无 ontology_id 且非公共函数）。
+ * - 新增 MCP 工具不在此集合：它们不承载 behavior/function 名，需父 Agent 经 related_functions 显式指定才挂载。
  */
 import type { BehaviorMeta } from '../types.js';
 
-/** 子 Agent 合法调用名集合（executeOntoBehavior 白名单 + 函数工具挂载白名单） */
+/** 子 Agent 合法调用名集合（行为工具挂载集合 + 函数工具挂载集合） */
 export interface LegalCalls {
   /** 合法 behavior_name 集合 */
   behaviors: string[];

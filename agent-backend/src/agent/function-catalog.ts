@@ -1,5 +1,5 @@
 /**
- * FunctionCatalog —— 函数信息三源合一的深 module（单出口）。
+ * FunctionCatalog —— 函数/行为工具信息三源合一的深 module（单出口）。
  *
  * 函数信息（名单 / 参数声明 / 中文名）原先分散两条链：params 链三源齐全、meta 链只有文件两源
  * （第三源其他MCP工具漏接），且①②在文件与 MCP schema 双投影。本模块收口为唯一出口 functionInfo：
@@ -10,6 +10,11 @@
  *   ③ 其他MCP工具：目录无标记条目，全局
  *  文件兜底模式：目录中①②全缺（= 我方 MCP server 未连接）→ ①②回落 gateway 文件声明
  *   （yaml functions[] ∪ functions.json），③仍走目录。校验可用性不绑死 MCP 连接。
+ *
+ * 行为侧（2026-09 facade 化）：行为已是一等 MCP 工具（category='本体行为'），其编译 inputSchema
+ * （含约束）是规划期参数校验的唯一数据源——behaviorSchema 按 scope（场景/本体/裸名）回溯。
+ * 行为不进函数三源（functionNames/functionInfo 自然不含），也不设文件兜底：
+ * MCP 目录缺行为工具 = 我方 MCP server 未连接，此时行为根本无法执行，校验跳过即可。
  *
  * view() 是 async 快照：MCP 目录发现是 async（其内部 run 级缓存保证重复调用代价可忽略），
  * 快照建好后所有查询同步进行——校验器得以保持纯同步函数（repairPlan 的 isClean/detailOf 闭包直接调）。
@@ -23,10 +28,12 @@ export interface FunctionInfo {
   displayName: string;
   description?: string;
   params: Record<string, any>;
+  /** 编译 inputSchema 原文（已剥离 scope/ontology_id）：规划期参数校验（TypeBox）的数据源；文件兜底模式无 */
+  schema?: Record<string, any>;
 }
 
 /**
- * 函数目录视图（同步快照）：规划校验与执行展示的函数侧唯一数据源。
+ * 函数目录视图（同步快照）：规划校验与执行展示的函数/行为侧唯一数据源。
  * functionInfo 返回 null = 函数不在任何源（校验跳过，合法性由 functionNames 名单先行拦截）。
  */
 export interface FunctionCatalogView {
@@ -34,18 +41,21 @@ export interface FunctionCatalogView {
   functionNames(scenario: string, ontology: string): string[];
   /** 函数信息（中文名/描述/参数声明），三源按序：本体函数（限定本体）→ 公共函数 → 其他MCP工具 */
   functionInfo(scenario: string, ontology: string, functionName: string): FunctionInfo | null;
+  /** 行为的编译 inputSchema（按 scope 场景/本体 + 裸名回溯）；无（MCP 未连接/行为不存在）→ null（校验跳过） */
+  behaviorSchema(scenario: string, ontology: string, behaviorName: string): Record<string, any> | null;
 }
 
 export class FunctionCatalog {
   constructor(
     private gateway: OntologyGatewayPort,
-    /** 可挂载工具目录（三类函数合一），AgentFactory.getMountableToolCatalog 注入 */
+    /** 可挂载工具目录（四类合一），AgentFactory.getMountableToolCatalog 注入 */
     private mcpCatalog: () => Promise<MountableToolInfo[]>,
   ) {}
 
   /** 构建同步视图快照：正常模式以 MCP 目录为准，目录缺①②时整体回落文件声明（gateway） */
   async view(): Promise<FunctionCatalogView> {
     const catalog = await this.mcpCatalog();
+    const behaviors = catalog.filter(t => t.category === '本体行为');
     const onto = catalog.filter(t => t.category === '本体函数');
     const common = catalog.filter(t => t.category === '公共函数');
     const others = new Map(
@@ -61,7 +71,7 @@ export class FunctionCatalog {
     const inOnto = (t: MountableToolInfo, scenario: string, ontology: string) =>
       t.scope?.scenario_name === scenario && t.scope?.ontology_name === ontology;
     const fromEntry = (t: MountableToolInfo): FunctionInfo => ({
-      displayName: t.displayName ?? '', description: t.description, params: t.params,
+      displayName: t.displayName ?? '', description: t.description, params: t.params, schema: t.schema,
     });
     return {
       functionNames: (scenario, ontology) => fileFallback
@@ -83,6 +93,9 @@ export class FunctionCatalog {
         const ext = others.get(functionName);
         return ext ? fromEntry(ext) : null;
       },
+      // 行为工具可能带 onto{ontology_id}__ 前缀（跨本体重名），匹配用 scope.name 裸名，不用工具名
+      behaviorSchema: (scenario, ontology, behaviorName) =>
+        behaviors.find(t => inOnto(t, scenario, ontology) && t.scope?.name === behaviorName)?.schema ?? null,
     };
   }
 }

@@ -8,7 +8,6 @@ import { SkillLoader } from '../services/skill-loader.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
 import { buildParentPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from '../utils/text-utils.js';
-import { isParamValueEmpty } from './param-contract.js';
 import { subtaskFieldsSchema } from './subtask-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
@@ -22,10 +21,11 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '.
 /**
  * 父 Agent 可挂载的本体查询工具（只读元数据，规划时了解场景/本体/行为/概念/关系/函数/安全/流程）。
  * 父 Agent 工具职责边界：load_skill + 本体查询 list* + listAllMcpFunctions（本地内部工具：函数/工具清单）+ submit_plan，【不挂执行工具、不挂函数/外部工具】。
- * 函数/外部工具由 listAllMcpFunctions 实时发现（本体函数/公共函数/其他MCP工具三类），父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务；executeOntoBehavior 由子 Agent 独占。
+ * 函数/外部工具由 listAllMcpFunctions 实时发现（本体函数/公共函数/其他MCP工具三类，本体行为不在其列——
+ * 行为规划走 listOntoBehaviors），父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务；
+ * 本体行为是一等 MCP 工具（facade，工具名即行为名），由子 Agent 按 legalCalls.behaviors 挂载。
  * 注：load_skill / submit_plan / listAllMcpFunctions 是 agent-backend 本地内部工具，只挂父 Agent，
  * 不注册进任何 MCP server、不暴露给子 Agent 与外部消费方。
- *
  * 单源形态 = 工具名 → 中文标签：本文件用作挂载/剔除白名单（keys），
  * orchestrator 用作执行记录展示名（"中文（英文）"格式）。
  */
@@ -49,9 +49,9 @@ const SCOPE_KEY = 'scope';
 
 /**
  * MCP 工具 → 可挂载目录条目（纯函数，导出供单测直调，无需 MCP 连接）。
- * 分类唯一依据：发布方标记（本体函数 = scope.category const，公共函数 = x-category 扩展键）；
+ * 分类唯一依据：发布方标记（本体行为/本体函数 = scope.category const，公共函数 = x-category 扩展键）；
  * 无标记 = 外部 MCP 工具（排除法）。core/agent 同仓库整栈部署，不设旧启发式兼容层——
- * 特征猜测（hasOntologyId）会把碰巧带 ontology_id 参数的外部工具误判为本体函数并误删其参数。
+ * 特征猜测（hasOntologyId）会把碰巧带 ontology_id 参数的外部工具误判为本体工具并误删其参数。
  */
 export function toMountableToolInfo(tool: { name: string; description?: string; label?: string; parameters?: any }): MountableToolInfo {
   const schema = tool.parameters || {};
@@ -62,23 +62,27 @@ export function toMountableToolInfo(tool: { name: string; description?: string; 
   if (scopeProp && !scopeProp.properties?.category) {
     console.warn(`[AgentFactory] 工具 ${tool.name} 带 scope 块但无 category 标记——core-backend 版本过旧，请同步升级`);
   }
-  // scope 作用域块一律剥离（规划元数据，非函数输入参数）；ontology_id 仅对本体函数剥离
+  // scope 作用域块一律剥离（规划元数据，非输入参数）；ontology_id 仅对本体工具剥离
   // （发布方标记判定，执行时自动注入，见 entry.scope）。
+  const ontoScoped = category === '本体函数' || category === '本体行为';
   const baseProps = { ...(schema.properties || {}) };
   delete baseProps[SCOPE_KEY];
-  if (category === '本体函数') delete baseProps.ontology_id;
+  if (ontoScoped) delete baseProps.ontology_id;
   const entry: MountableToolInfo = {
     name: tool.name,
     category,
     description: tool.description || tool.label || '',
     // 中文显示名：发布方结构化字段（scope.display_name / x-display_name），无则留空由上层兜底
     displayName: scopeProp?.properties?.display_name?.const ?? schema['x-display_name'] ?? undefined,
-    // 完整参数结构：类型/必填/描述（本体函数示例拼在描述里，公共函数有 example 字段）
+    // 完整参数结构：类型/必填/描述（本体工具示例拼在描述里，公共函数有 example 字段）
     params: schemaToDeclaredParams({ ...schema, properties: baseProps }),
+    // 编译 inputSchema 原文（剥 scope/ontology_id 后）：规划期参数校验（TypeBox）的数据源
+    schema: { ...schema, properties: baseProps },
   };
-  // 本体函数：scope 块（const 真实值）→ 独立 scope 字段（仅场景/本体四值，剔除 category/display_name 标记），
+  // 本体行为/函数：scope 块（const 真实值）→ 独立 scope 字段（剔除 category/display_name 标记；
+  // name 保留——行为工具可能带 onto{id}__ 前缀，裸名是挂载过滤/disable 闸的匹配键），
   // 父 Agent 填子任务 scenario/ontology 字段用
-  if (category === '本体函数' && scopeProp?.properties) {
+  if (ontoScoped && scopeProp?.properties) {
     entry.scope = Object.fromEntries(
       Object.entries(scopeProp.properties)
         .filter(([k]) => k !== 'category' && k !== 'display_name')
@@ -143,7 +147,7 @@ export class AgentFactory {
    * 创建父 Agent（规划专家）。
    * 注册 load_skill + submit_plan + listAllMcpFunctions（本地内部工具：函数/工具清单，只读）+ 本体查询工具（list*）。
    * 函数/外部工具不挂父 Agent——由 listAllMcpFunctions 实时发现，父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务。
-   * 父 Agent 不挂执行工具（executeOntoBehavior）——业务执行由子 Agent 独占，
+   * 父 Agent 不挂执行工具（本体行为 facade 工具）——业务执行由子 Agent 独占，
    * 从机制上杜绝父 Agent 规划阶段自执行/与子任务双重执行。
    * - onSkillLoaded：父 Agent 调用 load_skill 时触发，通知 orchestrator 记录已加载的技能名。
    * - onPlanSubmitted：父 Agent 调用 submit_plan 提交规划时触发，规划已通过 TypeBox schema 校验。
@@ -189,30 +193,36 @@ export class AgentFactory {
 
   /**
    * 创建子 Agent（执行专家）。
-   * 挂载业务执行工具集：executeOntoBehavior（恒在）+ 本体函数/公共函数/其他 MCP 工具（一律按 policy.legalCalls.functions = 规则声明 ∪ 父 Agent related_functions 挂载）。
-   * 不挂 load_skill / submit_plan / list* 本体浏览工具——合法行为列表已在指令中渲染，无需自行浏览本体元数据。
+   * 挂载业务执行工具集：本体行为工具（按 policy.legalCalls.behaviors，scope.name 裸名匹配）
+   * + 本体函数/公共函数/其他 MCP 工具（一律按 policy.legalCalls.functions = 规则声明 ∪ 父 Agent related_functions 挂载）。
+   * 挂载期过滤即白名单机制：未挂载的工具子 Agent 物理上不可调用，无需运行期名单闸。
+   * 参数合法性由工具 inputSchema（core 编译，含 enum/pattern/min/max/必填约束）在 harness 层校验。
+   * 不挂 load_skill / submit_plan / list* 本体浏览工具——子 Agent 只执行业务，无需自行浏览本体元数据。
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
-   * policy 为 buildSubtaskPolicy 派生的完整执行策略（合法清单/必填表/安全上下文/报错预算），
-   * 四道闸与预算包装恒在——不存在"半设防"形态，缺哪样都编译不过。
+   * policy 为 buildSubtaskPolicy 派生的完整执行策略（合法清单/安全上下文/报错预算），
+   * 安全闸与预算包装恒在——不存在"半设防"形态，缺哪样都编译不过。
    */
   async createChildAgent(context: SkillContext, policy: SubtaskPolicy): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
     const model = resolveDeepSeekModel();
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
-    // 剔除本体浏览工具（list*）——子 Agent 只执行业务，合法行为列表已在指令中渲染。
+    // 剔除本体浏览工具（list*）——子 Agent 只执行业务。
     // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
     // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
     const legal = policy.legalCalls;
     const mcpTools = allMcp
       .filter(({ tool }) => {
         if (PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name)) return false; // 剔除 list*
-        if (tool.name === 'executeOntoBehavior') return true; // 行为执行
+        const scopeProps = (tool.parameters as any)?.properties?.[SCOPE_KEY]?.properties;
+        const category = scopeProps?.category?.const;
+        // 本体行为工具：按 scope.name 裸名匹配合法行为集合（工具名可能带 onto{id}__ 前缀，不能按工具名比）
+        if (category === '本体行为') return legal.behaviors.includes(scopeProps?.name?.const ?? '');
         // 本体函数 / 公共函数 / 其他 MCP 工具：一律按 legalCalls.functions（规则声明 ∪ 父 Agent related_functions）挂载
         return legal.functions.includes(tool.name);
       })
       .map(({ tool }) => this.scopeToOntology(tool, ontologyId, policy));
-    const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接使用给定的行为名称和参数调用 executeOntoBehavior。${timeNote()}`;
+    const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接调用已挂载的行为/函数工具（工具名即行为名/函数名），参数结构以各工具 schema 为准。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'off' },
     });
@@ -247,30 +257,30 @@ export class AgentFactory {
 
   /**
    * 将执行类工具限定到指定本体：
-   * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）
+   * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）与 scope 块（规划元数据）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
-   * - executeOntoBehavior 四道闸（按序，见 execute 内）：
+   * - 两道安全闸（按序，见 execute 内；参数合法性由工具 inputSchema 在 harness 层校验，不再设运行期参数闸）：
    *   闸0 入口短路（violation 已置位 → 一律 terminate，中断信号广播到全 run）→
-   *   闸1 disable（策略级拒绝：置 violation + terminate，不抛错不走预算，无自纠空间）→
-   *   闸2 白名单（非法行为名，抛错给 LLM 自纠 + 报错预算兜底）→
-   *   闸3 必填硬检查（必填参数缺失，抛错给 LLM 自纠 + 报错预算兜底）
-   *   （本体函数工具已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门）
+   *   闸1 disable（本体行为工具按 scope.name 裸名查禁用集合：置 violation + terminate，不抛错不走预算，无自纠空间）
+   *   （行为/函数工具的合法性已在 createChildAgent 挂载期按 legalCalls 过滤，机制即白名单）
    * 无 ontology_id 的工具（如公共函数/新增 MCP）原样返回。
    */
   private scopeToOntology(tool: AgentTool, ontologyId: number, policy: SubtaskPolicy): AgentTool {
-    const { requiredParamsMap, legalCalls, security, errorBudget } = policy;
+    const { security, errorBudget } = policy;
     const schema = tool.parameters as any;
     const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
-    // 本体锁定对象：executeOntoBehavior（行为执行）+ 发布方标记的本体函数（scope.category const）。
+    const scopeProps = props?.[SCOPE_KEY]?.properties;
+    const category = scopeProps?.category?.const;
+    // 本体锁定对象：本体行为（facade）+ 本体函数，均按发布方标记（scope.category const）判定。
     // 不靠 ontology_id 属性猜测——外部工具碰巧带该参数时不会被误剥参数/误注入本体 id
-    const needLock = tool.name === 'executeOntoBehavior'
-      || props?.[SCOPE_KEY]?.properties?.category?.const === '本体函数';
+    const isBehavior = category === '本体行为';
+    const needLock = category === '本体函数' || isBehavior;
     // 仅锁定的工具做 ontology_id 剔除 + 强制注入；其余（公共函数/外部 MCP）原样透传参数
     let nextParameters = schema;
     if (needLock && props) {
       const nextProps = { ...props };
       delete nextProps.ontology_id;
-      delete nextProps[SCOPE_KEY]; // scope 是规划元数据（非函数输入），子 Agent 不该看见/填写
+      delete nextProps[SCOPE_KEY]; // scope 是规划元数据（非输入参数），子 Agent 不该看见/填写
       const required = Array.isArray(schema.required)
         ? (schema.required as string[]).filter(k => k !== 'ontology_id')
         : undefined;
@@ -286,39 +296,16 @@ export class AgentFactory {
       }
       const p = needLock ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
 
-      if (tool.name === 'executeOntoBehavior') {
-        const bn = p?.behavior_name;
-
-        // ── 闸1 disable（策略级拒绝，先于白名单/必填——先资格后形状）──
-        // 命中：置 run 级 violation（first-writer-wins）+ 返回 terminate:true，真实 MCP 调用零发生。
-        // 不抛错、不计报错预算：策略拒绝无自纠空间（重试必败），terminate 当场停内层循环（与预算超限同机制），
-        // SubtaskRunner 见 violation 返回 securityViolation 失败 → orchestrator 以 securityBlocked 中断整个 run。
-        if (bn && security.disabled.has(bn)) {
-          security.gate.violation ??= buildDisableMessage(bn, security.disabled.get(bn));
+      // ── 闸1 disable（策略级拒绝）──
+      // 行为工具按 scope.name 裸名查禁用集合（工具名可能带 onto{id}__ 前缀，裸名才是 securities 登记键）。
+      // 命中：置 run 级 violation（first-writer-wins）+ 返回 terminate:true，真实 MCP 调用零发生。
+      // 不抛错、不计报错预算：策略拒绝无自纠空间（重试必败），terminate 当场停内层循环（与预算超限同机制），
+      // SubtaskRunner 见 violation 返回 securityViolation 失败 → orchestrator 以 securityBlocked 中断整个 run。
+      if (isBehavior) {
+        const bare = scopeProps?.name?.const ?? tool.name.replace(/^onto\d+__/, '');
+        if (security.disabled.has(bare)) {
+          security.gate.violation ??= buildDisableMessage(bare, security.disabled.get(bare));
           return securityTerminateResult(security.gate.violation);
-        }
-
-        // ── 闸2 白名单：业务执行面（executeOntoBehavior）的 behavior 名只允许合法集合 ──
-        // 与父 Agent 工具边界同源：只靠提示词"未列入一律不得调用"挡不住幻觉（历史教训：父 Agent 双重执行）。
-        // 抛错落进 wrapExecuteWithErrorBudget → 报错自带合法清单，LLM 可自纠；连续 3 次 terminate 停循环，子任务判失败。
-        // 本体函数工具（函数名即工具名）已在 createChildAgent 挂载期按 legalCalls.functions 过滤，无需运行时闸门。
-        if (bn && !legalCalls.behaviors.includes(bn)) {
-          throw new Error(`禁止执行：behavior "${bn}" 不在本子任务合法行为列表（合法：${legalCalls.behaviors.join('、')}）。`);
-        }
-      }
-
-      // ── 闸3 必填硬检查：凡 executeOntoBehavior 调用，按 behavior_name 查必填表（不限主行为）──
-      // 缺失则抛异常（pi-agent 以抛异常识别工具错误并触发子 Agent 重试；
-      // 返回 isError 字段会被 pi-agent 吞掉——executePreparedToolCall 硬编码 isError:false，重试永不触发）。
-      // 子 Agent 看到错误后必须补齐参数（查询/推断/询问用户）才能重试。
-      // 查询行为缺必填同样会被 core 端拒绝——提前在工具层拦下，错误消息与重试方向更清晰。
-      if (tool.name === 'executeOntoBehavior' && p?.behavior_name) {
-        const required = requiredParamsMap[p.behavior_name];
-        if (required) {
-          const missing = required.filter(key => isParamValueEmpty((p.params ?? {})[key]));
-          if (missing.length > 0) {
-            throw new Error(`禁止执行：必填参数缺失 ${missing.join('、')}。请先补齐这些参数（可通过查询、推断或询问用户获取）后再调用 executeOntoBehavior。`);
-          }
         }
       }
       return originalExecute(toolCallId, p);
@@ -326,7 +313,7 @@ export class AgentFactory {
     return {
       ...tool,
       ...(nextParameters !== schema ? { parameters: nextParameters } : {}),
-      // 恒包上报错计数（含白名单/必填硬检查抛错）——预算由策略对象保证存在，不再有"无预算"形态
+      // 恒包上报错计数——预算由策略对象保证存在，不再有"无预算"形态
       execute: wrapExecuteWithErrorBudget(execute, errorBudget),
     };
   }
@@ -413,23 +400,25 @@ export class AgentFactory {
   }
 
   /**
-   * 可挂载函数/工具目录（单一事实源）：本体函数 / 公共函数 / 其他 MCP 工具三类。
-   * 供父 Agent 的 listAllMcpFunctions 工具（规划发现）与规划校验（函数名/参数结构数据源）共用。
+   * 可挂载工具目录（单一事实源）：本体行为 / 本体函数 / 公共函数 / 其他 MCP 工具四类。
+   * 供父 Agent 的 listAllMcpFunctions 工具（规划发现，本体行为条目会被剔除——行为规划走 listOntoBehaviors）
+   * 与规划校验（函数名/参数结构与行为编译 schema 数据源）共用。
    * 每个条目：
-   *   - category：发布方标记（本体函数 scope.category / 公共函数 x-category），无标记 = 其他MCP工具
+   *   - category：发布方标记（本体行为/本体函数 scope.category / 公共函数 x-category），无标记 = 其他MCP工具
    *   - displayName：中文显示名（scope.display_name / x-display_name），无则上层兜底
    *   - params：完整参数结构（inputSchema 剔除 scope 后经 schemaToDeclaredParams 转声明形状
    *     {key: {type, required, description(含示例), example?}}），与子任务 params 填法同形
-   *   - scope（本体函数独有）：所属场景/本体的真实值 {ontology_id, scenario_id, scenario_name, ontology_name}，
-   *     来自 MCP server 工具 schema 前置的 scope 块（非函数输入参数）
+   *   - schema：编译 inputSchema 原文（剥 scope/ontology_id），规划期参数校验（TypeBox）的数据源
+   *   - scope（本体行为/函数独有）：所属场景/本体真实值 {ontology_id/scenario_id/scenario_name/ontology_name/name 裸名}，
+   *     来自 MCP server 工具 schema 前置的 scope 块（非输入参数）
    * 只读：仅返回工具元数据，不调用任何工具、无副作用。
    */
   async getMountableToolCatalog(): Promise<MountableToolInfo[]> {
     const all = await this.discoverTools();
-    // 剔除本体浏览 list*（含 listOntoFunctions 元数据查询工具）与行为执行 executeOntoBehavior——这两类不可挂给子任务，
-    // 其余（本体函数 / 公共函数 / 其他 MCP 工具）均是可挂载项，即 related_functions / 函数子任务 function 的取值域。
+    // 只剔除本体浏览 list*（元数据查询工具）；其余（本体行为 / 本体函数 / 公共函数 / 其他 MCP 工具）均是可挂载项。
+    // 函数三类是 related_functions / 函数子任务 function 的取值域；本体行为是子 Agent 行为挂载与规划期参数校验的数据源。
     return all
-      .filter(({ tool }) => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name) && tool.name !== 'executeOntoBehavior')
+      .filter(({ tool }) => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name))
       .map(({ tool }) => toMountableToolInfo(tool));
   }
 
@@ -463,7 +452,9 @@ export class AgentFactory {
           ? toFiniteNum(p.ontology_id, 'ontology_id')
           : undefined;
         const kw = typeof p?.keyword === 'string' && p.keyword.trim() !== '' ? p.keyword.trim().toLowerCase() : undefined;
-        let catalog = await this.getMountableToolCatalog();
+        let catalog = (await this.getMountableToolCatalog())
+          // 本体行为不进本清单：行为子任务规划走 listOntoBehaviors（花名册+规则关联），这里只列函数/工具
+          .filter(t => t.category !== '本体行为');
         if (oid !== undefined) {
           // 仅滤本体函数：scope.ontology_id 精确匹配；全局工具（公共函数/其他MCP工具）无本体归属，始终保留
           catalog = catalog.filter(t => t.category !== '本体函数' || t.scope?.ontology_id === oid);

@@ -13,12 +13,13 @@ export interface CommonFunction {
 
 /**
  * 把公共函数的 inputSchema（标准 JSON Schema）转换为与本体函数 params 一致的声明形状
- * {k: {type, required:boolean, ...}}，让 validateParamStructure 统一校验本体函数与公共函数。
+ * {k: {type, required:boolean, ...}}——供工具目录 params 展示与 PlanGate nudge 的结构 sketch 渲染
+ * （renderParamStructure）统一消费本体函数与公共函数。
  * 转换规则是 params_to_input_schema 的逆过程：
  * - 顶层 required:[数组] → 每个参数的 required:boolean（本体函数源形式即内联布尔）
  * - array 参数：items 递归还原为 {type:"object", properties, required:[数组]}（内层 required 保留数组，同本体函数 items 写法）
  * - object 参数：properties 递归
- * 注意：validateParamStructure 当前只消费顶层 required+type；嵌套结构还原仅为保持与本体函数 params 形状一致、便于未来深化校验。
+ * 注意：声明形状主要承载顶层 required+type（目录展示/sketch 渲染用）；嵌套结构还原仅为保持与本体函数 params 形状一致、便于未来深化。
  */
 export function schemaToDeclaredParams(schema: any): Record<string, any> {
   const out: Record<string, any> = {};

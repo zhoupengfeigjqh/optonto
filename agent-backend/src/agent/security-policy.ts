@@ -13,7 +13,7 @@ export function needsSecurityConfirm(meta: BehaviorMeta): boolean {
  * Run 级安全闸 —— 权限范围 disable 的运行面硬闸共享状态（2026-08-27 定稿：工具层单点）。
  *
  * 一个 run 仅一个实例（RunSession 持有），全 run 所有子 Agent 的工具 execute 包装共享：
- * 任一 executeOntoBehavior 调用命中 disable → 置 violation + 返回 terminate:true
+ * 任一行为工具（facade）调用命中 disable → 置 violation + 返回 terminate:true
  * （不抛错、不计工具报错预算、无 LLM 试错——策略级拒绝不存在"改对了再试"，重试必败）；
  * violation 置位后，所有后续工具调用在入口短路一律 terminate（中断信号的广播机制），
  * 兄弟子 Agent 随之停摆，orchestrator 波次截断后整个 run 以 securityBlocked 结局收尾。

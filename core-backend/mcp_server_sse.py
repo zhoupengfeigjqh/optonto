@@ -73,20 +73,21 @@ SCOPE_KEY = "scope"
 FUNCTION_SCOPE_KEYS = {SCOPE_KEY}
 
 
-def _with_function_scope(input_schema: dict, fn: dict) -> dict:
-    """本体函数工具 schema 前置 scope 作用域块（const 带真实值，供规划填子任务对应字段）。
+def _with_function_scope(input_schema: dict, fn: dict, category: str = "本体函数") -> dict:
+    """本体函数/行为工具 schema 前置 scope 作用域块（const 带真实值，供规划填子任务对应字段）。
 
-    scope 块放在函数参数之前；agent-backend 的 listAllMcpFunctions 读出 scope 展示给父 Agent，
-    callFunctionTool/scopeToOntology 与本分发器在调用前剥离 scope，避免污染真实函数参数。
+    scope 块放在参数之前；agent-backend 的 listAllMcpFunctions 读出 scope 展示给父 Agent，
+    callFunctionTool/scopeToOntology 与本分发器在调用前剥离 scope，避免污染真实参数。
     category/display_name 为发布方权威标记：agent-backend 据此分类（不再靠特征猜测），
     display_name 使中文名结构化可得（不再从 description 前缀切分）。
     """
     props: dict = {
         SCOPE_KEY: {
             "type": "object",
-            "description": "本函数所属场景/本体上下文（规划时填子任务对应字段；非函数输入参数，执行时自动剥离）",
+            "description": "本工具所属场景/本体上下文（规划时填子任务对应字段；非输入参数，执行时自动剥离）",
             "properties": {
-                "category": {"type": "string", "const": "本体函数"},
+                "category": {"type": "string", "const": category},
+                "name": {"type": "string", "const": fn.get("name") or ""},
                 "display_name": {"type": "string", "const": fn.get("display_name") or ""},
             },
         },
@@ -172,10 +173,49 @@ async def _load_function_tools(force: bool = False) -> list[Tool]:
     return _FUNCTION_CACHE["tools"]
 
 
+# ─── 本体行为工具（facade：行为名即工具名，schema 由 core 编译含约束，调用翻译回 /behaviors/{name}/call）──
+# 替代已退役的 executeOntoBehavior 黑盒分发器——参数结构/约束在工具 schema 可见，harness 调用前自动校验。
+# tool_name 由 core 聚合端点全局命名（裸名优先，跨本体重名加 onto{ontology_id}__ 前缀）。
+_BEHAVIOR_CACHE: dict = {"fingerprint": None, "tools": [], "entries": {}}
+
+
+async def _load_behavior_tools(force: bool = False) -> list[Tool]:
+    """从后端聚合端点拉取所有本体行为并转成 Tool（与函数共用 mtime 指纹语义）。"""
+    fingerprint = _functions_fingerprint()
+    if not force and _BEHAVIOR_CACHE["fingerprint"] is not None and _BEHAVIOR_CACHE["fingerprint"] == fingerprint:
+        return _BEHAVIOR_CACHE["tools"]
+    try:
+        data = await _api_get("/api/ontologies/behaviors/all")
+        if isinstance(data, dict) and data.get("error"):
+            data = []
+        tools: list[Tool] = []
+        entries: dict[str, dict] = {}
+        for b in data or []:
+            if not isinstance(b, dict) or not b.get("tool_name"):
+                continue
+            tool_name = b["tool_name"]
+            desc_parts = [p for p in (b.get("display_name"), b.get("description")) if p]
+            desc = "：".join(desc_parts) if desc_parts else tool_name
+            oname = b.get("ontology_name")
+            if oname:
+                desc = f"{desc}（本体「{oname}」）"
+            tools.append(Tool(
+                name=tool_name,
+                description=desc,
+                inputSchema=_with_function_scope(b.get("inputSchema", {"type": "object", "properties": {}}), b, category="本体行为"),
+            ))
+            entries[tool_name] = b
+        _BEHAVIOR_CACHE.update(fingerprint=fingerprint, tools=tools, entries=entries)
+    except Exception:
+        pass  # 拉取失败保留旧缓存；首次失败则沿用空列表
+    return _BEHAVIOR_CACHE["tools"]
+
+
 async def _list_tools() -> list[Tool]:
     function_tools = await _load_function_tools()
+    behavior_tools = await _load_behavior_tools()
     common_tools, _ = _get_common_tools()
-    return common_tools + [
+    fixed_tools = [
         Tool(
             name="listScenarios",
             description="列出所有场景。返回每个场景的 id、name和description等。",
@@ -268,20 +308,14 @@ async def _list_tools() -> list[Tool]:
                 "required": ["ontology_id"],
             },
         ),
-        Tool(
-            name="executeOntoBehavior",
-            description="执行本体行为。API 类型调用目标 HTTP 接口，SQL 类型执行 SQL 查询。传入 ontology_id、behavior_name 和 params，返回按 response 结构对齐的数据。",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "ontology_id": {"type": "integer", "description": "本体 ID"},
-                    "behavior_name": {"type": "string", "description": "行为名称"},
-                    "params": {"type": "object", "description": "行为输入参数，按 behavior.params 结构传入"},
-                },
-                "required": ["ontology_id", "behavior_name", "params"],
-            },
-        ),
-    ] + function_tools
+    ]
+    # 拼装：公共函数 + 固定 list* + 本体函数 + 本体行为。
+    # 重名守卫：行为 tool_name 与在先段（公共函数/list*/本体函数）撞名时跳过——
+    # core 端命名只管行为内部冲突，跨段撞名属极端场景，先到先得、不静默覆盖在先工具。
+    tools = common_tools + fixed_tools + function_tools
+    taken = {t.name for t in tools}
+    tools.extend(t for t in behavior_tools if t.name not in taken)
+    return tools
 
 
 @server.list_tools()
@@ -301,8 +335,9 @@ async def _filter_list(data: list | dict, keyword: str | None, fields: list[str]
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     result = None
-    # 确保本体函数工具名缓存已加载（MCP 协议先 list_tools 后 call_tool，此处兜底直连场景）
+    # 确保本体函数/行为工具缓存已加载（MCP 协议先 list_tools 后 call_tool，此处兜底直连场景）
     await _load_function_tools()
+    await _load_behavior_tools()
 
     if name == "listScenarios":
         data = await _api_get("/api/scenarios")
@@ -362,22 +397,24 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         data = await _api_get(f"/api/ontologies/{oid}/processes")
         result = await _filter_list(data, arguments.get("keyword"), ["name", "display_name"])
 
-    elif name == "executeOntoBehavior":
-        oid = arguments["ontology_id"]
-        bname = arguments["behavior_name"]
-        params = arguments.get("params", {})
-        body = {"params": params}
+    # ─── 本体行为执行（facade：工具名→behavior_name，平铺实参→params 包络，翻译回通用行为调用端点）──
+    if result is None and name in _BEHAVIOR_CACHE["entries"]:
+        entry = _BEHAVIOR_CACHE["entries"][name]
+        oid = arguments.get("ontology_id") or entry.get("ontology_id")
+        bname = entry["name"]  # 裸行为名（tool_name 可能带 onto{id}__ 前缀）
+        # scope 是规划元数据（非行为输入），剥离；ontology_id 仅路由用，亦剥离
+        params = {k: v for k, v in arguments.items() if k not in FUNCTION_SCOPE_KEYS and k != "ontology_id"}
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{API_BASE}/api/ontologies/{oid}/behaviors/{bname}/call",
-                json=body,
+                json={"params": params},
             )
             if resp.status_code >= 400:
                 try:
                     err = resp.json()
                 except Exception:
                     err = {"detail": resp.text}
-                # 同 executeOntoFunction：执行失败必须置 isError，交由 agent 判定失败
+                # 执行失败必须置 isError（抛异常），交由 agent 判定失败
                 raise RuntimeError(f"行为 {bname} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
             result = resp.json()
 
@@ -394,7 +431,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
                     err = resp.json()
                 except Exception:
                     err = {"detail": resp.text}
-                # 与 executeOntoBehavior/Function 一致：失败必须置 isError（抛异常），
+                # 与行为/本体函数执行一致：失败必须置 isError（抛异常），
                 # 而非返回 {"error": true} 文本——否则 agent 侧把失败当成功文本，成败全靠 LLM 读 JSON。
                 raise RuntimeError(f"公共函数 {name} 执行失败 (HTTP {resp.status_code}): {json.dumps(err, ensure_ascii=False)[:2000]}")
             result = resp.json()

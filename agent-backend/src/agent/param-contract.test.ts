@@ -1,10 +1,13 @@
 /**
- * unwrapParamValues 深展开单测 —— 函数子任务直连 MCP 前剥 {type/required/description/value} 包装。
- * 覆盖真实 LLM 波次反馈中继的递归嵌套形态（数组项字段被包成 {value: ...}），
- * 历史教训：只做顶层剥皮会漏掉嵌套包装，函数收到 dict 报 strptime 类型错误（见 tool-subtask-param-unwrap）。
+ * param-contract 单测 —— 三部分：
+ *  1. unwrapParamValues 深展开：函数子任务直连 MCP 前剥 {type/required/description/value} 包装。
+ *     覆盖真实 LLM 波次反馈中继的递归嵌套形态（历史教训：只做顶层剥皮会漏嵌套包装，见 tool-subtask-param-unwrap）。
+ *  2. validateParamsAgainstSchema：规划期对 core 编译 inputSchema 的「必填 key 齐全 + 已填值合规」校验
+ *     （facade 化后替代 validateParamStructure/validateConstraintValues——类型与 enum/pattern/min/max 一道覆盖）。
+ *  3. renderParamStructure：中继提示 / PlanGate nudge 的结构 sketch 渲染。
  */
 import { describe, it, expect } from 'vitest';
-import { unwrapParamValues, validateParamStructure, renderParamStructure } from './param-contract.js';
+import { unwrapParamValues, validateParamsAgainstSchema, renderParamStructure } from './param-contract.js';
 
 describe('unwrapParamValues · 深展开计划期参数包装', () => {
   it('顶层四键包装 {type/required/description/value} → 纯值', () => {
@@ -53,135 +56,147 @@ describe('unwrapParamValues · 深展开计划期参数包装', () => {
   });
 });
 
-// ─── validateParamStructure · 已填非空值的真实类型校验 ─────────────────
-// 规划期（初始 + 波次中继）共用此判定器；空值放行（子 Agent 补 / 中继填），裸标量维持"报缺失"（B 口径）。
+// ─── validateParamsAgainstSchema · 结构（必填 key / 自报 type） ─────────────────
+// schema 均按 core 编译产物形态书写（JSON Schema；pattern 已是 ^(?:…)$ 全匹配包装）。
 
-describe('validateParamStructure · 值类型校验', () => {
-  const DECLARED = {
-    date: { type: 'string', required: true },
-    days: { type: 'integer', required: true },
-    ratio: { type: 'number', required: false },
-    tags: { type: 'array', required: false },
-    meta: { type: 'object', required: false },
-    flag: { type: 'boolean', required: false },
-    unit: { type: 'enum', required: false },
-    custom: { required: false }, // 未声明 type → 无比对依据
+describe('validateParamsAgainstSchema · 结构校验', () => {
+  const SCHEMA = {
+    type: 'object',
+    properties: {
+      date: { type: 'string' },
+      days: { type: 'integer' },
+      note: { type: 'string' },
+    },
+    required: ['date', 'days'],
+  };
+
+  it('必填 key 齐全（包装对象）→ 通过；可选缺失不拦', () => {
+    expect(validateParamsAgainstSchema(SCHEMA, {
+      date: { type: 'string', value: '' },
+      days: { type: 'integer', value: 30 },
+    }, 1, 'fn')).toEqual([]);
+  });
+
+  it('缺必填 key / 必填给裸标量 → 报"缺少必填参数"', () => {
+    expect(validateParamsAgainstSchema(SCHEMA, { days: { type: 'integer', value: 30 } }, 1, 'fn'))
+      .toEqual(['子任务1(fn) 缺少必填参数 date']);
+    const errors = validateParamsAgainstSchema(SCHEMA, { date: { value: 'x' }, days: 30 }, 1, 'fn');
+    expect(errors).toEqual(['子任务1(fn) 缺少必填参数 days']);
+  });
+
+  it('必填包装自报 type 与声明不一致 → 报类型应为；可选参数自报 type 不查', () => {
+    const errors = validateParamsAgainstSchema(SCHEMA, {
+      date: { type: 'string', value: '' },
+      days: { type: 'string', value: '' },
+      note: { type: 'integer', value: '' }, // 可选：自报 type 不查
+    }, 2, 'fn');
+    expect(errors).toEqual(['子任务2(fn) 参数 days 类型应为 integer，实际 string']);
+  });
+
+  it('ontology_id / scope 键一律跳过（编译 schema 带，规划期不填）', () => {
+    const withScope = {
+      type: 'object',
+      properties: { ontology_id: { type: 'integer' }, scope: { type: 'object' }, date: { type: 'string' } },
+      required: ['ontology_id', 'date'],
+    };
+    expect(validateParamsAgainstSchema(withScope, { date: { value: '2026-08-17' } }, 1, 'fn')).toEqual([]);
+  });
+});
+
+// ─── validateParamsAgainstSchema · 类型与嵌套递归 ─────────────────
+
+describe('validateParamsAgainstSchema · 值类型校验', () => {
+  const SCHEMA = {
+    type: 'object',
+    properties: {
+      date: { type: 'string' },
+      days: { type: 'integer' },
+      ratio: { type: 'number' },
+      flag: { type: 'boolean' },
+      tags: { type: 'array', items: { type: 'string' } },
+      custom: {}, // 无 type → Unknown，无比对依据
+    },
+    required: ['date', 'days'],
   };
 
   it('类型全对（含可选参数）→ 无错误', () => {
-    expect(validateParamStructure(DECLARED, {
-      date: { type: 'string', value: '2026-08-17' },
-      days: { type: 'integer', value: 30 },
-      ratio: { value: 0.5 },
-      tags: { value: ['a'] },
-      meta: { value: { k: 1 } },
-      flag: { value: true },
-      unit: { value: '吨' },
+    expect(validateParamsAgainstSchema(SCHEMA, {
+      date: { value: '2026-08-17' }, days: { value: 30 },
+      ratio: { value: 0.5 }, tags: { value: ['a'] }, flag: { value: true },
       custom: { value: { arbitrary: ['任意'] } },
     }, 2, 'fn')).toEqual([]);
   });
 
   it('integer 填入中文字符串 → 拦（dateAdd days="三十" 场景）', () => {
-    const errors = validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' },
-      days: { type: 'integer', value: '三十' },
+    const errors = validateParamsAgainstSchema(SCHEMA, {
+      date: { value: '2026-08-17' }, days: { type: 'integer', value: '三十' },
     }, 2, 'dateAdd');
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('参数 days 声明类型 integer');
     expect(errors[0]).toContain('"三十"');
   });
 
-  it('integer 填入数字字符串 "30" → 拦（严格口径，不认数字字符串）', () => {
-    const errors = validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' },
-      days: { value: '30' },
-    }, 2, 'dateAdd');
-    expect(errors.some(e => e.includes('参数 days'))).toBe(true);
+  it('integer 填入数字字符串 "30" / 非整数 30.5 → 拦（严格口径）', () => {
+    for (const v of ['30', 30.5]) {
+      const errors = validateParamsAgainstSchema(SCHEMA, { date: { value: 'x' }, days: { value: v } }, 2, 'fn');
+      expect(errors.some(e => e.includes('参数 days'))).toBe(true);
+    }
   });
 
-  it('integer 填入 30.5（非整数 number）→ 拦', () => {
-    const errors = validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' },
-      days: { value: 30.5 },
-    }, 2, 'dateAdd');
-    expect(errors.some(e => e.includes('参数 days'))).toBe(true);
-  });
-
-  it('number 接受整数与浮点；boolean/array/object 各认各的', () => {
-    expect(validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' }, days: { value: 30 }, ratio: { value: 7 },
+  it('空值放行：value 留空不报类型错（等中继/子 Agent 补）；空数组同样放行', () => {
+    expect(validateParamsAgainstSchema(SCHEMA, {
+      date: { type: 'string', value: '' }, days: { type: 'integer', value: '' }, tags: { value: [] },
     }, 2, 'fn')).toEqual([]);
-    // boolean 填 0、array 填对象、object 填数组 → 全拦
-    const errors = validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' }, days: { value: 30 },
-      flag: { value: 0 }, tags: { value: { 0: 'a' } }, meta: { value: [1] },
+  });
+
+  it('number 接受整数与浮点；boolean/array 错型各拦各的', () => {
+    expect(validateParamsAgainstSchema(SCHEMA, {
+      date: { value: 'x' }, days: { value: 30 }, ratio: { value: 7 },
+    }, 2, 'fn')).toEqual([]);
+    const errors = validateParamsAgainstSchema(SCHEMA, {
+      date: { value: 'x' }, days: { value: 30 }, flag: { value: 0 }, tags: { value: { 0: 'a' } },
     }, 2, 'fn');
     expect(errors.some(e => e.includes('参数 flag'))).toBe(true);
     expect(errors.some(e => e.includes('参数 tags'))).toBe(true);
-    expect(errors.some(e => e.includes('参数 meta'))).toBe(true);
-  });
-
-  it('空值放行：value 留空不报类型错（等中继/子 Agent 补）', () => {
-    const errors = validateParamStructure(DECLARED, {
-      date: { type: 'string', value: '' },   // 空值：不报类型错
-      days: { type: 'integer', value: '' },  // 空值：不报类型错
-    }, 2, 'dateAdd');
-    expect(errors).toEqual([]);
-  });
-
-  it('裸标量维持 B 口径：必填参数给裸值 → 仍报"缺少必填参数"，不做值类型校验', () => {
-    const errors = validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' },
-      days: 30,
-    }, 2, 'dateAdd');
-    expect(errors).toEqual(['子任务2(dateAdd) 缺少必填参数 days']);
-  });
-
-  it('未声明 type 的参数填任意值 → 跳过比对', () => {
-    expect(validateParamStructure(DECLARED, {
-      date: { value: '2026-08-17' }, days: { value: 30 },
-      custom: { value: 12345 },
-    }, 2, 'fn')).toEqual([]);
   });
 });
 
-// ─── validateParamStructure · array/object 递归校验 ─────────────────
-// 嵌套结构沿声明的 items/properties 深入比对，错误带路径（填值依据与中继结构参考同源）。
-
-describe('validateParamStructure · 嵌套递归校验', () => {
-  // 真实案例：sumRawNotArrivalQty 的 purchaseRecordSet（array 套 object）
+describe('validateParamsAgainstSchema · 嵌套递归校验', () => {
+  // 真实案例：sumRawNotArrivalQty 的 purchaseRecordSet（array 套 object）的编译 schema 形态
   const NESTED = {
-    purchaseRecordSet: {
-      type: 'array', required: true,
-      items: {
-        type: 'object',
-        properties: {
-          arrivalTime: { type: 'string', required: true },
-          rawMaterialName: { type: 'string', required: true },
-          arrivalQuantity: { type: 'number', required: true },
+    type: 'object',
+    properties: {
+      purchaseRecordSet: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            arrivalTime: { type: 'string', minLength: 1 },
+            rawMaterialName: { type: 'string', minLength: 1 },
+            arrivalQuantity: { type: 'number' },
+          },
+          required: ['arrivalTime', 'rawMaterialName', 'arrivalQuantity'],
         },
       },
-    },
-    detail: {
-      type: 'object', required: false,
-      properties: {
-        weight: { type: 'number', required: true },
-        note: { type: 'string', required: false },
+      detail: {
+        type: 'object',
+        properties: { weight: { type: 'number' }, note: { type: 'string' } },
+        required: ['weight'],
       },
+      plainArr: { type: 'array' },  // 无 items：只查"是数组"
+      plainObj: { type: 'object' }, // 无 properties：只查"是对象"
     },
-    tags: { type: 'array', required: false, items: { type: 'string' } }, // 标量项数组
-    plainArr: { type: 'array', required: false },                        // 无 items：只查"是数组"
-    plainObj: { type: 'object', required: false },                       // 无 properties：只查"是对象"
+    required: ['purchaseRecordSet'],
   };
 
   it('数组项结构全对 → 通过', () => {
-    expect(validateParamStructure(NESTED, {
+    expect(validateParamsAgainstSchema(NESTED, {
       purchaseRecordSet: { value: [{ arrivalTime: '2026-09-01', rawMaterialName: '钢板', arrivalQuantity: 100 }] },
     }, 2, 'sumRawNotArrivalQty')).toEqual([]);
   });
 
   it('数组项内字段类型错 → 拦截并报路径 purchaseRecordSet[0].arrivalQuantity', () => {
-    const errors = validateParamStructure(NESTED, {
+    const errors = validateParamsAgainstSchema(NESTED, {
       purchaseRecordSet: { value: [{ arrivalTime: '2026-09-01', rawMaterialName: '钢板', arrivalQuantity: '一百' }] },
     }, 2, 'sumRawNotArrivalQty');
     expect(errors).toHaveLength(1);
@@ -191,46 +206,116 @@ describe('validateParamStructure · 嵌套递归校验', () => {
   });
 
   it('数组项缺必填字段 → 报"缺少必填字段"且不重复报该字段的类型错', () => {
-    const errors = validateParamStructure(NESTED, {
+    const errors = validateParamsAgainstSchema(NESTED, {
       purchaseRecordSet: { value: [{ arrivalTime: '2026-09-01', rawMaterialName: '钢板' }] },
     }, 2, 'fn');
     expect(errors).toEqual(['子任务2(fn) 参数 purchaseRecordSet[0].arrivalQuantity 缺少必填字段']);
   });
 
+  it('数组项必填字段填空串 → minLength 拦（空串=缺失语义编进 schema）', () => {
+    const errors = validateParamsAgainstSchema(NESTED, {
+      purchaseRecordSet: { value: [{ arrivalTime: '', rawMaterialName: '钢板', arrivalQuantity: 1 }] },
+    }, 2, 'fn');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('purchaseRecordSet[0].arrivalTime');
+    expect(errors[0]).toContain('不能为空');
+  });
+
   it('数组项字段的嵌套 {value} 包装（真实中继产物）→ 剥包装后比对，不误报', () => {
-    expect(validateParamStructure(NESTED, {
+    expect(validateParamsAgainstSchema(NESTED, {
       purchaseRecordSet: { value: [{ arrivalTime: { value: '2026-09-01' }, rawMaterialName: '钢板', arrivalQuantity: 100 }] },
     }, 2, 'fn')).toEqual([]);
   });
 
   it('object 参数：字段类型错带路径；声明外多出的字段放行', () => {
-    const errors = validateParamStructure(NESTED, {
+    const errors = validateParamsAgainstSchema(NESTED, {
       purchaseRecordSet: { value: [{ arrivalTime: '2026-09-01', rawMaterialName: '钢板', arrivalQuantity: 1 }] },
       detail: { value: { weight: '很重', extraField: '声明外字段不报错' } },
     }, 2, 'fn');
     expect(errors).toEqual(['子任务2(fn) 参数 detail.weight 声明类型 number，实际填入值 "很重"（string），请按声明类型修正']);
   });
 
-  it('标量项数组：逐项查标量类型', () => {
-    const ok = { value: [{ arrivalTime: 't', rawMaterialName: 'n', arrivalQuantity: 1 }] };
-    expect(validateParamStructure(NESTED, { purchaseRecordSet: ok, tags: { value: ['a', 'b'] } }, 2, 'fn')).toEqual([]);
-    const errors = validateParamStructure(NESTED, { purchaseRecordSet: ok, tags: { value: ['a', 1] } }, 2, 'fn');
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain('tags[1]');
-  });
-
   it('无 items/properties 声明的 array/object：只查顶层形态', () => {
     const ok = { value: [{ arrivalTime: 't', rawMaterialName: 'n', arrivalQuantity: 1 }] };
-    expect(validateParamStructure(NESTED, {
+    expect(validateParamsAgainstSchema(NESTED, {
       purchaseRecordSet: ok,
       plainArr: { value: [1, '混', { 啥: '都行' }] }, plainObj: { value: { any: 1 } },
     }, 2, 'fn')).toEqual([]);
-    expect(validateParamStructure(NESTED, { purchaseRecordSet: ok, plainArr: { value: '不是数组' } }, 2, 'fn'))
+    expect(validateParamsAgainstSchema(NESTED, { purchaseRecordSet: ok, plainArr: { value: '不是数组' } }, 2, 'fn'))
       .toEqual(['子任务2(fn) 参数 plainArr 声明类型 array，实际填入值 "不是数组"（string），请按声明类型修正']);
   });
+});
 
-  it('空数组 [] 视为空值 → 整体放行（等中继/子 Agent 补）', () => {
-    expect(validateParamStructure(NESTED, { purchaseRecordSet: { value: [] } }, 2, 'fn')).toEqual([]);
+// ─── validateParamsAgainstSchema · 约束（enum/pattern/min/max 编译进 schema 后的统一校验） ─────────────────
+
+describe('validateParamsAgainstSchema · 约束校验', () => {
+  const CONSTRAINED = {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['有效', '无效'] },
+      orderDate: { type: 'string', pattern: '^(?:\\d{4}-\\d{2}-\\d{2})$' },
+      level: { type: 'integer', enum: [1, 2, 3] },
+      qty: { type: 'integer', minimum: 1, maximum: 999 },
+      ratio: { type: 'number', minimum: 0 },
+    },
+    required: [],
+  };
+
+  it('值全部合规 → 无错误', () => {
+    expect(validateParamsAgainstSchema(CONSTRAINED, {
+      status: { value: '有效' }, orderDate: { value: '2026-08-24' },
+      level: { value: 2 }, qty: { value: 500 }, ratio: { value: 0.5 },
+    }, 1, 'B')).toEqual([]);
+  });
+
+  it('枚举违例（字符串/数字枚举严格比对）→ 报不在枚举值内，并列合法清单', () => {
+    const errors = validateParamsAgainstSchema(CONSTRAINED, {
+      status: { value: '未知' }, level: { value: 9 },
+    }, 1, 'B');
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain('不在枚举值 [有效 / 无效] 内');
+    expect(errors[1]).toContain('不在枚举值 [1 / 2 / 3] 内');
+  });
+
+  it('模式不匹配 → 报不匹配模式（编译 schema 已全匹配包装，部分命中也拦）', () => {
+    const errors = validateParamsAgainstSchema(CONSTRAINED, { orderDate: { value: '2026-8-4' } }, 2, 'B');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('不匹配模式');
+    expect(validateParamsAgainstSchema(CONSTRAINED, { orderDate: { value: 'x2026-08-24' } }, 2, 'B')).toHaveLength(1);
+  });
+
+  it('取值范围：低于 min / 高于 max 均拦，报错带范围文本；范围内与无范围声明不拦', () => {
+    const low = validateParamsAgainstSchema(CONSTRAINED, { qty: { value: 0 } }, 1, 'B');
+    expect(low).toHaveLength(1);
+    expect(low[0]).toContain('低于最小值 1（取值范围 1 ~ 999）');
+    const high = validateParamsAgainstSchema(CONSTRAINED, { qty: { value: 1000 } }, 1, 'B');
+    expect(high[0]).toContain('高于最大值 999（取值范围 1 ~ 999）');
+    expect(validateParamsAgainstSchema(CONSTRAINED, { qty: { value: 999 }, ratio: { value: 99999 } }, 1, 'B')).toEqual([]);
+  });
+
+  it('嵌套数组项字段约束递归校验，错误带路径 recordSet[1].orderDate', () => {
+    const nested = {
+      type: 'object',
+      properties: {
+        recordSet: {
+          type: 'array',
+          items: { type: 'object', properties: { orderDate: { type: 'string', pattern: '^(?:\\d{4})$' } } },
+        },
+      },
+      required: [],
+    };
+    const errors = validateParamsAgainstSchema(nested, {
+      recordSet: { value: [{ orderDate: { value: '2026' } }, { orderDate: { value: '26' } }] },
+    }, 3, 'B');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('recordSet[1].orderDate');
+    expect(errors[0]).toContain('不匹配模式');
+  });
+
+  it('空值放行（缺值由子 Agent/中继负责，非约束校验职责）', () => {
+    expect(validateParamsAgainstSchema(CONSTRAINED, {
+      status: { value: '' }, orderDate: {}, qty: { value: '' },
+    }, 1, 'B')).toEqual([]);
   });
 });
 
@@ -268,105 +353,5 @@ describe('renderParamStructure', () => {
   it('无内部声明的 array：单行不展开', () => {
     expect(renderParamStructure('tags', { type: 'array', required: false }))
       .toEqual(['tags: array']);
-  });
-});
-
-// ─── 枚举/匹配模式约束校验（规划期父 Agent 专用） ─────────────────────────────
-import { buildAttrConstraintMap, mergeAttrConstraints, validateConstraintValues } from './param-contract.js';
-
-describe('buildAttrConstraintMap · 约束查找表', () => {
-  const concepts = [
-    { name: 'A', display_name: 'A', attributes: [
-      { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['有效', '无效'] } },
-      { name: 'orderDate', type: 'string', display_name: '日期', constraint: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
-      { name: 'qty', type: 'number', display_name: '数量', constraint: { unique: true, required: true } },
-    ]},
-    { name: 'B', display_name: 'B', attributes: [
-      { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['启用', '停用'] } },
-    ]},
-  ] as any;
-
-  it('只收有 enum/pattern 的属性；unique/required 不构成校验依据', () => {
-    const m = buildAttrConstraintMap(concepts);
-    expect(m.size).toBe(2);
-    expect(m.has('qty')).toBe(false);
-    expect(m.get('orderDate')).toEqual({ enum: undefined, pattern: '^\\d{4}-\\d{2}-\\d{2}$' });
-  });
-
-  it('同名属性取第一个（约定同名定义一致），不 warn', () => {
-    expect(buildAttrConstraintMap(concepts).get('status')?.enum).toEqual(['有效', '无效']);
-  });
-});
-
-describe('mergeAttrConstraints · 约束合并进 spec 树', () => {
-  it('顶层 + array 项 properties 逐级合并；已有显式声明不被覆盖', () => {
-    const attrMap = new Map([
-      ['status', { enum: ['有效', '无效'] }],
-      ['arrivalTime', { pattern: '^\\d{4}-\\d{2}-\\d{2}$' }],
-    ]) as any;
-    const merged = mergeAttrConstraints({
-      status: { type: 'string', enum: ['自定义'] },
-      recordSet: { type: 'array', items: { type: 'object', properties: { arrivalTime: { type: 'string' } } } },
-    }, attrMap) as any;
-    expect(merged.status.enum).toEqual(['自定义']); // 显式声明优先
-    expect(merged.recordSet.items.properties.arrivalTime.pattern).toBe('^\\d{4}-\\d{2}-\\d{2}$');
-  });
-});
-
-describe('validateConstraintValues · 枚举/模式分类校验', () => {
-  const declared = {
-    status: { type: 'string', enum: ['有效', '无效'] },
-    orderDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
-    level: { type: 'integer', enum: [1, 2, 3] },
-  };
-
-  it('值全部合规 → 无错误', () => {
-    const v = validateConstraintValues(declared, {
-      status: { value: '有效' }, orderDate: { value: '2026-08-24' }, level: { value: 2 },
-    }, 1, 'B');
-    expect(v.enumErrors).toEqual([]);
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  it('枚举违例 → enumErrors；数字枚举严格比对', () => {
-    const v = validateConstraintValues(declared, {
-      status: { value: '未知' }, level: { value: 9 },
-    }, 1, 'B');
-    expect(v.enumErrors).toHaveLength(2);
-    expect(v.enumErrors[0]).toContain('不在枚举值');
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  it('模式不匹配 → patternErrors（可 nudge 转换类）；强制全匹配防部分命中', () => {
-    const v = validateConstraintValues(declared, {
-      orderDate: { value: '2026-8-4' },
-    }, 2, 'B');
-    expect(v.patternErrors).toHaveLength(1);
-    expect(v.patternErrors[0]).toContain('不匹配模式');
-    expect(v.enumErrors).toEqual([]);
-    // 部分命中也拦：值含额外前后缀不算通过
-    expect(validateConstraintValues(declared, { orderDate: { value: 'x2026-08-24' } }, 2, 'B').patternErrors).toHaveLength(1);
-  });
-
-  it('空值放行（缺值由结构校验/子 Agent 负责，非本校验职责）', () => {
-    const v = validateConstraintValues(declared, { status: { value: '' }, orderDate: {} }, 1, 'B');
-    expect(v.enumErrors).toEqual([]);
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  it('嵌套数组项字段递归校验，错误带路径 recordSet[1].orderDate', () => {
-    const nested = {
-      recordSet: { type: 'array', items: { type: 'object', properties: { orderDate: { type: 'string', pattern: '^\\d{4}$' } } } },
-    };
-    const v = validateConstraintValues(nested, {
-      recordSet: { value: [{ orderDate: { value: '2026' } }, { orderDate: { value: '26' } }] },
-    }, 3, 'B');
-    expect(v.patternErrors).toHaveLength(1);
-    expect(v.patternErrors[0]).toContain('recordSet[1].orderDate');
-  });
-
-  it('非法正则不当场判负（声明问题不阻塞执行）', () => {
-    const v = validateConstraintValues({ x: { type: 'string', pattern: '([' } }, { x: { value: 'any' } }, 1, 'B');
-    expect(v.patternErrors).toEqual([]);
   });
 });

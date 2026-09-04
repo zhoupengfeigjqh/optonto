@@ -158,10 +158,9 @@ export class OntologyGateway {
   }
 
   /**
-   * 函数信息合一查询（中文名 + 描述 + 参数声明 + 关联概念）：本体函数 functions[] 优先，不在则回查公共函数；
+   * 函数信息合一查询（中文名 + 描述 + 参数声明）：本体函数 functions[] 优先，不在则回查公共函数；
    * 都不在 → null（函数不在任何文件声明源）。
-   * FunctionCatalog 文件兜底模式的①②数据源（meta/params），以及规划期约束校验的声明源（concepts：
-   * 本体函数按 related_concepts 解析属性 constraint，公共函数恒为 []——无概念关联，自然跳过校验）。
+   * FunctionCatalog 文件兜底模式的①②数据源（meta/params）。
    */
   getFunctionInfo(scenario: string, ontology: string, functionName: string): FunctionInfo | null {
     const data = this.loadOntologyData(scenario, ontology);
@@ -171,11 +170,10 @@ export class OntologyGateway {
         display_name: fn?.display_name || fn?.description || '',
         description: fn?.description,
         params: fn?.params || {},
-        concepts: this.resolveConcepts(data, fn?.related_concepts || []),
       };
     }
     const common = getCommonFunctionInfo(functionName);
-    return common ? { ...common, concepts: [] } : null;
+    return common ? { display_name: common.display_name, description: common.description, params: common.params } : null;
   }
 
   /**

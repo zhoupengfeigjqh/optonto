@@ -1,9 +1,13 @@
 /**
  * topologicalSort 单元测试 —— 独立出来的图算法，补边界兜底（此前只能靠编排集成测试间接覆盖）。
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
+ *
+ * validateAllParams（2026-09 facade 化后）：对 core 编译 inputSchema 跑「必填 key 齐全 + 已填值合规」，
+ * 数据源 = run 级目录快照（函数 functionInfo.schema 三源 / 行为 behaviorSchema）；无 schema → 跳过。
+ * 约束（enum/pattern/min/max）已编进 schema，由同一道校验覆盖（细粒度断言见 param-contract.test.ts）。
  */
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validateAllConstraints, validatePlanStructure, validateSeqConflicts, looksLikePlanClaim } from './plan-validation.js';
+import { topologicalSort, validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts, looksLikePlanClaim } from './plan-validation.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
@@ -84,7 +88,7 @@ describe('validatePlanStructure', () => {
   });
 });
 
-// ─── 函数子任务名校验 + 参数结构校验分支 ─────────────────────────────
+// ─── 名称校验 + 参数校验分支 ─────────────────────────────
 
 function fakeGateway(): OntologyGatewayPort {
   return {
@@ -100,7 +104,7 @@ function fakeGateway(): OntologyGatewayPort {
     }),
     getFunctionInfo: (_scenario, _ontology, fn) =>
       fn === 'sumRawNotArrivalQty'
-        ? { display_name: '', params: { purchaseRecordSet: { required: true, type: 'array' } }, concepts: [] }
+        ? { display_name: '', params: { purchaseRecordSet: { required: true, type: 'array' } } }
         : null,
   };
 }
@@ -117,9 +121,27 @@ function plan(subtasks: SubTask[]): SubTaskPlan {
   return { subtasks };
 }
 
+const ONTARIO_SCOPE = { name: '', ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' };
+
+/** 本体行为目录项（facade 一等工具；schema = core 编译产物，scope.name 为裸名） */
+function behaviorTool(bareName: string, schema: Record<string, any>, toolName?: string): MountableToolInfo {
+  return {
+    name: toolName ?? bareName, category: '本体行为', description: '', params: {},
+    schema, scope: { ...ONTARIO_SCOPE, name: bareName },
+  };
+}
+
+/** 本体函数目录项（正常模式数据源） */
+function ontoFnTool(name: string, schema: Record<string, any>): MountableToolInfo {
+  return {
+    name, category: '本体函数', description: '', params: {},
+    schema, scope: { ...ONTARIO_SCOPE, name },
+  };
+}
+
 /** 其他MCP工具目录项（FunctionCatalog 的第三数据源） */
-function mcpTool(name: string, params: Record<string, any> = {}): MountableToolInfo {
-  return { name, category: '其他MCP工具', description: '', params };
+function mcpTool(name: string, schema?: Record<string, any>): MountableToolInfo {
+  return { name, category: '其他MCP工具', description: '', params: {}, ...(schema ? { schema } : {}) };
 }
 
 /** 经真实 FunctionCatalog 构建 view（fake gateway + fake MCP 目录），测试覆盖真实三源 join 链路 */
@@ -151,6 +173,13 @@ describe('validateFunctionNames', () => {
     expect(invalid[0].valid).toContain('weatherQuery');
     expect(invalid[0].valid).toContain('sumRawNotArrivalQty');
   });
+
+  it('本体行为工具不进合法函数名集合（行为规划走 listOntoBehaviors，与函数取值域隔离）', async () => {
+    const view = await mkView([behaviorTool('CreatePurchaseRecord', { type: 'object', properties: {} })]);
+    // 目录含行为工具（正常模式判定不受影响：fileFallback 由本体函数/公共函数缺位触发，
+    // 此处 fileFallback=true → 函数名走文件兜底），行为名不得混入函数名集合
+    expect(view.functionNames('生产调度', '原材料采购和库存')).not.toContain('CreatePurchaseRecord');
+  });
 });
 
 describe('validateBehaviorNames 跳过函数节点', () => {
@@ -159,30 +188,67 @@ describe('validateBehaviorNames 跳过函数节点', () => {
   });
 });
 
-describe('validateAllParams 函数/行为分支', () => {
-  it('函数子任务：按函数 params 校验必填', async () => {
-    const errors = validateAllParams(fakeGateway(), await mkView(), plan([fnSubtask('sumRawNotArrivalQty')]));
+describe('validateAllParams · 编译 schema 校验（行为/函数统一）', () => {
+  const BEH_SCHEMA = {
+    type: 'object',
+    properties: {
+      rawMaterialId: { type: 'string', minLength: 1 },
+      qty: { type: 'integer', minimum: 1, maximum: 100 },
+      status: { type: 'string', enum: ['有效', '无效'] },
+    },
+    required: ['rawMaterialId'],
+  };
+  const FN_SCHEMA = {
+    type: 'object',
+    properties: { purchaseRecordSet: { type: 'array' } },
+    required: ['purchaseRecordSet'],
+  };
+
+  it('行为子任务：按 behaviorSchema 校验必填（缺 key → 报错）', async () => {
+    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA)]);
+    const errors = validateAllParams(view, plan([behSubtask('CreatePurchaseRecord')]));
+    expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
+  });
+
+  it('行为子任务：已填值的类型/约束违例一道拦（范围/枚举进同一错误流，统一 nudge）', async () => {
+    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA)]);
+    const sub = {
+      ...behSubtask('CreatePurchaseRecord'),
+      params: { rawMaterialId: { value: 'RM-1' }, qty: { value: 500 }, status: { value: '未知' } },
+    };
+    const errors = validateAllParams(view, plan([sub]));
+    expect(errors.some(e => e.includes('高于最大值 100'))).toBe(true);
+    expect(errors.some(e => e.includes('不在枚举值'))).toBe(true);
+  });
+
+  it('行为子任务：跨本体重名工具带前缀 → 按 scope.name 裸名回溯 schema，不误判', async () => {
+    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA, 'onto1__CreatePurchaseRecord')]);
+    const errors = validateAllParams(view, plan([behSubtask('CreatePurchaseRecord')]));
+    expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
+  });
+
+  it('行为无 schema（目录无该行为工具）→ 跳过（执行期 harness schema 兜底）', async () => {
+    const errors = validateAllParams(await mkView(), plan([behSubtask('CreatePurchaseRecord')]));
+    expect(errors).toEqual([]);
+  });
+
+  it('函数子任务：本体函数目录项带 schema → 校验必填', async () => {
+    const view = await mkView([ontoFnTool('sumRawNotArrivalQty', FN_SCHEMA)]);
+    const errors = validateAllParams(view, plan([fnSubtask('sumRawNotArrivalQty')]));
     expect(errors).toEqual(['子任务1(sumRawNotArrivalQty) 缺少必填参数 purchaseRecordSet']);
   });
 
-  it('函数无声明源（view 返回 null）跳过结构校验', async () => {
-    expect(validateAllParams(fakeGateway(), await mkView(), plan([fnSubtask('calcSafetyStock')]))).toEqual([]);
+  it('文件兜底模式（目录无本体/公共函数）→ gateway 声明无 schema，跳过校验', async () => {
+    const errors = validateAllParams(await mkView(), plan([fnSubtask('sumRawNotArrivalQty')]));
+    expect(errors).toEqual([]);
   });
 
-  it('其他MCP工具：按目录声明校验必填（gateway 无声明时兜底数据源）', async () => {
-    const view = await mkView([mcpTool('generate_line_chart', { data: { required: true, type: 'array' } })]);
-    const errors = validateAllParams(fakeGateway(), view, plan([fnSubtask('generate_line_chart')]));
-    expect(errors).toEqual(['子任务1(generate_line_chart) 缺少必填参数 data']);
-  });
-
-  it('其他MCP工具：目录声明为空（MCP 无 inputSchema）→ 跳过结构校验', async () => {
-    const view = await mkView([mcpTool('weatherQuery')]);
-    expect(validateAllParams(fakeGateway(), view, plan([fnSubtask('weatherQuery')]))).toEqual([]);
-  });
-
-  it('行为子任务：仍按行为 params 校验', async () => {
-    const errors = validateAllParams(fakeGateway(), await mkView(), plan([behSubtask('CreatePurchaseRecord')]));
-    expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
+  it('其他MCP工具：目录带 schema → 校验必填；无 schema → 跳过', async () => {
+    const withSchema = await mkView([mcpTool('generate_line_chart', { type: 'object', properties: { data: { type: 'array' } }, required: ['data'] })]);
+    expect(validateAllParams(withSchema, plan([fnSubtask('generate_line_chart')])))
+      .toEqual(['子任务1(generate_line_chart) 缺少必填参数 data']);
+    const noSchema = await mkView([mcpTool('weatherQuery')]);
+    expect(validateAllParams(noSchema, plan([fnSubtask('weatherQuery')]))).toEqual([]);
   });
 });
 
@@ -221,136 +287,6 @@ describe('validateSeqConflicts（seq 防碰撞）', () => {
 
   it('规划路径不传 executedTasks → 冒名规则休眠（只查重复）', () => {
     expect(validateSeqConflicts(planOf([st(1)]))).toEqual([]);
-  });
-});
-
-// ─── validateAllConstraints · 行为/函数统一约束校验 ─────────────────────────
-// 函数子任务经 getFunctionInfo().concepts（related_concepts 解析）回溯约束，与行为同路径。
-
-describe('validateAllConstraints · 行为/函数统一约束校验', () => {
-  const CONCEPT = {
-    name: 'PurchaseRecord', display_name: '采购记录',
-    attributes: [
-      { name: 'status', type: 'string', display_name: '状态', constraint: { enum: ['有效', '无效'] } },
-      { name: 'arrivalTime', type: 'string', display_name: '到位时间', constraint: { pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
-      { name: 'rawMaterialName', type: 'string', display_name: '原料名', constraint: { enum: ['钢板'] } },
-      { name: 'qty', type: 'number', display_name: '数量', constraint: { min: 0, max: 100 } },
-      { name: 'leadTime', type: 'integer', display_name: '交期', constraint: { min: 1 } },
-      { name: 'note', type: 'string', display_name: '备注', constraint: { required: true } }, // 无范围：不查
-    ],
-  };
-  const gw = (): OntologyGatewayPort => ({
-    getBehaviorNames: () => ['CreatePurchaseRecord'],
-    getFunctionNames: () => ['sumRawNotArrivalQty'],
-    getBehaviorMeta: (_s, _o, b) => ({
-      display_name: '',
-      params: { status: { type: 'string' }, arrivalTime: { type: 'string' }, qty: { type: 'number' }, leadTime: { type: 'integer' }, note: { type: 'string' } },
-      preRules: [], postRules: [],
-      concepts: b === 'CreatePurchaseRecord' ? [CONCEPT] : [],
-      isWrite: false,
-    }),
-    getFunctionInfo: (_s, _o, fn) =>
-      fn === 'sumRawNotArrivalQty'
-        ? {
-            display_name: '',
-            params: {
-              filterRawMaterialName: { type: 'string' }, // 改名参数：与属性 rawMaterialName 不同名
-              purchaseRecordSet: { type: 'array', items: { type: 'object', properties: { arrivalTime: { type: 'string' }, status: { type: 'string' } } } },
-            },
-            concepts: [CONCEPT],
-          }
-        : fn === 'dateAdd'
-          ? { display_name: '', params: { days: { type: 'integer' } }, concepts: [] } // 公共函数：无概念关联
-          : null, // 第三源 MCP 工具
-  });
-
-  it('行为子任务：枚举违例 → enumErrors（回归，原行为分支不变）', () => {
-    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { status: { value: '未知' }, arrivalTime: { value: '2026-08-24' } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.enumErrors).toHaveLength(1);
-    expect(v.enumErrors[0]).toContain('status');
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  it('函数子任务：嵌套数组项字段按属性约束递归校验，错误带路径', () => {
-    const sub = {
-      ...fnSubtask('sumRawNotArrivalQty'),
-      params: {
-        purchaseRecordSet: { value: [
-          { arrivalTime: '2026-08-24', status: '有效' },
-          { arrivalTime: '2026-8-4', status: '未知' },
-        ] },
-      },
-    };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.patternErrors).toHaveLength(1);
-    expect(v.patternErrors[0]).toContain('purchaseRecordSet[1].arrivalTime');
-    expect(v.enumErrors).toHaveLength(1);
-    expect(v.enumErrors[0]).toContain('purchaseRecordSet[1].status');
-  });
-
-  it('函数子任务：改名顶层参数 ≠ 属性名 → 不查（键名匹配的既定边界，静默漏检而非误拦）', () => {
-    const sub = { ...fnSubtask('sumRawNotArrivalQty'), params: { filterRawMaterialName: { value: '铁板' } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.enumErrors).toEqual([]);
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  it('公共函数（concepts 恒空）→ 无校验依据，跳过', () => {
-    const sub = { ...fnSubtask('dateAdd'), params: { days: { value: 30 } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.enumErrors).toEqual([]);
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  it('第三源 MCP 工具（getFunctionInfo 返回 null）→ 跳过', () => {
-    const sub = { ...fnSubtask('weatherQuery'), params: { city: { value: '北京' } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.enumErrors).toEqual([]);
-    expect(v.patternErrors).toEqual([]);
-  });
-
-  // ─── 取值范围（number/integer，min/max 非空才查） ─────────────────────────
-
-  it('number 低于最小值 → rangeErrors（含范围文本）', () => {
-    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: -5 } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.rangeErrors).toHaveLength(1);
-    expect(v.rangeErrors[0]).toContain('qty');
-    expect(v.rangeErrors[0]).toContain('低于最小值 0');
-    expect(v.rangeErrors[0]).toContain('0 ~ 100');
-  });
-
-  it('number 高于最大值 → rangeErrors', () => {
-    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: 500 } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.rangeErrors).toHaveLength(1);
-    expect(v.rangeErrors[0]).toContain('高于最大值 100');
-  });
-
-  it('integer 单边范围（仅 min）：低于报错 / 高于不限', () => {
-    const bad = { ...behSubtask('CreatePurchaseRecord'), params: { leadTime: { value: 0 } } };
-    const good = { ...behSubtask('CreatePurchaseRecord'), params: { leadTime: { value: 9999 } } };
-    expect(validateAllConstraints(gw(), plan([bad])).rangeErrors).toHaveLength(1);
-    expect(validateAllConstraints(gw(), plan([good])).rangeErrors).toEqual([]);
-  });
-
-  it('范围内 / 无范围声明（note） → 不查不报', () => {
-    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: 50 }, note: { value: '任意文本' } } };
-    const v = validateAllConstraints(gw(), plan([sub]));
-    expect(v.rangeErrors).toEqual([]);
-  });
-
-  it('数字字符串纳入校验（"500" 超界报错）；非数字字符串跳过（类型校验负责）', () => {
-    const strBad = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: '500' } } };
-    const strSkip = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: 'abc' } } };
-    expect(validateAllConstraints(gw(), plan([strBad])).rangeErrors).toHaveLength(1);
-    expect(validateAllConstraints(gw(), plan([strSkip])).rangeErrors).toEqual([]);
-  });
-
-  it('空值放行（缺值非本校验职责）', () => {
-    const sub = { ...behSubtask('CreatePurchaseRecord'), params: { qty: { value: '' } } };
-    expect(validateAllConstraints(gw(), plan([sub])).rangeErrors).toEqual([]);
   });
 });
 

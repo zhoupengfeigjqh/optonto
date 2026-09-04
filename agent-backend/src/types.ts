@@ -125,7 +125,7 @@ export interface BehaviorMeta {
   preRules: RuleDetail[];
   postRules: RuleDetail[];
   /** 安全管控。confirm=false 为显式关闭，覆盖 isWrite 强制确认（判定见 security-policy.needsSecurityConfirm）；
-   *  scope 为权限范围（恒数组）：含 'disable' 时行为被禁用，executeOntoBehavior 工具层硬中断（security-policy.SecurityGate）。 */
+   *  scope 为权限范围（恒数组）：含 'disable' 时行为被禁用，行为工具层硬中断（security-policy.SecurityGate）。 */
   security?: { confirm: boolean; confirm_content: string; scope: string[] };
   concepts: ConceptInfo[];
   /** 是否写操作（API + POST/PATCH/DELETE）。写操作无论有无 security 登记都强制人工确认。 */
@@ -137,8 +137,6 @@ export interface FunctionInfo {
   display_name: string;
   description?: string;
   params: Record<string, any>;
-  /** 关联概念（含属性 constraint，规划期枚举/正则校验的回溯源）。本体函数按 related_concepts 解析；公共函数恒为 []。 */
-  concepts: ConceptInfo[];
 }
 
 /** 子任务执行结果 */

@@ -88,14 +88,12 @@ export class Orchestrator {
       confirmManager: this.confirmManager,
       createChildAgent: (ctx, policy) => this.agentFactory.createChildAgent(ctx, policy),
       childAgents: session.childAgents,
-      // 子任务元数据查询口：策略派生（必填表/禁用集合）与工具调用展示（中文名）的全部投影，一次性接线
+      // 子任务元数据查询口：策略派生（禁用集合）与工具调用展示（中文名）的全部投影，一次性接线
       info: {
         behaviorDisplayName: (scenario, ontology, behaviorName) =>
           this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
         functionDisplayName: (scenario, ontology, functionName) =>
           session.catalogView?.functionInfo(scenario, ontology, functionName)?.displayName ?? '',
-        behaviorParams: (scenario, ontology, behaviorName) =>
-          this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).params || {},
         // 工具层 disable 闸数据源：securities 登记的 scope（恒数组）；无登记（旧本体回退）视为 everyone 放行
         behaviorScope: (scenario, ontology, behaviorName) =>
           this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).security?.scope ?? ['everyone'],
@@ -367,25 +365,15 @@ export class Orchestrator {
       }
       plan = validNamedF;
 
-      // 参数结构校验（必填参数 key 齐全 + 类型匹配）：非法时 nudge 父Agent 修正一次，不再直接失败
+      // 参数校验（必填 key 齐全 + 已填值合规：类型/枚举/模式/取值范围一次覆盖，编译 schema 权威）：非法时 nudge 父Agent 修正一次
       const paramValidated = await this.planGate.validateTaskParams(plan, planCtx);
       if (!paramValidated) {
-        emit.entry({ type: 'subtask_done', name: '参数结构修正失败', status: 'failed', source: 'parent' });
-        emit.raw({ type: 'error', message: '⚠️ 规划校验失败：参数结构不合法，修正失败' });
+        emit.entry({ type: 'subtask_done', name: '参数修正失败', status: 'failed', source: 'parent' });
+        emit.raw({ type: 'error', message: '⚠️ 规划校验失败：参数不合法，修正失败' });
         emit.raw({ type: 'done' });
-        return { reply: '⚠️ 规划校验失败：参数结构不合法，修正失败，请重新描述需求。' };
+        return { reply: '⚠️ 规划校验失败：参数不合法，修正失败，请重新描述需求。' };
       }
       plan = paramValidated;
-
-      // 约束校验（校验链尾）：取值范围违例 → 直接中断报错提交明细；枚举/匹配模式违例 → nudge 修正一次，复验仍不过判失败
-      const constraintChecked = await this.planGate.validateTaskConstraints(plan, planCtx);
-      if (!constraintChecked.plan) {
-        const reason = constraintChecked.fatalReason ?? '参数值不满足枚举/匹配模式约束，修正失败';
-        emit.raw({ type: 'error', message: `⚠️ ${reason}` });
-        emit.raw({ type: 'done' });
-        return { reply: `⚠️ ${reason}` };
-      }
-      plan = constraintChecked.plan;
 
       if (round === 0) {
         emit.entry({ type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
@@ -688,11 +676,8 @@ ${waveList}
       const validatedB = validatedS ? await this.planGate.validateTaskBehaviorNames(validatedS, ctx) : null;
       const validatedF = validatedB ? await this.planGate.validateTaskFunctionNames(validatedB, ctx) : null;
       const validatedP = validatedF ? await this.planGate.validateTaskParams(validatedF, ctx) : null;
-      // 约束校验：取值范围违例 → 硬中断（fatalReason 带明细）；枚举/匹配模式违例 → nudge 修正一次，复验仍不过 → null
-      const constraintChecked: { plan: SubTaskPlan | null; fatalReason?: string } = validatedP ? await this.planGate.validateTaskConstraints(validatedP, ctx) : { plan: null };
-      const validatedC = constraintChecked.plan;
       // 依赖校验也带 nudge（与行为名/参数一致）
-      const validatedD = validatedC ? await this.planGate.validatePlanDeps(validatedC, ctx, executedSeqs) : null;
+      const validatedD = validatedP ? await this.planGate.validatePlanDeps(validatedP, ctx, executedSeqs) : null;
       if (validatedD) {
         // 调整后的规划是权威全集：剔除已执行，重新拓扑排序；为空则提前终止。
         nextPending = topologicalSort(validatedD.subtasks.filter(st => !executedSeqs.has(st.seq)));
@@ -702,9 +687,7 @@ ${waveList}
       } else {
         // 校验（含 nudge 修正）仍未通过 → 不沿用原计划让下游带空参数裸奔：主动中止，总结阶段点破残留副作用
         session.terminate('adjustmentInvalid');
-        analysisDetail = constraintChecked.fatalReason
-          ? `本波次调整规划已中止：${constraintChecked.fatalReason}`
-          : `本波次调整规划校验失败，流程已中止（避免后续子任务缺失中继数据继续执行）`;
+        analysisDetail = `本波次调整规划校验失败，流程已中止（避免后续子任务缺失中继数据继续执行）`;
       }
     }
 

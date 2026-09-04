@@ -5,7 +5,7 @@
 import type { SubTask, SubTaskPlan } from '../types.js';
 import type { OntologyGatewayPort } from './agent-ports.js';
 import type { FunctionCatalogView } from './function-catalog.js';
-import { validateParamStructure, buildAttrConstraintMap, mergeAttrConstraints, validateConstraintValues, type ConstraintViolations } from './param-contract.js';
+import { validateParamsAgainstSchema } from './param-contract.js';
 
 export interface InvalidTaskName {
   sub: SubTask;
@@ -35,58 +35,24 @@ export function validateFunctionNames(catalog: FunctionCatalogView, plan: SubTas
   return invalid;
 }
 
-/** 参数结构校验：必填字段齐全 + 类型匹配。只查"结构"不查 value（缺失值由子Agent 按 SKILL.md 补）。判定委托给 param-contract。
- *  函数节点的参数声明由 FunctionCatalogView 单源提供（functionInfo：本体函数限定本体 → 公共函数 → 其他MCP工具）；
- *  函数不在任何源（functionInfo null）→ 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）。 */
-export function validateAllParams(gateway: OntologyGatewayPort, catalog: FunctionCatalogView, plan: SubTaskPlan): string[] {
+/**
+ * 参数校验（行为/函数统一）：对 core 编译的 inputSchema 跑「必填 key 齐全 + 已填值合规」。
+ * 编译 schema 已含概念属性约束（enum/pattern/min/max/必填 minLength），类型与约束一次校验覆盖，
+ * 不再分"结构校验"与"约束校验"两道。违例统一由 PlanGate nudge 父 Agent 修正一次（不硬停）。
+ * schema 数据源 = run 级目录快照（FunctionCatalogView）：行为走 behaviorSchema（scope 裸名回溯），
+ * 函数走 functionInfo（三源）。schema 为 null（MCP 未连接/无声明源）→ 跳过（执行期 harness schema 兜底）。
+ * 只查"已填值"，value 留空放行，由子 Agent 按 SKILL.md 补 / 波次反馈中继填。
+ */
+export function validateAllParams(catalog: FunctionCatalogView, plan: SubTaskPlan): string[] {
   const errors: string[] = [];
   for (const st of plan.subtasks) {
-    if (st.function) {
-      const fnParams = catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.params ?? null;
-      // null = 函数不在任何声明源 → 结构无从比对，跳过（参数正确性由 MCP 工具 schema 兜底）
-      if (fnParams) errors.push(...validateParamStructure(fnParams, st.params || {}, st.seq, st.function));
-      continue;
-    }
-    const meta = gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
-    errors.push(...validateParamStructure(meta.params, st.params || {}, st.seq, st.behavior));
+    const schema = st.function
+      ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.schema ?? null)
+      : catalog.behaviorSchema(st.scenario_name, st.ontology_name, st.behavior);
+    if (!schema) continue;
+    errors.push(...validateParamsAgainstSchema(schema, st.params || {}, st.seq, st.function || st.behavior));
   }
   return errors;
-}
-
-/**
- * 枚举/匹配模式约束校验（校验链尾）：按"参数名 = 属性名"从关联概念的属性 constraint 回溯
- * 枚举/正则，对已填非空值递归校验。分类返回（枚举/模式），调用方统一 nudge 父 Agent 修正
- * 一次，复验仍不过判失败（不硬停）。
- * 行为子任务：声明源 = getBehaviorMeta（params + related_concepts 解析的概念属性）；
- * 函数子任务：声明源 = getFunctionInfo（本体函数按 related_concepts 解析概念属性；
- * 公共函数 concepts 恒空 → 自然跳过；第三源 MCP 工具 info 为 null → 跳过）。
- * 子 Agent 执行期不做此类检查。
- */
-export function validateAllConstraints(gateway: OntologyGatewayPort, plan: SubTaskPlan): ConstraintViolations {
-  const out: ConstraintViolations = { patternErrors: [], enumErrors: [], rangeErrors: [] };
-  for (const st of plan.subtasks) {
-    let declared: Record<string, any> | null;
-    let concepts: Parameters<typeof buildAttrConstraintMap>[0];
-    if (st.function) {
-      const info = gateway.getFunctionInfo(st.scenario_name, st.ontology_name, st.function);
-      if (!info) continue; // 第三源 MCP 工具：无文件声明源，跳过
-      declared = info.params;
-      concepts = info.concepts || [];
-    } else {
-      const meta = gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior);
-      if (!meta?.params) continue;
-      declared = meta.params;
-      concepts = meta.concepts || [];
-    }
-    const attrMap = buildAttrConstraintMap(concepts);
-    if (attrMap.size === 0) continue; // 关联属性无约束声明 → 无校验依据
-    const merged = mergeAttrConstraints(declared, attrMap);
-    const v = validateConstraintValues(merged, st.params || {}, st.seq, st.function || st.behavior);
-    out.patternErrors.push(...v.patternErrors);
-    out.enumErrors.push(...v.enumErrors);
-    out.rangeErrors.push(...v.rangeErrors);
-  }
-  return out;
 }
 
 /**

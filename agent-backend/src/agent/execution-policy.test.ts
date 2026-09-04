@@ -1,8 +1,8 @@
 /**
  * buildSubtaskPolicy 单元测试 —— 子任务执行策略的单一派生点。
- * 验证四件套一次派生：合法清单 / 必填表（主行为取 meta，补充行为走 info 口）/
- * 禁用集合（scope 含 disable，值带 display_name）/ 报错预算（每子任务一份新实例），
- * 以及 run 级安全闸按引用透传（所有子任务共享同一道闸）。
+ * 验证三件套一次派生：合法清单（子 Agent 挂载过滤依据）/ 禁用集合（scope 含 disable，值带 display_name）/
+ * 报错预算（每子任务一份新实例），以及 run 级安全闸按引用透传（所有子任务共享同一道闸）。
+ * （2026-09 facade 化：requiredParamsMap 已退役——参数合法性由工具 inputSchema 在 harness 层校验。）
  */
 import { describe, it, expect } from 'vitest';
 import { buildSubtaskPolicy } from './execution-policy.js';
@@ -38,7 +38,6 @@ function mkInfo(over?: Partial<SubtaskInfoPort>): SubtaskInfoPort {
   return {
     behaviorDisplayName: (_s, _o, bn) => `${bn}中文名`,
     functionDisplayName: () => '',
-    behaviorParams: () => ({ materialName: { required: true }, pageSize: { required: false } }),
     behaviorScope: () => ['everyone'],
     ...over,
   };
@@ -51,14 +50,6 @@ describe('buildSubtaskPolicy — 子任务执行策略单一派生点', () => {
     );
     expect(policy.legalCalls.behaviors).toEqual(['CreatePurchaseRecord', 'QueryRawMaterials']);
     expect(policy.legalCalls.functions).toEqual(['getCurrentDate', 'sumRawNotArrivalQty']);
-  });
-
-  it('必填表：主行为取 meta.params，补充行为取 info.behaviorParams（只收 required）', () => {
-    const policy = buildSubtaskPolicy(subTask, meta, mkInfo(), createSecurityGate());
-    expect(policy.requiredParamsMap).toEqual({
-      CreatePurchaseRecord: ['rawMaterialId'],
-      QueryRawMaterials: ['materialName'],
-    });
   });
 
   it('禁用集合：scope 含 disable 的合法行为入集，主行为 display_name 取 meta、补充行为走 info 口', () => {

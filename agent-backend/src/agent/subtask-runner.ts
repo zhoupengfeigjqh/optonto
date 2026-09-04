@@ -7,7 +7,7 @@
  */
 import { contentToText, toolResultToText } from '../utils/text-utils.js';
 import { parseResultStatus, stripResultStatus } from './result-protocol.js';
-import { renderParam, unwrapParamValues } from './param-contract.js';
+import { isParamValueEmpty, unwrapParamValue, unwrapParamValues } from './param-contract.js';
 import type { AgentPort } from './agent-port.js';
 import type { LegalCalls } from './legal-calls.js';
 import { needsSecurityConfirm } from './security-policy.js';
@@ -132,9 +132,9 @@ export class SubtaskRunner {
     }
 
     // 组装指令（参数在规划确认/数据传播阶段已定死，安全确认只做批准/拒绝，不改参数）
-    // 执行策略一处派生：合法清单（白名单闸+挂载过滤+指令渲染同源）、必填表、禁用集合、报错预算
+    // 执行策略一处派生：合法清单（子 Agent 挂载过滤）、禁用集合、报错预算
     const policy = buildSubtaskPolicy(subTask, meta, this.deps.info, this.deps.securityGate);
-    const instruction = this.buildInstruction(subTask, meta, policy.legalCalls);
+    const instruction = this.buildInstruction(subTask, meta);
     emit.entry({ type: 'subtask_input', name: subTask.behavior, status: 'running', detail: instruction, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
     let lastError = '';
 
@@ -145,29 +145,24 @@ export class SubtaskRunner {
       // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
       // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
       let userAborted = false;
-      // toolCallId → { 显示名, 展示参数 }。
-      // start 事件带 args 可推导行为名/参数，end 事件不带 args，靠 toolCallId 桥接，
+      // toolCallId → 展示参数。
+      // start 事件带 args，end 事件不带 args，靠 toolCallId 桥接，
       // 保证 start/end 同名、同参数，前端 running→done 去重匹配不破、参数不被覆盖成空。
-      const toolDisplayNames = new Map<string, { name: string; params: any }>();
+      const toolCallParams = new Map<string, any>();
       childAgent.subscribe((event: any, signal: AbortSignal) => {
         if (signal?.aborted) userAborted = true;
         if (event.type === 'tool_execution_start') {
-          const displayName = this.describeToolCall(event.toolName, event.args);
-          // 行为调用只展示传入的 params（去掉 behavior_name 包装层）；本体函数/公共函数工具参数即 event.args
-          const displayParams = (event.toolName === 'executeOntoBehavior')
-            ? (event.args?.params ?? event.args)
-            : event.args;
+          // 行为/函数都是一等工具：参数即 event.args（不再有 behavior_name 包装层）
+          toolCallParams.set(event.toolCallId, event.args);
           // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名（无中文映射 → undefined，前端用工具原名兜底）
-          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, policy.legalCalls.functions);
+          const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          toolDisplayNames.set(event.toolCallId, { name: displayName, params: displayParams });
-          pushEntry({ type: 'tool_call', name: displayName, status: 'running', params: displayParams, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         } else if (event.type === 'tool_execution_end') {
           const text = toolResultToText(event.result?.content);
-          const display = toolDisplayNames.get(event.toolCallId);
-          const called = this.resolveCalledDisplay(subTask, event.toolName, event.args, policy.legalCalls.functions);
+          const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ type: 'tool_call', name: display?.name || event.toolName, status: 'done', params: display?.params, result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.get(event.toolCallId), result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         }
       });
 
@@ -248,18 +243,20 @@ export class SubtaskRunner {
 
   /**
    * 解析被调对象的中文名（工具调用展示用）：
-   *  executeOntoBehavior → 被调行为的中文 display_name；本体函数（工具名=函数名）→ 函数中文 display_name；
-   *  其它工具无中文映射 → 返回空（前端用工具原名兜底）。
+   *  行为工具（facade，工具名 = 裸名或 onto{id}__ 前缀名）→ 被调行为的中文 display_name；
+   *  本体函数（工具名=函数名）→ 函数中文 display_name；其它工具无中文映射 → 返回空（前端用工具原名兜底）。
    */
-  private resolveCalledDisplay(subTask: SubTask, toolName: string, args: any, functionNames: string[]): { name: string; display: string } {
-    if (toolName === 'executeOntoBehavior' && args?.behavior_name) {
+  private resolveCalledDisplay(subTask: SubTask, toolName: string, legal: LegalCalls): { name: string; display: string } {
+    // 前缀剥离：跨本体重名行为工具带 onto{ontology_id}__ 前缀，裸名才是 legal.behaviors / gateway 的匹配键
+    const bare = toolName.replace(/^onto\d+__/, '');
+    if (legal.behaviors.includes(bare)) {
       return {
-        name: args.behavior_name,
-        display: this.deps.info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, args.behavior_name),
+        name: bare,
+        display: this.deps.info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, bare),
       };
     }
     // 本体函数是一等工具（函数名即工具名），用合法函数名判定是函数而非公共函数/新增 MCP
-    if (functionNames.includes(toolName)) {
+    if (legal.functions.includes(toolName)) {
       return {
         name: toolName,
         display: this.deps.info.functionDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
@@ -268,14 +265,8 @@ export class SubtaskRunner {
     return { name: '', display: '' };
   }
 
-  /** 工具调用的显示名：行为调用显示 behavior_name；本体函数工具名即函数名；其余工具显示工具名。 */
-  private describeToolCall(toolName: string, args: any): string {
-    if (toolName === 'executeOntoBehavior' && args?.behavior_name) return args.behavior_name;
-    return toolName;
-  }
-
-  /** 组装子任务指令（legalCalls 与策略/工具层闸门同源——buildSubtaskPolicy 派生后传入，不再重算） */
-  private buildInstruction(subTask: SubTask, meta: BehaviorMeta, legal: LegalCalls): string {
+  /** 组装子任务指令（可调用范围由挂载过滤保证——与策略同源，见 buildSubtaskPolicy/createChildAgent） */
+  private buildInstruction(subTask: SubTask, meta: BehaviorMeta): string {
     let text = `## 子任务 ${subTask.seq}\n`;
     text += `描述: ${subTask.description}\n`;
     text += `行为: ${subTask.behavior}\n`;
@@ -286,11 +277,17 @@ export class SubtaskRunner {
       text += `\n### 执行指导\n${subTask.guidance}\n`;
     }
 
-    text += `\n### 参数\n`;
+    text += `\n### 参数（值如下；结构与约束以各工具 schema 为准，必填/枚举/模式/取值范围由 schema 承载）\n`;
     const rawParams = subTask.params || {};
     const paramKeys = Object.keys(rawParams);
     if (paramKeys.length > 0) {
-      paramKeys.forEach(k => { text += `${renderParam(k, rawParams[k])}\n`; });
+      paramKeys.forEach(k => {
+        const shown = isParamValueEmpty(rawParams[k])
+          ? '（待补充）'
+          : JSON.stringify(unwrapParamValue(
+              rawParams[k] && typeof rawParams[k] === 'object' ? rawParams[k].value : rawParams[k]));
+        text += `  - ${k}: ${shown}\n`;
+      });
     } else {
       text += `  （父 Agent 未提供详细参数）\n`;
     }
@@ -301,8 +298,7 @@ export class SubtaskRunner {
         text += `[${r.name}] ${r.description}\n`;
         if (r.rule_detail) text += `  配置: ${JSON.stringify(r.rule_detail)}\n`;
         if (r.data_supplements?.length) {
-          text += `  需要接口: ${r.data_supplements.join(', ')}\n`;
-          text += `${this.renderSupplementApis(r.data_supplements, subTask.scenario_name, subTask.ontology_name)}\n`;
+          text += `  需要接口: ${r.data_supplements.join(', ')}（已挂载为同名工具，参数以其 schema 为准）\n`;
         }
         if (r.related_functions?.length) {
           text += `  关联函数: ${r.related_functions.join(', ')}\n`;
@@ -323,8 +319,7 @@ export class SubtaskRunner {
         text += `[${r.name}] ${r.description}\n`;
         if (r.rule_detail) text += `  配置: ${JSON.stringify(r.rule_detail)}\n`;
         if (r.data_supplements?.length) {
-          text += `  需要接口: ${r.data_supplements.join(', ')}\n`;
-          text += `${this.renderSupplementApis(r.data_supplements, subTask.scenario_name, subTask.ontology_name)}\n`;
+          text += `  需要接口: ${r.data_supplements.join(', ')}（已挂载为同名工具，参数以其 schema 为准）\n`;
         }
         if (r.related_functions?.length) {
           text += `  关联函数: ${r.related_functions.join(', ')}\n`;
@@ -341,55 +336,12 @@ export class SubtaskRunner {
       });
     }
 
-    // 合法行为列表：本子任务唯一可调用的行为/函数/工具范围。与工具层白名单闸门 + 挂载期过滤同源
-    // （同一份 policy.legalCalls 传入），保证"文案展示的合法集合"与"工具层强制的合法集合"永远一致（单一事实源）。
-    // 主行为 + 规则关联行为（data_supplements 取数接口）+ 可用函数/工具：
-    //   规则声明 ∪ 父 Agent 指定的 related_functions（本体函数 / 公共函数 / 其他 MCP 工具三合一，均按名挂载）。
-    // 无规则且父 Agent 未指定时列表只有主行为——子 Agent 无查询/计算依据，从源头杜绝臆造行为名/函数名/工具名。
-    text += `\n### 本子任务合法行为列表（只能调用以下行为/函数/工具，严禁调用未列出的）\n`;
-    text += `- 主行为: ${subTask.behavior}\n`;
-    text += `- 规则关联行为: ${legal.behaviors.filter(b => b !== subTask.behavior).join('、') || '（无）'}\n`;
-    text += `- 可用函数/工具（规则声明或父 Agent 指定，直接工具调用）: ${legal.functions.join('、') || '（无）'}\n`;
+    // 可调用范围：挂载期过滤即白名单（同源 policy.legalCalls）——子 Agent 只看得见这些工具，
+    // 文案不再列名单（列出反而与机制双写漂移）；未挂载的行为/函数物理上不可调用。
+    text += `\n### 可调用范围\n`;
+    text += `主行为 ${subTask.behavior} 与规则关联行为/函数已挂载为你的工具（工具名即行为名/函数名）；只能调用已挂载的工具，严禁编造工具名。\n`;
 
     return text;
-  }
-
-  /**
-   * 渲染单个参数结构对象为缩进行：`key: type（必填/可选）— 名称，示例: xxx`。
-   * 行为 params 与本体函数 params 结构一致（type/required/display_name/description/example），共用此方法。
-   */
-  private renderParamSpecs(params: Record<string, any>, indent: string): string {
-    const lines: string[] = [];
-    for (const k of Object.keys(params)) {
-      const spec = params[k] && typeof params[k] === 'object' ? params[k] : {};
-      const type = spec.type || 'any';
-      const req = spec.required ? '必填' : '可选';
-      const label = spec.display_name || spec.description || '';
-      const example = spec.example !== undefined && spec.example !== '' ? `，示例: ${spec.example}` : '';
-      lines.push(`${indent}${k}: ${type}（${req}）— ${label}${example}`);
-    }
-    return lines.join('\n');
-  }
-
-  /**
-   * 渲染规则取数接口（data_supplements）对应查询行为的参数结构。
-   * 子 Agent 只知道要调哪个查询行为、不知道传什么参数，这里把行为的 params 声明拼进指令，
-   * 让它有权威依据取值，不再靠猜。无参数声明的行为兜底给一行提示。
-   */
-  private renderSupplementApis(apis: string[], scenario: string, ontology: string): string {
-    const lines: string[] = [];
-    for (const api of apis) {
-      if (!api) continue;
-      const params = this.deps.info.behaviorParams(scenario, ontology, api);
-      const keys = params && typeof params === 'object' ? Object.keys(params) : [];
-      if (keys.length === 0) {
-        lines.push(`  ${api}（未声明参数）`);
-        continue;
-      }
-      lines.push(`  ${api} 参数:`);
-      lines.push(this.renderParamSpecs(params, '    '));
-    }
-    return lines.join('\n');
   }
 
   /** 提取子任务执行结果：以 LLM 回复末尾的【状态】标记为准。工具报错已由内层自纠/预算兜底，不再额外判失败。 */
