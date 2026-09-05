@@ -10,6 +10,7 @@
  */
 import type { ThreadStore } from './thread-store.js';
 import type { MemoryService } from './memory-service.js';
+import type { SkillLoader } from './skill-loader.js';
 import type { Orchestrator } from '../agent/orchestrator.js';
 import type { ThreadMessage, SSEEvent } from '../types.js';
 
@@ -18,6 +19,7 @@ export class ChatSession {
     private threadStore: ThreadStore,
     private memoryService: MemoryService,
     private orchestrator: Orchestrator,
+    private skillLoader: SkillLoader,
   ) {}
 
   /**
@@ -46,7 +48,10 @@ export class ChatSession {
       console.error(`[chat] 历史压缩失败（忽略，走原始历史）: ${e?.message || e}`);
     }
 
-    const result = await this.orchestrator.execute(message, thread.skill_names, history, sendEvent);
+    // 本体作用域一次性解析：所选本体 → 权威四元组（id 来自 meta.json）+ 目录下全部技能（自动关联）。
+    // 空范围 = 通用问答模式（父 Agent 不挂业务工具）。
+    const scope = this.skillLoader.resolveScope(thread.ontology_scope || []);
+    const result = await this.orchestrator.execute(message, scope, history, sendEvent);
 
     const userMsg: ThreadMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };
     const asstMsg: ThreadMessage = { role: 'assistant', content: result, timestamp: new Date().toISOString() };

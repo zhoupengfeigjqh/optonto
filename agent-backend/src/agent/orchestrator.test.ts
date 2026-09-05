@@ -7,7 +7,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { Orchestrator, planNeedsConfirm } from './orchestrator.js';
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import type { AgentPort } from './agent-ports.js';
-import type { SubTask, SubTaskPlan, SSEEvent } from '../types.js';
+import type { SubTask, SubTaskPlan, SSEEvent, ConversationScope } from '../types.js';
+
+/** 测试对话作用域：本体 1（与 mkSubtask 的 ontology_id 对齐）；contexts 空 = 通用模式 */
+const SCOPE: ConversationScope = {
+  contexts: [{ scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 }],
+  skills: [],
+};
 
 function mkSubtask(seq: number): SubTask {
   return {
@@ -68,12 +74,12 @@ describe('Orchestrator.execute — 单 run 互斥', () => {
     const orch = new Orchestrator(factory, noopGateway);
 
     const events1: SSEEvent[] = [];
-    const p1 = orch.execute('第一条消息', [], [], e => events1.push(e));
+    const p1 = orch.execute('第一条消息', SCOPE, [], e => events1.push(e));
     // 等 execute1 进入 run（createParentAgent 挂起中 = activeSession 已就位）
     await vi.waitFor(() => expect(orch.hasActiveRun()).toBe(true));
 
     const events2: SSEEvent[] = [];
-    const reply2 = await orch.execute('第二条消息', [], [], e => events2.push(e));
+    const reply2 = await orch.execute('第二条消息', SCOPE, [], e => events2.push(e));
     expect(reply2).toContain('已有任务正在执行中');
     expect(events2.map(e => e.type)).toEqual(['error', 'done']);
     expect(factory.createParentAgent).toHaveBeenCalledTimes(1); // 第二个 run 未创建父 Agent
@@ -89,9 +95,9 @@ describe('Orchestrator.execute — 单 run 互斥', () => {
     const factory = mkFactory(vi.fn().mockResolvedValue(fakeParentAgent()));
     const orch = new Orchestrator(factory, noopGateway);
 
-    const reply1 = await orch.execute('第一条', [], [], () => {});
+    const reply1 = await orch.execute('第一条', SCOPE, [], () => {});
     expect(reply1).toContain('无法生成执行计划'); // 父 Agent 无规划/无回复 → 兜底
-    const reply2 = await orch.execute('第二条', [], [], () => {});
+    const reply2 = await orch.execute('第二条', SCOPE, [], () => {});
     expect(reply2).not.toContain('已有任务正在执行中');
     expect(factory.createParentAgent).toHaveBeenCalledTimes(2);
   });
@@ -139,7 +145,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
     };
     const orch = new Orchestrator(factory, gateway, () => confirm as any);
 
-    await orch.execute('测试 disable 中断', [], [], () => {});
+    await orch.execute('测试 disable 中断', SCOPE, [], () => {});
 
     // 子任务2 从未启动（violation → securityBlocked → 不开新波、不反馈重规划）
     expect(factory.createChildAgent).toHaveBeenCalledTimes(1);
@@ -215,7 +221,7 @@ describe('Orchestrator · 言行不一闸（假提交声明检测 → nudge 一�
     const { parent, factory } = mkClaimFactory('plan');
     const orch = new Orchestrator(factory, claimGateway, () => claimConfirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('查一下库存', [], [], e => events.push(e));
+    const reply = await orch.execute('查一下库存', SCOPE, [], e => events.push(e));
 
     // nudge 文案确实发给了父 Agent
     const prompts = (parent.prompt as any).mock.calls.map((c: any[]) => String(c[0]));
@@ -231,7 +237,7 @@ describe('Orchestrator · 言行不一闸（假提交声明检测 → nudge 一�
     const { parent, factory } = mkClaimFactory('claim');
     const orch = new Orchestrator(factory, claimGateway, () => claimConfirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('查一下库存', [], [], e => events.push(e));
+    const reply = await orch.execute('查一下库存', SCOPE, [], e => events.push(e));
 
     expect(reply).toContain('规划提交失败');
     expect(events.some(e => e.type === 'error' && (e as any).message?.includes('规划提交失败'))).toBe(true);
@@ -248,7 +254,7 @@ describe('Orchestrator · 言行不一闸（假提交声明检测 → nudge 一�
     const { parent, factory } = mkClaimFactory('answer');
     const orch = new Orchestrator(factory, claimGateway, () => claimConfirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('查一下库存', [], [], e => events.push(e));
+    const reply = await orch.execute('查一下库存', SCOPE, [], e => events.push(e));
 
     expect(reply).toBe('当前原材料库存 35 吨，无需执行操作。');
     const tokens = events.filter(e => e.type === 'token').map(e => (e as any).token).join('');
@@ -263,7 +269,7 @@ describe('Orchestrator · 言行不一闸（假提交声明检测 → nudge 一�
     });
     const factory = mkFactory(vi.fn().mockResolvedValue(parent));
     const orch = new Orchestrator(factory, noopGateway);
-    const reply = await orch.execute('库存多少', [], [], () => {});
+    const reply = await orch.execute('库存多少', SCOPE, [], () => {});
 
     expect(reply).toContain('当前库存 35 吨');
     expect((parent.prompt as any).mock.calls).toHaveLength(1); // 无 nudge
@@ -301,7 +307,7 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
     });
     const orch = new Orchestrator(factory, noopGateway);
     const events: SSEEvent[] = [];
-    await orch.execute('本体里有哪些行为', [], [], e => events.push(e));
+    await orch.execute('本体里有哪些行为', SCOPE, [], e => events.push(e));
 
     const calls = toolEntries(events).filter(en => en.name === 'listOntoBehaviors');
     expect(calls).toHaveLength(2);
@@ -316,7 +322,7 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
     });
     const orch = new Orchestrator(factory, noopGateway);
     const events: SSEEvent[] = [];
-    await orch.execute('加载技能看看', [], [], e => events.push(e));
+    await orch.execute('加载技能看看', SCOPE, [], e => events.push(e));
 
     const calls = toolEntries(events).filter(en => en.name === 'load_skill');
     expect(calls).toHaveLength(1);
@@ -333,7 +339,7 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
     });
     const orch = new Orchestrator(factory, noopGateway);
     const events: SSEEvent[] = [];
-    await orch.execute('随便聊聊', [], [], e => events.push(e));
+    await orch.execute('随便聊聊', SCOPE, [], e => events.push(e));
 
     expect(toolEntries(events)).toHaveLength(0);
   });
@@ -406,7 +412,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('帮我建两张采购单', [], [], e => events.push(e));
+    const reply = await orch.execute('帮我建两张采购单', SCOPE, [], e => events.push(e));
 
     expect(reply).toBe('已按您的意愿取消，未执行任何操作。');
     expect(factory.createChildAgent).not.toHaveBeenCalled();
@@ -423,7 +429,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('建采购单', [], [], e => events.push(e));
+    const reply = await orch.execute('建采购单', SCOPE, [], e => events.push(e));
 
     expect(promptsOf(parent)[1]).toContain('只保留一个子任务'); // 用户建议透传给父Agent
     expect(confirm.requestPlanConfirm).toHaveBeenCalledTimes(1); // 第二轮单子任务跳过弹窗
@@ -448,7 +454,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    await orch.execute('建采购单', [], [], e => events.push(e));
+    await orch.execute('建采购单', SCOPE, [], e => events.push(e));
 
     expect(entryDetails(events).some(d => d.startsWith('规划审核|重规划次数已达上限'))).toBe(true);
     expect(factory.createChildAgent).not.toHaveBeenCalled();
@@ -463,7 +469,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    await orch.execute('建采购单', [], [], e => events.push(e));
+    await orch.execute('建采购单', SCOPE, [], e => events.push(e));
 
     expect(entryDetails(events).some(d => d.startsWith('规划审核|重规划未生成有效规划'))).toBe(true);
     expect(factory.createChildAgent).not.toHaveBeenCalled();
@@ -478,7 +484,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    await orch.execute('建采购单', [], [], e => events.push(e));
+    await orch.execute('建采购单', SCOPE, [], e => events.push(e));
 
     expect(entryDetails(events).some(d => d.startsWith('规划已修改|'))).toBe(true);
     // 只执行编辑后留下的 Behavior2（经真实 SubtaskPolicy 的 legalCalls 断言）
@@ -500,7 +506,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('建采购单', [], [], e => events.push(e));
+    const reply = await orch.execute('建采购单', SCOPE, [], e => events.push(e));
 
     expect(reply).toBe('已取消。');
     expect(entryDetails(events).some(d => d.startsWith('规划为空|'))).toBe(true);
@@ -515,7 +521,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('建采购单', [], [], e => events.push(e));
+    const reply = await orch.execute('建采购单', SCOPE, [], e => events.push(e));
 
     expect(reply).toContain('规划校验失败');
     expect(events.some(e => e.type === 'error' && (e as any).message?.includes('规划校验失败'))).toBe(true);
@@ -532,7 +538,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     });
     const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
     const events: SSEEvent[] = [];
-    const reply = await orch.execute('查库存再建采购单', [], [], e => events.push(e));
+    const reply = await orch.execute('查库存再建采购单', SCOPE, [], e => events.push(e));
 
     // 反馈 prompt 确已发出，且含本波执行结果
     expect(promptsOf(parent).some(p => p.includes('本波次已执行完毕') && p.includes('子任务 1'))).toBe(true);
@@ -541,5 +547,37 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     // 两个子任务分波执行完毕
     expect(factory.createChildAgent).toHaveBeenCalledTimes(2);
     expect(reply).toBe('全部完成。');
+  });
+
+  it('本体范围硬闸：规划含范围外本体（ontology_id=2）→ PlanGate nudge 一次，未修正则判废，不创建子Agent', async () => {
+    const { factory, confirm } = mkLoopRig({
+      // 提交含范围外本体的规划；nudge（第 2 次 prompt）不修正 → 判废
+      submitAt: { 1: plan([{ ...mkSubtask(1), ontology_id: 2, ontology_name: '订单排程' }]) },
+      confirmQueue: [],
+    });
+    const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
+    const events: SSEEvent[] = [];
+    const reply = await orch.execute('帮我处理订单排程', SCOPE, [], e => events.push(e));
+
+    expect(reply).toContain('规划校验失败');
+    expect(entryDetails(events).some(d => d.startsWith('本体范围校验|'))).toBe(true);
+    expect(confirm.requestPlanConfirm).not.toHaveBeenCalled(); // 弹窗前就被拦下
+    expect(factory.createChildAgent).not.toHaveBeenCalled();
+  });
+
+  it('本体范围兜底：用户在确认弹窗把子任务改成范围外本体 → 结构校验拦下（用户编辑可绕过 nudge 链）', async () => {
+    const { factory, confirm } = mkLoopRig({
+      submitAt: { 1: plan([mkSubtask(1), mkSubtask(2)]) },
+      replyAt: { 2: '已取消。' },
+      // 用户确认但把子任务1 编辑到范围外本体
+      confirmQueue: [{ approved: true, plan: plan([{ ...mkSubtask(1), ontology_id: 2, ontology_name: '订单排程' }, mkSubtask(2)]) }],
+    });
+    const orch = new Orchestrator(factory, loopGateway, () => confirm as any);
+    const events: SSEEvent[] = [];
+    const reply = await orch.execute('建采购单', SCOPE, [], e => events.push(e));
+
+    expect(reply).toContain('规划结构不合法');
+    expect(entryDetails(events).some(d => d.startsWith('规划结构校验|') && d.includes('不在本次对话本体范围内'))).toBe(true);
+    expect(factory.createChildAgent).not.toHaveBeenCalled();
   });
 });

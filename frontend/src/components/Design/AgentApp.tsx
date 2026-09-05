@@ -11,9 +11,9 @@ import {
 import {
   listAgentThreads, createAgentThread, deleteAgentThread,
   getAgentThread, agentChatStream,
-  listAllSkills,
-  AgentThreadSummary, AgentMessage, SkillInfo, SkillSelection,
+  AgentThreadSummary, AgentMessage, OntologyScopeSelection,
 } from '@/api/agent-client';
+import { listAllOntologies, OntologyScopeOption } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
 
 // ─── 安全管控确认弹窗 ───────────────────────────────
@@ -826,7 +826,7 @@ function AgentConversation({
           <div className="flex flex-col items-center justify-center h-48 text-text-muted">
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p className="text-sm">开始一段新的智能体对话</p>
-            <p className="text-xs mt-1">输入您的问题，AI Agent 将基于加载的技能为您解答</p>
+            <p className="text-xs mt-1">输入您的问题，AI Agent 将在所选本体范围内为您解答</p>
           </div>
         ) : messagesContent}
         {analyzing && (
@@ -1122,24 +1122,24 @@ export default function AgentApp({
   ontologyName?: string;
 }) {
   const [threads, setThreads] = useState<AgentThreadSummary[]>([]);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [ontologies, setOntologies] = useState<OntologyScopeOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [selectedSkills, setSelectedSkills] = useState<SkillSelection[]>([]);
+  const [selectedScope, setSelectedScope] = useState<OntologyScopeSelection[]>([]);
 
-  // 加载线程列表和技能列表（技能跨全部本体扫描）
+  // 加载线程列表和全量本体列表（本体范围选择器数据源）
   const load = async () => {
     if (!scenarioName || !ontologyName) return;
     setLoading(true);
     try {
-      const [threadList, skillList] = await Promise.all([
+      const [threadList, ontologyList] = await Promise.all([
         listAgentThreads(scenarioName, ontologyName),
-        listAllSkills(),
+        listAllOntologies(),
       ]);
       setThreads(threadList);
-      setSkills(skillList);
+      setOntologies(ontologyList);
     } catch (e: any) {
       message.error('加载失败: ' + e.message);
     } finally {
@@ -1151,7 +1151,7 @@ export default function AgentApp({
     load();
   }, [scenarioName, ontologyName]);
 
-  // 新建线程
+  // 新建线程（本体范围默认勾选当前本体，用户可加选/清空；清空 = 通用问答模式）
   const handleNew = async () => {
     if (!scenarioName || !ontologyName) return;
     try {
@@ -1159,11 +1159,11 @@ export default function AgentApp({
         scenarioName,
         ontologyName,
         newTitle || '新对话',
-        selectedSkills
+        selectedScope
       );
       setShowNewDialog(false);
       setNewTitle('');
-      setSelectedSkills([]);
+      setSelectedScope([]);
       setActiveThreadId(thread.id);
     } catch (e: any) {
       message.error('创建失败: ' + e.message);
@@ -1255,13 +1255,19 @@ export default function AgentApp({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">智能体应用</h3>
         <div className="flex items-center gap-2">
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowNewDialog(true)}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+            // 打开时默认勾选当前页所在本体，用户可加选/清空
+            if (scenarioName && ontologyName) {
+              setSelectedScope([{ scenario: scenarioName, ontology: ontologyName }]);
+            }
+            setShowNewDialog(true);
+          }}>
             新建对话
           </Button>
         </div>
       </div>
       <p className="text-text-muted text-xs mb-3">
-        与 AI Agent 进行对话，它将基于加载的技能文件为您提供领域知识解答。
+        与 AI Agent 进行对话，查询与执行将限定在对话所选的本体范围内。
       </p>
 
       <Table
@@ -1281,7 +1287,7 @@ export default function AgentApp({
         onCancel={() => {
           setShowNewDialog(false);
           setNewTitle('');
-          setSelectedSkills([]);
+          setSelectedScope([]);
         }}
         okText="创建"
         cancelText="取消"
@@ -1297,28 +1303,28 @@ export default function AgentApp({
             />
           </div>
           <div>
-            <label className="text-text-secondary text-sm block mb-1">选择加载的技能</label>
+            <label className="text-text-secondary text-sm block mb-1">本体范围</label>
             <Select
               mode="multiple"
-              placeholder="选择该对话要加载的技能文件"
-              value={selectedSkills.map(sk => `${sk.scenario}/${sk.ontology}/${sk.name}`)}
+              placeholder="选择本次对话限定的本体（不选 = 通用问答模式）"
+              value={selectedScope.map(s => `${s.scenario}/${s.ontology}`)}
               onChange={(keys: string[]) => {
-                const sel: SkillSelection[] = keys.map(k => {
-                  const [scenario, ontology, ...rest] = k.split('/');
-                  return { scenario, ontology, name: rest.join('/') };
+                const sel: OntologyScopeSelection[] = keys.map(k => {
+                  const idx = k.indexOf('/');
+                  return { scenario: k.slice(0, idx), ontology: k.slice(idx + 1) };
                 });
-                setSelectedSkills(sel);
+                setSelectedScope(sel);
               }}
-              options={skills.map(s => ({
-                label: s.ontology ? `${s.name}（${s.ontology}）` : s.name,
-                value: `${s.scenario || ''}/${s.ontology || ''}/${s.name}`,
+              options={ontologies.map(o => ({
+                label: `${o.scenario_name} / ${o.ontology_name}`,
+                value: `${o.scenario_name}/${o.ontology_name}`,
               }))}
               className="w-full"
               style={{ background: '#1a1a2e' }}
               popupClassName="bg-dark-card"
             />
             <p className="text-text-muted text-xs mt-1">
-              选中的技能将作为 AI Agent 的知识来源（可跨本体选择）
+              本次对话的查询与执行将限定在所选本体内（可跨本体多选）；不选则为通用问答模式，不使用任何业务工具
             </p>
           </div>
         </div>

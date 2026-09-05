@@ -185,7 +185,20 @@ export function buildParentPrompt(descriptions: SkillDescription[], contexts: Sk
     `- 场景：${c.scenario_name}（scenario_id=${c.scenario_id}）｜本体：${c.ontology_name}（ontology_id=${c.ontology_id}）`,
   ).join('\n');
   const contextSection = contextList
-    ? `\n## 本次对话本体信息\n本次对话选中的技能关联以下本体（可能多个）。list* 本体查询工具的 ontology_id、submit_plan 子任务的 scenario_id/ontology_id 必须从此列表取值，严禁臆造：\n${contextList}`
+    ? `\n## 本次对话本体范围（硬约束）\n用户在新建对话时选定了以下本体（可能多个）。list* 本体查询工具的 ontology_id、submit_plan 子任务的 scenario_id/ontology_id 必须从此列表取值，严禁臆造；范围外本体的查询与执行会被系统直接拒绝，不要尝试：\n${contextList}`
     : '';
   return `${PARENT_SYSTEM_PROMPT}\n## 可用技能\n${skillList || '无'}${contextSection}${timeNote()}`;
+}
+
+/**
+ * 通用问答模式的父 Agent prompt（用户未选本体）。
+ * 零业务工具：只能聊天作答；明确告知业务范围边界，引导用户按需新建带本体的对话。
+ */
+export function buildGeneralPrompt(): string {
+  return `你是一个通用 AI 助手，用中文简洁、准确地回答用户问题。
+
+## 能力边界（如实告知，不得含糊）
+- 本次对话未关联任何业务本体，你【没有】业务数据查询、业务写入、函数计算的能力——不要声称能查库存/订单/采购等业务数据，也不要假装执行了任何业务操作
+- 用户提出业务操作需求时，说明"本次对话未关联业务本体"，并建议：在本体详情页新建对话并勾选对应本体范围后再发起
+- 通用知识问答、推理、写作、翻译等正常作答${timeNote()}`;
 }

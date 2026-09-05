@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { PathAccessController, ForbiddenError } from '../security/path-access-controller.js';
-import type { Thread, ThreadSummary, ThreadMessage, SkillSelection } from '../types.js';
+import type { Thread, ThreadSummary, ThreadMessage, OntologySelection } from '../types.js';
 
 /**
  * ThreadStore — 对话线程数据的读写。
@@ -47,8 +47,8 @@ export class ThreadStore {
     return threads;
   }
 
-  /** 创建新线程 */
-  create(scenario: string, ontology: string, title: string, skillNames: SkillSelection[]): Thread {
+  /** 创建新线程（ontologyScope = 用户选择的本体范围；空数组 = 通用问答模式） */
+  create(scenario: string, ontology: string, title: string, ontologyScope: OntologySelection[]): Thread {
     const threadId = randomUUID();
     const now = new Date().toISOString();
 
@@ -61,7 +61,7 @@ export class ThreadStore {
       updated_at: now,
       scenario_name: scenario,
       ontology_name: ontology,
-      skill_names: skillNames,
+      ontology_scope: ontologyScope,
     };
 
     // 新建线程：UUID 全新，无归属可校验，经 PAC 取可写路径

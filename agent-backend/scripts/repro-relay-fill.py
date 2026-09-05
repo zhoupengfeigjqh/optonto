@@ -13,7 +13,6 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 BASE = 'http://localhost:8003/agent-api'
 SCEN = '生产调度'
 ONTO = '原材料采购和库存'
-SKILL = {'name': 'raw-material-inventory', 'scenario': SCEN, 'ontology': ONTO}
 API_BASE = '/'.join([BASE, 'onto_market', urllib.parse.quote(SCEN), urllib.parse.quote(ONTO), 'threads'])
 
 
@@ -37,7 +36,7 @@ def show_plan(plan, tag):
         print(f"    purchaseRecordSet = {prs_v}")
 
 
-tid = post(API_BASE, {'title': 'repro-中继填充', 'skill_names': [SKILL]})['id']
+tid = post(API_BASE, {'title': 'repro-中继填充', 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
 print(f'thread: {tid}')
 
 url = API_BASE + f'/{tid}/chat'

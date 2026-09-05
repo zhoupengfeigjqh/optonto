@@ -5,7 +5,7 @@ import { MCPClient } from '../services/mcp-client.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
-import { buildParentPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
+import { buildParentPrompt, buildGeneralPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from '../utils/text-utils.js';
 import { subtaskFieldsSchema } from './subtask-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
@@ -14,7 +14,7 @@ import { PARENT_TOOL_LABELS, SCOPE_KEY, bareBehaviorName, toMountableToolInfo } 
 import type { MountableToolInfo } from './tool-catalog.js';
 import type { AgentPort } from './agent-ports.js';
 import type { SubtaskPolicy } from './execution-policy.js';
-import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
+import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection, ConversationScope } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
 
@@ -74,7 +74,9 @@ export class AgentFactory {
 
   /**
    * 创建父 Agent（规划专家）。
-   * 注册 load_skill + submit_plan + listAllMcpFunctions（本地内部工具：函数/工具清单，只读）+ 本体查询工具（list*）。
+   * 本体模式（scope.contexts 非空）：注册 load_skill + submit_plan + listAllMcpFunctions（本地内部工具，只读）
+   * + 本体查询工具（list*，按本体范围硬过滤）；技能为所选本体目录自动反查（用户无感）。
+   * 通用模式（scope.contexts 为空）：不挂任何业务工具，纯问答（进不了规划/执行路径）。
    * 函数/外部工具不挂父 Agent——由 listAllMcpFunctions 实时发现，父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务。
    * 父 Agent 不挂执行工具（本体行为 facade 工具）——业务执行由子 Agent 独占，
    * 从机制上杜绝父 Agent 规划阶段自执行/与子任务双重执行。
@@ -82,40 +84,97 @@ export class AgentFactory {
    * - onPlanSubmitted：父 Agent 调用 submit_plan 提交规划时触发，规划已通过 TypeBox schema 校验。
    */
   async createParentAgent(
-    skills: SkillSelection[],
+    scope: ConversationScope,
     history: ThreadMessage[],
     onSkillLoaded: (skillName: string) => void,
     onPlanSubmitted?: (plan: SubTaskPlan) => void,
   ): Promise<AgentPort> {
-    // 合并所有选中技能（可跨本体）的 name+description 进 system prompt；附带本体信息列表（id 权威来源：core meta.json）
-    const descriptions = this.skillLoader.getSkillDescriptions(skills);
-    const contexts = this.skillLoader.getSelectedContexts(skills);
-    const systemPrompt = buildParentPrompt(descriptions, contexts);
     const model = resolveDeepSeekModel();
 
-    const loadSkillTool = this.createLoadSkillTool(skills, onSkillLoaded);
+    // ── 通用问答模式：未选本体 → 零业务工具，纯对话（无 submit_plan ⇒ 永远进不了执行路径）──
+    if (scope.contexts.length === 0) {
+      const agent = new Agent({
+        initialState: { systemPrompt: buildGeneralPrompt(), model, tools: [], thinkingLevel: 'off' },
+        transformContext: async (messages) => [...this.toHistoryMessages(history), ...messages],
+      });
+      return agent;
+    }
+
+    // ── 本体模式 ──
+    // 允许集（硬闸锚点）：用户所选本体的 ontology_id 集合，list*/函数清单/规划校验三处共用
+    const allowedOntologyIds = new Set(scope.contexts.map(c => c.ontology_id));
+    // 技能 name+description 进 system prompt；本体信息列表是 id 的权威来源（严禁臆造）
+    const descriptions = this.skillLoader.getSkillDescriptions(scope.skills);
+    const systemPrompt = buildParentPrompt(descriptions, scope.contexts);
+
+    const loadSkillTool = this.createLoadSkillTool(scope.skills, onSkillLoaded);
     const submitPlanTool = this.createSubmitPlanTool(onPlanSubmitted);
-    const listAllMcpFunctionsTool = this.createListAllMcpFunctionsTool();
-    // MCP 配置全局唯一，不区分场景/本体。父 Agent 只挂本体查询 list*（规划时了解行为/参数/概念/规则/函数元数据）；
+    const listAllMcpFunctionsTool = this.createListAllMcpFunctionsTool(allowedOntologyIds);
+    // MCP 配置全局唯一，不区分场景/本体。父 Agent 只挂本体查询 list*（规划时了解行为/参数/概念/规则/函数元数据），
+    // 并按本体范围包一层硬过滤（越界本体直接报错，不靠提示词自觉）；
     // 函数与外部工具一律不挂——由 listAllMcpFunctions 实时发现，父 Agent 选定后经 related_functions 下放子 Agent。
     const allMcp = await this.discoverTools();
-    const parentMcpTools = allMcp.filter(t => PARENT_ONTOLOGY_QUERY_TOOLS.includes(t.name));
+    const parentMcpTools = allMcp
+      .filter(t => PARENT_ONTOLOGY_QUERY_TOOLS.includes(t.name))
+      .map(t => this.scopeListTool(t, scope.contexts));
     const tools: AgentTool[] = [loadSkillTool, submitPlanTool, listAllMcpFunctionsTool, ...parentMcpTools];
-
-    const historyMessages: AgentMessage[] = history.map(msg => {
-      if (msg.role === 'user') {
-        return { role: 'user', content: msg.content, timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
-      }
-      // summary 是短期记忆压缩生成的背景摘要：加前缀标注，避免模型把它当成助手上一轮真实发言
-      const text = msg.role === 'summary' ? `【历史摘要】${msg.content}` : msg.content;
-      return { role: 'assistant', content: [{ type: 'text', text }], timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
-    });
 
     const agent = new Agent({
       initialState: { systemPrompt, model, tools, thinkingLevel: 'off' },
-      transformContext: async (messages) => [...historyMessages, ...messages],
+      transformContext: async (messages) => [...this.toHistoryMessages(history), ...messages],
     });
     return agent;
+  }
+
+  /** 线程历史 → SDK 消息（summary 角色加【历史摘要】前缀，避免模型当成自己上一轮真实发言） */
+  private toHistoryMessages(history: ThreadMessage[]): AgentMessage[] {
+    return history.map(msg => {
+      if (msg.role === 'user') {
+        return { role: 'user', content: msg.content, timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
+      }
+      const text = msg.role === 'summary' ? `【历史摘要】${msg.content}` : msg.content;
+      return { role: 'assistant', content: [{ type: 'text', text }], timestamp: Date.parse(msg.timestamp) || Date.now() } as unknown as AgentMessage;
+    });
+  }
+
+  /**
+   * list* 本体查询工具的本体范围硬过滤（agent 层闸，防 LLM 越界查询）：
+   *  - 带 ontology_id 参数的 6 个工具（listOnto*）：越界直接抛错，LLM 自纠
+   *  - listScenarios/listOntologies（全局清单）：结果按允许集过滤（JSON 数组形状可识别时；
+   *    解析失败原样放行——只泄名称不泄数据，真正的闸在上面 6 个工具与 PlanGate）
+   */
+  private scopeListTool(tool: AgentTool, contexts: SkillContext[]): AgentTool {
+    const allowedOntologyIds = new Set(contexts.map(c => c.ontology_id));
+    const allowedScenarioIds = new Set(contexts.map(c => c.scenario_id));
+    const allowedList = contexts.map(c => `${c.ontology_name}（ontology_id=${c.ontology_id}）`).join('、');
+    const hasOntologyIdParam = !!((tool.parameters as any)?.properties?.ontology_id);
+    const originalExecute = tool.execute;
+    const execute = async (toolCallId: string, params: any) => {
+      const p = params as any;
+      if (hasOntologyIdParam) {
+        const oid = Number(p?.ontology_id);
+        if (!allowedOntologyIds.has(oid)) {
+          throw new Error(`ontology_id=${p?.ontology_id} 不在本次对话的本体范围内（允许：${allowedList}），请改用允许的本体 ID`);
+        }
+        return originalExecute(toolCallId, params);
+      }
+      const result = await originalExecute(toolCallId, params);
+      // 全局清单工具：过滤出允许的场景/本体（形状可识别才过滤，解析失败放行）
+      try {
+        const text = toolResultToText((result as any).content);
+        const data = JSON.parse(text);
+        if (!Array.isArray(data)) return result;
+        const isScenarioList = tool.name === 'listScenarios';
+        const filtered = data.filter((item: any) => {
+          const id = Number(item?.id ?? item?.ontology_id);
+          return isScenarioList ? allowedScenarioIds.has(id) : allowedOntologyIds.has(id);
+        });
+        return { ...(result as any), content: [{ type: 'text', text: JSON.stringify(filtered, null, 2) }] };
+      } catch {
+        return result;
+      }
+    };
+    return { ...tool, execute };
   }
 
   /**
@@ -354,22 +413,24 @@ export class AgentFactory {
    * 列出可规划/可下放的函数与工具清单（本体函数 / 公共函数 / 其他 MCP 工具三类合一），
    * 供父 Agent 规划函数子任务（function 字段）、行为子任务的 related_functions、以及填子任务 params。
    * 与 MCP 版 listOntoFunctions（本体函数元数据查询）分工：那个只查指定本体的函数元数据，这个管"能规划什么"。
+   * 本体范围硬过滤：本体函数恒限定在本次对话所选本体集合内（无论是否传 ontology_id），
+   * 传了范围外的 ontology_id 直接报错；公共函数/其他MCP工具是全局工具，始终保留。
    * 参数 ontology_id 与 keyword 均可选，与关系：
-   *   - ontology_id：仅过滤本体函数（按 scope.ontology_id 精确匹配）；公共函数/其他MCP工具是全局工具，始终保留
+   *   - ontology_id：仅过滤本体函数（按 scope.ontology_id 精确匹配，且必须在允许集内）
    *   - keyword：对 name/description 大小写不敏感模糊匹配
-   *   - 都不传 → 返回全部
+   *   - 都不传 → 返回允许集内全部
    * 本地实现且不进 MCP server 的原因：①其他 MCP 工具只存在于 agent-backend 的 discoverTools() 清单中，
    * core-backend 无法感知；②与 submit_plan/load_skill 同为父 Agent 内部工具，不暴露给外部消费方与子 Agent。
    * 只读：仅返回工具元数据，不调用任何工具、无副作用——
    * 与父 Agent「只规划、不执行」的职责边界一致，避免父 Agent 借此执行外部副作用工具。
    */
-  private createListAllMcpFunctionsTool(): AgentTool {
+  private createListAllMcpFunctionsTool(allowedOntologyIds: ReadonlySet<number>): AgentTool {
     return {
       name: 'listAllMcpFunctions',
       label: '列出可规划函数/工具',
-      description: '列出当前可规划为子任务的函数/工具清单（本体函数 / 公共函数 / 其他 MCP 工具，含名称、分类、描述、完整参数结构、本体函数所属场景/本体）。用于规划函数子任务（function 字段）、行为子任务的 related_functions、以及填子任务 params。参数 ontology_id（按本体过滤，仅滤本体函数）与 keyword（按名称/描述搜索）均可选，与关系；都不传返回全部。只读，不会调用这些工具。',
+      description: '列出当前可规划为子任务的函数/工具清单（本体函数 / 公共函数 / 其他 MCP 工具，含名称、分类、描述、完整参数结构、本体函数所属场景/本体）。用于规划函数子任务（function 字段）、行为子任务的 related_functions、以及填子任务 params。参数 ontology_id（按本体过滤，仅滤本体函数，且必须在本次对话本体范围内）与 keyword（按名称/描述搜索）均可选，与关系；都不传返回范围内全部。只读，不会调用这些工具。',
       parameters: Type.Object({
-        ontology_id: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: '本体 ID（可选）。填了则本体函数只返回该本体下的；公共函数/其他MCP工具为全局工具，不受此过滤' })),
+        ontology_id: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: '本体 ID（可选）。填了则本体函数只返回该本体下的（必须在本次对话本体范围内）；公共函数/其他MCP工具为全局工具，不受此过滤' })),
         keyword: Type.Optional(Type.String({ description: '搜索关键词（可选），模糊匹配函数/工具名称或描述' })),
       }),
       execute: async (_toolCallId, params) => {
@@ -378,13 +439,18 @@ export class AgentFactory {
         const oid = p?.ontology_id !== undefined && p?.ontology_id !== null && p?.ontology_id !== ''
           ? toFiniteNum(p.ontology_id, 'ontology_id')
           : undefined;
+        // 本体范围硬闸：显式指定了范围外的本体 → 报错（不静默返空，避免 LLM 误判"该本体无函数"）
+        if (oid !== undefined && !allowedOntologyIds.has(oid)) {
+          throw new Error(`ontology_id=${oid} 不在本次对话的本体范围内（允许：${[...allowedOntologyIds].join('、')}）`);
+        }
         const kw = typeof p?.keyword === 'string' && p.keyword.trim() !== '' ? p.keyword.trim().toLowerCase() : undefined;
         let catalog = (await this.getMountableToolCatalog())
           // 本体行为不进本清单：行为子任务规划走 listOntoBehaviors（花名册+规则关联），这里只列函数/工具
-          .filter(t => t.category !== '本体行为');
+          .filter(t => t.category !== '本体行为')
+          // 本体范围硬过滤：本体函数恒限定在允许集内；全局工具（公共函数/其他MCP工具）无本体归属，始终保留
+          .filter(t => t.category !== '本体函数' || allowedOntologyIds.has(Number(t.scope?.ontology_id)));
         if (oid !== undefined) {
-          // 仅滤本体函数：scope.ontology_id 精确匹配；全局工具（公共函数/其他MCP工具）无本体归属，始终保留
-          catalog = catalog.filter(t => t.category !== '本体函数' || t.scope?.ontology_id === oid);
+          catalog = catalog.filter(t => t.category !== '本体函数' || Number(t.scope?.ontology_id) === oid);
         }
         if (kw !== undefined) {
           catalog = catalog.filter(t => t.name.toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw));

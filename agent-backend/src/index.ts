@@ -25,7 +25,7 @@ const ontologyGateway = new OntologyGateway(pac);
 const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
 const orchestrator = new Orchestrator(agentFactory, ontologyGateway);
 const memoryService = new MemoryService();
-const chatSession = new ChatSession(threadStore, memoryService, orchestrator);
+const chatSession = new ChatSession(threadStore, memoryService, orchestrator, skillLoader);
 
 // ─── Express 应用 ────────────────────────────────
 

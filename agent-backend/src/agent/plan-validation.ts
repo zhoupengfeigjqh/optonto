@@ -56,6 +56,17 @@ export function validateAllParams(catalog: FunctionCatalogView, plan: SubTaskPla
 }
 
 /**
+ * 本体范围硬闸：每个子任务的 ontology_id 必须在本次对话所选本体集合内（行为/函数子任务同查）。
+ * 用户在新建对话时声明的允许集是锚点；公共函数/其他MCP工具是全局工具不受影响
+ * （函数子任务的 ontology_id 仅作本体函数路由，越界语义仍是"访问了未授权本体"，一律拦）。
+ * 返回违例子任务列表（空数组 = 通过）。allowed 为空集（通用模式）时任何子任务都违例——
+ * 但通用模式父 Agent 未挂 submit_plan，规划到不了这里，本函数无需特判。
+ */
+export function validateOntologyScope(plan: SubTaskPlan, allowed: ReadonlySet<number>): SubTask[] {
+  return plan.subtasks.filter(st => !allowed.has(st.ontology_id));
+}
+
+/**
  * 言行不一检测：父 Agent 文本声称"已提交规划/即将开始执行"，但 submit_plan 工具回调为空时使用。
  * 只在规划阶段"无规划"分支调用（有规划时不评估，正常路径零影响）。
  * 命中 → 调用方 nudge 一次自救；仍无规划 → 诚实报错，不把虚假声明原文转发给用户。

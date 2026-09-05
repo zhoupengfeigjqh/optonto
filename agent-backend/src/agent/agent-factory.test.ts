@@ -91,13 +91,10 @@ vi.mock('../services/mcp-client.js', () => ({
     }
   },
 }));
-// SkillLoader 只用到 getSkillDescriptions / getSelectedContexts（tools 的 execute 不在此路径触发）
+// SkillLoader 只用到 getSkillDescriptions（tools 的 execute 不在此路径触发）
 vi.mock('../services/skill-loader.js', () => ({
   SkillLoader: class {
     getSkillDescriptions() { return []; }
-    getSelectedContexts() {
-      return [{ scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 }];
-    }
   },
 }));
 // 模型解析：返回假模型，避免真实解析
@@ -113,9 +110,16 @@ import type { ChildSecurityCtx } from './security-policy.js';
 import { createToolErrorBudget } from './error-budget.js';
 import type { SubtaskPolicy } from './execution-policy.js';
 import type { LegalCalls } from './execution-policy.js';
-import type { ThreadMessage } from '../types.js';
+import type { ThreadMessage, ConversationScope } from '../types.js';
 
 const mockedAgent = vi.mocked(Agent);
+
+/** 测试对话作用域：本体 1（允许集 = {1}）；GENERAL = 通用问答模式（零本体） */
+const SCOPE: ConversationScope = {
+  contexts: [{ scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 }],
+  skills: [],
+};
+const GENERAL: ConversationScope = { contexts: [], skills: [] };
 
 function mkHistory(): ThreadMessage[] {
   const t = (n: number) => new Date(Date.now() - (5 - n) * 60_000).toISOString();
@@ -129,7 +133,7 @@ function mkHistory(): ThreadMessage[] {
 
 async function captureTransformContext() {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-  await factory.createParentAgent([], mkHistory(), () => {});
+  await factory.createParentAgent(SCOPE, mkHistory(), () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   const config = mockedAgent.mock.calls[0][0];
   const transformed = await config.transformContext([]);
@@ -162,7 +166,7 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
 
   it('历史消息按原顺序置于实时消息之前', async () => {
     const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-    await factory.createParentAgent([], mkHistory(), () => {});
+    await factory.createParentAgent(SCOPE, mkHistory(), () => {});
     const config = mockedAgent.mock.calls[0][0];
     const transformed = await config.transformContext([{ role: 'user', content: '当前问题' }]);
     expect(transformed.length).toBe(5); // 4 条历史 + 1 条实时
@@ -201,7 +205,7 @@ async function captureChildTools(legalCalls?: LegalCalls, security?: ChildSecuri
  */
 async function captureParentTools() {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-  await factory.createParentAgent([], [], () => {});
+  await factory.createParentAgent(SCOPE, [], () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
 }
@@ -224,7 +228,7 @@ describe('AgentFactory submit_plan 互斥门与键省略容忍', () => {
   it('函数子任务省略 behavior 键 → 正常提交，behavior 规整为空串', async () => {
     let received: any = null;
     const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-    await factory.createParentAgent([], [], () => {}, (plan) => { received = plan; });
+    await factory.createParentAgent(SCOPE, [], () => {}, (plan) => { received = plan; });
     const sp = (mockedAgent.mock.calls[0][0].initialState.tools as any[]).find(t => t.name === 'submit_plan');
     const sub = { ...baseSub(), function: 'sumRawNotArrivalQty' }; // 无 behavior 键
     const res = await sp.execute('c1', { subtasks: [sub] });
@@ -283,12 +287,32 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     expect(names).toContain('submit_plan');
   });
 
-  it('父 Agent system prompt 含本次对话本体信息列表（scenario/ontology 四元组）', async () => {
+  it('父 Agent system prompt 含本次对话本体范围列表（scenario/ontology 四元组 + 硬约束标注）', async () => {
     const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-    await factory.createParentAgent([], mkHistory(), () => {});
+    await factory.createParentAgent(SCOPE, mkHistory(), () => {});
     const prompt = mockedAgent.mock.calls[0][0].initialState.systemPrompt as string;
-    expect(prompt).toContain('## 本次对话本体信息');
+    expect(prompt).toContain('## 本次对话本体范围');
     expect(prompt).toContain('场景：生产调度（scenario_id=1）｜本体：原材料采购和库存（ontology_id=1）');
+  });
+
+  it('通用问答模式（未选本体）→ 零业务工具，prompt 声明无业务能力', async () => {
+    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
+    await factory.createParentAgent(GENERAL, mkHistory(), () => {});
+    const state = mockedAgent.mock.calls[0][0].initialState;
+    expect(state.tools).toEqual([]); // load_skill / submit_plan / list* 一律不挂
+    expect(state.systemPrompt).toContain('未关联任何业务本体');
+  });
+
+  it('list* 工具本体范围硬闸：范围外 ontology_id 直接报错，范围内透传执行', async () => {
+    mcpCalls.list.length = 0;
+    const tools = await captureParentTools();
+    const tool = tools.find(t => t.name === 'listOntoBehaviors');
+    // 范围外（ontology_id=2）→ 抛错（LLM 自纠），真实 MCP 调用零发生
+    await expect(tool.execute('q1', { ontology_id: 2 })).rejects.toThrow('不在本次对话的本体范围内');
+    expect(mcpCalls.list).toHaveLength(0);
+    // 范围内（ontology_id=1）→ 透传执行
+    await tool.execute('q2', { ontology_id: 1 });
+    expect(mcpCalls.list).toEqual([{ name: 'listOntoBehaviors', args: { ontology_id: 1 } }]);
   });
 
   it('父 Agent 挂只读 listAllMcpFunctions：函数/工具三类清单（本体行为不在其列——行为规划走 listOntoBehaviors）', async () => {
@@ -299,8 +323,9 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     const parsed = JSON.parse(result.content[0].text);
     const names = parsed.map((t: any) => t.name);
     expect(names).toContain('weatherQuery'); // 其他 MCP 工具可见（可规划为函数子任务 / related_functions）
-    expect(names).toContain('calcSafetyStock'); // 本体函数可见
-    expect(names).toContain('getCurrentDate'); // 公共函数可见
+    expect(names).toContain('calcSafetyStock'); // 范围内本体函数可见
+    expect(names).toContain('getCurrentDate'); // 公共函数可见（全局工具）
+    expect(names).not.toContain('sumRawNotArrivalQty'); // 范围外本体（oid=2）的函数被硬过滤
     expect(names).not.toContain('CreatePurchaseRecord'); // 本体行为不进函数清单（规划走 listOntoBehaviors）
     expect(names).not.toContain('QuerySupplier');
     expect(names).not.toContain('listOntoBehaviors'); // 本体浏览不属可规划域
@@ -326,7 +351,7 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     expect(byName['weatherQuery'].scope).toBeUndefined(); // 非本体函数无 scope
   });
 
-  it('listAllMcpFunctions 按 ontology_id 过滤：只滤本体函数（按 scope 匹配），全局工具（公共/其他MCP）保留', async () => {
+  it('listAllMcpFunctions 按 ontology_id 过滤：只滤本体函数（按 scope 匹配），全局工具（公共/其他MCP）保留；范围外本体直接报错', async () => {
     const tools = await captureParentTools();
     const tool = tools.find(t => t.name === 'listAllMcpFunctions');
     const parsed = JSON.parse((await tool.execute('call-f1', { ontology_id: 1 })).content[0].text);
@@ -335,6 +360,8 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     expect(names).not.toContain('sumRawNotArrivalQty'); // 本体函数但无匹配 scope → 被过滤
     expect(names).toContain('getCurrentDate'); // 公共函数是全局工具，保留
     expect(names).toContain('weatherQuery'); // 其他MCP工具是全局工具，保留
+    // 范围外本体：不静默返空，直接报错（避免 LLM 误判"该本体无函数"）
+    await expect(tool.execute('call-f1b', { ontology_id: 2 })).rejects.toThrow('不在本次对话的本体范围内');
   });
 
   it('listAllMcpFunctions 按 keyword 过滤：模糊匹配名称/描述（大小写不敏感）', async () => {

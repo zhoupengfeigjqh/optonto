@@ -10,7 +10,6 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 BASE = 'http://localhost:8003/agent-api'
 SCEN = '生产调度'
 ONTO = '原材料采购和库存'
-SKILL = {'name': 'raw-material-inventory', 'scenario': SCEN, 'ontology': ONTO}
 API = '/'.join([BASE, 'onto_market', urllib.parse.quote(SCEN), urllib.parse.quote(ONTO), 'threads'])
 
 
@@ -50,7 +49,7 @@ def chat(tid, message):
     return events
 
 
-tid = post(API, {'title': 'facade-E2E', 'skill_names': [SKILL]})['id']
+tid = post(API, {'title': 'facade-E2E', 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
 print('thread:', tid)
 evts = chat(tid, '先查一下高强度钢板（RM-001）的当前库存，然后为它创建一张 5 吨的采购单，供应商是宝钢。分两步执行。')
 

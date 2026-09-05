@@ -31,15 +31,18 @@ export function createThreadsRouter(
     try {
       const scenario = req.params.scenario as string;
       const ontology = req.params.ontology as string;
-      const { title, skill_names } = req.body as { title: string; skill_names: { name: string; scenario: string; ontology: string }[] };
-      const names = skill_names || [];
+      const { title, ontology_scope } = req.body as { title: string; ontology_scope?: { scenario: string; ontology: string }[] };
+      const scope = ontology_scope || [];
 
-      // 如果选了技能，校验每个 SKILL.md frontmatter 必含 4 个字段（按技能自带位置）
-      if (names.length > 0) {
-        skillLoader.validateSkillContext(names);
+      // 本体范围逐条校验：必须能解析到 core meta.json（选了不存在的本体 → 400 指出具体条目）。
+      // 空数组合法——通用问答模式（父 Agent 不挂业务工具）。
+      const bad = scope.filter(sel => !sel?.scenario || !sel?.ontology || !skillLoader.resolveOntologyContext(sel.scenario, sel.ontology));
+      if (bad.length > 0) {
+        res.status(400).json({ error: `以下本体不存在或元数据缺失：${bad.map(b => `${b?.scenario ?? '?'}/${b?.ontology ?? '?'}`).join('、')}` });
+        return;
       }
 
-      const thread = threadStore.create(scenario, ontology, title || '新对话', names);
+      const thread = threadStore.create(scenario, ontology, title || '新对话', scope);
       res.status(201).json(thread);
     } catch (e: any) {
       res.status(400).json({ error: e.message });

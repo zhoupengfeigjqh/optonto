@@ -2,7 +2,7 @@
  * 规划闸门 —— 规划（初始/波次调整）进入执行前的完整校验链 + 修复循环（深 module）。
  *
  * 对外只有两个深入口，链序编排（谁先谁后、谁带已执行上下文、一环判废即全废）唯一在此：
- *  - validateInitial：初始规划（确认弹窗前）——seq 冲突 → 行为名 → 函数名 → 参数。
+ *  - validateInitial：初始规划（确认弹窗前）——seq 冲突 → 本体范围 → 行为名 → 函数名 → 参数。
  *    依赖结构不在此链：用户可能在确认弹窗里编辑依赖，确认前验依赖没意义（确认后由
  *    orchestrator 用纯函数 validatePlanStructure + validateSeqConflicts 兜底）。
  *  - validateAdjustment：波次反馈的调整规划——同序中段 + 依赖结构收尾，携带已执行上下文
@@ -15,7 +15,7 @@
  *
  * 从 Orchestrator 拆出后本模块即测试面：修复循环与链序可脱离 execute() 全路径直测。
  */
-import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
+import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts, validateOntologyScope } from './plan-validation.js';
 import type { InvalidTaskName } from './plan-validation.js';
 import { renderParamStructure, validateParamsAgainstSchema, type ParamSpec } from './param-contract.js';
 import { schemaToDeclaredParams } from '../services/common-functions.js';
@@ -26,13 +26,15 @@ import type { FunctionCatalogView } from './function-catalog.js';
 import type { PlanSubmission } from './run-session.js';
 import type { SubTaskPlan } from '../types.js';
 
-/** 规划修复上下文：nudge 父Agent 所需三件套 + run 级函数目录快照打包，替代 4-5 参穿透。
- *  submittedPlan 只经 PlanSubmission 口操作（reset 复位-重提协议 / peek 读最新提交） */
+/** 规划修复上下文：nudge 父Agent 所需三件套 + run 级函数目录快照 + 本体范围允许集打包，替代多参穿透。
+ *  submittedPlan 只经 PlanSubmission 口操作（reset 复位-重提协议 / peek 读最新提交）；
+ *  allowedOntologyIds = 用户新建对话时声明的本体集合（ontology_id），本体范围硬闸的锚点 */
 export interface PlanRepairCtx {
   parentAgent: AgentPort;
   submittedPlan: PlanSubmission;
   emit: EventChannel;
   catalog: FunctionCatalogView;
+  allowedOntologyIds: ReadonlySet<number>;
 }
 
 /** 规划闸门依赖：本体元信息 + 带超时的父Agent prompt（orchestrator 注入其 parentPrompt） */
@@ -63,12 +65,26 @@ export class PlanGate {
     return core ? this.validatePlanDeps(core, ctx, executed.seqs) : null;
   }
 
-  /** 校验链中段（初始/调整共用）：行为名 → 函数名 → 参数。 */
+  /** 校验链中段（初始/调整共用）：本体范围 → 行为名 → 函数名 → 参数。 */
   private async validateCore(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
-    const named = await this.validateTaskBehaviorNames(plan, ctx);
+    const scoped = await this.validateTaskOntologyScope(plan, ctx);
+    if (!scoped) return null;
+    const named = await this.validateTaskBehaviorNames(scoped, ctx);
     if (!named) return null;
     const namedF = await this.validateTaskFunctionNames(named, ctx);
     return namedF ? this.validateTaskParams(namedF, ctx) : null;
+  }
+
+  /** 本体范围硬闸：子任务 ontology_id 必须在本对话所选集合内（行为/函数子任务同查）；越界时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  private async validateTaskOntologyScope(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    const allowed = ctx.allowedOntologyIds;
+    return this.repairPlan(plan, ctx, {
+      label: '本体范围校验',
+      doneLabel: '本体范围已修正',
+      detailOf: (p) => `超出本体范围: ${validateOntologyScope(p, allowed).map(st => `子任务${st.seq}: ontology_id=${st.ontology_id}（${st.scenario_name}/${st.ontology_name}）`).join('、')}`,
+      isClean: (p) => validateOntologyScope(p, allowed).length === 0,
+      nudge: (p) => `以下子任务的本体不在本次对话用户所选的本体范围内（允许的 ontology_id：${[...allowed].join('、')}）：\n${validateOntologyScope(p, allowed).map(st => `- 子任务${st.seq}（${st.function || st.behavior}，${st.scenario_name}/${st.ontology_name}，ontology_id=${st.ontology_id}）`).join('\n')}\n请将这些子任务改到允许的本体，或直接删除，保持其余内容不变，然后重新调用 submit_plan 工具提交修正后的规划。`,
+    });
   }
 
   /** seq 冲突校验（校验链首）：规划内 seq 唯一 + 反馈路径防"新任务冒名已执行 seq"。非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */

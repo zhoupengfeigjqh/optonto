@@ -10,7 +10,6 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 BASE = 'http://localhost:8003/agent-api'
 SCEN = '生产调度'
 ONTO = '原材料采购和库存'
-SKILL = {'name': 'raw-material-inventory', 'scenario': SCEN, 'ontology': ONTO}
 API_BASE = '/'.join([BASE, 'onto_market', urllib.parse.quote(SCEN), urllib.parse.quote(ONTO), 'threads'])
 
 
@@ -24,7 +23,7 @@ def post(url, body=None):
         return {'_http_error': e.code, '_body': e.read().decode('utf-8', errors='replace')[:200]}
 
 
-tid = post(API_BASE, {'title': '取消PO-047/048', 'skill_names': [SKILL]})['id']
+tid = post(API_BASE, {'title': '取消PO-047/048', 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
 print(f'线程: {tid}\n')
 
 url = API_BASE + f'/{tid}/chat'

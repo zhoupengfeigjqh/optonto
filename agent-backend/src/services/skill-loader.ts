@@ -2,7 +2,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
-import type { SkillInfo, SkillDescription, SkillContext, SkillSelection } from '../types.js';
+import type { SkillInfo, SkillDescription, SkillContext, SkillSelection, OntologySelection, ConversationScope } from '../types.js';
 
 /**
  * SkillLoader — 只读加载技能目录下的 SKILL.md 文件。
@@ -62,60 +62,44 @@ export class SkillLoader {
       .filter((s): s is SkillDescription => s !== null);
   }
 
-  /** 校验每个选中技能的 SKILL.md 的 frontmatter 是否包含全部 4 个字段，缺失即报错 */
-  validateSkillContext(skills: SkillSelection[]): void {
-    if (!skills || skills.length === 0) return;
-    const errors: string[] = [];
-    for (const s of skills) {
-      try {
-        const content = this.loadSkill(s.scenario, s.ontology, s.name);
-        const fm = this.parseFrontmatter(content);
-        // 技能模板 frontmatter 仅定义 name + description；技能按路径（onto_market/{场景}/{本体}/skills/）定位，
-        // 不强制 frontmatter 带场景/本体字段。
-        const required = ['name', 'description'] as const;
-        for (const field of required) {
-          if (!fm[field] || !String(fm[field]).trim()) {
-            errors.push(`技能 "${s.name}" 缺少 ${field}`);
-          }
-        }
-      } catch (e: any) {
-        errors.push(`技能 "${s.name}" 加载失败: ${e.message}`);
-      }
-    }
-    if (errors.length > 0) {
-      throw new Error(`技能上下文校验失败：\n${errors.join('\n')}`);
+  /**
+   * 解析单个本体选择为权威四元组（id 取自 core meta.json 注册表，实时权威）。
+   * meta 缺失/解析失败返回 null——路由层据此 400（用户选了不存在的本体）。
+   */
+  resolveOntologyContext(scenario: string, ontology: string): SkillContext | null {
+    try {
+      const onMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(scenario, ontology), 'utf-8'));
+      const scMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(scenario), 'utf-8'));
+      const ontologyId = Number(onMeta?.id);
+      const scenarioId = Number(scMeta?.id ?? onMeta?.scenario_id);
+      if (!Number.isFinite(ontologyId) || !Number.isFinite(scenarioId)) return null;
+      return { scenario_name: scenario, scenario_id: scenarioId, ontology_name: ontology, ontology_id: ontologyId };
+    } catch {
+      return null;
     }
   }
 
   /**
-   * 取选中技能关联的本体上下文列表（scenario/ontology 四元组），按 ontology_id 去重。
-   * id 取自 core 的 meta.json 注册表（实时权威），不解析 SKILL.md 章节0 的快照文本
-   * （本体删除重建后 id 会变，SKILL.md 不会跟着更新）。
-   * meta 缺失/解析失败的技能静默跳过——不阻断对话，仅列表少一条。
+   * 解析对话作用域（新建对话/对话发起共用单一入口）：
+   *  - contexts：所选本体的权威四元组（按 ontology_id 去重；解析失败的条目静默跳过——
+   *    新建时路由已逐条校验，运行期跳过只对"本体后被删除"的场景兜底）
+   *  - skills：所选本体目录下全部技能（自动关联，用户无感；无技能的本体照样可选，知识为空而已）
    */
-  getSelectedContexts(skills: SkillSelection[]): SkillContext[] {
+  resolveScope(selections: OntologySelection[]): ConversationScope {
     const seen = new Set<number>();
     const contexts: SkillContext[] = [];
-    for (const s of skills) {
-      try {
-        const onMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(s.scenario, s.ontology), 'utf-8'));
-        const scMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(s.scenario), 'utf-8'));
-        const ontologyId = Number(onMeta?.id);
-        const scenarioId = Number(scMeta?.id ?? onMeta?.scenario_id);
-        if (!Number.isFinite(ontologyId) || !Number.isFinite(scenarioId)) continue;
-        if (seen.has(ontologyId)) continue;
-        seen.add(ontologyId);
-        contexts.push({
-          scenario_name: s.scenario,
-          scenario_id: scenarioId,
-          ontology_name: s.ontology,
-          ontology_id: ontologyId,
-        });
-      } catch {
-        continue;
+    const skills: SkillSelection[] = [];
+    for (const sel of selections) {
+      const ctx = this.resolveOntologyContext(sel.scenario, sel.ontology);
+      if (ctx && !seen.has(ctx.ontology_id)) {
+        seen.add(ctx.ontology_id);
+        contexts.push(ctx);
+      }
+      for (const s of this.listSkills(sel.scenario, sel.ontology)) {
+        skills.push({ name: s.name, scenario: sel.scenario, ontology: sel.ontology });
       }
     }
-    return contexts;
+    return { contexts, skills };
   }
 
   /** 扫描 onto_market 全部本体，返回所有技能及所在位置（技能选择下拉用） */

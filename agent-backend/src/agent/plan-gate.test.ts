@@ -55,6 +55,7 @@ function mkCtx(catalog?: Partial<FunctionCatalogView>): { ctx: PlanRepairCtx; ev
         behaviorSchema: () => null,
         ...catalog,
       } as unknown as FunctionCatalogView,
+      allowedOntologyIds: new Set([1]), // 测试允许集：本体 1（与 mkSub 的 ontology_id 对齐）
     },
   };
 }
@@ -201,6 +202,63 @@ describe('PlanGate · 参数校验（validateInitial · 编译 schema 统一 nud
     const out = await gate.validateInitial(dirty, ctx);
     expect(out).toBe(fixed);
     expect(promptParent.mock.calls[0][1]).toContain('缺少必填参数 recordSet');
+  });
+});
+
+describe('PlanGate · 本体范围硬闸（validateInitial/validateAdjustment 共用链中段首环）', () => {
+  it('范围内（ontology_id=1）→ 原样放行，不 nudge', async () => {
+    const promptParent = vi.fn();
+    const gate = new PlanGate({ gateway, promptParent });
+    const { ctx } = mkCtx();
+    const plan: SubTaskPlan = { subtasks: [mkSub(1)] };
+    expect(await gate.validateInitial(plan, ctx)).toBe(plan);
+    expect(promptParent).not.toHaveBeenCalled();
+  });
+
+  it('越界（ontology_id=2）→ nudge 一次（提示含允许集），父Agent 改回范围内 → 放行并记修正流水', async () => {
+    const fixed: SubTaskPlan = { subtasks: [mkSub(1)] };
+    const { ctx, events } = mkCtx();
+    const promptParent = vi.fn().mockImplementation(async () => { ctx.submittedPlan.submit(fixed); });
+    const gate = new PlanGate({ gateway, promptParent });
+    const dirty: SubTaskPlan = { subtasks: [{ ...mkSub(1), ontology_id: 2, ontology_name: '订单排程' }] };
+
+    const out = await gate.validateInitial(dirty, ctx);
+    expect(out).toBe(fixed);
+    expect(promptParent).toHaveBeenCalledTimes(1);
+    const nudgeText = promptParent.mock.calls[0][1] as string;
+    expect(nudgeText).toContain('允许的 ontology_id：1');
+    expect(nudgeText).toContain('ontology_id=2');
+    const names = events.filter((e: any) => e.type === 'exec_entry').map((e: any) => `${e.entry.name}:${e.entry.status}`);
+    expect(names).toContain('本体范围校验:failed');
+    expect(names).toContain('本体范围已修正:done');
+  });
+
+  it('越界且修正后仍越界 → 判废返回 null', async () => {
+    const { ctx } = mkCtx();
+    const promptParent = vi.fn().mockImplementation(async () => {
+      ctx.submittedPlan.submit({ subtasks: [{ ...mkSub(1), ontology_id: 9 }] });
+    });
+    const gate = new PlanGate({ gateway, promptParent });
+    const dirty: SubTaskPlan = { subtasks: [{ ...mkSub(1), ontology_id: 2 }] };
+    expect(await gate.validateInitial(dirty, ctx)).toBeNull();
+    expect(promptParent).toHaveBeenCalledTimes(1); // 只有一次修正机会
+  });
+
+  it('函数子任务同查：function 子任务 ontology_id 越界同样拦', async () => {
+    const { ctx } = mkCtx();
+    const promptParent = vi.fn().mockResolvedValue(undefined); // 不重提 → 判废
+    const gate = new PlanGate({ gateway, promptParent });
+    const dirty: SubTaskPlan = { subtasks: [{ ...mkSub(1), behavior: '', function: 'sumQty', ontology_id: 2 }] };
+    expect(await gate.validateInitial(dirty, ctx)).toBeNull();
+    expect(promptParent.mock.calls[0][1]).toContain('本体范围');
+  });
+
+  it('调整链同闸：validateAdjustment 的越界子任务同样被拦', async () => {
+    const { ctx } = mkCtx();
+    const promptParent = vi.fn().mockResolvedValue(undefined);
+    const gate = new PlanGate({ gateway, promptParent });
+    const dirty: SubTaskPlan = { subtasks: [{ ...mkSub(2), ontology_id: 2 }] };
+    expect(await gate.validateAdjustment(dirty, ctx, { seqs: new Set(), tasks: new Map() })).toBeNull();
   });
 });
 

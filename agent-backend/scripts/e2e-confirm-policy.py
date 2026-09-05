@@ -11,7 +11,6 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 BASE = 'http://localhost:8003/agent-api'
 SCEN = '生产调度'
 ONTO = '原材料采购和库存'
-SKILL = {'name': 'raw-material-inventory', 'scenario': SCEN, 'ontology': ONTO}
 API_BASE = '/'.join([BASE, 'onto_market', urllib.parse.quote(SCEN), urllib.parse.quote(ONTO), 'threads'])
 
 
@@ -26,7 +25,7 @@ def post(url, body=None):
 
 
 def new_thread(title):
-    return post(API_BASE, {'title': title, 'skill_names': [SKILL]})['id']
+    return post(API_BASE, {'title': title, 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
 
 
 def chat_events(tid, message, approve_plan=True):

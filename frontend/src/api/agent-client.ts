@@ -36,7 +36,8 @@ export interface AgentThread {
   updated_at: string;
   scenario_name: string;
   ontology_name: string;
-  skill_names: SkillSelection[];
+  /** 本次对话的本体范围（空数组 = 通用问答模式） */
+  ontology_scope: OntologyScopeSelection[];
 }
 
 export interface AgentMessage {
@@ -46,9 +47,8 @@ export interface AgentMessage {
   timestamp: string;
 }
 
-/** 选中的技能及其所在本体/场景 */
-export interface SkillSelection {
-  name: string;
+/** 对话本体范围单元（用户显式选择的 scenario+ontology） */
+export interface OntologyScopeSelection {
   scenario: string;
   ontology: string;
 }
@@ -81,18 +81,18 @@ export const listAgentThreads = (scenario: string, ontology: string) =>
     `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/threads`
   );
 
-/** 创建新 agent 线程 */
+/** 创建新 agent 线程（scope = 本体范围；空数组 = 通用问答模式） */
 export const createAgentThread = (
   scenario: string,
   ontology: string,
   title: string,
-  skills: SkillSelection[]
+  scope: OntologyScopeSelection[]
 ) =>
   request<AgentThread>(
     `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/threads`,
     {
       method: 'POST',
-      body: JSON.stringify({ title, skill_names: skills }),
+      body: JSON.stringify({ title, ontology_scope: scope }),
     }
   );
 

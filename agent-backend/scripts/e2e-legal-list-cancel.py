@@ -11,7 +11,6 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 BASE = 'http://localhost:8003/agent-api'
 SCEN = '生产调度'
 ONTO = '原材料采购和库存'
-SKILL = {'name': 'raw-material-inventory', 'scenario': SCEN, 'ontology': ONTO}
 API_BASE = '/'.join([BASE, 'onto_market', urllib.parse.quote(SCEN), urllib.parse.quote(ONTO), 'threads'])
 
 
@@ -80,7 +79,7 @@ def report(tag, events):
 # 故直接用数据库中现存状态为"待入库"的采购单（经查询确认为 PO-20260809-045）。
 PO = 'PO-20260809-045'
 
-tid = post(API_BASE, {'title': '合法列表取消验证', 'skill_names': [SKILL]})['id']
+tid = post(API_BASE, {'title': '合法列表取消验证', 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
 print(f'线程: {tid}\n>> 将取消采购单 {PO}\n')
 
 # ── 2. 取消该采购单（验证合法行为列表约束） ──

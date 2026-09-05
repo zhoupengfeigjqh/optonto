@@ -61,6 +61,16 @@ export interface OntologyData {
 export const getOntologies = (scenarioId: number) =>
   request<Ontology[]>(`/api/ontologies/by-scenario/${scenarioId}`);
 
+/** 跨场景全量本体列表（智能体对话的本体范围选择器用；条目含 scenario_name/ontology_name） */
+export interface OntologyScopeOption {
+  id: number;
+  scenario_name: string;
+  ontology_name: string;
+  description?: string;
+}
+export const listAllOntologies = () =>
+  request<OntologyScopeOption[]>('/api/ontologies');
+
 export const createOntology = (data: { scenario_id: number; name: string; description?: string; creator?: string }) =>
   request<Ontology>('/api/ontologies', { method: 'POST', body: JSON.stringify(data) });
 

@@ -18,7 +18,7 @@
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import { getLastAssistantMessage, toolResultToText } from '../utils/text-utils.js';
 import { PARENT_TOOL_LABELS } from './tool-catalog.js';
-import { validatePlanStructure, validateSeqConflicts, topologicalSort, looksLikePlanClaim } from './plan-validation.js';
+import { validatePlanStructure, validateSeqConflicts, validateOntologyScope, topologicalSort, looksLikePlanClaim } from './plan-validation.js';
 import { isParamValueEmpty, renderParamStructure, type ParamSpec } from './param-contract.js';
 import { ConfirmManager } from './confirm-manager.js';
 import type { ConfirmPort } from './confirm-manager.js';
@@ -33,7 +33,7 @@ import { createEventChannel, ToolCallBridge } from './event-channel.js';
 import type { EventChannel } from './event-channel.js';
 import type { AgentPort } from './agent-ports.js';
 import type {
-  ThreadMessage, SubTaskPlan, SubTaskResult, SubTask, SSEEvent, SkillSelection,
+  ThreadMessage, SubTaskPlan, SubTaskResult, SubTask, SSEEvent, ConversationScope,
 } from '../types.js';
 
 const MAX_ROUNDS = 50;
@@ -145,7 +145,7 @@ export class Orchestrator {
 
   async execute(
     message: string,
-    skills: SkillSelection[],
+    scope: ConversationScope,
     history: ThreadMessage[],
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
@@ -159,7 +159,7 @@ export class Orchestrator {
     const session = new RunSession(this.createConfirmManager());
     this.activeSession = session;
     try {
-      return await this.runExecute(session, message, skills, history, sendEvent);
+      return await this.runExecute(session, message, scope, history, sendEvent);
     } finally {
       // 编排结束（无论成功/失败/中断）释放 run 引用与 MCP 连接，避免跨子任务累积泄漏
       this.activeSession = null;
@@ -175,7 +175,7 @@ export class Orchestrator {
   private async runExecute(
     session: RunSession,
     message: string,
-    skills: SkillSelection[],
+    scope: ConversationScope,
     history: ThreadMessage[],
     sendEvent: (e: SSEEvent) => void,
   ): Promise<string> {
@@ -183,10 +183,12 @@ export class Orchestrator {
     // run 级函数目录快照：规划校验与执行展示同源同时刻（建快照是一次 async MCP 目录读取，
     // 之后全 run 同步复用，不再每次校验各自 view()）
     session.catalogView = await this.functionCatalog.view();
+    // 本体范围允许集（硬闸锚点）：通用模式为空集——父 Agent 未挂 submit_plan，永远不会有规划进入校验链
+    const allowedOntologyIds = new Set(scope.contexts.map(c => c.ontology_id));
     try {
-      const planned = await this.planningPhase(session, message, skills, history, emit);
+      const planned = await this.planningPhase(session, message, scope, allowedOntologyIds, history, emit);
       if ('reply' in planned) return planned.reply;
-      const pending = await this.wavePhase(session, planned.plan, emit);
+      const pending = await this.wavePhase(session, planned.plan, allowedOntologyIds, emit);
       return await this.summaryPhase(session, pending, emit);
     } catch (e: any) {
       // 守卫兜底：父Agent 处理异常（LLM 错误 / 超时 / 不可用）。
@@ -232,13 +234,14 @@ export class Orchestrator {
   private async planningPhase(
     session: RunSession,
     message: string,
-    skills: SkillSelection[],
+    scope: ConversationScope,
+    allowedOntologyIds: ReadonlySet<number>,
     history: ThreadMessage[],
     emit: EventChannel,
   ): Promise<PlanningOutcome> {
     const loadedSkillNames: string[] = [];
     const parentAgent = await this.agentFactory.createParentAgent(
-      skills, history,
+      scope, history,
       (name: string) => {
         if (!loadedSkillNames.includes(name)) loadedSkillNames.push(name);
         emit.raw({ type: 'token', token: `\n📖 已加载技能：${name}\n` });
@@ -284,8 +287,8 @@ export class Orchestrator {
         emit.raw({ type: route, token: event.assistantMessageEvent.delta });
       }
     });
-    // 规划修复上下文：nudge 父Agent/波次反馈共用的三件套
-    const planCtx: PlanRepairCtx = { parentAgent, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView! };
+    // 规划修复上下文：nudge 父Agent/波次反馈共用的三件套 + 本体范围允许集（PlanGate 硬闸锚点）
+    const planCtx: PlanRepairCtx = { parentAgent, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView!, allowedOntologyIds };
 
     // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
     await this.parentPrompt(parentAgent,`${message}`);
@@ -354,7 +357,7 @@ export class Orchestrator {
     let exitReason = '用户拒绝执行规划';
 
     for (let round = 0; round < MAX_PLAN_ROUNDS; round++) {
-      // 初始校验链（seq 冲突 → 行为名 → 函数名 → 参数，各带一次静默修正；链序与判废编排唯一在 PlanGate 内）
+      // 初始校验链（seq 冲突 → 本体范围 → 行为名 → 函数名 → 参数，各带一次静默修正；链序与判废编排唯一在 PlanGate 内）
       const validated = await this.planGate.validateInitial(plan, planCtx);
       if (!validated) {
         const msg = '⚠️ 规划校验失败：无法生成有效的执行计划';
@@ -438,8 +441,14 @@ export class Orchestrator {
       return this.endPlanning(emit, { reply });
     }
 
-    // 结构校验：依赖存在性 / 无自引用 / 无环 / seq 唯一（纯代码，不弹窗，兜底前端已做的校验——用户编辑可绕过上方各闸）
-    const structureErrors = [...validatePlanStructure(plan), ...validateSeqConflicts(plan)];
+    // 结构校验：依赖存在性 / 无自引用 / 无环 / seq 唯一 / 本体范围（纯代码，不弹窗，兜底前端已做的校验——用户编辑可绕过上方各闸。
+    // 本体范围必须在此兜底：确认弹窗里用户可手改 ontology_id 到范围外本体，PlanGate 的 nudge 链已在确认前跑完，这里只做判定不做修复）
+    const scopeViolations = validateOntologyScope(plan, allowedOntologyIds);
+    const structureErrors = [
+      ...validatePlanStructure(plan),
+      ...validateSeqConflicts(plan),
+      ...scopeViolations.map(st => `子任务 ${st.seq}（${st.function || st.behavior}）的 ontology_id=${st.ontology_id} 不在本次对话本体范围内`),
+    ];
     if (structureErrors.length > 0) {
       emit.entry({ type: 'subtask_done', name: '规划结构校验', status: 'failed', detail: structureErrors.join('；'), source: 'parent' });
       const msg = '规划结构不合法，请重新发起。';
@@ -472,11 +481,12 @@ export class Orchestrator {
   private async wavePhase(
     session: RunSession,
     plan: SubTaskPlan,
+    allowedOntologyIds: ReadonlySet<number>,
     emit: EventChannel,
   ): Promise<SubTask[]> {
     session.disableTokens(); // 子任务执行和反馈不流到聊天区，避免重复
     const runner = this.createSubtaskRunner(session);
-    const planCtx: PlanRepairCtx = { parentAgent: session.parentAgent!, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView! };
+    const planCtx: PlanRepairCtx = { parentAgent: session.parentAgent!, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView!, allowedOntologyIds };
     let pending = topologicalSort(plan.subtasks);
 
     for (let wave = 0; wave < MAX_ROUNDS; wave++) {

@@ -6,7 +6,7 @@
  */
 import type { SubtaskPolicy } from './execution-policy.js';
 import type { MountableToolInfo } from './tool-catalog.js';
-import type { ThreadMessage, SkillContext, SkillSelection, SubTaskPlan, BehaviorMeta, FunctionMeta } from '../types.js';
+import type { ThreadMessage, SkillContext, SubTaskPlan, BehaviorMeta, FunctionMeta, ConversationScope } from '../types.js';
 
 /**
  * Agent 门面 —— 编排层依赖的最小 Agent 接口（pi-agent-core 实现此缝）。
@@ -30,8 +30,9 @@ export interface AgentPort {
 
 /** AgentFactory 门面 —— Orchestrator 需要的工厂能力（创建父/子 Agent + run 级资源释放） */
 export interface AgentFactoryPort {
+  /** 创建父 Agent。scope.contexts 为空 = 通用问答模式（零业务工具）；非空 = 本体模式（list 工具/函数清单/规划校验按所选本体硬过滤） */
   createParentAgent(
-    skills: SkillSelection[],
+    scope: ConversationScope,
     history: ThreadMessage[],
     onSkillLoaded: (skillName: string) => void,
     onPlanSubmitted?: (plan: SubTaskPlan) => void,

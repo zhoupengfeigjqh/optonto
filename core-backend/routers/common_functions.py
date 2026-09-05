@@ -39,6 +39,7 @@ async def get_common_function_code(func_name: str) -> dict:
 async def execute_common_function(func_name: str, body: dict):
     """Execute a common function. Convention: def run(params: dict) -> dict.
 
+    2026-09-05 起本体函数也统一为同一 run 约定（见 routers/functions.py）。
     run() 已自带 {"result": ...} 包装，故原样返回（不再包一层，避免双重嵌套）。
     """
     code_path = COMMON_DIR / f"{func_name}.py"

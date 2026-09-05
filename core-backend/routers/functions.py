@@ -1,5 +1,7 @@
 """CRUD API for functions within an ontology.
 Function code is stored as .py files in onto_market/{scenario}/{ontology}/functions/.
+代码统一入口约定（2026-09-05 起，与公共函数一致）：def run(params: dict) -> dict；
+保存/生成写盘前经 _validate_function_code 静态校验。
 """
 
 import json
@@ -26,6 +28,26 @@ load_env()
 
 def _code_path(sc_name: str, on_name: str, func_name: str) -> Path:
     return _get_functions_dir(sc_name, on_name) / f"{func_name}.py"
+
+
+def _validate_function_code(code: str) -> str | None:
+    """函数代码入口静态校验（保存/生成写盘前调用）。返回 None = 通过，否则返回错误描述。
+
+    统一入口约定（2026-09-05）：本体函数与公共函数同为 def run(params: dict) -> dict，
+    exec 后按 "run" 取符号、整包传参。注册名（YAML name / 文件名）只作标识，
+    不再要求代码内函数同名——改名/迁移不影响代码。
+    """
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return f"语法错误: {e}"
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            if not node.args.args:
+                return "run 必须接收 params 参数（def run(params: dict) -> dict）"
+            return None
+    return "未找到 def run(params) 定义——函数代码须以 run 为统一入口（与公共函数同约定）"
 
 
 # ─── 函数名全局唯一 ─────────────────────────────────────────────────────────────
@@ -150,7 +172,11 @@ async def save_function_code(ontology_id: int, function_name: str, body: dict):
 
     ensure_functions_dir(sc_name, on_name)
     code_path = _code_path(sc_name, on_name, function_name)
-    code_path.write_text(body.get("code", ""), encoding="utf-8")
+    code = body.get("code", "")
+    err = _validate_function_code(code)
+    if err:
+        raise HTTPException(status_code=400, detail=f"函数代码校验未通过: {err}")
+    code_path.write_text(code, encoding="utf-8")
 
     # Update code_file reference in YAML
     data.functions[idx].code_file = f"functions/{function_name}.py"
@@ -184,6 +210,11 @@ async def generate_function_code(ontology_id: int, function_name: str):
         code, _ = await llm_text(FUNCTION_CODE_SYSTEM_PROMPT, prompt, 0.3)
         if code is None:
             raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法智能生成代码")
+
+        # 生成物过同一道入口校验，不合格不落地（提示词已要求 run 形态，此处兜底）
+        err = _validate_function_code(code)
+        if err:
+            raise HTTPException(status_code=500, detail=f"生成的代码未通过入口校验: {err}")
 
         # Save to file
         ensure_functions_dir(sc_name, on_name)
@@ -225,12 +256,14 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
 
     try:
         exec(code, restricted_globals, local_vars)
-        func = local_vars.get(fn.name)
+        # 统一入口约定（与公共函数一致）：def run(params: dict) -> dict，整包传参。
+        # 注册名（fn.name / 文件名）只作标识与路由，不再要求代码内函数同名。
+        func = local_vars.get("run")
         if func is None:
-            raise HTTPException(status_code=500, detail=f"未找到函数 {fn.name}，请确认函数名与定义一致")
+            raise HTTPException(status_code=500, detail="未找到函数 run，本体函数须以 def run(params) 定义（与公共函数同约定）")
         # 函数代码已自带 {"result": ...} 包装（与公共函数 run() 约定一致，见 common_functions.py），
-        # 故原样返回，不再包一层，避免双重嵌套（sumRawNotArrivalQty 等函数 code_file 均自带头 result）。
-        result = func(**params)
+        # 故原样返回，不再包一层，避免双重嵌套。
+        result = func(params)
         return result
     except HTTPException:
         raise
