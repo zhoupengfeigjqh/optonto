@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
 import { getCommonFunctionNames, getCommonFunctionInfo } from './common-functions.js';
-import type { BehaviorMeta, RuleDetail, ConceptInfo, FunctionInfo } from '../types.js';
+import type { BehaviorMeta, RuleDetail, ConceptInfo, FunctionMeta } from '../types.js';
 
 export class OntologyGateway {
   /** 按 (scenario, ontology) 缓存解析结果，用文件 mtime 失效（ontology.yaml + data_engines.yaml + securities.yaml 三 mtime），避免编排中反复读盘 */
@@ -96,7 +96,7 @@ export class OntologyGateway {
       related_behaviors: r.related_behaviors || [],
       rule_detail: r.rule_detail || null,
       related_functions: r.related_functions || [],
-      // 目前只采用 yaml 手写的 data_supplements；inferNeededApis 暂不启用（函数保留，待需要时再接回）
+      // 只采用 yaml 手写的 data_supplements
       data_supplements: [...(r.data_supplements || [])],
     }));
 
@@ -162,7 +162,7 @@ export class OntologyGateway {
    * 都不在 → null（函数不在任何文件声明源）。
    * FunctionCatalog 文件兜底模式的①②数据源（meta/params）。
    */
-  getFunctionInfo(scenario: string, ontology: string, functionName: string): FunctionInfo | null {
+  getFunctionInfo(scenario: string, ontology: string, functionName: string): FunctionMeta | null {
     const data = this.loadOntologyData(scenario, ontology);
     const fn = (data?.functions || []).find((f: any) => f.name === functionName);
     if (fn) {
@@ -174,37 +174,5 @@ export class OntologyGateway {
     }
     const common = getCommonFunctionInfo(functionName);
     return common ? { display_name: common.display_name, description: common.description, params: common.params } : null;
-  }
-
-  /**
-   * 从 rule_detail 中递归扫描 type:concept/instance 节点（instance 为 2026-08-26 改名后的新名，concept 为存量兼容），
-   * 通过 related_concepts 反推需要调用的查询行为。
-   */
-  private inferNeededApis(ruleDetail: any, behaviors: any[]): string[] {
-    if (!ruleDetail || typeof ruleDetail !== 'object') return [];
-    const conceptNames = new Set<string>();
-    const walk = (node: any) => {
-      if (!node || typeof node !== 'object') return;
-      if ((node.type === 'concept' || node.type === 'instance') && node.concept) {
-        conceptNames.add(node.concept);
-      }
-      Object.values(node).forEach(v => walk(v));
-    };
-    walk(ruleDetail);
-
-    // 匹配查询行为：related_concepts 包含该概念且 name 以 Query 开头
-    const apis: string[] = [];
-    for (const beh of behaviors) {
-      if (typeof beh.name === 'string' && beh.name.startsWith('Query')) {
-        const rc = (beh.related_concepts || []).map((s: any) => String(s));
-        for (const cn of conceptNames) {
-          if (rc.includes(cn)) {
-            apis.push(beh.name);
-            break;
-          }
-        }
-      }
-    }
-    return apis;
   }
 }

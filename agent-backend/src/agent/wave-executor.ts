@@ -10,7 +10,7 @@
  * runner.run(st, meta, emit)——本模块只管"这一波谁先谁后、谁并谁串、何时截断"，不再复制执行知识。
  * 从 Orchestrator 拆出后本模块即测试面：分类/限流/闸截断可脱离 execute() 全路径直测。
  */
-import { needsSecurityConfirm } from './security-policy.js';
+import { needsSecurityConfirm } from './execution-policy.js';
 import type { SecurityGate } from './security-policy.js';
 import type { EventChannel } from './event-channel.js';
 import type { SubtaskRunner } from './subtask-runner.js';

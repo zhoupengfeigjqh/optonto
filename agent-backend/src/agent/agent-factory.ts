@@ -2,7 +2,6 @@ import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@sinclair/typebox';
 import { MCPClient } from '../services/mcp-client.js';
-import { schemaToDeclaredParams } from '../services/common-functions.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
@@ -11,86 +10,16 @@ import { toolResultToText } from '../utils/text-utils.js';
 import { subtaskFieldsSchema } from './subtask-contract.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
-import type { AgentPort } from './agent-port.js';
-import type { MountableToolInfo } from './agent-ports.js';
+import { PARENT_TOOL_LABELS, SCOPE_KEY, bareBehaviorName, toMountableToolInfo } from './tool-catalog.js';
+import type { MountableToolInfo } from './tool-catalog.js';
+import type { AgentPort } from './agent-ports.js';
 import type { SubtaskPolicy } from './execution-policy.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
 
-/**
- * 父 Agent 可挂载的本体查询工具（只读元数据，规划时了解场景/本体/行为/概念/关系/函数/安全/流程）。
- * 父 Agent 工具职责边界：load_skill + 本体查询 list* + listAllMcpFunctions（本地内部工具：函数/工具清单）+ submit_plan，【不挂执行工具、不挂函数/外部工具】。
- * 函数/外部工具由 listAllMcpFunctions 实时发现（本体函数/公共函数/其他MCP工具三类，本体行为不在其列——
- * 行为规划走 listOntoBehaviors），父 Agent 选定后经 related_functions 下放子 Agent、或直接规划为函数子任务；
- * 本体行为是一等 MCP 工具（facade，工具名即行为名），由子 Agent 按 legalCalls.behaviors 挂载。
- * 注：load_skill / submit_plan / listAllMcpFunctions 是 agent-backend 本地内部工具，只挂父 Agent，
- * 不注册进任何 MCP server、不暴露给子 Agent 与外部消费方。
- * 单源形态 = 工具名 → 中文标签：本文件用作挂载/剔除白名单（keys），
- * orchestrator 用作执行记录展示名（"中文（英文）"格式）。
- */
-export const PARENT_TOOL_LABELS: Record<string, string> = {
-  listScenarios: '查询场景清单',
-  listOntologies: '查询本体清单',
-  listOntoBehaviors: '查询行为清单',
-  listOntoConcepts: '查询概念清单',
-  listOntoRelations: '查询关系清单',
-  listOntoFunctions: '查询函数清单',
-  listOntoSecurities: '查询安全清单',
-  listOntoProcesses: '查询流程清单',
-};
+// 父 Agent 本体查询工具白名单（标签表单源在 tool-catalog.PARENT_TOOL_LABELS，此处取 keys 作挂载/剔除依据）
 const PARENT_ONTOLOGY_QUERY_TOOLS = Object.keys(PARENT_TOOL_LABELS);
-
-/**
- * 本体函数工具 schema 前置的作用域块键（MCP server 在 inputSchema.properties.scope 注入所属场景/本体的真实值）。
- * 非函数输入参数：listAllMcpFunctions 读出 scope 展示给父 Agent；scopeToOntology/callFunctionTool 调用前剥离。
- */
-const SCOPE_KEY = 'scope';
-
-/**
- * MCP 工具 → 可挂载目录条目（纯函数，导出供单测直调，无需 MCP 连接）。
- * 分类唯一依据：发布方标记（本体行为/本体函数 = scope.category const，公共函数 = x-category 扩展键）；
- * 无标记 = 外部 MCP 工具（排除法）。core/agent 同仓库整栈部署，不设旧启发式兼容层——
- * 特征猜测（hasOntologyId）会把碰巧带 ontology_id 参数的外部工具误判为本体工具并误删其参数。
- */
-export function toMountableToolInfo(tool: { name: string; description?: string; label?: string; parameters?: any }): MountableToolInfo {
-  const schema = tool.parameters || {};
-  const scopeProp = schema.properties?.[SCOPE_KEY];
-  const category: MountableToolInfo['category'] =
-    scopeProp?.properties?.category?.const ?? schema['x-category'] ?? '其他MCP工具';
-  // 版本错配告警：带 scope 块但无 category 标记 = 连上了未打标记的旧版 core-backend
-  if (scopeProp && !scopeProp.properties?.category) {
-    console.warn(`[AgentFactory] 工具 ${tool.name} 带 scope 块但无 category 标记——core-backend 版本过旧，请同步升级`);
-  }
-  // scope 作用域块一律剥离（规划元数据，非输入参数）；ontology_id 仅对本体工具剥离
-  // （发布方标记判定，执行时自动注入，见 entry.scope）。
-  const ontoScoped = category === '本体函数' || category === '本体行为';
-  const baseProps = { ...(schema.properties || {}) };
-  delete baseProps[SCOPE_KEY];
-  if (ontoScoped) delete baseProps.ontology_id;
-  const entry: MountableToolInfo = {
-    name: tool.name,
-    category,
-    description: tool.description || tool.label || '',
-    // 中文显示名：发布方结构化字段（scope.display_name / x-display_name），无则留空由上层兜底
-    displayName: scopeProp?.properties?.display_name?.const ?? schema['x-display_name'] ?? undefined,
-    // 完整参数结构：类型/必填/描述（本体工具示例拼在描述里，公共函数有 example 字段）
-    params: schemaToDeclaredParams({ ...schema, properties: baseProps }),
-    // 编译 inputSchema 原文（剥 scope/ontology_id 后）：规划期参数校验（TypeBox）的数据源
-    schema: { ...schema, properties: baseProps },
-  };
-  // 本体行为/函数：scope 块（const 真实值）→ 独立 scope 字段（剔除 category/display_name 标记；
-  // name 保留——行为工具可能带 onto{id}__ 前缀，裸名是挂载过滤/disable 闸的匹配键），
-  // 父 Agent 填子任务 scenario/ontology 字段用
-  if (ontoScoped && scopeProp?.properties) {
-    entry.scope = Object.fromEntries(
-      Object.entries(scopeProp.properties)
-        .filter(([k]) => k !== 'category' && k !== 'display_name')
-        .map(([k, v]: [string, any]) => [k, v?.const ?? v?.description ?? null]),
-    );
-  }
-  return entry;
-}
 
 /**
  * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
@@ -114,7 +43,7 @@ export class AgentFactory {
   /** 按 MCP server URL 缓存连接，避免每个 Agent/子任务新建连接造成传输资源泄漏 */
   private clientCache = new Map<string, MCPClient>();
   /** 按 run 作用域缓存的工具发现结果（closeAll 时清空）。一次 run 内工具列表不变，避免父/子 Agent 每次创建都重复 listTools */
-  private toolsCache: { tool: AgentTool; builtin: boolean }[] | null = null;
+  private toolsCache: AgentTool[] | null = null;
 
   constructor(
     private mcpConfigStore: MCPConfigStore,
@@ -170,9 +99,7 @@ export class AgentFactory {
     // MCP 配置全局唯一，不区分场景/本体。父 Agent 只挂本体查询 list*（规划时了解行为/参数/概念/规则/函数元数据）；
     // 函数与外部工具一律不挂——由 listAllMcpFunctions 实时发现，父 Agent 选定后经 related_functions 下放子 Agent。
     const allMcp = await this.discoverTools();
-    const parentMcpTools = allMcp
-      .filter(({ tool }) => PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name))
-      .map(({ tool }) => tool);
+    const parentMcpTools = allMcp.filter(t => PARENT_ONTOLOGY_QUERY_TOOLS.includes(t.name));
     const tools: AgentTool[] = [loadSkillTool, submitPlanTool, listAllMcpFunctionsTool, ...parentMcpTools];
 
     const historyMessages: AgentMessage[] = history.map(msg => {
@@ -212,7 +139,7 @@ export class AgentFactory {
     // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
     const legal = policy.legalCalls;
     const mcpTools = allMcp
-      .filter(({ tool }) => {
+      .filter(tool => {
         if (PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name)) return false; // 剔除 list*
         const scopeProps = (tool.parameters as any)?.properties?.[SCOPE_KEY]?.properties;
         const category = scopeProps?.category?.const;
@@ -221,7 +148,7 @@ export class AgentFactory {
         // 本体函数 / 公共函数 / 其他 MCP 工具：一律按 legalCalls.functions（规则声明 ∪ 父 Agent related_functions）挂载
         return legal.functions.includes(tool.name);
       })
-      .map(({ tool }) => this.scopeToOntology(tool, ontologyId, policy));
+      .map(tool => this.scopeToOntology(tool, ontologyId, policy));
     const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接调用已挂载的行为/函数工具（工具名即行为名/函数名），参数结构以各工具 schema 为准。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'off' },
@@ -238,17 +165,17 @@ export class AgentFactory {
    */
   async callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }> {
     const all = await this.discoverTools();
-    const found = all.find(({ tool }) => tool.name === functionName);
+    const found = all.find(tool => tool.name === functionName);
     if (!found) {
       return { text: `函数 ${functionName} 不在可挂载工具清单中`, isError: true };
     }
-    const props = (found.tool.parameters as any)?.properties;
+    const props = (found.parameters as any)?.properties;
     // 本体函数判定用发布方标记（scope.category const），不靠 ontology_id 属性猜测：
     // 外部工具碰巧带 ontology_id 参数时按原样透传，不被误注入本体 id
     const isOntoFn = props?.[SCOPE_KEY]?.properties?.category?.const === '本体函数';
     const p = isOntoFn ? { ...params, ontology_id: ontologyId } : { ...params };
     try {
-      const res = await found.tool.execute('direct-function-call', p);
+      const res = await found.execute('direct-function-call', p);
       return { text: toolResultToText(res.content), isError: false };
     } catch (e: any) {
       return { text: e?.message || String(e), isError: true };
@@ -302,7 +229,7 @@ export class AgentFactory {
       // 不抛错、不计报错预算：策略拒绝无自纠空间（重试必败），terminate 当场停内层循环（与预算超限同机制），
       // SubtaskRunner 见 violation 返回 securityViolation 失败 → orchestrator 以 securityBlocked 中断整个 run。
       if (isBehavior) {
-        const bare = scopeProps?.name?.const ?? tool.name.replace(/^onto\d+__/, '');
+        const bare = scopeProps?.name?.const ?? bareBehaviorName(tool.name);
         if (security.disabled.has(bare)) {
           security.gate.violation ??= buildDisableMessage(bare, security.disabled.get(bare));
           return securityTerminateResult(security.gate.violation);
@@ -418,8 +345,8 @@ export class AgentFactory {
     // 只剔除本体浏览 list*（元数据查询工具）；其余（本体行为 / 本体函数 / 公共函数 / 其他 MCP 工具）均是可挂载项。
     // 函数三类是 related_functions / 函数子任务 function 的取值域；本体行为是子 Agent 行为挂载与规划期参数校验的数据源。
     return all
-      .filter(({ tool }) => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(tool.name))
-      .map(({ tool }) => toMountableToolInfo(tool));
+      .filter(t => !PARENT_ONTOLOGY_QUERY_TOOLS.includes(t.name))
+      .map(t => toMountableToolInfo(t));
   }
 
   /**
@@ -472,19 +399,17 @@ export class AgentFactory {
 
   /**
    * 从 MCP 配置中连接启用的服务，自动发现并注册工具。
-   * 返回带归属标记（是否内置本体MCP）的工具，供父/子 Agent 分流。
    */
-  private async discoverTools(): Promise<{ tool: AgentTool; builtin: boolean }[]> {
+  private async discoverTools(): Promise<AgentTool[]> {
     // 一次 run 内工具列表不变：缓存发现结果，避免父/子 Agent 每次创建都重复 listTools。
     // 缓存生命周期与连接缓存一致，由 closeAll() 在 run 结束时清空。
     if (this.toolsCache) return this.toolsCache;
     // MCP 配置全局唯一（./config/mcp-config.json），不区分场景/本体
     const mcpConfig = this.mcpConfigStore.getConfig();
-    const tools: { tool: AgentTool; builtin: boolean }[] = [];
+    const tools: AgentTool[] = [];
 
     for (const server of mcpConfig.servers) {
       if (!server.enabled) continue;
-      const builtin = server.builtin === true;
 
       let client: MCPClient | null = null;
       try {
@@ -504,29 +429,26 @@ export class AgentFactory {
           // 无 schema 时退回宽松校验（validateToolArguments 原生支持 JSON Schema）
           const inputSchema = (t as any).inputSchema;
           tools.push({
-            tool: {
-              name: toolName,
-              label: toolName,
-              description: (t.description as string) || `[${server.name}] ${toolName}`,
-              parameters: inputSchema && typeof inputSchema === 'object' && Object.keys(inputSchema).length > 0
-                ? inputSchema
-                : Type.Object({}, { additionalProperties: true }),
-              execute: async (toolCallId, params) => {
-                if (!client) throw new Error('MCP 未连接');
-                const p = params as any;
-                // LLM 可能传字符串类型，强制转数字；非法值抛错置工具失败，子 Agent 可自纠
-                if (p.ontology_id !== undefined) p.ontology_id = toFiniteNum(p.ontology_id, 'ontology_id');
-                if (p.scenario_id !== undefined) p.scenario_id = toFiniteNum(p.scenario_id, 'scenario_id');
-                const result = await client.callTool(toolName, p);
-                const text = toolResultToText(result.content);
-                if (result.isError) {
-                  // 抛异常让 pi-agent 识别为工具错误（返回 isError 字段会被吞掉，重试不触发）
-                  throw new Error(text);
-                }
-                return { content: [{ type: 'text', text }], details: {} };
-              },
+            name: toolName,
+            label: toolName,
+            description: (t.description as string) || `[${server.name}] ${toolName}`,
+            parameters: inputSchema && typeof inputSchema === 'object' && Object.keys(inputSchema).length > 0
+              ? inputSchema
+              : Type.Object({}, { additionalProperties: true }),
+            execute: async (toolCallId, params) => {
+              if (!client) throw new Error('MCP 未连接');
+              const p = params as any;
+              // LLM 可能传字符串类型，强制转数字；非法值抛错置工具失败，子 Agent 可自纠
+              if (p.ontology_id !== undefined) p.ontology_id = toFiniteNum(p.ontology_id, 'ontology_id');
+              if (p.scenario_id !== undefined) p.scenario_id = toFiniteNum(p.scenario_id, 'scenario_id');
+              const result = await client.callTool(toolName, p);
+              const text = toolResultToText(result.content);
+              if (result.isError) {
+                // 抛异常让 pi-agent 识别为工具错误（返回 isError 字段会被吞掉，重试不触发）
+                throw new Error(text);
+              }
+              return { content: [{ type: 'text', text }], details: {} };
             },
-            builtin,
           });
         }
 

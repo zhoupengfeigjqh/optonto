@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Agent } from '@earendil-works/pi-agent-core';
-import { toMountableToolInfo } from './agent-factory.js';
+import { toMountableToolInfo } from './tool-catalog.js';
 
 // 整体替换 pi-agent-core：捕获 new Agent(config) 的 config（含 transformContext）
 vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
@@ -112,7 +112,7 @@ import { createSecurityGate } from './security-policy.js';
 import type { ChildSecurityCtx } from './security-policy.js';
 import { createToolErrorBudget } from './error-budget.js';
 import type { SubtaskPolicy } from './execution-policy.js';
-import type { LegalCalls } from './legal-calls.js';
+import type { LegalCalls } from './execution-policy.js';
 import type { ThreadMessage } from '../types.js';
 
 const mockedAgent = vi.mocked(Agent);

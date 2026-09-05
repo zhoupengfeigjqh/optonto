@@ -26,6 +26,23 @@ export function createEventChannel(sendEvent: (e: SSEEvent) => void): EventChann
 }
 
 /**
+ * ToolCallBridge —— SDK 工具事件 start/end 的 toolCallId 桥接（父/子 Agent 订阅两侧同一模式，单点化）。
+ * start 事件带 args、end 不带：靠桥接配对保证 start/end 同名同参数，
+ * 前端 running→done 去重匹配不破、参数不被覆盖成空。
+ */
+export class ToolCallBridge {
+  private held = new Map<string, any>();
+  /** start 时暂存参数 */
+  hold(toolCallId: string, params: any): void { this.held.set(toolCallId, params); }
+  /** end 时取出并删除（一次性配对；未配对 → undefined） */
+  take(toolCallId: string): any {
+    const params = this.held.get(toolCallId);
+    this.held.delete(toolCallId);
+    return params;
+  }
+}
+
+/**
  * 子任务展示信息三元组（单源）：
  *  - displayName：中文（英文），执行记录侧面板用，如 创建采购记录（CreatePurchaseRecord）
  *  - displayLabel：纯中文（行为/函数 display_name，空则回退子任务描述），聊天区用

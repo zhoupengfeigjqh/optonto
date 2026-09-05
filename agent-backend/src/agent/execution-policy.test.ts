@@ -5,7 +5,7 @@
  * （2026-09 facade 化：requiredParamsMap 已退役——参数合法性由工具 inputSchema 在 harness 层校验。）
  */
 import { describe, it, expect } from 'vitest';
-import { buildSubtaskPolicy } from './execution-policy.js';
+import { buildSubtaskPolicy, needsSecurityConfirm } from './execution-policy.js';
 import type { SubtaskInfoPort } from './execution-policy.js';
 import { createSecurityGate } from './security-policy.js';
 import type { SubTask, BehaviorMeta } from '../types.js';
@@ -75,5 +75,38 @@ describe('buildSubtaskPolicy — 子任务执行策略单一派生点', () => {
     expect(p1.security.gate).toBe(gate);             // 闸共享：一处命中全场停摆
     expect(p2.security.gate).toBe(gate);
     expect(p1.errorBudget.count).toBe(0);
+  });
+
+  it('无规则：合法清单只含主行为，functions 为空', () => {
+    const bare: BehaviorMeta = { params: {}, preRules: [], postRules: [], concepts: [], isWrite: true };
+    const policy = buildSubtaskPolicy(subTask, bare, mkInfo(), createSecurityGate());
+    expect(policy.legalCalls).toEqual({ behaviors: ['CreatePurchaseRecord'], functions: [] });
+  });
+
+  it('主行为在 data_supplements 里重复出现 → 去重；规则函数与父 Agent 函数重复 → 去重', () => {
+    const dup: BehaviorMeta = {
+      params: {},
+      preRules: [{ name: 'V01', description: '', position: '前置', related_behaviors: [], data_supplements: ['CreatePurchaseRecord'], related_functions: ['getCurrentDate'] }],
+      postRules: [{ name: 'I02', description: '', position: '后置', related_behaviors: [], data_supplements: ['QueryRawMaterials'], related_functions: ['calcSafetyStock', 'getCurrentDate'] }],
+      concepts: [],
+      isWrite: true,
+    };
+    const policy = buildSubtaskPolicy({ ...subTask, related_functions: ['sumRawNotArrivalQty', 'getCurrentDate'] }, dup, mkInfo(), createSecurityGate());
+    expect(policy.legalCalls.behaviors).toEqual(['CreatePurchaseRecord', 'QueryRawMaterials']);
+    expect(policy.legalCalls.functions).toEqual(['getCurrentDate', 'calcSafetyStock', 'sumRawNotArrivalQty']);
+  });
+});
+
+describe('needsSecurityConfirm — 人工确认判定单一事实源', () => {
+  const base: BehaviorMeta = { params: {}, preRules: [], postRules: [], concepts: [], isWrite: false };
+
+  it('无 securities 登记：写操作强制确认，读操作不确认', () => {
+    expect(needsSecurityConfirm({ ...base, isWrite: true })).toBe(true);
+    expect(needsSecurityConfirm({ ...base, isWrite: false })).toBe(false);
+  });
+
+  it('有 securities 登记：按登记的 confirm（false 显式关闭，覆盖写操作强制确认）', () => {
+    expect(needsSecurityConfirm({ ...base, isWrite: true, security: { confirm: false } } as BehaviorMeta)).toBe(false);
+    expect(needsSecurityConfirm({ ...base, isWrite: false, security: { confirm: true } } as BehaviorMeta)).toBe(true);
   });
 });

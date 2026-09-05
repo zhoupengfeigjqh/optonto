@@ -68,7 +68,7 @@ function rangeOpts(schema: any): { minimum?: number; maximum?: number } {
  * 嵌套层不传（填了半截的数组项/对象，缺必填字段仍是错）。
  * 未识别/无 type → Unknown（无比对依据，放行）。
  */
-export function jsonSchemaToTypeBox(schema: any, depth = 0, dropRequired = false): TSchema {
+function jsonSchemaToTypeBox(schema: any, depth = 0, dropRequired = false): TSchema {
   if (!schema || typeof schema !== 'object' || depth > MAX_DECL_DEPTH) return Type.Unknown();
   if (schema.const !== undefined) return Type.Literal(schema.const);
   if (Array.isArray(schema.enum) && schema.enum.length > 0) {
@@ -102,7 +102,7 @@ export function jsonSchemaToTypeBox(schema: any, depth = 0, dropRequired = false
 }
 
 /** TypeBox 错误路径 "/0/arrivalQuantity" → "[0].arrivalQuantity"（拼在参数名后展示） */
-export function formatValuePath(path: string): string {
+function formatValuePath(path: string): string {
   return path.split('/').filter(Boolean)
     .map(seg => (/^\d+$/.test(seg) ? `[${seg}]` : `.${seg}`)).join('');
 }

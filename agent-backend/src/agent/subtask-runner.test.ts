@@ -11,7 +11,7 @@ import { SubtaskRunner, type SubtaskRunnerDeps } from './subtask-runner.js';
 import { wrapExecuteWithErrorBudget, type ToolErrorBudget } from './error-budget.js';
 import { createSecurityGate, buildDisableMessage } from './security-policy.js';
 import type { SubtaskPolicy } from './execution-policy.js';
-import type { AgentPort } from './agent-port.js';
+import type { AgentPort } from './agent-ports.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import { createEventChannel } from './event-channel.js';
 import type { SubTask, BehaviorMeta } from '../types.js';

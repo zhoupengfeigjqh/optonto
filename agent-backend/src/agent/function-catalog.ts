@@ -20,7 +20,8 @@
  * 快照建好后所有查询同步进行——校验器得以保持纯同步函数（repairPlan 的 isClean/detailOf 闭包直接调）。
  * 一次 run 建一次快照（orchestrator 存 session.catalogView）：规划校验与执行展示同源同时刻。
  */
-import type { MountableToolInfo, OntologyGatewayPort } from './agent-ports.js';
+import type { MountableToolInfo } from './tool-catalog.js';
+import type { OntologyGatewayPort } from './agent-ports.js';
 
 /** 函数信息（单出口返回单元）。params 恒为对象：{} = 无声明可比对（校验自然零错误，等价跳过） */
 export interface FunctionInfo {

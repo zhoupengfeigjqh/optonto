@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { RunSession } from './run-session.js';
-import type { AgentPort } from './agent-port.js';
+import type { AgentPort } from './agent-ports.js';
 
 function fakeAgent(): AgentPort & { abort: ReturnType<typeof vi.fn> } {
   return {
@@ -46,16 +46,31 @@ describe('RunSession — abort 状态迁移', () => {
     expect(good.abort).toHaveBeenCalledTimes(1);
     expect(s.isAborted()).toBe(true);
   });
+
+  it('abort 连带 confirmManager.abortAll（确认弹窗 per-run 持有，随 run 生灭）', () => {
+    const abortAll = vi.fn();
+    const s = new RunSession({ abortAll } as never);
+    s.abort();
+    expect(abortAll).toHaveBeenCalledTimes(1);
+  });
 });
 
-describe('RunSession — token 流式开关', () => {
-  it('默认开启；disable/enable 显式切换', () => {
+describe('RunSession — 父Agent 文本增量路由（routeParentText）', () => {
+  it('默认 narrative（规划阶段折叠块）；disableTokens 后 drop；enable 恢复', () => {
     const s = new RunSession();
-    expect(s.tokensEnabled()).toBe(true);
+    expect(s.routeParentText()).toBe('narrative');
     s.disableTokens();
-    expect(s.tokensEnabled()).toBe(false);
+    expect(s.routeParentText()).toBe('drop');
     s.enableTokens();
-    expect(s.tokensEnabled()).toBe(true);
+    expect(s.routeParentText()).toBe('narrative');
+  });
+
+  it('submit_plan 已提交 → drop（断流防编造叙事）；closePlanningNarrative 后 token（总结正文）', () => {
+    const s = new RunSession();
+    s.submittedPlan.submit({ subtasks: [] });
+    expect(s.routeParentText()).toBe('drop');
+    s.closePlanningNarrative();
+    expect(s.routeParentText()).toBe('token'); // 总结阶段：holder 非空也走正文（提交后才有总结）
   });
 });
 
@@ -132,21 +147,15 @@ describe('RunSession — 规划提交口（PlanSubmission 复位-重提协议）
   });
 });
 
-describe('RunSession — 规划叙事通道', () => {
-  it('默认开启；closePlanningNarrative 后关闭（总结阶段走 token 正文）', () => {
-    const s = new RunSession();
-    expect(s.isPlanningNarrative()).toBe(true);
-    s.closePlanningNarrative();
-    expect(s.isPlanningNarrative()).toBe(false);
-  });
-});
-
 describe('RunSession — 父 Agent 上下文手术', () => {
-  it('injectFinalPlan 向父 Agent 注入最终规划消息（user 角色 + 模板文案）', () => {
+  it('confirmPlan 记录确认规划；编辑过时向父 Agent 注入最终规划消息（user 角色 + 模板文案）', () => {
     const s = new RunSession();
     const p = fakeAgent();
     s.parentAgent = p;
-    s.injectFinalPlan('1. QueryA（场景/本体）');
+    const plan = { subtasks: [{ seq: 1, behavior: 'QueryA', function: '', params: {}, description: '', scenario_name: '场景', ontology_name: '本体', ontology_id: 1 }] };
+    s.confirmPlan(plan as never, true);
+    expect(s.confirmedPlan()).toBe(plan);
+    expect(s.wasPlanModified()).toBe(true);
     expect(p.state.messages).toHaveLength(1);
     const msg = p.state.messages[0] as { role: string; content: string };
     expect(msg.role).toBe('user');
@@ -154,9 +163,22 @@ describe('RunSession — 父 Agent 上下文手术', () => {
     expect(msg.content).toContain('1. QueryA（场景/本体）');
   });
 
-  it('父 Agent 缺失时 injectFinalPlan/markFeedbackStart/dropFeedbackRound 均安全空转', () => {
+  it('confirmPlan 未编辑时不注入；confirmedPlan/wasPlanModified 默认 null/false', () => {
     const s = new RunSession();
-    expect(() => s.injectFinalPlan('x')).not.toThrow();
+    const p = fakeAgent();
+    s.parentAgent = p;
+    expect(s.confirmedPlan()).toBeNull();
+    expect(s.wasPlanModified()).toBe(false);
+    const plan = { subtasks: [{ seq: 1 }] };
+    s.confirmPlan(plan as never, false);
+    expect(s.confirmedPlan()).toBe(plan);
+    expect(s.wasPlanModified()).toBe(false);
+    expect(p.state.messages).toHaveLength(0); // 未编辑不注入
+  });
+
+  it('父 Agent 缺失时 confirmPlan（编辑注入）/markFeedbackStart/dropFeedbackRound 均安全空转', () => {
+    const s = new RunSession();
+    expect(() => s.confirmPlan({ subtasks: [{ seq: 1, behavior: 'B', scenario_name: 'S', ontology_name: 'O' }] } as never, true)).not.toThrow();
     expect(s.markFeedbackStart()).toBe(0);
     expect(() => s.dropFeedbackRound(0)).not.toThrow();
   });

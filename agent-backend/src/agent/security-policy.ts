@@ -1,13 +1,5 @@
-import type { BehaviorMeta } from '../types.js';
-
-/**
- * 人工确认判定（单一事实源）：subtask-runner 确认弹窗 / 子任务指令安全注记 / orchestrator 串行调度 三处共用。
- * 有 securities 登记 → 按登记的 confirm（confirm:false 显式关闭，覆盖写操作强制确认）；
- * 无登记 → 写操作（isWrite）默认强制确认，读操作不确认。
- */
-export function needsSecurityConfirm(meta: BehaviorMeta): boolean {
-  return meta.security ? meta.security.confirm : meta.isWrite;
-}
+// needsSecurityConfirm（人工确认判定）已迁 execution-policy.ts：它是调度/指令侧的执行面判定，
+// 本文件只留运行面硬闸（disable 命中即全场停摆的 SecurityGate 机制）。
 
 /**
  * Run 级安全闸 —— 权限范围 disable 的运行面硬闸共享状态（2026-08-27 定稿：工具层单点）。

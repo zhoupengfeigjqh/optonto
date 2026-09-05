@@ -8,16 +8,15 @@
 import { contentToText, toolResultToText } from '../utils/text-utils.js';
 import { parseResultStatus, stripResultStatus } from './result-protocol.js';
 import { isParamValueEmpty, unwrapParamValue, unwrapParamValues } from './param-contract.js';
-import type { AgentPort } from './agent-port.js';
-import type { LegalCalls } from './legal-calls.js';
-import { needsSecurityConfirm } from './security-policy.js';
+import type { AgentPort } from './agent-ports.js';
 import type { SecurityGate } from './security-policy.js';
-import { buildSubtaskPolicy } from './execution-policy.js';
-import type { SubtaskInfoPort, SubtaskPolicy } from './execution-policy.js';
+import { bareBehaviorName } from './tool-catalog.js';
+import { buildSubtaskPolicy, needsSecurityConfirm } from './execution-policy.js';
+import type { LegalCalls, SubtaskInfoPort, SubtaskPolicy } from './execution-policy.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult } from '../types.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import type { EventChannel } from './event-channel.js';
-import { entryDisplay } from './event-channel.js';
+import { entryDisplay, ToolCallBridge } from './event-channel.js';
 
 /** LLM 调用异常（prompt() 抛错：API/网络瞬态错误）时的最大重试次数。工具报错不在此列——由内层自纠（≤2 次 rethrow）与预算（第 3 次 terminate）处理。 */
 const MAX_LLM_EXCEPTION_RETRIES = 2;
@@ -145,15 +144,13 @@ export class SubtaskRunner {
       // 订阅事件都会携带当前 run 的 abort signal；被中断时最后一条事件（agent_end）必能看到 signal.aborted。
       // 用它覆盖"工具调用进行中"场景——该场景最后一条消息的 stopReason 不是 'aborted'，isChildAborted 会漏判。
       let userAborted = false;
-      // toolCallId → 展示参数。
-      // start 事件带 args，end 事件不带 args，靠 toolCallId 桥接，
-      // 保证 start/end 同名、同参数，前端 running→done 去重匹配不破、参数不被覆盖成空。
-      const toolCallParams = new Map<string, any>();
+      // start/end 参数配对走 ToolCallBridge（与父 Agent 侧同一模式）
+      const toolCallParams = new ToolCallBridge();
       childAgent.subscribe((event: any, signal: AbortSignal) => {
         if (signal?.aborted) userAborted = true;
         if (event.type === 'tool_execution_start') {
           // 行为/函数都是一等工具：参数即 event.args（不再有 behavior_name 包装层）
-          toolCallParams.set(event.toolCallId, event.args);
+          toolCallParams.hold(event.toolCallId, event.args);
           // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名（无中文映射 → undefined，前端用工具原名兜底）
           const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
@@ -162,7 +159,7 @@ export class SubtaskRunner {
           const text = toolResultToText(event.result?.content);
           const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.get(event.toolCallId), result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.take(event.toolCallId), result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         }
       });
 
@@ -248,7 +245,7 @@ export class SubtaskRunner {
    */
   private resolveCalledDisplay(subTask: SubTask, toolName: string, legal: LegalCalls): { name: string; display: string } {
     // 前缀剥离：跨本体重名行为工具带 onto{ontology_id}__ 前缀，裸名才是 legal.behaviors / gateway 的匹配键
-    const bare = toolName.replace(/^onto\d+__/, '');
+    const bare = bareBehaviorName(toolName);
     if (legal.behaviors.includes(bare)) {
       return {
         name: bare,
@@ -306,9 +303,6 @@ export class SubtaskRunner {
       });
     }
 
-    // if (needsSecurityConfirm(meta)) {
-    //   text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n审核内容: ${meta.security?.confirm_content || '写操作确认'}\n`;
-    // }
     if (needsSecurityConfirm(meta)) {
       text += `\n### 安全管控\n本行为的安全管控已由系统在用户侧完成确认，请直接执行，无需再向用户询问。\n`;
     }

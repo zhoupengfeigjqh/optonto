@@ -1,6 +1,6 @@
 /**
  * PlanGate 单元测试 —— 规划闸门脱离 execute() 全路径直测。
- * 以 validateTaskSeqs（校验链首，校验器为纯函数 validateSeqConflicts）验证修复循环骨架：
+ * 测试面 = 两个深入口 validateInitial / validateAdjustment（链序编排在门内，测试经链首/链尾驱动各环）：
  * 干净放行 / nudge 一次修正 / 复验不过判废 / 未重提判废。
  * 参数校验（2026-09 facade 化后）对 core 编译 schema 统一跑「必填+类型+enum/pattern/min/max」，
  * 违例一律 nudge 一次（取值范围硬中断已退役），数据源 = ctx.catalog 快照（functionInfo.schema / behaviorSchema）。
@@ -9,7 +9,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { PlanGate } from './plan-gate.js';
 import type { PlanRepairCtx } from './plan-gate.js';
 import type { OntologyGatewayPort } from './agent-ports.js';
-import type { AgentPort } from './agent-port.js';
+import type { AgentPort } from './agent-ports.js';
 import { createEventChannel } from './event-channel.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { PlanSubmission } from './run-session.js';
@@ -24,6 +24,9 @@ function mkSub(seq: number): SubTask {
 
 const gateway = {
   getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
+  getBehaviorNames: () => ['QuerySupplier'],
+  getFunctionNames: () => [],
+  getFunctionInfo: () => null,
 } as unknown as OntologyGatewayPort;
 
 /** PlanSubmission fake：与 RunSession 同款三动作（submit/reset/peek），测试经 submit 模拟工具回调写入 */
@@ -48,6 +51,7 @@ function mkCtx(catalog?: Partial<FunctionCatalogView>): { ctx: PlanRepairCtx; ev
       emit: createEventChannel(e => events.push(e)),
       catalog: {
         functionInfo: () => null,
+        functionNames: () => [],
         behaviorSchema: () => null,
         ...catalog,
       } as unknown as FunctionCatalogView,
@@ -55,14 +59,14 @@ function mkCtx(catalog?: Partial<FunctionCatalogView>): { ctx: PlanRepairCtx; ev
   };
 }
 
-describe('PlanGate · 修复循环骨架（validateTaskSeqs）', () => {
+describe('PlanGate · 修复循环骨架（validateInitial · 链首 seq 校验驱动）', () => {
   it('规划干净 → 原样放行，不 nudge 父Agent', async () => {
     const promptParent = vi.fn();
     const gate = new PlanGate({ gateway, promptParent });
     const { ctx } = mkCtx();
     const plan: SubTaskPlan = { subtasks: [mkSub(1), mkSub(2)] };
 
-    const out = await gate.validateTaskSeqs(plan, ctx);
+    const out = await gate.validateInitial(plan, ctx);
     expect(out).toBe(plan);
     expect(promptParent).not.toHaveBeenCalled();
   });
@@ -73,7 +77,7 @@ describe('PlanGate · 修复循环骨架（validateTaskSeqs）', () => {
     const promptParent = vi.fn().mockImplementation(async () => { ctx.submittedPlan.submit(fixed); });
     const gate = new PlanGate({ gateway, promptParent });
 
-    const out = await gate.validateTaskSeqs({ subtasks: [mkSub(1), mkSub(1)] }, ctx);
+    const out = await gate.validateInitial({ subtasks: [mkSub(1), mkSub(1)] }, ctx);
     expect(out).toBe(fixed);
     expect(promptParent).toHaveBeenCalledTimes(1);
     const names = events.filter((e: any) => e.type === 'exec_entry').map((e: any) => `${e.entry.name}:${e.entry.status}`);
@@ -88,7 +92,7 @@ describe('PlanGate · 修复循环骨架（validateTaskSeqs）', () => {
     });
     const gate = new PlanGate({ gateway, promptParent });
 
-    const out = await gate.validateTaskSeqs({ subtasks: [mkSub(1), mkSub(1)] }, ctx);
+    const out = await gate.validateInitial({ subtasks: [mkSub(1), mkSub(1)] }, ctx);
     expect(out).toBeNull();
     expect(promptParent).toHaveBeenCalledTimes(1); // 不再二次 nudge
   });
@@ -98,12 +102,12 @@ describe('PlanGate · 修复循环骨架（validateTaskSeqs）', () => {
     const promptParent = vi.fn().mockResolvedValue(undefined); // 不写 holder
     const gate = new PlanGate({ gateway, promptParent });
 
-    const out = await gate.validateTaskSeqs({ subtasks: [mkSub(1), mkSub(1)] }, ctx);
+    const out = await gate.validateInitial({ subtasks: [mkSub(1), mkSub(1)] }, ctx);
     expect(out).toBeNull();
   });
 });
 
-describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 nudge）', () => {
+describe('PlanGate · 参数校验（validateInitial · 编译 schema 统一 nudge）', () => {
   /** 含必填 + 范围约束的编译 schema（core params_schema 编译产物形态） */
   const SCHEMA = {
     type: 'object',
@@ -123,7 +127,7 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     const gate = new PlanGate({ gateway, promptParent });
     const { ctx } = mkCtx(catalogOf(SCHEMA));
     const plan: SubTaskPlan = { subtasks: [{ ...mkSub(1), params: { rawMaterialId: { value: 'RM-1' }, qty: { value: 50 } } }] };
-    const out = await gate.validateTaskParams(plan, ctx);
+    const out = await gate.validateInitial(plan, ctx);
     expect(out).toBe(plan);
     expect(promptParent).not.toHaveBeenCalled();
   });
@@ -134,7 +138,7 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     const promptParent = vi.fn().mockImplementation(async () => { ctx.submittedPlan.submit(fixed); });
     const gate = new PlanGate({ gateway, promptParent });
 
-    const out = await gate.validateTaskParams({ subtasks: [mkSub(1)] }, ctx);
+    const out = await gate.validateInitial({ subtasks: [mkSub(1)] }, ctx);
     expect(out).toBe(fixed);
     expect(promptParent).toHaveBeenCalledTimes(1);
     const nudgeText = (promptParent.mock.calls[0][1] as string);
@@ -153,7 +157,7 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     const gate = new PlanGate({ gateway, promptParent });
     const plan: SubTaskPlan = { subtasks: [{ ...mkSub(1), params: { rawMaterialId: { value: 'RM-1' }, qty: { value: 999 } } }] };
 
-    const out = await gate.validateTaskParams(plan, ctx);
+    const out = await gate.validateInitial(plan, ctx);
     expect(out).toBe(fixed);
     expect(promptParent).toHaveBeenCalledTimes(1); // 不再硬中断：给 LLM 一次自修机会
     expect(promptParent.mock.calls[0][1]).toContain('高于最大值 100');
@@ -166,7 +170,7 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     });
     const gate = new PlanGate({ gateway, promptParent });
     const plan: SubTaskPlan = { subtasks: [{ ...mkSub(1), params: { rawMaterialId: { value: 'RM-1' }, qty: { value: 999 } } }] };
-    expect(await gate.validateTaskParams(plan, ctx)).toBeNull();
+    expect(await gate.validateInitial(plan, ctx)).toBeNull();
   });
 
   it('无 schema（目录快照缺该行为工具）→ 跳过放行（执行期 harness schema 兜底）', async () => {
@@ -174,7 +178,7 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     const gate = new PlanGate({ gateway, promptParent });
     const { ctx } = mkCtx(catalogOf(null));
     const plan: SubTaskPlan = { subtasks: [mkSub(1)] };
-    expect(await gate.validateTaskParams(plan, ctx)).toBe(plan);
+    expect(await gate.validateInitial(plan, ctx)).toBe(plan);
     expect(promptParent).not.toHaveBeenCalled();
   });
 
@@ -182,6 +186,7 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     const FN_SCHEMA = { type: 'object', properties: { recordSet: { type: 'array' } }, required: ['recordSet'] };
     const catalog: Partial<FunctionCatalogView> = {
       behaviorSchema: () => null,
+      functionNames: () => ['sumQty'],
       functionInfo: (_s: string, _o: string, fn: string) =>
         fn === 'sumQty' ? { display_name: '', description: '', params: {}, schema: FN_SCHEMA } : null,
     };
@@ -193,8 +198,46 @@ describe('PlanGate · 参数校验（validateTaskParams · 编译 schema 统一 
     const gate = new PlanGate({ gateway, promptParent });
     const dirty: SubTaskPlan = { subtasks: [{ ...mkSub(1), behavior: '', function: 'sumQty' }] };
 
-    const out = await gate.validateTaskParams(dirty, ctx);
+    const out = await gate.validateInitial(dirty, ctx);
     expect(out).toBe(fixed);
     expect(promptParent.mock.calls[0][1]).toContain('缺少必填参数 recordSet');
+  });
+});
+
+describe('PlanGate · 调整链（validateAdjustment · 依赖收尾 + 已执行上下文）', () => {
+  it('dep 指向已执行 seq → 合法放行（调整规划常只含剩余子任务）', async () => {
+    const promptParent = vi.fn();
+    const gate = new PlanGate({ gateway, promptParent });
+    const { ctx } = mkCtx();
+    const plan: SubTaskPlan = { subtasks: [{ ...mkSub(2), depends_on: [1] }] };
+
+    const out = await gate.validateAdjustment(plan, ctx, { seqs: new Set([1]), tasks: new Map([[1, 'QuerySupplier']]) });
+    expect(out).toBe(plan);
+    expect(promptParent).not.toHaveBeenCalled();
+  });
+
+  it('dep 悬空（既不在规划内也未执行）→ nudge 一次，修正后放行', async () => {
+    const fixed: SubTaskPlan = { subtasks: [mkSub(3)] };
+    const { ctx, events } = mkCtx();
+    const promptParent = vi.fn().mockImplementation(async () => { ctx.submittedPlan.submit(fixed); });
+    const gate = new PlanGate({ gateway, promptParent });
+
+    const out = await gate.validateAdjustment({ subtasks: [{ ...mkSub(3), depends_on: [9] }] }, ctx, { seqs: new Set(), tasks: new Map() });
+    expect(out).toBe(fixed);
+    expect(promptParent).toHaveBeenCalledTimes(1);
+    const names = events.filter((e: any) => e.type === 'exec_entry').map((e: any) => `${e.entry.name}:${e.entry.status}`);
+    expect(names).toContain('依赖结构校验:failed');
+    expect(names).toContain('依赖结构已修正:done');
+  });
+
+  it('新任务冒名已执行 seq（同 seq 不同名）→ seq 校验拦下', async () => {
+    const { ctx } = mkCtx();
+    const promptParent = vi.fn().mockResolvedValue(undefined); // 不重提 → 判废
+    const gate = new PlanGate({ gateway, promptParent });
+
+    const out = await gate.validateAdjustment({ subtasks: [{ ...mkSub(1), description: '冒名任务' }] }, ctx,
+      { seqs: new Set([1]), tasks: new Map([[1, '原有任务']]) });
+    expect(out).toBeNull();
+    expect(promptParent).toHaveBeenCalledTimes(1);
   });
 });

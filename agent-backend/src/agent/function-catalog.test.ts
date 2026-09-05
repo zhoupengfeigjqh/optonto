@@ -7,7 +7,8 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { FunctionCatalog } from './function-catalog.js';
-import type { MountableToolInfo, OntologyGatewayPort } from './agent-ports.js';
+import type { OntologyGatewayPort } from './agent-ports.js';
+import type { MountableToolInfo } from './tool-catalog.js';
 
 afterEach(() => {
   vi.restoreAllMocks(); // console.warn spy 复位（vitest4：用 afterEach 清而非 beforeEach reset）

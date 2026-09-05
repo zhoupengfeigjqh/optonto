@@ -1,19 +1,26 @@
 /**
- * 规划闸门 —— 规划（初始/波次调整共用）进入执行前的完整校验链 + 修复循环。
+ * 规划闸门 —— 规划（初始/波次调整）进入执行前的完整校验链 + 修复循环（深 module）。
+ *
+ * 对外只有两个深入口，链序编排（谁先谁后、谁带已执行上下文、一环判废即全废）唯一在此：
+ *  - validateInitial：初始规划（确认弹窗前）——seq 冲突 → 行为名 → 函数名 → 参数。
+ *    依赖结构不在此链：用户可能在确认弹窗里编辑依赖，确认前验依赖没意义（确认后由
+ *    orchestrator 用纯函数 validatePlanStructure + validateSeqConflicts 兜底）。
+ *  - validateAdjustment：波次反馈的调整规划——同序中段 + 依赖结构收尾，携带已执行上下文
+ *    （seq 防冒名 / dep 指向已执行合法）。
  *
  * 五个校验器共享同一骨架 repairPlan（校验 → 有错则记录执行流水 + 复位 holder + nudge 父Agent
  * 最多 1 次 → 复验），各自只差校验器与提示文案。
  * 参数校验（2026-09 facade 化后）一道覆盖类型与约束：core 编译 inputSchema 已含
  * enum/pattern/min/max/必填约束，违例统一 nudge 一次（取值范围硬中断已随用户拍板退役）。
  *
- * 从 Orchestrator 拆出后本模块即测试面：修复循环的"修正一次/复验不过判废"可脱离 execute() 全路径直测。
+ * 从 Orchestrator 拆出后本模块即测试面：修复循环与链序可脱离 execute() 全路径直测。
  */
 import { validateBehaviorNames, validateFunctionNames, validateAllParams, validatePlanStructure, validateSeqConflicts } from './plan-validation.js';
 import type { InvalidTaskName } from './plan-validation.js';
 import { renderParamStructure, validateParamsAgainstSchema, type ParamSpec } from './param-contract.js';
 import { schemaToDeclaredParams } from '../services/common-functions.js';
 import type { OntologyGatewayPort } from './agent-ports.js';
-import type { AgentPort } from './agent-port.js';
+import type { AgentPort } from './agent-ports.js';
 import type { EventChannel } from './event-channel.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { PlanSubmission } from './run-session.js';
@@ -34,11 +41,38 @@ export interface PlanGateDeps {
   promptParent: (agent: AgentPort, text: string) => Promise<void>;
 }
 
+/** 调整链的已执行上下文：seqs = 已执行成功 seq（dep 指向合法）；tasks = seq→任务名（防新任务冒名已执行 seq） */
+export interface ExecutedContext {
+  seqs: ReadonlySet<number>;
+  tasks: ReadonlyMap<number, string>;
+}
+
 export class PlanGate {
   constructor(private deps: PlanGateDeps) {}
 
+  /** 初始规划校验链（确认弹窗前）：seq 冲突 → 行为名 → 函数名 → 参数。判废返回 null。 */
+  async validateInitial(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    const seqs = await this.validateTaskSeqs(plan, ctx);
+    return seqs ? this.validateCore(seqs, ctx) : null;
+  }
+
+  /** 波次反馈的调整规划校验链：与初始链同序（seq 校验带防冒名上下文），收尾加依赖结构校验。判废返回 null。 */
+  async validateAdjustment(plan: SubTaskPlan, ctx: PlanRepairCtx, executed: ExecutedContext): Promise<SubTaskPlan | null> {
+    const seqs = await this.validateTaskSeqs(plan, ctx, executed.tasks);
+    const core = seqs ? await this.validateCore(seqs, ctx) : null;
+    return core ? this.validatePlanDeps(core, ctx, executed.seqs) : null;
+  }
+
+  /** 校验链中段（初始/调整共用）：行为名 → 函数名 → 参数。 */
+  private async validateCore(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    const named = await this.validateTaskBehaviorNames(plan, ctx);
+    if (!named) return null;
+    const namedF = await this.validateTaskFunctionNames(named, ctx);
+    return namedF ? this.validateTaskParams(namedF, ctx) : null;
+  }
+
   /** seq 冲突校验（校验链首）：规划内 seq 唯一 + 反馈路径防"新任务冒名已执行 seq"。非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  async validateTaskSeqs(plan: SubTaskPlan, ctx: PlanRepairCtx, executedTasks?: ReadonlyMap<number, string>): Promise<SubTaskPlan | null> {
+  private async validateTaskSeqs(plan: SubTaskPlan, ctx: PlanRepairCtx, executedTasks?: ReadonlyMap<number, string>): Promise<SubTaskPlan | null> {
     return this.repairPlan(plan, ctx, {
       label: 'seq 冲突校验',
       doneLabel: 'seq 冲突已修正',
@@ -49,7 +83,7 @@ export class PlanGate {
   }
 
   /** 校验行为子任务的行为名合法性（gateway 花名册，按子任务所属本体过滤）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  async validateTaskBehaviorNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+  private async validateTaskBehaviorNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
     const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateBehaviorNames(this.deps.gateway, p);
     return this.repairPlan(plan, ctx, {
       label: '行为名校验',
@@ -72,7 +106,7 @@ export class PlanGate {
   }
 
   /** 校验函数子任务的函数名合法性（FunctionCatalog 三源合一：本体函数按本体过滤 ∪ 公共函数 ∪ 其他MCP工具）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
-  async validateTaskFunctionNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+  private async validateTaskFunctionNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
     const catalog = ctx.catalog; // run 级快照（session.catalogView），与执行展示同源同时刻
     const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateFunctionNames(catalog, p);
     return this.repairPlan(plan, ctx, {
@@ -98,9 +132,8 @@ export class PlanGate {
    * 参数校验（行为/函数统一）：对 core 编译 inputSchema 跑「必填 key 齐全 + 已填值合规（含 enum/pattern/min/max 约束）」；
    * 非法时提示父Agent 修正（最多1次）。返回修正后的规划，无法修正返回 null。
    */
-  async validateTaskParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
-    const catalog = ctx.catalog; // run 级快照（session.catalogView）
-    // 子任务 → 编译 schema（与 validateAllParams 同口径：函数→functionInfo.schema 三源，行为→behaviorSchema）
+  private async validateTaskParams(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
+    const catalog = ctx.catalog; // run 级快照（session.catalogView）    // 子任务 → 编译 schema（与 validateAllParams 同口径：函数→functionInfo.schema 三源，行为→behaviorSchema）
     const schemaOf = (st: SubTaskPlan['subtasks'][number]): Record<string, any> | null => st.function
       ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.schema ?? null)
       : catalog.behaviorSchema(st.scenario_name, st.ontology_name, st.behavior);
@@ -132,7 +165,7 @@ export class PlanGate {
    * executedSeqs：波次反馈中继路径传入已执行成功的 seq——dep 指向已执行子任务是合法的（"已完成"≠"不存在"），
    * 中继调整规划常只含剩余子任务，depends_on 仍引用前序已执行 seq。
    */
-  async validatePlanDeps(plan: SubTaskPlan, ctx: PlanRepairCtx, executedSeqs: ReadonlySet<number> = new Set()): Promise<SubTaskPlan | null> {
+  private async validatePlanDeps(plan: SubTaskPlan, ctx: PlanRepairCtx, executedSeqs: ReadonlySet<number> = new Set()): Promise<SubTaskPlan | null> {
     return this.repairPlan(plan, ctx, {
       label: '依赖结构校验',
       doneLabel: '依赖结构已修正',

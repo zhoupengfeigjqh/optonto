@@ -315,6 +315,9 @@ def build_restricted_globals() -> dict:
 
     注意：__import__ 有意保留——现有函数代码依赖它（如公共函数在 run() 内部
     `from datetime import ...`）。这是"可信插件执行"，不是安全沙箱。
+
+    白名单含常用异常类型与 set/frozenset：函数代码需要 try/except Exception 兜错误契约、
+    以及 isinstance(obj, (set, frozenset)) 类型判断（filterData/aggregateData/groupReduce 用到）。
     """
     import datetime as _datetime
     import json as _json
@@ -327,6 +330,9 @@ def build_restricted_globals() -> dict:
             "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
             "len": len, "list": list, "max": max, "min": min, "range": range,
             "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
+            "set": set, "frozenset": frozenset,
+            "Exception": Exception, "ValueError": ValueError, "TypeError": TypeError,
+            "KeyError": KeyError, "IndexError": IndexError,
             "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
             "True": True, "False": False, "None": None,
             "__import__": __import__, "print": print,

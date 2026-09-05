@@ -11,7 +11,8 @@ import { topologicalSort, validateBehaviorNames, validateFunctionNames, validate
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
 import type { SubTask, SubTaskPlan } from '../types.js';
-import type { MountableToolInfo, OntologyGatewayPort } from './agent-ports.js';
+import type { OntologyGatewayPort } from './agent-ports.js';
+import type { MountableToolInfo } from './tool-catalog.js';
 
 function st(seq: number, depends_on?: number[]): SubTask {
   return {

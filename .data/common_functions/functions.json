@@ -53,5 +53,52 @@
       },
       "required": ["date"]
     }
+  },
+  {
+    "name": "filterData",
+    "display_name": "筛选过滤",
+    "description": "按条件数组过滤 JSON 记录集，支持多条件 AND/OR 组合。操作符：eq, ne, gt, gte, lt, lte, in, not_in, contains, not_contains, starts_with, ends_with, is_null, is_not_null, regex。返回满足条件的记录数组及条数。",
+    "response": {"result": {"type": "array", "display_name": "过滤结果", "description": "满足条件的记录数组（另附 count 条数）"}},
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "data": {"type": "array", "items": {"type": "object"}, "display_name": "数据", "description": "JSON 记录数组（对象列表）"},
+        "conditions": {"type": "array", "items": {"type": "object"}, "display_name": "过滤条件", "description": "条件数组，每项为 {field, operator, value}；operator 见函数描述"},
+        "logic": {"type": "string", "enum": ["AND", "OR"], "display_name": "组合逻辑", "description": "多条件组合逻辑，默认 AND"}
+      },
+      "required": ["data", "conditions"]
+    }
+  },
+  {
+    "name": "aggregateData",
+    "display_name": "聚合统计",
+    "description": "对 JSON 数组做整体聚合统计。聚合函数：sum, avg/mean, count, count_distinct, min, max, std, var, median, mode。返回各指标键值对（键为 字段_聚合函数 或指定 alias）。",
+    "response": {"result": {"type": "object", "display_name": "聚合结果", "description": "各聚合指标的键值对"}},
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "data": {"type": "array", "items": {"type": "object"}, "display_name": "数据", "description": "JSON 记录数组（对象列表）"},
+        "aggregations": {"type": "array", "items": {"type": "object"}, "display_name": "聚合定义", "description": "聚合定义数组，每项为 {field, functions, alias?}；functions 取值见函数描述"}
+      },
+      "required": ["data", "aggregations"]
+    }
+  },
+  {
+    "name": "groupReduce",
+    "display_name": "分组汇总",
+    "description": "按字段分组后聚合统计，支持 having 过滤、order_by 排序、top_n 截取。聚合函数：sum, avg/mean, count, count_distinct, min, max, std, var, median。返回分组结果记录数组及条数。",
+    "response": {"result": {"type": "array", "display_name": "分组结果", "description": "分组聚合后的记录数组（另附 count 条数）"}},
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "data": {"type": "array", "items": {"type": "object"}, "display_name": "数据", "description": "JSON 记录数组（对象列表）"},
+        "group_by": {"type": "array", "items": {"type": "string"}, "display_name": "分组字段", "description": "分组字段名数组"},
+        "aggregations": {"type": "array", "items": {"type": "object"}, "display_name": "聚合定义", "description": "聚合定义数组，每项为 {field, functions, alias?}；functions 取值见函数描述"},
+        "having": {"type": "array", "items": {"type": "object"}, "display_name": "组后过滤", "description": "可选。对聚合结果列过滤，每项为 {field, operator, value}"},
+        "order_by": {"type": "array", "items": {"type": "object"}, "display_name": "排序", "description": "可选。每项为 {field, direction: asc|desc}"},
+        "top_n": {"type": "integer", "display_name": "Top-N", "description": "可选。只返回前 N 条"}
+      },
+      "required": ["data", "group_by", "aggregations"]
+    }
   }
 ]

@@ -124,7 +124,7 @@ export interface BehaviorMeta {
   params: Record<string, any>;
   preRules: RuleDetail[];
   postRules: RuleDetail[];
-  /** 安全管控。confirm=false 为显式关闭，覆盖 isWrite 强制确认（判定见 security-policy.needsSecurityConfirm）；
+  /** 安全管控。confirm=false 为显式关闭，覆盖 isWrite 强制确认（判定见 execution-policy.needsSecurityConfirm）；
    *  scope 为权限范围（恒数组）：含 'disable' 时行为被禁用，行为工具层硬中断（security-policy.SecurityGate）。 */
   security?: { confirm: boolean; confirm_content: string; scope: string[] };
   concepts: ConceptInfo[];
@@ -132,8 +132,10 @@ export interface BehaviorMeta {
   isWrite: boolean;
 }
 
-/** 函数信息合一查询结果（本体函数 functions[] → 公共函数 functions.json，都不在 → null） */
-export interface FunctionInfo {
+/** 函数元信息（文件声明侧合一查询结果：本体函数 functions[] → 公共函数 functions.json，都不在 → null）。
+ *  与 function-catalog.FunctionInfo 区分：本类型是 gateway 文件投影（snake_case 贴 yaml/json 源形），
+ *  FunctionInfo 是 run 级目录快照的单出口返回单元（camelCase 编排侧）。 */
+export interface FunctionMeta {
   display_name: string;
   description?: string;
   params: Record<string, any>;
