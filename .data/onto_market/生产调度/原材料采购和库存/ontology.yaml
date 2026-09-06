@@ -316,6 +316,7 @@ functions:
   response:
     result:
       type: object
+      display_name: 计算记过
       properties:
         rawMaterialName:
           type: string
@@ -326,6 +327,52 @@ functions:
           display_name: 未到位总量
           example: 100
   code_file: functions/sumRawNotArrivalQty.py
+- name: checkRawMaterialUnit
+  display_name: 校验采购原材料单位一致性
+  description: 校验采购单的 rawMaterialId 存在于原材料主数据，且 unit 与原材料定义单位一致。服务于前置规则 V01。
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterial
+  params:
+    rawMaterialId:
+      type: string
+      display_name: 原材料ID
+      example: RM-001
+      required: true
+    unit:
+      type: string
+      display_name: 计量单位
+      example: 吨
+      required: true
+    rawMaterialSet:
+      type: array
+      display_name: 原材料主数据集
+      required: true
+      items:
+        type: object
+        properties:
+          rawMaterialId:
+            type: string
+            display_name: 原材料ID
+            required: true
+          unit:
+            type: string
+            display_name: 单位
+            required: true
+  response:
+    result:
+      type: object
+      display_name: 校验结果
+      properties:
+        pass:
+          type: boolean
+          display_name: 是否成立
+          example: 'True'
+        message:
+          type: string
+          display_name: 反馈消息
+          example: 当前条件成立
+  code_file: functions/checkRawMaterialUnit.py
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。

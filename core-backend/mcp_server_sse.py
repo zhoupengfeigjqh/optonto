@@ -21,8 +21,9 @@ from starlette.routing import Route
 # FastAPI backend URL (configurable via env)
 API_BASE = os.getenv("API_BASE_URL", "http://optonto-core-backend:8001")
 
-# Common functions directory (inside container, mounted from project .data)
-COMMON_DIR = Path("/app/.data/common_functions")
+# 统一数据目录（docker-compose 将项目根 .data 挂载到 /app/.data；用 DATA_DIR 覆盖即可切换挂载点/本地直跑）
+DATA_DIR = Path(os.getenv("DATA_DIR", "/app/.data"))
+COMMON_DIR = DATA_DIR / "common_functions"
 MANIFEST_PATH = COMMON_DIR / "functions.json"
 
 
@@ -115,7 +116,7 @@ async def _api_get(path: str, timeout: int = 15) -> dict | list:
 
 # ─── 本体函数工具（动态注册：函数名即工具名，schema = ontology_id + 展开参数）────────
 # 替代原 executeOntoFunction 黑盒包装——本体函数与公共函数同形，参数在工具 schema 可见。
-ONTO_MARKET_DIR = Path("/app/.data/onto_market")
+ONTO_MARKET_DIR = DATA_DIR / "onto_market"
 
 # mtime 指纹缓存：函数清单只依赖各 ontology.yaml 的 functions 段与本体清单（meta.json），
 # 与 OntologyGateway / services.load_ontology_data 的 mtime 失效语义一致——无 TTL 陈旧窗口，

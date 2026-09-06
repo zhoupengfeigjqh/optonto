@@ -10,7 +10,6 @@ COPY tsconfig.json next.config.js tailwind.config.ts postcss.config.js ./
 COPY src/ ./src/
 COPY public/ ./public/
 
-ENV NEXT_PUBLIC_API_URL=http://localhost:8001
 RUN npm run build
 
 # ─── Production stage ───

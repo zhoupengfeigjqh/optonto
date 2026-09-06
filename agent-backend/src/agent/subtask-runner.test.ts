@@ -306,7 +306,8 @@ describe('SubtaskRunner · 指令组装（facade 化后：挂载即白名单，�
       isWrite: true,
     };
     const deps = makeDeps(async () => ({
-      prompt: async (msg: string) => { instruction = msg; },
+      // 只记首轮完整指令——后置留痕闸的 nudge 补跑会再 prompt，不覆盖捕获
+      prompt: async (msg: string) => { if (!instruction) instruction = msg; },
       abort: () => {},
       subscribe: () => {},
       state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
@@ -498,5 +499,107 @@ describe('SubtaskRunner · 函数子任务（统一入口的直连路径）', ()
 
     const start = events.find(e => e.type === 'exec_entry' && e.entry.type === 'subtask_start');
     expect(start.entry.displayName).toBe('计算安全库存（calcSafetyStock）');
+  });
+});
+
+describe('SubtaskRunner · 后置规则留痕闸（成功收尾前核查后置规则函数已执行）', () => {
+  /** 主行为挂后置规则 I02（关联函数 getCurrentDate）；无前置规则、无安全确认 */
+  const metaPostRule: BehaviorMeta = {
+    display_name: '查询采购记录',
+    params: {},
+    preRules: [],
+    postRules: [
+      { name: 'I02', description: '超期预警', position: '后置', related_behaviors: ['CreatePurchaseRecord'], related_functions: ['getCurrentDate'] },
+    ],
+    concepts: [],
+    isWrite: false,
+  };
+  const okState = () => ({ messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] });
+
+  it('后置函数已留痕（子 Agent 已调）→ 直接放行，无 nudge 无警告', async () => {
+    const prompts: string[] = [];
+    const deps = makeDeps(async (_ctx, policy) => ({
+      prompt: async (msg: string) => {
+        prompts.push(msg);
+        policy.ruleGate.succeeded.add('getCurrentDate'); // 模拟子 Agent 已调函数（工具层台账同源写入）
+      },
+      abort: () => {},
+      subscribe: () => {},
+      state: okState(),
+    } satisfies AgentPort));
+
+    const result = await new SubtaskRunner(deps).run(subTask, metaPostRule, noopChannel);
+    expect(result.success).toBe(true);
+    expect(prompts).toHaveLength(1); // 无 nudge
+    expect(result.summary).not.toContain('留痕缺失');
+  });
+
+  it('后置函数未留痕 → nudge 补跑；补上后正常收尾（结果重提取，无警告）', async () => {
+    const prompts: string[] = [];
+    const deps = makeDeps(async (_ctx, policy) => ({
+      prompt: async (msg: string) => {
+        prompts.push(msg);
+        if (prompts.length === 2) policy.ruleGate.succeeded.add('getCurrentDate'); // nudge 后补跑成功
+      },
+      abort: () => {},
+      subscribe: () => {},
+      state: okState(),
+    } satisfies AgentPort));
+
+    const result = await new SubtaskRunner(deps).run(subTask, metaPostRule, noopChannel);
+    expect(result.success).toBe(true);
+    expect(prompts).toHaveLength(2); // 首轮 + 1 次 nudge
+    expect(prompts[1]).toContain('后置规则留痕缺失');
+    expect(prompts[1]).toContain('规则 I02：函数 getCurrentDate');
+    expect(result.summary).not.toContain('留痕缺失');
+  });
+
+  it('拒不补跑 → 有界 nudge（2 次）后成功保留 + summary 附警告（不翻案业务结果）', async () => {
+    const prompts: string[] = [];
+    const deps = makeDeps(async () => ({
+      prompt: async (msg: string) => { prompts.push(msg); },
+      abort: () => {},
+      subscribe: () => {},
+      state: okState(),
+    } satisfies AgentPort));
+
+    const result = await new SubtaskRunner(deps).run(subTask, metaPostRule, noopChannel);
+    expect(result.success).toBe(true);
+    expect(prompts).toHaveLength(3); // 首轮 + 2 次 nudge（有界）
+    expect(result.summary).toContain('⚠️ 后置规则留痕缺失');
+    expect(result.summary).toContain('规则 I02 的函数 getCurrentDate');
+  });
+
+  it('后置规则无关联函数 → 派生期剔除，闸自动跳过（不 nudge 不警告）', async () => {
+    const metaNoFn: BehaviorMeta = {
+      ...metaPostRule,
+      postRules: [{ name: 'I03', description: '无函数规则', position: '后置', related_behaviors: ['CreatePurchaseRecord'], related_functions: [] }],
+    };
+    const prompts: string[] = [];
+    const deps = makeDeps(async () => ({
+      prompt: async (msg: string) => { prompts.push(msg); },
+      abort: () => {},
+      subscribe: () => {},
+      state: okState(),
+    } satisfies AgentPort));
+
+    const result = await new SubtaskRunner(deps).run(subTask, metaNoFn, noopChannel);
+    expect(result.success).toBe(true);
+    expect(prompts).toHaveLength(1);
+    expect(result.summary).not.toContain('留痕缺失');
+  });
+
+  it('子任务失败时不做后置核查（失败结果原样返回，不 nudge）', async () => {
+    const prompts: string[] = [];
+    const deps = makeDeps(async () => ({
+      prompt: async (msg: string) => { prompts.push(msg); },
+      abort: () => {},
+      subscribe: () => {},
+      state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '前置规则不通过\n【状态】失败' }] }] },
+    } satisfies AgentPort));
+
+    const result = await new SubtaskRunner(deps).run(subTask, metaPostRule, noopChannel);
+    expect(result.success).toBe(false);
+    expect(prompts).toHaveLength(1);
   });
 });

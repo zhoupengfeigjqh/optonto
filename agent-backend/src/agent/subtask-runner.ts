@@ -11,7 +11,7 @@ import { isParamValueEmpty, unwrapParamValue, unwrapParamValues } from './param-
 import type { AgentPort } from './agent-ports.js';
 import type { SecurityGate } from './security-policy.js';
 import { bareBehaviorName } from './tool-catalog.js';
-import { buildSubtaskPolicy, needsSecurityConfirm } from './execution-policy.js';
+import { buildSubtaskPolicy, missingRuleFunctions, needsSecurityConfirm } from './execution-policy.js';
 import type { LegalCalls, SubtaskInfoPort, SubtaskPolicy } from './execution-policy.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult } from '../types.js';
 import type { ConfirmPort } from './confirm-manager.js';
@@ -20,6 +20,9 @@ import { entryDisplay, ToolCallBridge } from './event-channel.js';
 
 /** LLM 调用异常（prompt() 抛错：API/网络瞬态错误）时的最大重试次数。工具报错不在此列——由内层自纠（≤2 次 rethrow）与预算（第 3 次 terminate）处理。 */
 const MAX_LLM_EXCEPTION_RETRIES = 2;
+
+/** 后置规则留痕缺失时的最大 nudge 补跑次数（子 Agent 拒不补跑不无限纠缠，收尾警告暴露） */
+const MAX_POST_RULE_NUDGES = 2;
 
 export interface SubtaskRunnerDeps {
   confirmManager: ConfirmPort;
@@ -196,7 +199,10 @@ export class SubtaskRunner {
           }
           // 结果以 LLM 的【状态】标记为准：内层自纠（工具报错→修正→成功）算成功，不再被"途中报过错"判失败
           const result = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior);
-          if (result.success) { return result; }
+          if (result.success) {
+            // 后置规则留痕闸：成功收尾前核查后置规则关联函数已成功执行，缺失则 nudge 补跑（有界）
+            return await this.enforcePostRuleTrace(childAgent, policy, result, subTask, emit, display, () => userAborted);
+          }
           // LLM 自报失败（前置规则未过、必填参数无法获取等）直接返回，不重试、不整轮重做
           return { seq: subTask.seq, task: subTask.behavior, success: false, error: result.summary || '❌ 执行未成功', summary: result.summary };
         } catch (e: any) {
@@ -215,6 +221,50 @@ export class SubtaskRunner {
     } finally {
       this.deps.childAgents.delete(childAgent);
     }
+  }
+
+  /**
+   * 后置规则留痕闸：子任务成功收尾前核查后置规则关联函数已成功执行（"规则必挂函数"审计闭环的运行期核查）。
+   * 缺失 → nudge 子 Agent 补跑（有界 MAX_POST_RULE_NUDGES 次）：子 Agent 持有执行上下文，能为函数填参
+   * 并把规则结论写进结果；机制直连补跑填不了参数、产不出结论，不做。
+   * 仍缺 → 结果保留成功，summary 附警告（留痕缺失不翻案业务结果——闸的义务是提醒与暴露）。
+   * 无关联函数的后置规则不进 policy.ruleGate.post（派生期已剔除），此闸自动跳过。
+   */
+  private async enforcePostRuleTrace(
+    childAgent: AgentPort,
+    policy: SubtaskPolicy,
+    result: SubTaskResult,
+    subTask: SubTask,
+    emit: EventChannel,
+    display: ReturnType<typeof entryDisplay>,
+    isAborted: () => boolean,
+  ): Promise<SubTaskResult> {
+    const rg = policy.ruleGate;
+    if (!rg || rg.post.length === 0) return result;
+    let missing = missingRuleFunctions(rg.post, rg.succeeded);
+    for (let nudge = 0; missing.length > 0 && nudge < MAX_POST_RULE_NUDGES; nudge++) {
+      emit.entry({
+        type: 'tool_call', name: '后置规则留痕核查', status: 'running',
+        detail: `缺失：${missing.map(m => `${m.rule}（${m.functions.join('、')}）`).join('；')}，提醒补跑`,
+        source: 'child', seq: subTask.seq, ...display,
+      });
+      await childAgent.prompt(
+        `### 后置规则留痕缺失（系统核查）\n` +
+        `以下后置规则的关联函数尚未成功执行：\n` +
+        missing.map(m => `- 规则 ${m.rule}：函数 ${m.functions.join('、')}`).join('\n') +
+        `\n请补充调用这些函数完成后置规则推理，把规则结论写入结果，并重新输出最终结果（保留【状态】标记）。`);
+      // 中断/安全闸/预算超限各有既定收尾路径，留痕核查不翻案——保留已成功的结果原样返回
+      if (isAborted() || isChildAborted(childAgent) || this.deps.securityGate.violation || policy.errorBudget.exceeded) return result;
+      // 补跑后重提取结果（子 Agent 的新结论替换旧 summary；提取失败保留原结果）
+      const refreshed = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior);
+      if (refreshed.success) result = refreshed;
+      missing = missingRuleFunctions(rg.post, rg.succeeded);
+    }
+    if (missing.length > 0) {
+      result.summary += `\n\n⚠️ 后置规则留痕缺失（已提醒补跑 ${MAX_POST_RULE_NUDGES} 次仍缺）：` +
+        missing.map(m => `规则 ${m.rule} 的函数 ${m.functions.join('、')}`).join('；');
+    }
+    return result;
   }
 
   /** 组装安全确认弹窗的中文可读内容：行为说明 + 将写入/修改/删除的数据（参数中文名+值）。 */
@@ -301,6 +351,10 @@ export class SubtaskRunner {
           text += `  关联函数: ${r.related_functions.join(', ')}\n`;
         }
       });
+      // 与闸2（前置规则留痕）同语义：提前告知，报错时不意外
+      if (meta.preRules.some(r => r.related_functions?.length)) {
+        text += `⚠️ 系统硬闸：调用主行为前会强制检查上述规则的关联函数已成功执行，未执行将被拒绝——请先调用关联函数再调主行为。\n`;
+      }
     }
 
     if (needsSecurityConfirm(meta)) {
@@ -319,6 +373,10 @@ export class SubtaskRunner {
           text += `  关联函数: ${r.related_functions.join(', ')}\n`;
         }
       });
+      // 与后置留痕闸同语义：收尾核查缺函数会被要求补跑，提前告知
+      if (meta.postRules.some(r => r.related_functions?.length)) {
+        text += `⚠️ 系统核查：子任务结束前会检查后置规则的关联函数已成功执行，缺失将要求你补充执行后才能收尾。\n`;
+      }
     }
 
     // 关联概念属性：仅当存在规则时渲染（规则可能引用概念属性用于验证/推理）；

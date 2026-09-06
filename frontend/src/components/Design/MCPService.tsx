@@ -17,7 +17,7 @@ export default function MCPService() {
   const checkMcpStatus = useCallback(async () => {
     setMcpChecking(true);
     try {
-      const [s, tools] = await Promise.all([getMcpStatus(), getMcpTools(host)]);
+      const [s, tools] = await Promise.all([getMcpStatus(), getMcpTools()]);
       setMcpRunning(s.running);
       setMcpTools(tools);
     } catch { setMcpRunning(false); }
@@ -37,7 +37,7 @@ export default function MCPService() {
         for (let attempt = 0; attempt < 6; attempt++) {
           await new Promise(r => setTimeout(r, 1000));
           try {
-            const tools = await getMcpTools(host);
+            const tools = await getMcpTools();
             if (tools && tools.length > 0) { setMcpTools(tools); break; }
           } catch { /* retry */ }
         }

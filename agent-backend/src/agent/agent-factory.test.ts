@@ -108,7 +108,7 @@ import { SkillLoader } from '../services/skill-loader.js';
 import { createSecurityGate } from './security-policy.js';
 import type { ChildSecurityCtx } from './security-policy.js';
 import { createToolErrorBudget } from './error-budget.js';
-import type { SubtaskPolicy } from './execution-policy.js';
+import type { SubtaskPolicy, RuleGate } from './execution-policy.js';
 import type { LegalCalls } from './execution-policy.js';
 import type { ThreadMessage, ConversationScope } from '../types.js';
 
@@ -181,19 +181,20 @@ describe('AgentFactory.createParentAgent 历史映射', () => {
  * policy 完整策略对象直造（生产路径由 buildSubtaskPolicy 派生；工厂只消费不派生）：
  * legalCalls 默认含主行为 + 一个规则关联行为 + 关联函数。
  */
-function mkPolicy(over?: { legalCalls?: LegalCalls; security?: ChildSecurityCtx }): SubtaskPolicy {
+function mkPolicy(over?: { legalCalls?: LegalCalls; security?: ChildSecurityCtx; ruleGate?: RuleGate }): SubtaskPolicy {
   return {
     legalCalls: over?.legalCalls ?? { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] },
     errorBudget: createToolErrorBudget(),
     security: over?.security ?? { disabled: new Map<string, string>(), gate: createSecurityGate() },
+    ruleGate: over?.ruleGate ?? { mainBehavior: 'CreatePurchaseRecord', pre: [], post: [], succeeded: new Set() },
   };
 }
 
-async function captureChildTools(legalCalls?: LegalCalls, security?: ChildSecurityCtx) {
+async function captureChildTools(legalCalls?: LegalCalls, security?: ChildSecurityCtx, ruleGate?: RuleGate) {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createChildAgent(
     { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
-    mkPolicy({ legalCalls, security }),
+    mkPolicy({ legalCalls, security, ruleGate }),
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);
   return mockedAgent.mock.calls[0][0].initialState.tools as any[];
@@ -534,6 +535,54 @@ describe('AgentFactory 子 Agent disable 硬闸（工具层单点，terminate + 
     expect(result.terminate).toBeUndefined();
     expect(security.gate.violation).toBeNull();
     expect(mcpCalls.list).toHaveLength(1); // 真实执行发生
+  });
+});
+
+describe('AgentFactory 子 Agent 前置规则留痕闸（闸2：主行为调用前规则函数须已成功留痕）', () => {
+  beforeEach(() => { mockedAgent.mockClear(); mcpCalls.list.length = 0; });
+
+  /** 主行为 CreatePurchaseRecord 挂前置规则 V01（要求 getCurrentDate）；无后置 */
+  const mkRuleGate = (over?: Partial<RuleGate>): RuleGate => ({
+    mainBehavior: 'CreatePurchaseRecord',
+    pre: [{ name: 'V01', functions: ['getCurrentDate'] }],
+    post: [],
+    succeeded: new Set(),
+    ...over,
+  });
+
+  it('前置规则函数未留痕 → 主行为调用抛错列出缺口（规则+函数），真实 MCP 零执行', async () => {
+    const tools = await captureChildTools(undefined, undefined, mkRuleGate());
+    const tool = tools.find(t => t.name === 'CreatePurchaseRecord');
+    await expect(tool.execute('call-r1', { rawMaterialId: 'RM-1' })).rejects.toThrow('前置规则留痕缺失');
+    await expect(tool.execute('call-r2', { rawMaterialId: 'RM-1' })).rejects.toThrow('规则 V01：函数 getCurrentDate');
+    expect(mcpCalls.list).toHaveLength(0); // 真实执行零发生
+  });
+
+  it('函数成功调用后记入台账 → 主行为放行；失败调用不留痕仍拦截', async () => {
+    const ruleGate = mkRuleGate();
+    const tools = await captureChildTools(undefined, undefined, ruleGate);
+    // 公共函数工具成功调用 → 台账留痕
+    await tools.find(t => t.name === 'getCurrentDate').execute('call-r3', {});
+    expect(ruleGate.succeeded.has('getCurrentDate')).toBe(true);
+    const result = await tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-r4', { rawMaterialId: 'RM-1' });
+    expect(result.terminate).toBeUndefined();
+    expect(mcpCalls.list).toHaveLength(2); // 函数 + 主行为都真实执行
+  });
+
+  it('只闸主行为：规则补充接口（QuerySupplier）不被前置闸拦截（否则规则取数无路）', async () => {
+    const ruleGate = mkRuleGate();
+    const tools = await captureChildTools(undefined, undefined, ruleGate);
+    const result = await tools.find(t => t.name === 'QuerySupplier').execute('call-r5', { supplierName: '宝钢' });
+    expect(result.terminate).toBeUndefined();
+    expect(mcpCalls.list).toHaveLength(1); // 补充接口正常执行
+  });
+
+  it('前置规则无关联函数（pre 为空，派生期已剔除）→ 主行为不闸', async () => {
+    const ruleGate = mkRuleGate({ pre: [] });
+    const tools = await captureChildTools(undefined, undefined, ruleGate);
+    const result = await tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-r6', { rawMaterialId: 'RM-1' });
+    expect(result.terminate).toBeUndefined();
+    expect(mcpCalls.list).toHaveLength(1);
   });
 });
 

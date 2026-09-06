@@ -25,7 +25,7 @@
 import { createToolErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { ChildSecurityCtx, SecurityGate } from './security-policy.js';
-import type { SubTask, BehaviorMeta } from '../types.js';
+import type { SubTask, BehaviorMeta, RuleDetail } from '../types.js';
 
 /**
  * 子任务元数据查询口 —— 策略派生与子任务展示所需的全部本体/函数元数据投影。
@@ -42,12 +42,41 @@ export interface SubtaskInfoPort {
 
 /**
  * 子任务执行策略 —— createChildAgent 的完整输入。
- * 三件套一次派生、整体传递：合法清单（挂载过滤）、安全上下文（闸0/闸1：禁用集合 + run 级共享闸）、报错预算（熔断）。
+ * 四件套一次派生、整体传递：合法清单（挂载过滤）、安全上下文（闸0/闸1：禁用集合 + run 级共享闸）、
+ * 报错预算（熔断）、规则函数留痕闸（前置检查 + 后置核查共用台账）。
  */
 export interface SubtaskPolicy {
   legalCalls: LegalCalls;
   errorBudget: ToolErrorBudget;
   security: ChildSecurityCtx;
+  ruleGate: RuleGate;
+}
+
+/**
+ * 规则函数留痕闸（per-子任务）——"规则必挂函数"审计闭环的运行期核查机制。
+ * 语义（2026-09-05 拍板）：只保证"规则关联函数成功跑过"（留痕），规则裁决仍由子 Agent 自行判断；
+ * 无关联函数的规则在派生期剔除，不检查。
+ * - 前置：主行为工具调用前检查 pre 全部函数已在台账中，缺失则报错（子 Agent 补跑后重试，不中止子任务）；
+ * - 后置：子任务收尾时检查 post 全部函数已在台账中，缺失则 nudge 子 Agent 补跑（有界）；
+ * - "成功"粒度：函数名在本子任务内出现一次成功调用（execute 正常 resolve）即计入台账，不核对参数。
+ */
+export interface RuleGate {
+  /** 主行为裸名（前置闸只闸主行为；data_supplements 补充接口不闸——闸了则鸡生蛋，取数无路） */
+  mainBehavior: string;
+  /** 前置规则的函数要求（仅含有关联函数的规则） */
+  pre: RuleGateInfo[];
+  /** 后置规则的函数要求（仅含有关联函数的规则） */
+  post: RuleGateInfo[];
+  /** 本子任务内已成功调用的工具名台账（工具层写入：execute 正常 resolve 即记，抛错不记） */
+  succeeded: Set<string>;
+}
+
+/** 单条规则的函数留痕要求（关联函数为空的规则不进入此结构——无函数即无留痕义务） */
+export interface RuleGateInfo {
+  /** 规则名（报错/nudge 文案用） */
+  name: string;
+  /** 该规则要求成功执行的关联函数名（去重、非空） */
+  functions: string[];
 }
 
 /** 子 Agent 合法调用名集合（行为工具挂载集合 + 函数工具挂载集合） */
@@ -110,5 +139,25 @@ export function buildSubtaskPolicy(
     legalCalls,
     errorBudget: createToolErrorBudget(),
     security: { disabled, gate },
+    ruleGate: {
+      mainBehavior: subTask.behavior,
+      pre: toRuleGateInfo(meta.preRules),
+      post: toRuleGateInfo(meta.postRules),
+      succeeded: new Set(),
+    },
   };
+}
+
+/** 规则数组 → 留痕要求：仅保留声明了关联函数的规则（无函数 = 无留痕义务，跳过不检查），函数名去重剔空 */
+function toRuleGateInfo(rules: RuleDetail[]): RuleGateInfo[] {
+  return rules
+    .filter(r => r.related_functions?.length)
+    .map(r => ({ name: r.name, functions: [...new Set(r.related_functions!.filter(Boolean))] }));
+}
+
+/** 计算留痕缺口：哪些规则的哪些关联函数尚未成功调用（前置闸报错 / 后置闸 nudge / 收尾警告 三处同一判定） */
+export function missingRuleFunctions(rules: RuleGateInfo[], succeeded: ReadonlySet<string>): { rule: string; functions: string[] }[] {
+  return rules
+    .map(r => ({ rule: r.name, functions: r.functions.filter(f => !succeeded.has(f)) }))
+    .filter(m => m.functions.length > 0);
 }

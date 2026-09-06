@@ -5,7 +5,7 @@
  * （2026-09 facade 化：requiredParamsMap 已退役——参数合法性由工具 inputSchema 在 harness 层校验。）
  */
 import { describe, it, expect } from 'vitest';
-import { buildSubtaskPolicy, needsSecurityConfirm } from './execution-policy.js';
+import { buildSubtaskPolicy, missingRuleFunctions, needsSecurityConfirm } from './execution-policy.js';
 import type { SubtaskInfoPort } from './execution-policy.js';
 import { createSecurityGate } from './security-policy.js';
 import type { SubTask, BehaviorMeta } from '../types.js';
@@ -94,6 +94,40 @@ describe('buildSubtaskPolicy — 子任务执行策略单一派生点', () => {
     const policy = buildSubtaskPolicy({ ...subTask, related_functions: ['sumRawNotArrivalQty', 'getCurrentDate'] }, dup, mkInfo(), createSecurityGate());
     expect(policy.legalCalls.behaviors).toEqual(['CreatePurchaseRecord', 'QueryRawMaterials']);
     expect(policy.legalCalls.functions).toEqual(['getCurrentDate', 'calcSafetyStock', 'sumRawNotArrivalQty']);
+  });
+});
+
+describe('buildSubtaskPolicy — 规则函数留痕闸（ruleGate）派生', () => {
+  it('ruleGate：pre/post 只收有关联函数的规则（无函数 = 无留痕义务，跳过）；mainBehavior 取子任务行为；台账空集起步', () => {
+    const policy = buildSubtaskPolicy(subTask, meta, mkInfo(), createSecurityGate());
+    expect(policy.ruleGate.mainBehavior).toBe('CreatePurchaseRecord');
+    // V01 related_functions=[] → 剔除；I02 有 getCurrentDate → 入 post
+    expect(policy.ruleGate.pre).toEqual([]);
+    expect(policy.ruleGate.post).toEqual([{ name: 'I02', functions: ['getCurrentDate'] }]);
+    expect(policy.ruleGate.succeeded.size).toBe(0);
+  });
+
+  it('规则函数去重剔空；台账每子任务一份新实例（不共享）', () => {
+    const m: BehaviorMeta = {
+      params: {},
+      preRules: [{ name: 'V02', description: '', position: '前置', related_behaviors: [], related_functions: ['f1', 'f1', ''] }],
+      postRules: [],
+      concepts: [],
+      isWrite: false,
+    };
+    const p1 = buildSubtaskPolicy(subTask, m, mkInfo(), createSecurityGate());
+    const p2 = buildSubtaskPolicy(subTask, m, mkInfo(), createSecurityGate());
+    expect(p1.ruleGate.pre).toEqual([{ name: 'V02', functions: ['f1'] }]);
+    expect(p1.ruleGate.succeeded).not.toBe(p2.ruleGate.succeeded); // 台账 per-子任务独立
+  });
+
+  it('missingRuleFunctions：按规则列出缺口；全部留痕 → 空', () => {
+    const rules = [{ name: 'I02', functions: ['f1', 'f2'] }, { name: 'I03', functions: ['f3'] }];
+    expect(missingRuleFunctions(rules, new Set(['f1']))).toEqual([
+      { rule: 'I02', functions: ['f2'] },
+      { rule: 'I03', functions: ['f3'] },
+    ]);
+    expect(missingRuleFunctions(rules, new Set(['f1', 'f2', 'f3']))).toEqual([]);
   });
 });
 

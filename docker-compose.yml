@@ -28,6 +28,8 @@ services:
       - MEMORY_DIR=/app/.data/memory
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
+      # 内置本体MCP 地址（默认同为该值，显式写出便于切换环境时一眼看到）
+      - MCP_BUILTIN_URL=http://optonto-mcp:8002/sse
     networks:
       - optonto-net
 
@@ -135,6 +137,7 @@ services:
       - ./.data:/app/.data
     environment:
       - API_BASE_URL=http://optonto-core-backend:8001
+      - DATA_DIR=/app/.data
       - TZ=Asia/Shanghai
     command: >
       sh -c "python -m uvicorn mcp_server_sse:starlette_app --host 0.0.0.0 --port 8002"

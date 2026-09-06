@@ -386,8 +386,9 @@ export interface McpActionResult {
 export const getMcpStatus = () =>
   request<McpStatus>('/api/mcp/status');
 
-export const getMcpTools = async (host: string) => {
-  const resp = await fetch(`http://${host}:8002/tools`);
+// 经 Nginx /mcp/ 代理到 optonto-mcp:8002，不直连端口（端口可不对外发布）
+export const getMcpTools = async () => {
+  const resp = await fetch('/mcp/tools');
   if (!resp.ok) {
     throw new Error(`获取 MCP 工具失败 (${resp.status})`);
   }

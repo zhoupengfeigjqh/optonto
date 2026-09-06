@@ -15,10 +15,16 @@ export interface MCPConfig {
   servers: MCPServerConfig[];
 }
 
-/** 内置本体MCP —— 恒存在、恒启用、恒全选，不可删除 */
+/**
+ * 内置本体MCP —— 恒存在、恒启用、恒全选，不可删除。
+ * URL 默认 Docker 内网服务名，可用 MCP_BUILTIN_URL 覆盖（如本地直跑指向 http://localhost:8002/sse）。
+ */
+const LEGACY_BUILTIN_URL = 'http://optonto-mcp:8002/sse';
+export const BUILTIN_MCP_URL = process.env['MCP_BUILTIN_URL'] || LEGACY_BUILTIN_URL;
+
 export const BUILTIN_MCP = {
   name: '本体MCP',
-  url: 'http://optonto-mcp:8002/sse',
+  url: BUILTIN_MCP_URL,
   enabled: true,
   builtin: true,
 } as MCPServerConfig;
@@ -27,13 +33,17 @@ const DEFAULT_CONFIG: MCPConfig = {
   servers: [BUILTIN_MCP],
 };
 
+/** 内置身份识别：builtin 标记 / 当前 URL / 历史默认 URL（配置文件里可能残留旧默认，env 切换后仍要正确归类） */
+function isBuiltinServer(s: MCPServerConfig | undefined | null): boolean {
+  return !!s && (s.builtin === true || s.url === BUILTIN_MCP_URL || s.url === LEGACY_BUILTIN_URL);
+}
+
 /**
  * 规整配置：确保内置本体MCP 恒存在且形态固定；用户服务剥离 builtin 标记。
- * 身份以内置 URL 识别——即使文件里没写 builtin 也能正确归类。
  */
 function normalize(config: MCPConfig): MCPConfig {
   const others = (config.servers || [])
-    .filter(s => s && s.url !== BUILTIN_MCP.url)
+    .filter(s => s && !isBuiltinServer(s))
     .map(s => {
       const { builtin, ...rest } = s as any;
       return rest;

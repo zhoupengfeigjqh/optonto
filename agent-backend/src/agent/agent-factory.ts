@@ -14,6 +14,7 @@ import { PARENT_TOOL_LABELS, SCOPE_KEY, bareBehaviorName, toMountableToolInfo } 
 import type { MountableToolInfo } from './tool-catalog.js';
 import type { AgentPort } from './agent-ports.js';
 import type { SubtaskPolicy } from './execution-policy.js';
+import { missingRuleFunctions } from './execution-policy.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection, ConversationScope } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
@@ -245,10 +246,12 @@ export class AgentFactory {
    * 将执行类工具限定到指定本体：
    * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）与 scope 块（规划元数据）
    * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
-   * - 两道安全闸（按序，见 execute 内；参数合法性由工具 inputSchema 在 harness 层校验，不再设运行期参数闸）：
+   * - 三道安全闸（按序，见 execute 内；参数合法性由工具 inputSchema 在 harness 层校验，不再设运行期参数闸）：
    *   闸0 入口短路（violation 已置位 → 一律 terminate，中断信号广播到全 run）→
-   *   闸1 disable（本体行为工具按 scope.name 裸名查禁用集合：置 violation + terminate，不抛错不走预算，无自纠空间）
+   *   闸1 disable（本体行为工具按 scope.name 裸名查禁用集合：置 violation + terminate，不抛错不走预算，无自纠空间）→
+   *   闸2 前置规则留痕（仅主行为：前置规则关联函数未成功执行 → 抛错引导补跑，可恢复走报错预算）
    *   （行为/函数工具的合法性已在 createChildAgent 挂载期按 legalCalls 过滤，机制即白名单）
+   * - 成功台账：execute 正常 resolve 后把工具名记入 policy.ruleGate.succeeded（后置闸收尾核查的数据源）
    * 无 ontology_id 的工具（如公共函数/新增 MCP）原样返回。
    */
   private scopeToOntology(tool: AgentTool, ontologyId: number, policy: SubtaskPolicy): AgentTool {
@@ -293,8 +296,24 @@ export class AgentFactory {
           security.gate.violation ??= buildDisableMessage(bare, security.disabled.get(bare));
           return securityTerminateResult(security.gate.violation);
         }
+        // ── 闸2 前置规则留痕（仅主行为；补充接口不闸——闸了则规则取数无路）──
+        // 前置规则的关联函数须先成功执行（留痕）才放行主行为；缺失则抛错，文案列出缺哪个规则的哪个函数，
+        // 子 Agent 据此前置补跑后重试（可恢复，不中止子任务；连续硬闯由报错预算熔断）。
+        if (bare === policy.ruleGate.mainBehavior && policy.ruleGate.pre.length > 0) {
+          const missing = missingRuleFunctions(policy.ruleGate.pre, policy.ruleGate.succeeded);
+          if (missing.length > 0) {
+            throw new Error(
+              `前置规则留痕缺失，本行为暂不能执行。请先成功调用以下规则关联函数完成前置验证，再重试本行为：\n` +
+              missing.map(m => `- 规则 ${m.rule}：函数 ${m.functions.join('、')}`).join('\n')
+            );
+          }
+        }
       }
-      return originalExecute(toolCallId, p);
+      // 成功台账：execute 正常 resolve 即记（抛错不记）。函数名=工具名，后置闸/前置闸按名查此集合；
+      // 行为名也一并记录（可能带前缀，台账查询只按函数名，行为条目自然不被命中，无副作用）。
+      const result = await originalExecute(toolCallId, p);
+      policy.ruleGate.succeeded.add(tool.name);
+      return result;
     };
     return {
       ...tool,
