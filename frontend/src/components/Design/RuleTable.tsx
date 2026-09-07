@@ -602,7 +602,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         </Tooltip>
       );
     }},
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 90, render: (v: any, r: Rule) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 90, render: (v: any, r: Rule) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '规则类型', dataIndex: 'rule_type', key: 'rule_type', width: 75, render: (v: any, r: Rule) => renderCell(v, r, 'rule_type', (v2: string) => v2 || '-') },
     { title: '介入位置', dataIndex: 'position', key: 'position', width: 50, render: (v: any, r: Rule) => renderCell(v, r, 'position', (v2: string) => v2 || '-') },
     { title: '描述', dataIndex: 'description', key: 'description', width: 160, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'description') },

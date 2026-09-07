@@ -209,8 +209,8 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_concepts: [] } as any);
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Function) => renderCell(v, r, 'name') },
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '英文名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Function) => renderCell(v, r, 'name') },
+    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '计算逻辑', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'description') },
     { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, render: (_: any, r: Function) => {

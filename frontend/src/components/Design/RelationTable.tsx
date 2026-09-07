@@ -115,8 +115,8 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
   };
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'name') },
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '英文名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'name') },
+    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '源概念', dataIndex: 'source', key: 'source', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'source', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
     { title: '目标概念', dataIndex: 'target', key: 'target', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'target', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
     { title: '基数', dataIndex: 'cardinality', key: 'cardinality', width: 65, render: (v: any, r: Relation) => renderCell(v, r, 'cardinality', (v2: string) => <span className="text-accent-blue">{v2}</span>) },

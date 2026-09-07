@@ -192,11 +192,11 @@ async def export_thread(thread_id: str, body: dict):
 
     ontology_name = body.get("ontology_name", "").strip()
     content = body.get("content", "").strip()
-    version = body.get("version", "").strip()
+    version = (thread.get("version") or "").strip()
     if not ontology_name or not content:
         raise HTTPException(status_code=400, detail="本体名与内容均不能为空")
     if not version:
-        raise HTTPException(status_code=400, detail="版本不能为空")
+        raise HTTPException(status_code=400, detail="版本不能为空（请在创建对话时填写版本号）")
 
     # 文件名合法性校验：禁路径分隔符、禁与线程元数据冲突的保留名、长度上限
     doc_name = f"{ontology_name}_{content}"

@@ -139,6 +139,7 @@ async def list_threads(scenario: str = "", ontology: str = ""):
                 "id": data["id"],
                 "title": data.get("title", ""),
                 "status": data.get("status", "exploring"),
+                "version": data.get("version", ""),
                 "created_at": data.get("created_at", ""),
                 "updated_at": data.get("updated_at", ""),
                 "scenario_name": sc_name,
@@ -158,6 +159,9 @@ async def create_thread(body: dict):
     title = body.get("title", "新对话")
     scenario_name = body.get("scenario_name", "")
     ontology_name = body.get("ontology_name", "")
+    version = body.get("version", "")
+    if not version:
+        raise HTTPException(status_code=400, detail="请提供版本号(version)")
     """Create a new conversation thread within a specific ontology."""
     if not scenario_name or not ontology_name:
         raise HTTPException(status_code=400, detail="请提供场景名称(scenario_name)和本体名称(ontology_name)")
@@ -168,6 +172,7 @@ async def create_thread(body: dict):
         "id": str(uuid.uuid4()),
         "title": title,
         "status": "exploring",
+        "version": version,
         "created_at": now,
         "updated_at": now,
         "messages": [],
@@ -298,16 +303,8 @@ async def list_requirements(scenario: str = "", ontology: str = ""):
             # 已生成判定：同名 yaml 优先，否则回退 yaml 内 metadata.source_file
             matched_yaml = _match_ontology_yaml(tdir, req_name, filename, source_map)
 
-            # 从文档头部解析版本行：「版本：xxx」
-            version = ""
-            try:
-                for line in f.read_text(encoding="utf-8").splitlines()[:10]:
-                    stripped = line.strip()
-                    if stripped.startswith("版本："):
-                        version = stripped[len("版本："):].strip()
-                        break
-            except Exception:
-                pass
+            # 版本号取自 thread .data.json 的 version 字段（对话创建时录入）
+            version = thread_data.get("version", "") if thread_data else ""
 
             items.append({
                 "filename": filename,

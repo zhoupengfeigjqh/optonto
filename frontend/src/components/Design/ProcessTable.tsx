@@ -92,8 +92,8 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
   };
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name', width: 100 },
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: string) => v || '-' },
+    { title: '英文名称', dataIndex: 'name', key: 'name', width: 100 },
+    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: string) => v || '-' },
     { title: '流程目标', dataIndex: 'goal', key: 'goal', width: 150, ellipsis: true, render: (v: string) => v || '-' },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: string) => v || '-' },
     { title: '步骤数', key: 'steps_count', width: 70, render: (_: any, r: Process) => <Tag color="blue">{r.steps?.length || 0}</Tag> },
@@ -133,8 +133,8 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
         {/* Basic fields */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
-            <label className="text-text-muted text-xs mb-1 block">展示名称（中文）</label>
-            <Input value={editProcess.display_name || ''} onChange={e => setEditProcess(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程展示名称" />
+            <label className="text-text-muted text-xs mb-1 block">中文名称</label>
+            <Input value={editProcess.display_name || ''} onChange={e => setEditProcess(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程中文名称" />
           </div>
           <div>
             <label className="text-text-muted text-xs mb-1 block">名称</label>

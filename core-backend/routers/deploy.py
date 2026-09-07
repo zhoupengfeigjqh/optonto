@@ -1,7 +1,7 @@
 """本体部署 API：版本合并预览 + 部署到 onto_market。
 
-版本语义：以需求文档头部的「版本：v1.1」行为准。同一版本下的所有已生成
-yaml（含 metadata.source_file 回退匹配到的）合并为该版本的完整本体。
+版本语义：以对话创建时录入的版本号（.data.json 中的 version 字段）为准。
+同一版本下的所有已生成 yaml（含 metadata.source_file 回退匹配到的）合并为该版本的完整本体。
 合并只发生在部署时的内存里，需求侧分片文件保持不动（单一事实来源）。
 """
 
@@ -31,21 +31,10 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/deploy", tags=["本体�
 _MERGE_SECTIONS = ("concepts", "relations", "functions", "behaviors", "rules", "processes")
 
 
-def _parse_version(md_path: Path) -> str:
-    """从 md 前 10 行解析「版本：xxx」，与 list_requirements 同一规则。"""
-    try:
-        for line in md_path.read_text(encoding="utf-8").splitlines()[:10]:
-            stripped = line.strip()
-            if stripped.startswith("版本："):
-                return stripped[len("版本："):].strip()
-    except Exception:
-        pass
-    return ""
-
-
 def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:
     """扫描全部需求线程，收集指定本体下已生成 yaml 的文档，按版本分组。
 
+    版本号取自 thread .data.json 的 version 字段（对话创建时录入）。
     返回 {版本: [{md, yaml, thread_id, thread_title}]}；yaml 匹配规则与
     list_requirements 一致（同名优先 + source_file 回退）。
     """
@@ -65,13 +54,16 @@ def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:
         if data.get("ontology_name") != ontology_name:
             continue
 
+        version = (data.get("version") or "").strip()
+        if not version:
+            continue
+
         source_map = _yaml_source_map(tdir)
         for md in sorted(tdir.glob("*.md")):
             req_name = md.name[:-3]
             matched = _match_ontology_yaml(tdir, req_name, md.name, source_map)
             if not matched:
                 continue
-            version = _parse_version(md)
             by_version.setdefault(version, []).append({
                 "md": md.name,
                 "yaml": matched,

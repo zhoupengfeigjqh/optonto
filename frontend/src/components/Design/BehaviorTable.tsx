@@ -109,8 +109,8 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', params: {}, response: {}, related_concepts: [] } as any);
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '英文名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
+    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '接口类型', dataIndex: 'behavior_type', key: 'behavior_type', width: 80, render: (v: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Select size="small" value={editData.behavior_type || 'API'} onChange={v => setEditData((p: any) => ({...p, behavior_type: v}))} options={[{label:'API',value:'API'},{label:'SQL',value:'SQL'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
       const t = v || 'API';

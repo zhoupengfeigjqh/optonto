@@ -19,6 +19,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [title, setTitle] = useState('');
+  const [version, setVersion] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -26,7 +27,6 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [exportOntoName, setExportOntoName] = useState('');
   const [exportContent, setExportContent] = useState('');
-  const [exportVersion, setExportVersion] = useState('');
   const [validating, setValidating] = useState(false);
   const [validateResult, setValidateResult] = useState('');
   const [showValidateModal, setShowValidateModal] = useState(false);
@@ -39,6 +39,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
     try {
       const thread = await getThread(threadId, scenarioName, ontologyName);
       setTitle(thread.title);
+      setVersion(thread.version || '');
       setMessages(thread.messages || []);
       setSavedValidate(thread.validate_result || null);
     } catch (e: any) {
@@ -126,19 +127,18 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const handleExport = () => {
     setExportOntoName(ontologyName || '');
     setExportContent('');
-    setExportVersion('');
     setShowTitleModal(true);
   };
 
   const handleConfirmExport = async () => {
     if (!exportOntoName.trim()) { message.warning('请输入本体名'); return; }
     if (!exportContent.trim()) { message.warning('请输入内容'); return; }
-    if (!exportVersion.trim()) { message.warning('请输入版本'); return; }
+    if (!version) { message.warning('版本号缺失（请在创建对话时填写版本号）'); return; }
     setShowTitleModal(false);
     setExporting(true);
     try {
       const selectedList = selectedIndex !== null ? [selectedIndex] : [];
-      const result = await exportThread(threadId, exportOntoName.trim(), exportContent.trim(), exportVersion.trim(), selectedList);
+      const result = await exportThread(threadId, exportOntoName.trim(), exportContent.trim(), selectedList);
       message.success(`文档已生成: ${result.filename}`);
       setSelectedIndex(null);
     } catch (e: any) {
@@ -354,10 +354,8 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
           />
           <label className="text-text-secondary text-sm block mb-2">版本</label>
           <Input
-            placeholder="例如：v1.0"
-            value={exportVersion}
-            onChange={e => setExportVersion(e.target.value)}
-            onPressEnter={handleConfirmExport}
+            value={version}
+            readOnly
             className="bg-dark-bg border-dark-border text-text-primary"
           />
           <p className="text-text-muted text-xs mt-2">已选中 1 条助手回复 · 同名文件将覆盖 · 导出后请到需求汇总查看</p>

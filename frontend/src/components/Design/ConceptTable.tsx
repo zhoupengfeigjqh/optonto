@@ -185,9 +185,9 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   }
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name', width: 120,
+    { title: '英文名称', dataIndex: 'name', key: 'name', width: 120,
       render: (v: any, r: Concept) => renderCell(v, r, 'name') },
-    { title: '展示名称', dataIndex: 'display_name', key: 'display_name', width: 120,
+    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120,
       render: (v: any, r: Concept) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true,
       render: (v: any, r: Concept) => renderCell(v, r, 'description') },
@@ -240,11 +240,11 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           pagination={false}
           scroll={{ x: 1240 }}
           columns={[
-            { title: '属性名', width: 130, render: (_: any, r: any) => (
-              <Input size="small" value={r.name} onChange={e => updateAttr(r._idx, { name: e.target.value })} placeholder="属性名" className="bg-dark-bg border-dark-border text-text-primary" />
+            { title: '英文名称', width: 130, render: (_: any, r: any) => (
+              <Input size="small" value={r.name} onChange={e => updateAttr(r._idx, { name: e.target.value })} placeholder="英文名称" className="bg-dark-bg border-dark-border text-text-primary" />
             )},
-            { title: '展示名', width: 110, render: (_: any, r: any) => (
-              <Input size="small" value={r.display_name || ''} onChange={e => updateAttr(r._idx, { display_name: e.target.value })} placeholder="展示名" className="bg-dark-bg border-dark-border text-text-primary" />
+            { title: '中文名称', width: 110, render: (_: any, r: any) => (
+              <Input size="small" value={r.display_name || ''} onChange={e => updateAttr(r._idx, { display_name: e.target.value })} placeholder="中文名称" className="bg-dark-bg border-dark-border text-text-primary" />
             )},
             { title: '类型', width: 100, render: (_: any, r: any) => (
               <Select size="small" value={r.type} onChange={v => updateAttr(r._idx, { type: v })} style={{ width: '100%' }}

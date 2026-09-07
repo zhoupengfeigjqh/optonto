@@ -407,6 +407,7 @@ export interface ThreadSummary {
   id: string;
   title: string;
   status: string;
+  version?: string;
   created_at: string;
   updated_at: string;
   scenario_name?: string;
@@ -423,6 +424,7 @@ export interface Thread {
   id: string;
   title: string;
   status: string;
+  version?: string;
   created_at: string;
   updated_at: string;
   messages: ThreadMessage[];
@@ -433,8 +435,8 @@ export interface Thread {
 export const getThreads = (query: string = '') =>
   request<ThreadSummary[]>(`/api/threads${query ? '?' + query : ''}`);
 
-export const createThread = (title: string = '新对话', scenario_name: string = '', ontology_name: string = '') =>
-  request<Thread>('/api/threads', { method: 'POST', body: JSON.stringify({ title, scenario_name, ontology_name }) });
+export const createThread = (title: string = '新对话', scenario_name: string = '', ontology_name: string = '', version: string = '') =>
+  request<Thread>('/api/threads', { method: 'POST', body: JSON.stringify({ title, scenario_name, ontology_name, version }) });
 
 export const getThread = (id: string, scenario?: string, ontology?: string) => {
   let url = `/api/threads/${id}`;
@@ -466,8 +468,8 @@ export const generateOntology = (threadId: string, filename: string, sections: s
 export const getOntologyTemplateSections = () =>
   request<{ sections: string[] }>('/api/threads/ontology-template/sections');
 
-export const exportThread = (id: string, ontologyName: string, content: string, version: string, selectedIndices: number[] = []) =>
-  request<{ message: string; path: string; filename: string }>(`/api/threads/${id}/export`, { method: 'POST', body: JSON.stringify({ ontology_name: ontologyName, content, version, selected_indices: selectedIndices }) });
+export const exportThread = (id: string, ontologyName: string, content: string, selectedIndices: number[] = []) =>
+  request<{ message: string; path: string; filename: string }>(`/api/threads/${id}/export`, { method: 'POST', body: JSON.stringify({ ontology_name: ontologyName, content, selected_indices: selectedIndices }) });
 
 export const chatStream = (threadId: string, message: string, grilling: boolean = false): Promise<Response> =>
   fetch(`/api/threads/${threadId}/chat`, {

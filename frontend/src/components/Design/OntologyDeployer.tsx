@@ -80,7 +80,7 @@ export default function OntologyDeployer({ ontologyId, activeTab }: Props) {
         <div className="text-text-secondary text-sm space-y-1">
           <p>将把版本 <strong className="text-accent-blue">{version}</strong> 合并后的本体（{statsText}）部署为：</p>
           <p className="font-mono text-xs bg-dark-card border border-dark-border rounded px-2 py-1">onto_market/…/ontology.yaml</p>
-          <p className="text-amber-400">此操作会覆盖当前本体市场中对应的 ontology.yaml，并同步刷新 data_engines.yaml / securities.yaml。</p>
+          <p className="text-amber-400">请注意，此操作会覆盖本体文件，并且需要重新配置设置安全和数据引擎。</p>
         </div>
       ),
       okText: '确认部署', cancelText: '取消', okButtonProps: { danger: true },
@@ -130,7 +130,7 @@ export default function OntologyDeployer({ ontologyId, activeTab }: Props) {
       </div>
 
       <p className="text-text-muted text-xs mb-3">
-        版本来自需求文档头部的「版本：xxx」；选择后自动拼接该版本下所有已生成的本体分片（一级目录按名字去重），确认后部署为本体市场中的完整本体文件。
+        选择后自动拼接该版本下所有已生成的本体分片（一级目录按名字去重），确认后部署后将初始化本体文件，后续可在本体明细中进一步修改和调整。
       </p>
 
       {loadingVersions || loadingPreview ? (
