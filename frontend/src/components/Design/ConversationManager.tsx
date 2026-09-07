@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Table, Modal, message, Space, Tag, Input, Spin } from 'antd';
-import { PlusOutlined, DeleteOutlined, MessageOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, MessageOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { getThreads, createThread, deleteThread, updateThread, ThreadSummary } from '@/api/client';
 import ConversationChat from './ConversationChat';
 
@@ -62,6 +62,11 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
     });
   };
 
+  const handleCancelEdit = () => {
+    setEditingTitle(null);
+    setEditValue('');
+  };
+
   const handleRename = async (id: string) => {
     if (!editValue.trim()) { setEditingTitle(null); return; }
     try {
@@ -81,9 +86,17 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
       title: '会话标题', dataIndex: 'title', key: 'title',
       render: (v: string, r: ThreadSummary) => {
         if (editingTitle === r.id) {
-          return <Input size="small" value={editValue} onChange={e => setEditValue(e.target.value)}
-            onBlur={() => handleRename(r.id)} onPressEnter={() => handleRename(r.id)}
-            className="bg-dark-bg border-dark-border text-text-primary" autoFocus />;
+          return (
+            <Space.Compact style={{ width: '100%' }}>
+              <Input size="small" value={editValue} onChange={e => setEditValue(e.target.value)}
+                onPressEnter={() => handleRename(r.id)}
+                className="bg-dark-bg border-dark-border text-text-primary" autoFocus />
+              <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleRename(r.id)}
+                style={{ color: '#10b981', height: 24, width: 24 }} />
+              <Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancelEdit}
+                style={{ color: '#ef4444', height: 24, width: 24 }} />
+            </Space.Compact>
+          );
         }
         return (
           <span className="text-text-primary cursor-pointer hover:text-accent-blue"
@@ -105,7 +118,7 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
         <Space>
           <Button type="link" size="small" icon={<MessageOutlined />} onClick={() => setActiveThreadId(r.id)}>对话</Button>
           <Button type="link" size="small" icon={<EditOutlined />}
-            onClick={() => { setEditingTitle(r.id); setEditValue(r.title); }} />
+            onClick={() => { setEditingTitle(r.id); setEditValue(r.title); }}>编辑</Button>
           <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r.id)} />
         </Space>
       ),

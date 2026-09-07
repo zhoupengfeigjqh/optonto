@@ -12,6 +12,7 @@ import {
   CompassOutlined,
   ApiOutlined,
   RobotOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
 import ConceptTable from '@/components/Design/ConceptTable';
@@ -41,7 +42,6 @@ const DESIGN_TABS = [
   { key: 'functions', label: '函数' },
   { key: 'rules', label: '规则' },
   { key: 'processes', label: '流程' },
-  { key: 'securities', label: '安全' },
 ];
 
 export default function DesignPage() {
@@ -51,7 +51,7 @@ export default function DesignPage() {
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'data-engine' | 'agent'>('design');
+  const [activeSection, setActiveSection] = useState<'design' | 'view' | 'requirements' | 'data-engine' | 'agent' | 'security'>('design');
   const [activeTab, setActiveTab] = useState('concepts');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>('design');
@@ -140,7 +140,11 @@ export default function DesignPage() {
       <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
       <div style={{ display: activeSection === 'design' && activeTab === 'processes' ? '' : 'none' }}><ProcessTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'securities' ? '' : 'none' }}><SecurityTable ontologyId={ontologyId} activeTab={activeTab} /></div>
+
+      {/* ── 权限控制：独立一级栏目，条件渲染 ── */}
+      {activeSection === 'security' && (
+        <SecurityTable ontologyId={ontologyId} activeTab={activeTab} />
+      )}
 
       {/* ── 数据引擎 & 智能体：条件渲染 ── */}
       {activeSection === 'data-engine' && activeTab === 'api-mapping' && (
@@ -322,6 +326,39 @@ export default function DesignPage() {
             )}
           </div>
 
+          {/* 权限控制 */}
+          <div>
+            <button
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${sidebarCollapsed ? 'justify-center' : 'justify-start'} ${
+                expandedSection === 'security'
+                  ? 'bg-accent-blue/10 text-accent-blue border border-accent-blue/30'
+                  : 'text-text-secondary hover:bg-dark-hover hover:text-text-primary border border-transparent'
+              }`}
+              onClick={() => {
+                  setExpandedSection(expandedSection === 'security' ? null : 'security');
+                }}
+              title="权限控制"
+            >
+              <SafetyOutlined />
+              {!sidebarCollapsed && <span>权限控制</span>}
+            </button>
+
+            {!sidebarCollapsed && expandedSection === 'security' && (
+              <div className="ml-4 mt-1 space-y-0.5">
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                    activeTab === 'securities'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { navigateTo('security', 'securities'); }}
+                >
+                  安全配置
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* 数据引擎 */}
           <div>
             <button
@@ -452,6 +489,8 @@ export default function DesignPage() {
               ? DESIGN_TABS.find(t => t.key === activeTab)?.label
               : activeSection === 'requirements'
               ? activeTab === 'requirements' ? '需求对话' : activeTab === 'requirement-summary' ? '需求汇总' : '本体部署'
+              : activeSection === 'security'
+              ? '权限控制'
               : activeSection === 'data-engine'
               ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
               : activeSection === 'agent'
