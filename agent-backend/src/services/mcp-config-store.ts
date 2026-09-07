@@ -9,6 +9,8 @@ export interface MCPServerConfig {
   allowed_tools?: string[];
   /** 内置服务标记（本体MCP）：不可删除、不可编辑、始终注册全部工具 */
   builtin?: boolean;
+  /** 连接携带的 HTTP 头（远程 MCP 鉴权：如 {Authorization: "Bearer xxx"}，架构文档 §九.3） */
+  headers?: Record<string, string>;
 }
 
 export interface MCPConfig {
@@ -18,9 +20,15 @@ export interface MCPConfig {
 /**
  * 内置本体MCP —— 恒存在、恒启用、恒全选，不可删除。
  * URL 默认 Docker 内网服务名，可用 MCP_BUILTIN_URL 覆盖（如本地直跑指向 http://localhost:8002/sse）。
+ * 2026-09-07 三服务拆分：optonto-mcp 更名 optonto-ontology-mcp（行为 facade 迁至 data-engine-mcp）。
  */
 const LEGACY_BUILTIN_URL = 'http://optonto-mcp:8002/sse';
-export const BUILTIN_MCP_URL = process.env['MCP_BUILTIN_URL'] || LEGACY_BUILTIN_URL;
+const DEFAULT_BUILTIN_URL = 'http://optonto-ontology-mcp:8002/sse';
+export const BUILTIN_MCP_URL = process.env['MCP_BUILTIN_URL'] || DEFAULT_BUILTIN_URL;
+
+/** 内置数据引擎MCP —— 行为 facade 唯一入口（2026-09-07 从本体MCP 拆出）。同内置语义：恒存在、恒启用、恒全选。 */
+const DEFAULT_DATA_ENGINE_URL = 'http://optonto-data-engine-mcp:8005/sse';
+export const BUILTIN_DATA_ENGINE_MCP_URL = process.env['MCP_BUILTIN_DATA_ENGINE_URL'] || DEFAULT_DATA_ENGINE_URL;
 
 export const BUILTIN_MCP = {
   name: '本体MCP',
@@ -29,17 +37,28 @@ export const BUILTIN_MCP = {
   builtin: true,
 } as MCPServerConfig;
 
+export const BUILTIN_DATA_ENGINE_MCP = {
+  name: '数据引擎MCP',
+  url: BUILTIN_DATA_ENGINE_MCP_URL,
+  enabled: true,
+  builtin: true,
+} as MCPServerConfig;
+
+const BUILTIN_SERVERS = [BUILTIN_MCP, BUILTIN_DATA_ENGINE_MCP];
+
 const DEFAULT_CONFIG: MCPConfig = {
-  servers: [BUILTIN_MCP],
+  servers: [...BUILTIN_SERVERS],
 };
 
-/** 内置身份识别：builtin 标记 / 当前 URL / 历史默认 URL（配置文件里可能残留旧默认，env 切换后仍要正确归类） */
+/** 内置身份识别：builtin 标记 / 任一内置当前 URL / 历史默认 URL（配置文件里可能残留旧默认，env 切换后仍要正确归类） */
 function isBuiltinServer(s: MCPServerConfig | undefined | null): boolean {
-  return !!s && (s.builtin === true || s.url === BUILTIN_MCP_URL || s.url === LEGACY_BUILTIN_URL);
+  return !!s && (s.builtin === true
+    || s.url === BUILTIN_MCP_URL || s.url === LEGACY_BUILTIN_URL
+    || s.url === BUILTIN_DATA_ENGINE_MCP_URL);
 }
 
 /**
- * 规整配置：确保内置本体MCP 恒存在且形态固定；用户服务剥离 builtin 标记。
+ * 规整配置：确保内置服务（本体MCP + 数据引擎MCP）恒存在且形态固定；用户服务剥离 builtin 标记。
  */
 function normalize(config: MCPConfig): MCPConfig {
   const others = (config.servers || [])
@@ -48,7 +67,7 @@ function normalize(config: MCPConfig): MCPConfig {
       const { builtin, ...rest } = s as any;
       return rest;
     });
-  return { servers: [BUILTIN_MCP, ...others] };
+  return { servers: [...BUILTIN_SERVERS, ...others] };
 }
 
 /**

@@ -27,18 +27,7 @@ def http_engine(behavior: str, method: str) -> dict:
     return {
         "name": f"e-{behavior}-{method}",
         "behavior_name": behavior,
-        "engine_type": "HTTP",
         "target": {"method": method, "url": "http://x"},
-    }
-
-
-def sql_engine(behavior: str) -> dict:
-    return {
-        "name": f"e-{behavior}-sql",
-        "behavior_name": behavior,
-        "engine_type": "SQL",
-        "target": {"method": "POST"},
-        "sql": "select 1",
     }
 
 
@@ -111,38 +100,26 @@ class TestOverlay(ContractCase):
 
 
 class TestOpType(ContractCase):
-    """契约 §3 操作类型推导（_resolve_op_type）"""
+    """契约 §3 操作类型推导（_resolve_op_type）——2026-09-07 起引擎不参与推导，空即 query"""
 
     def engines(self, *ds: dict) -> list[DataEngineItem]:
         return [DataEngineItem(**d) for d in ds]
 
     def test_T1_显式command优先(self) -> None:
         b = BehaviorItem(name="B1", op_type="command")
-        self.assertEqual(self.resolve(b, self.engines(sql_engine("B1"))), "command")
+        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "GET"))), "command")
 
     def test_T2_显式query优先(self) -> None:
         b = BehaviorItem(name="B1", op_type="query")
         self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "POST"))), "query")
 
-    def test_T3_空op_type加HTTP_POST判command(self) -> None:
+    def test_T3_空op_type有引擎判query(self) -> None:
         b = BehaviorItem(name="B1")
-        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "POST"))), "command")
+        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "POST"))), "query")
 
-    def test_T4_空op_type加HTTP_GET判query(self) -> None:
-        b = BehaviorItem(name="B1")
-        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "GET"))), "query")
-
-    def test_T5_空op_type加SQL引擎判query(self) -> None:
-        b = BehaviorItem(name="B1")
-        self.assertEqual(self.resolve(b, self.engines(sql_engine("B1"))), "query")
-
-    def test_T6_空op_type无引擎判query(self) -> None:
+    def test_T4_空op_type无引擎判query(self) -> None:
         b = BehaviorItem(name="B1")
         self.assertEqual(self.resolve(b, []), "query")
-
-    def test_T7_method小写不敏感(self) -> None:
-        b = BehaviorItem(name="B1")
-        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "post"))), "command")
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ class ConceptItem(BaseModel):
     description: str = Field("", description="概念描述")
     attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表")
     display_name: str = Field("", description="展示名称")
+    instance_label: str = Field("", description="实例标签：用于实例展示时作为节点标签，可选值为属性的英文名")
 
 
 class RelationItem(BaseModel):
@@ -80,7 +81,6 @@ class RelationItem(BaseModel):
 class BehaviorItem(BaseModel):
     name: str = Field(..., description="行为名称")
     description: str = Field("", description="行为描述")
-    behavior_type: str = Field("API", description="接口类型（API/SQL）")
     op_type: str = Field("", description="操作类型（command/query）")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
@@ -185,18 +185,21 @@ class TargetApiConfig(BaseModel):
     method: str = Field("POST", description="请求方式 (GET/POST/PATCH/DELETE)")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="输出结构")
+    # 下游 MCP 服务与工具（落盘自包含，不引用外部注册表；引擎唯一形态=MCP）
+    server_url: str = Field("", description="下游 MCP 服务 SSE 地址（必填）")
+    tool_name: str = Field("", description="下游 MCP 工具名（必填）")
+    output_fields: list[str] = Field(default_factory=list, description="目标输出字段（无 outputSchema 时手工/试调录入，设计期参照）")
+    headers: dict = Field(default_factory=dict, description="连接下游 MCP 携带的 HTTP 头（远程鉴权，可选）")
 
 
 class DataEngineItem(BaseModel):
-    """数据引擎 — 本体行为与目标API/SQL映射"""
+    """数据引擎 — 本体行为与目标 MCP 工具映射（SQL/HTTP 型已删除，2026-09-07）"""
     name: str = Field(..., description="数据引擎名称")
     display_name: str = Field("", description="展示名称")
     behavior_name: str = Field(..., description="本体行为名称")
-    engine_type: str = Field("API", description="引擎类型（API/SQL）")
     target: TargetApiConfig = Field(default_factory=TargetApiConfig)
     input_mapping: dict = Field(default_factory=dict, description="输入映射 {ontology_param: target_param}")
     output_mapping: dict = Field(default_factory=dict, description="输出映射 {ontology_field: target_field}")
-    sql: str = Field("", description="SQL 查询语句")
 
 
 class OntologyData(BaseModel):

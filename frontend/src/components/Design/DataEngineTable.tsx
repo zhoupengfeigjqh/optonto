@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Tag } from 'antd';
 import { EditOutlined, CodeOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartParseTarget, smartAlign, getBehaviors, updateBehavior, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import { getDataEngines, createDataEngine, updateDataEngine, analyzeMapping, callBehavior, smartAlign, getBehaviors, updateBehavior, DataEngine, TargetApiConfig, Behavior } from '@/api/client';
+import { getMCPConfig, listMCPTools, callMCPTool, MCPServerConfig, MCPToolInfo } from '@/api/agent-client';
 import ResizableTable from '@/components/ResizableTable';
 import JsonEditor from '@/components/JsonEditor';
 
@@ -62,9 +63,64 @@ function flattenFields(obj: Record<string, unknown>, prefix = ''): string[] {
 }
 
 const emptyTarget: TargetApiConfig = {
-  data_source_name: '', api_name: '', url: '', method: 'POST',
+  data_source_name: '', api_name: '', url: '', method: '',
   params: {}, response: {},
 };
+
+/**
+ * JSON Schema → 平台 params/response 结构（{field: {type, description, required, properties/items}}）。
+ * 映射页"自动提取 schema"：inputSchema/outputSchema 直接转，映射弹窗的 flattenFields/flattenFieldTypes 原样消费。
+ */
+function schemaToParams(schema: Record<string, any> | null | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!schema || typeof schema !== 'object') return out;
+  const props = schema.properties || {};
+  const requiredList: string[] = Array.isArray(schema.required) ? schema.required : [];
+  for (const [k, v] of Object.entries(props)) {
+    out[k] = convertNode(v as Record<string, any>, requiredList.includes(k));
+  }
+  return out;
+}
+
+function convertNode(node: Record<string, any>, required: boolean): Record<string, unknown> {
+  const t = node?.type || 'string';
+  const out: Record<string, unknown> = { type: t };
+  if (required) out.required = true;
+  if (node?.description) out.description = node.description;
+  if (t === 'object' && node?.properties) {
+    out.properties = schemaToParams(node);
+  } else if (t === 'array' && node?.items) {
+    out.items = node.items.type === 'object' && node.items.properties
+      ? { type: 'object', properties: schemaToParams(node.items) }
+      : { type: node.items.type || 'string' };
+  }
+  return out;
+}
+
+/** 试调提取：从真实响应样本反推字段结构（值 → type），与 schemaToParams 同形态 */
+function inferFromSample(sample: unknown): Record<string, unknown> {
+  if (sample === null || sample === undefined || typeof sample !== 'object') return {};
+  const src = Array.isArray(sample) ? (sample[0] ?? {}) : sample;
+  if (typeof src !== 'object' || src === null) return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
+    out[k] = inferNode(v);
+  }
+  return out;
+}
+
+function inferNode(v: unknown): Record<string, unknown> {
+  if (typeof v === 'number') return { type: Number.isInteger(v) ? 'integer' : 'number' };
+  if (typeof v === 'boolean') return { type: 'boolean' };
+  if (Array.isArray(v)) {
+    const first = v[0];
+    return first && typeof first === 'object'
+      ? { type: 'array', items: { type: 'object', properties: inferFromSample(first) } }
+      : { type: 'array', items: { type: typeof first === 'number' ? 'number' : 'string' } };
+  }
+  if (v !== null && typeof v === 'object') return { type: 'object', properties: inferFromSample(v) };
+  return { type: 'string' };
+}
 
 function emptyEngine(behaviorName: string): DataEngine {
   return {
@@ -93,6 +149,18 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [targetParamsOpen, setTargetParamsOpen] = useState(false);
   const [targetResponseOpen, setTargetResponseOpen] = useState(false);
 
+  // MCP 服务/工具选择（文档 §八.1/§八.2：目标接口=下拉选已配置 MCP 服务，接口地址=选该服务下的函数）
+  const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
+  const [mcpTools, setMcpTools] = useState<MCPToolInfo[]>([]);
+  const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
+  const [selectedServerUrl, setSelectedServerUrl] = useState('');
+  const [selectedToolName, setSelectedToolName] = useState('');
+
+  // 试调提取（文档 §九.2 降级链：无 outputSchema → 真实 callTool 一次反推字段）
+  const [trialOpen, setTrialOpen] = useState(false);
+  const [trialArgs, setTrialArgs] = useState('{}');
+  const [trialLoading, setTrialLoading] = useState(false);
+
   // mapping modals
   const [inputMappingOpen, setInputMappingOpen] = useState(false);
   const [outputMappingOpen, setOutputMappingOpen] = useState(false);
@@ -115,18 +183,10 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [connectResult, setConnectResult] = useState<any>(null);
   const [connectLoading, setConnectLoading] = useState(false);
 
-  // smart parse modal
-  const [smartParseOpen, setSmartParseOpen] = useState(false);
-  const [smartParseParamsContent, setSmartParseParamsContent] = useState('');
-  const [smartParseResponseContent, setSmartParseResponseContent] = useState('');
-  const [smartParseLoading, setSmartParseLoading] = useState(false);
-
   // smart align modal
   const [smartAlignOpen, setSmartAlignOpen] = useState(false);
   const [smartAlignBehaviorName, setSmartAlignBehaviorName] = useState('');
   const [smartAlignLoading, setSmartAlignLoading] = useState(false);
-
-  // ─── (MCP 服务已移至独立页面) ───
 
   // smart mapping confirm modal
   const [smartMappingOpen, setSmartMappingOpen] = useState(false);
@@ -139,9 +199,6 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const [behaviorParamsStr, setBehaviorParamsStr] = useState('{}');
   const [behaviorResponseStr, setBehaviorResponseStr] = useState('{}');
   const [behaviorEditLoading, setBehaviorEditLoading] = useState(false);
-
-  // copy behavior params to target confirm modal
-  const [copyConfirmOpen, setCopyConfirmOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -168,14 +225,73 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
 
   // ─── target config ───────────────────────────────────────────────────────
 
-  const openTargetConfig = (behaviorName: string) => {
+  const openTargetConfig = async (behaviorName: string) => {
     setCurrentBehavior(behaviorName);
     const de = getEngine(behaviorName);
     const t = de.target || { ...emptyTarget };
-    setTargetData({ ...t });
+    setTargetData({ ...emptyTarget, ...t });
     setTargetParamsStr(JSON.stringify(t.params || {}, null, 2));
     setTargetResponseStr(JSON.stringify(t.response || {}, null, 2));
+    setSelectedServerUrl(t.server_url || '');
+    setSelectedToolName(t.tool_name || '');
+    setMcpTools([]);
     setTargetOpen(true);
+    // 已配置的手工（非内置）MCP 服务 = 目标接口下拉数据源（文档 §八.1）
+    try {
+      const cfg = await getMCPConfig();
+      setMcpServers(cfg.servers.filter(s => !s.builtin));
+    } catch (e: any) { message.warning('读取 MCP 服务配置失败: ' + e.message); }
+    // 回显：已配 server_url 时把工具清单拉回来（含工具名下拉回显）
+    if (t.server_url) fetchToolList(t.server_url, t.headers);
+  };
+
+  const fetchToolList = async (serverUrl: string, headers?: Record<string, string>) => {
+    setMcpToolsLoading(true);
+    try {
+      const r = await listMCPTools(serverUrl, headers);
+      if (r.success) setMcpTools(r.tools);
+      else { setMcpTools([]); message.warning('拉取工具清单失败: ' + (r.error || '')); }
+    } catch (e: any) { setMcpTools([]); message.warning('拉取工具清单失败: ' + e.message); }
+    finally { setMcpToolsLoading(false); }
+  };
+
+  /** 选中工具 → schema 自动提取（§八.6）：输入=inputSchema；输出降级链 outputSchema→试调→手工 */
+  const handleSelectTool = (toolName: string) => {
+    setSelectedToolName(toolName);
+    const tool = mcpTools.find(t => t.name === toolName);
+    if (!tool) return;
+    const server = mcpServers.find(s => s.url === selectedServerUrl);
+    setTargetParamsStr(JSON.stringify(schemaToParams(tool.inputSchema), null, 2));
+    if (tool.outputSchema) {
+      setTargetResponseStr(JSON.stringify(schemaToParams(tool.outputSchema), null, 2));
+      message.success('已自动提取输入/输出 schema');
+    } else {
+      setTargetResponseStr('{}');
+      message.info('输入 schema 已提取；该工具未声明输出 schema，请用"试调提取"或手工编辑输出');
+    }
+    // 数据源/接口名称自动带入（仍可手改）
+    setTargetData(p => ({
+      ...p,
+      data_source_name: p.data_source_name || server?.name || '',
+      api_name: toolName,
+    }));
+  };
+
+  const handleTrial = async () => {
+    let args: Record<string, unknown>;
+    try { args = JSON.parse(trialArgs || '{}'); } catch { message.warning('样例参数 JSON 格式错误'); return; }
+    const server = mcpServers.find(s => s.url === selectedServerUrl);
+    setTrialLoading(true);
+    try {
+      const r = await callMCPTool(selectedServerUrl, selectedToolName, args, server?.headers);
+      if (!r.success) { message.error('试调失败: ' + (r.error || '')); return; }
+      const inferred = inferFromSample(r.data);
+      if (Object.keys(inferred).length === 0) { message.warning('响应不是对象/数组，无法反推字段，请手工编辑输出'); return; }
+      setTargetResponseStr(JSON.stringify(inferred, null, 2));
+      message.success('试调提取完成，请确认输出结构');
+      setTrialOpen(false);
+    } catch (e: any) { message.error('试调失败: ' + e.message); }
+    finally { setTrialLoading(false); }
   };
 
   const saveTargetConfig = async () => {
@@ -183,37 +299,24 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       const params = JSON.parse(targetParamsStr);
       const response = JSON.parse(targetResponseStr);
       let de = await ensureEngine(currentBehavior);
-      const updated = { ...de, target: { ...targetData, params, response } };
+      const server = mcpServers.find(s => s.url === selectedServerUrl);
+      // 引擎唯一形态=MCP（engine_type 字段已删出 schema）：方法选择/URL 录入已删除（文档 §八.3），
+      // server_url+tool_name 落盘自包含；headers 快照自服务配置（远程鉴权，运行期 data-engine-mcp 透传）
+      const updated: DataEngine = {
+        ...de,
+        target: {
+          ...targetData, params, response,
+          url: '', method: '',
+          server_url: selectedServerUrl,
+          tool_name: selectedToolName,
+          headers: server?.headers,
+        },
+      };
       await updateDataEngine(ontologyId, de.name, updated);
       setEngines(prev => prev.map(e => e.behavior_name === currentBehavior ? updated : e));
       message.success('目标接口已保存');
       setTargetOpen(false);
     } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); }
-  };
-
-  const handleSmartParse = async () => {
-    if (!smartParseParamsContent.trim() || !smartParseResponseContent.trim()) {
-      message.warning('输入参数和输出结构都必须填写，否则无法解析');
-      return;
-    }
-    setSmartParseLoading(true);
-    try {
-      const de = await ensureEngine(currentBehavior);
-      const result = await smartParseTarget(ontologyId, de.name, smartParseParamsContent, smartParseResponseContent);
-      if (result.params && Object.keys(result.params).length > 0) {
-        setTargetParamsStr(JSON.stringify(result.params, null, 2));
-      }
-      if (result.response && Object.keys(result.response).length > 0) {
-        setTargetResponseStr(JSON.stringify(result.response, null, 2));
-      }
-      if (result.api_name) setTargetData(p => ({ ...p, api_name: result.api_name }));
-      if (result.data_source_name) setTargetData(p => ({ ...p, data_source_name: result.data_source_name }));
-      if (result.method) setTargetData(p => ({ ...p, method: result.method }));
-      if (result.url) setTargetData(p => ({ ...p, url: result.url }));
-      message.success('智能解析完成，请确认结果');
-      setSmartParseOpen(false);
-    } catch (e: any) { message.error('智能解析失败: ' + e.message); }
-    finally { setSmartParseLoading(false); }
   };
 
   const handleSmartMappingConfirm = async () => {
@@ -397,7 +500,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
 
   // ─── render ──────────────────────────────────────────────────────────────
 
-  const dataSource = behaviors.filter(b => !(b as any).behavior_type || (b as any).behavior_type === 'API').map(b => {
+  const dataSource = behaviors.map(b => {
     const de = getEngine(b.name);
     return { ...de, _key: b.name, _behavior: b };
   });
@@ -409,7 +512,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     }},
     { title: '目标接口设置', key: 'target', width: 100, render: (_: any, r: any) => {
       const de = getEngine(r._behavior.name);
-      const hasConfig = de.target?.url || de.target?.api_name || de.target?.data_source_name;
+      const hasConfig = de.target?.server_url || de.target?.tool_name || de.target?.url || de.target?.api_name || de.target?.data_source_name;
       return <Button size="small" icon={<EditOutlined />} onClick={() => openTargetConfig(r._behavior.name)}>{hasConfig ? '已设置' : '编辑'}</Button>;
     }},
     { title: '输入映射', key: 'input_mapping', width: 80, render: (_: any, r: any) => {
@@ -443,7 +546,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-base font-semibold text-text-primary">API映射</h3>
-          <p className="text-text-muted text-xs mt-0.5">管理 API 类型的数据映射，配置目标接口和字段映射关系。</p>
+          <p className="text-text-muted text-xs mt-0.5">管理 MCP 类型的数据映射，配置目标接口（MCP 服务与工具）和字段映射关系。</p>
         </div>
         <div className="flex items-center gap-2">
         </div>
@@ -452,8 +555,37 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
       {/* ─── Target Config Modal ──────────────────────────────────────────── */}
-      <Modal title={`目标接口设置 - ${getBehaviorDisplay(currentBehavior)}`} open={targetOpen} onOk={saveTargetConfig} onCancel={() => setTargetOpen(false)} okText="保存" cancelText="取消" width={700}>
+      <Modal title={`目标接口设置 - ${getBehaviorDisplay(currentBehavior)}`} open={targetOpen} onOk={saveTargetConfig} onCancel={() => setTargetOpen(false)} okText="保存" cancelText="取消" width={700}
+        okButtonProps={{ disabled: !selectedServerUrl || !selectedToolName }}>
         <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <span className="text-text-muted text-xs">目标 MCP 服务</span>
+              <Select
+                value={selectedServerUrl || undefined}
+                placeholder="选择已配置的 MCP 服务（在 MCP 配置页维护）"
+                onChange={v => { setSelectedServerUrl(v); setSelectedToolName(''); setMcpTools([]); const s = mcpServers.find(x => x.url === v); fetchToolList(v, s?.headers); }}
+                options={mcpServers.map(s => ({ label: `${s.name}${s.enabled ? '' : '（已停用）'}`, value: s.url }))}
+                style={{ width: '100%' }} popupClassName="!bg-dark-card"
+              />
+            </div>
+            <div className="flex-1">
+              <span className="text-text-muted text-xs">接口（该服务下的工具）</span>
+              <Select
+                value={selectedToolName || undefined}
+                placeholder={selectedServerUrl ? '选择工具' : '先选择 MCP 服务'}
+                loading={mcpToolsLoading}
+                disabled={!selectedServerUrl}
+                onChange={handleSelectTool}
+                options={mcpTools.map(t => ({ label: `${t.name} — ${t.description || ''}`, value: t.name }))}
+                style={{ width: '100%' }} popupClassName="!bg-dark-card"
+                showSearch optionFilterProp="label"
+              />
+            </div>
+          </div>
+          {targetData.url && !targetData.server_url && !selectedServerUrl && (
+            <p className="text-yellow-400 text-xs">⚠ 该行为仍是旧 HTTP 直连配置（{targetData.url}），已废弃待迁移：请重新选择 MCP 服务与工具，保存后自动转为 MCP 映射。</p>
+          )}
           <div className="flex gap-2">
             <div className="flex-1">
               <span className="text-text-muted text-xs">数据源名称</span>
@@ -464,22 +596,21 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
               <Input value={targetData.api_name} onChange={e => setTargetData(p => ({...p, api_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />
             </div>
           </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <span className="text-text-muted text-xs">目标API接口地址</span>
-              <Input value={targetData.url} onChange={e => setTargetData(p => ({...p, url: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="https://" />
-            </div>
-            <div style={{width:100}}>
-              <span className="text-text-muted text-xs">方法</span>
-              <Select value={targetData.method} onChange={v => setTargetData(p => ({...p, method: v}))} options={[{label:'GET',value:'GET'},{label:'POST',value:'POST'},{label:'PATCH',value:'PATCH'},{label:'DELETE',value:'DELETE'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />
-            </div>
-          </div>
           <div className="flex items-center gap-2">
-            <span className="text-text-muted text-xs">输入参数 / 输出结构</span>
+            <span className="text-text-muted text-xs">输入参数 / 输出结构（选中工具自动提取 schema，可手工调整）</span>
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetParamsOpen(true)}>编辑输入</Button>
             <Button size="small" icon={<CodeOutlined />} onClick={() => setTargetResponseOpen(true)}>编辑输出</Button>
-            <Button size="small" onClick={() => { setSmartParseParamsContent(''); setSmartParseResponseContent(''); setSmartParseOpen(true); }}><span style={{ color: '#f59e0b' }}>智能解析</span></Button>
-            <Button size="small" onClick={() => setCopyConfirmOpen(true)}><span style={{ color: '#ef4444' }}>复制本体行为参数</span></Button>
+            <Button size="small" disabled={!selectedToolName} onClick={() => {
+              // 用已提取的输入 schema 预填一份样例参数（类型默认值），用户改值后真实试调
+              let seed: Record<string, unknown> = {};
+              try {
+                const p = JSON.parse(targetParamsStr || '{}');
+                seed = Object.fromEntries(Object.entries(p).map(([k, v]: [string, any]) =>
+                  [k, v?.type === 'integer' || v?.type === 'number' ? 1 : v?.type === 'boolean' ? false : v?.type === 'array' ? [] : v?.type === 'object' ? {} : '']));
+              } catch { /* 输入 JSON 暂非法时给空样例 */ }
+              setTrialArgs(JSON.stringify(seed, null, 2));
+              setTrialOpen(true);
+            }}><span style={{ color: '#f59e0b' }}>试调提取</span></Button>
           </div>
         </div>
 
@@ -494,67 +625,13 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
           </div>
         </Modal>
 
-        {/* ─── Smart Parse Modal ──────────────────────────────────────────── */}
-        <Modal title="智能解析" open={smartParseOpen} onOk={handleSmartParse} onCancel={() => setSmartParseOpen(false)} okText="开始解析" cancelText="取消" width={900} confirmLoading={smartParseLoading}>
-          <p className="text-text-muted text-xs mb-3">粘贴目标接口的输入参数和输出结构文档（两栏均需填写），AI 将自动解析为标准格式</p>
-          <div className="flex gap-3" style={{ minHeight: 320 }}>
-            <div className="flex-1">
-              <span className="text-text-muted text-xs mb-1 block">输入参数</span>
-              <Input.TextArea
-                value={smartParseParamsContent}
-                onChange={e => setSmartParseParamsContent(e.target.value)}
-                rows={14}
-                className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
-                placeholder={`可复制粘贴需求或接口文档里API请求参数，样例：
-
-字段名  类型  必填  说明  示例
-tradeId  String  是  交易ID  "TRD001"
-amount  Number  是  交易金额  10000.00
-status  String  否  状态  "active"`}
-              />
-            </div>
-            <div className="flex-1">
-              <span className="text-text-muted text-xs mb-1 block">输出结构</span>
-              <Input.TextArea
-                value={smartParseResponseContent}
-                onChange={e => setSmartParseResponseContent(e.target.value)}
-                rows={14}
-                className="bg-dark-bg border-dark-border text-text-primary font-mono text-xs"
-                placeholder={`可复制粘贴需求或接口文档里返回结果，样例：
-
-字段名  类型  说明  示例
-code  Number  状态码  0
-data  Object  返回数据  {"orderId":"ORD001"}
-orderId  String  订单ID  "ORD001"
-total  Number  订单总价  15000.50`}
-              />
-            </div>
+        {/* ─── 试调提取 Modal（§九.2 降级链：无 outputSchema → 真实 callTool 反推字段） ─── */}
+        <Modal title={`试调提取 - ${selectedToolName}`} open={trialOpen} onOk={handleTrial} onCancel={() => setTrialOpen(false)} okText="发送试调" cancelText="取消" width={700} confirmLoading={trialLoading}>
+          <p className="text-text-muted text-xs mb-3">用样例参数真实调用一次该工具，从响应反推输出字段结构（查询类工具适用；写操作工具请手工编辑输出，避免试调产生真实数据）</p>
+          <span className="text-text-muted text-xs mb-1 block">样例参数 (JSON)</span>
+          <div className="border border-dark-border rounded overflow-hidden" style={{ minHeight: 260 }}>
+            <JsonEditor value={trialArgs} onChange={setTrialArgs} />
           </div>
-        </Modal>
-
-        {/* ─── Copy Behavior Params Confirm Modal ─────────────────────────── */}
-        <Modal
-          title="复制本体行为参数"
-          open={copyConfirmOpen}
-          onOk={() => {
-            const beh = behaviors.find(b => b.name === currentBehavior);
-            if (beh) {
-              setTargetParamsStr(JSON.stringify(beh.params || {}, null, 2));
-              setTargetResponseStr(JSON.stringify(beh.response || {}, null, 2));
-              message.success('已将本体行为参数复制到目标接口');
-            }
-            setCopyConfirmOpen(false);
-          }}
-          onCancel={() => setCopyConfirmOpen(false)}
-          okText="确认复制"
-          cancelText="取消"
-          okButtonProps={{ danger: true }}
-          width={500}
-        >
-          <p className="text-text-primary text-sm">
-            ⚠ <span className="text-red-400">注意：</span>将本体行为参数拷贝为目标接API口参数，此时需要用户按照本体参数设计目标API接口（即外部业务系统接口）。
-          </p>
-          <p className="text-text-muted text-xs mt-3">请问是否复制？</p>
         </Modal>
       </Modal>
 
@@ -669,7 +746,11 @@ total  Number  订单总价  15000.50`}
           <div className="space-y-4">
             <div>
               <span className="text-text-muted text-xs">目标接口：</span>
-              <code className="text-accent-green text-xs ml-1">{connectEngine.target?.method || 'POST'} {connectEngine.target?.url || '(未配置)'}</code>
+              <code className="text-accent-green text-xs ml-1">
+                {connectEngine.target?.server_url
+                  ? `MCP  ${connectEngine.target.tool_name} @ ${connectEngine.target.server_url}`
+                  : `${connectEngine.target?.method || 'POST'} ${connectEngine.target?.url || '(未配置)'}`}
+              </code>
             </div>
             {Object.keys(connectParams).length > 0 && (
               <div>

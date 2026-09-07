@@ -12,17 +12,14 @@ import sys
 import yaml
 
 BASE = pathlib.Path(__file__).resolve().parent.parent / ".data" / "onto_market" / "生产调度"
-WRITE_METHODS = {"POST", "PATCH", "DELETE", "PUT"}
 TOP_KEY = re.compile(r"^[A-Za-z_][\w-]*:")
 
 
 def resolve_op_type(behavior: dict, engines: list) -> str:
+    # 2026-09-07 起：op_type 唯一权威（引擎无 method 语义可推导），空即 query
     op = behavior.get("op_type") or ""
     if op in ("command", "query"):
         return op
-    eng = next((d for d in engines if d.get("behavior_name") == behavior.get("name")), None)
-    if eng and eng.get("engine_type") != "SQL" and (eng.get("target", {}).get("method", "") or "").upper() in WRITE_METHODS:
-        return "command"
     return "query"
 
 

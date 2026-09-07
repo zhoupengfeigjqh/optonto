@@ -135,6 +135,8 @@ export interface MCPServerConfig {
   allowed_tools?: string[];
   /** 内置本体MCP：不可删除/编辑，始终注册全部工具 */
   builtin?: boolean;
+  /** 连接携带的 HTTP 头（远程 MCP 鉴权，架构文档 §九.3） */
+  headers?: Record<string, string>;
 }
 
 export interface MCPConfig {
@@ -145,6 +147,8 @@ export interface MCPToolInfo {
   name: string;
   description: string;
   inputSchema: Record<string, any>;
+  /** 输出 schema（可空；business-mcp 强制声明，第三方远程通常没有 → 走降级链） */
+  outputSchema?: Record<string, any> | null;
 }
 
 export interface MCPTestResult {
@@ -171,4 +175,20 @@ export const testMCPConnection = (
   request<MCPTestResult>(
     `/mcp-config/test`,
     { method: 'POST', body: JSON.stringify({ url }) }
+  );
+
+/** 只读列出 MCP 工具（映射页二级下拉数据源，文档 §八.2） */
+export const listMCPTools = (url: string, headers?: Record<string, string>): Promise<MCPTestResult> =>
+  request<MCPTestResult>(
+    `/mcp-config/tools`,
+    { method: 'POST', body: JSON.stringify({ url, headers }) }
+  );
+
+/** 试调 MCP 工具（映射页"试调提取"：无 outputSchema 时真实调一次反推字段，文档 §九.2） */
+export const callMCPTool = (
+  url: string, toolName: string, args: Record<string, unknown>, headers?: Record<string, string>
+): Promise<{ success: boolean; data?: unknown; error?: string }> =>
+  request(
+    `/mcp-config/call-tool`,
+    { method: 'POST', body: JSON.stringify({ url, tool_name: toolName, arguments: args, headers }) }
   );

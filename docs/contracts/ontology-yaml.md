@@ -42,11 +42,11 @@
 
 规则（按序）：
 
-1. 行为 `op_type` 显式为 `command` 或 `query` → **采用显式值**（显式优先，不看数据引擎）。
-2. 否则查数据引擎：存在 `behavior_name` 匹配的引擎，且 `engine_type != "SQL"`，且 `target.method` 大写后 ∈ `{POST, PATCH, DELETE, PUT}` → `command`。
-3. 其余一切情况 → `query`（SQL 引擎推不出写；无引擎推不出写；method 大小写不敏感）。
+1. 行为 `op_type` 显式为 `command` 或 `query` → **采用显式值**。
+2. 其余一切情况 → `query`。
 
-写方法集合：`{POST, PATCH, DELETE, PUT}`（三端同一常量）。
+> 2026-09-07 简化：数据引擎唯一形态为 MCP（SQL/HTTP 型已删除），无 method 语义可推导，
+> 写行为必须在行为上显式 `op_type: command`；引擎不再参与推导。
 
 ## 4. 缓存语义
 
@@ -60,8 +60,8 @@
 
 | # | 场景 | 期望 |
 | :-: | :-- | :-- |
-| O1 | data_engines.yaml 存在（POST 引擎），ontology.yaml 旧段为 GET 引擎 | 采用独立文件（行为判写） |
-| O2 | data_engines.yaml 不存在，ontology.yaml 旧段为 POST 引擎 | 回退旧段（行为判写） |
+| O1 | data_engines.yaml 存在（POST 引擎），ontology.yaml 旧段为 GET 引擎 | 采用独立文件 |
+| O2 | data_engines.yaml 不存在，ontology.yaml 旧段为 POST 引擎 | 回退旧段 |
 | O3 | securities.yaml 存在（scope=everyone），ontology.yaml 旧段 scope=disable | 采用独立文件（everyone） |
 | O4 | 独立文件为裸列表形态 | 等价接受 |
 | O5 | 独立文件为映射包裹形态（`data_engines:` / `securities:` 键） | 等价接受 |
@@ -70,10 +70,7 @@
 
 | # | op_type | 引擎 | 期望 |
 | :-: | :-- | :-- | :-- |
-| T1 | `command`（显式） | SQL 引擎 | command（显式优先） |
-| T2 | `query`（显式） | HTTP POST 引擎 | query（显式优先） |
-| T3 | 空 | HTTP POST 引擎 | command |
-| T4 | 空 | HTTP GET 引擎 | query |
-| T5 | 空 | SQL 引擎（即使 method=POST） | query |
-| T6 | 空 | 无引擎 | query |
-| T7 | 空 | HTTP `post`（小写）引擎 | command（大小写不敏感） |
+| T1 | `command`（显式） | 任意引擎 | command |
+| T2 | `query`（显式） | 任意引擎 | query |
+| T3 | 空 | 有引擎 | query（引擎不参与推导） |
+| T4 | 空 | 无引擎 | query |

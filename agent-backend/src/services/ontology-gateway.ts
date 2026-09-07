@@ -115,15 +115,10 @@ export class OntologyGateway {
     // 关联概念属性
     const concepts = this.resolveConcepts(data, behavior?.related_concepts || []);
 
-    // 写操作判定：优先用 op_type（command=写/query=读，显式权威来源）；
-    // op_type 为空时兜底到 data_engines 的 HTTP method 推导（防漏填导致写操作跳过安全审核）。
+    // 写操作判定：op_type 是唯一权威来源（command=写/query=读）；
+    // 引擎唯一形态为 MCP（SQL/HTTP 已删除），无 method 语义可推导——空 op_type 一律按读处理。
     const opType = behavior?.op_type;
-    const writeMethods = new Set(['POST', 'PATCH', 'DELETE', 'PUT']);
-    const dataEngine = (data?.data_engines || []).find((d: any) => d.behavior_name === behaviorName);
-    const isWrite = opType
-      ? opType === 'command'
-      : (!!dataEngine && dataEngine.engine_type !== 'SQL'
-        && writeMethods.has((dataEngine.target?.method || '').toUpperCase()));
+    const isWrite = opType === 'command';
 
     return {
       display_name: behavior?.display_name || behavior?.name || '',

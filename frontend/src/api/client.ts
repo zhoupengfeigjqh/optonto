@@ -110,6 +110,7 @@ export interface Concept {
   description: string;
   attributes?: Attribute[];
   display_name?: string;
+  instance_label?: string;
 }
 
 export const getConcepts = (ontologyId: number) =>
@@ -197,7 +198,6 @@ export const updateFunction = (ontologyId: number, name: string, data: Function)
 export interface Behavior {
   name: string;
   description: string;
-  behavior_type?: string;
   op_type?: string;
   params: Record<string, unknown>;
   response?: Record<string, unknown>;
@@ -316,17 +316,23 @@ export interface TargetApiConfig {
   method: string;
   params: Record<string, unknown>;
   response: Record<string, unknown>;
+  /** MCP 型引擎：下游 MCP 服务 SSE 地址（选中即落盘） */
+  server_url?: string;
+  /** MCP 型引擎：下游工具名 */
+  tool_name?: string;
+  /** 无 outputSchema 时手工/试调录入的目标输出字段（设计期参照） */
+  output_fields?: string[];
+  /** 连接下游 MCP 携带的 HTTP 头（远程鉴权） */
+  headers?: Record<string, string>;
 }
 
 export interface DataEngine {
   name: string;
   display_name?: string;
   behavior_name: string;
-  engine_type?: string;
   target: TargetApiConfig;
   input_mapping: Record<string, string>;
   output_mapping: Record<string, string>;
-  sql?: string;
 }
 
 export const getDataEngines = (ontologyId: number) =>
@@ -349,19 +355,10 @@ export const analyzeMapping = (ontologyId: number, name: string, body?: {
     { method: 'POST', body: body ? JSON.stringify(body) : undefined }
   );
 
-export const callDataEngine = (ontologyId: number, engineName: string, params: Record<string, any>) =>
-  request<any>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(engineName)}/call`, { method: 'POST', body: JSON.stringify({ params }) });
-
 export const callBehavior = (ontologyId: number, name: string, params: Record<string, any>) =>
   request<{ status_code: number; headers: Record<string, string>; data: any }>(
     `/api/ontologies/${ontologyId}/behaviors/${encodeURIComponent(name)}/call`,
     { method: 'POST', body: JSON.stringify({ params }) }
-  );
-
-export const smartParseTarget = (ontologyId: number, name: string, paramsContent: string, responseContent: string) =>
-  request<{ api_name: string; data_source_name: string; url: string; method: string; params: Record<string, unknown>; response: Record<string, unknown> }>(
-    `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-parse`,
-    { method: 'POST', body: JSON.stringify({ params_content: paramsContent, response_content: responseContent }) }
   );
 
 export const smartAlign = (ontologyId: number, name: string) =>
@@ -371,6 +368,9 @@ export const smartAlign = (ontologyId: number, name: string) =>
   );
 
 // ─── MCP Control ───────────────────────────────────────────────────────
+
+/** 平台可管控的 MCP 服务键（core mcp_ctl 白名单）；business 只读 */
+export type McpServiceKey = 'ontology' | 'data-engine';
 
 export interface McpStatus {
   status: string;
@@ -383,10 +383,14 @@ export interface McpActionResult {
   running: boolean;
 }
 
-export const getMcpStatus = () =>
-  request<McpStatus>('/api/mcp/status');
+export const getMcpStatus = (service: McpServiceKey = 'ontology') =>
+  request<McpStatus>(`/api/mcp/${service}/status`);
 
-// 经 Nginx /mcp/ 代理到 optonto-mcp:8002，不直连端口（端口可不对外发布）
+/** business-mcp 容器状态（只读；启停只能 Docker 手动，架构文档 §十六） */
+export const getBusinessMcpStatus = () =>
+  request<McpStatus>('/api/mcp/business/status');
+
+// 经 Nginx /mcp/ 代理到 optonto-ontology-mcp:8002，不直连端口（端口可不对外发布）
 export const getMcpTools = async () => {
   const resp = await fetch('/mcp/tools');
   if (!resp.ok) {
@@ -395,11 +399,20 @@ export const getMcpTools = async () => {
   return resp.json() as Promise<{ name: string; description: string }[]>;
 };
 
-export const startMcp = () =>
-  request<McpActionResult>('/api/mcp/start', { method: 'POST' });
+// 经 Nginx /mcp-data-engine/ 代理到 optonto-data-engine-mcp:8005
+export const getDataEngineMcpTools = async () => {
+  const resp = await fetch('/mcp-data-engine/tools');
+  if (!resp.ok) {
+    throw new Error(`获取数据引擎 MCP 工具失败 (${resp.status})`);
+  }
+  return resp.json() as Promise<{ name: string; description: string }[]>;
+};
 
-export const stopMcp = () =>
-  request<McpActionResult>('/api/mcp/stop', { method: 'POST' });
+export const startMcp = (service: McpServiceKey = 'ontology') =>
+  request<McpActionResult>(`/api/mcp/${service}/start`, { method: 'POST' });
+
+export const stopMcp = (service: McpServiceKey = 'ontology') =>
+  request<McpActionResult>(`/api/mcp/${service}/stop`, { method: 'POST' });
 
 // ─── Thread / Chat ────────────────────────────────────────────────────────
 
@@ -529,27 +542,6 @@ export interface YamlFile {
 
 export const getFileContent = (ontologyId: number) =>
   request<YamlFile>(`/api/ontologies/${ontologyId}/files/content`);
-
-// ─── DB Schema ────────────────────────────────────────────────────────────
-
-export const getDbSchema = (ontologyId: number) =>
-  request<{ content: string; exists: boolean }>(`/api/ontologies/${ontologyId}/db-schema`);
-
-export const uploadDbSchema = async (ontologyId: number, file: File) => {
-  const form = new FormData();
-  form.append('file', file);
-  const res = await fetch(`/api/ontologies/${ontologyId}/db-schema`, { method: 'POST', body: form });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || `上传失败 (${res.status})`);
-  }
-  return res.json();
-};
-
-// ─── Generate SQL ─────────────────────────────────────────────────────────
-
-export const generateSQL = (ontologyId: number, engineName: string) =>
-  request<{ sql: string }>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(engineName)}/generate-sql`, { method: 'POST' });
 
 export const saveFileContent = (ontologyId: number, data: YamlFile) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/files/content`, { method: 'PUT', body: JSON.stringify(data) });

@@ -2,16 +2,14 @@
 
 import json
 
-import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from config import DATA_DIR
 from dependencies import get_ontology_names
 from schemas import DataEngineItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
-from llm_utils import load_env, llm_json, llm_text
+from llm_utils import load_env, llm_json
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/data-engines", tags=["数据引擎"])
 
@@ -110,66 +108,6 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
         raise HTTPException(status_code=500, detail=f"智能映射失败: {str(e)}")
 
 
-# ─── Smart Parse ────────────────────────────────────────────────────────────────
-
-class SmartParseRequest(BaseModel):
-    params_content: str = ""
-    response_content: str = ""
-
-
-@router.post("/{engine_name}/smart-parse")
-async def smart_parse(ontology_id: int, engine_name: str, body: SmartParseRequest):
-    """Use LLM to parse pasted API doc content into structured params/response."""
-    sc_name, on_name = await get_ontology_names(ontology_id)
-    data = load_ontology_data(sc_name, on_name)
-
-    de = next((d for d in data.data_engines if d.name == engine_name), None)
-    if de is None:
-        raise HTTPException(status_code=404, detail="数据引擎不存在")
-
-    from config import TARGET_PARSE_SYSTEM_PROMPT, TARGET_PARSE_PROMPT, DATA_DIR
-    import yaml
-
-    # 从 onto_template.yaml 读取标准参考模板
-    template_path = DATA_DIR / "onto_template.yaml"
-    template_params = "{}"
-    template_response = "{}"
-    if template_path.exists():
-        with open(template_path, encoding="utf-8") as f:
-            template_data = yaml.safe_load(f) or {}
-        if template_data.get("behaviors"):
-            template_params = json.dumps(template_data["behaviors"][0].get("params", {}), ensure_ascii=False)
-            template_response = json.dumps(template_data["behaviors"][0].get("response", {}), ensure_ascii=False)
-
-    prompt = TARGET_PARSE_PROMPT.format(
-        template_params=template_params,
-        template_response=template_response,
-        params_content=body.params_content or "（未提供）",
-        response_content=body.response_content or "（未提供）",
-    )
-
-    try:
-        result, stripped = await llm_json(TARGET_PARSE_SYSTEM_PROMPT, prompt, 0.3)
-        if result is None:
-            if stripped is None:
-                raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能解析")
-            raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {stripped[:200]}")
-        return {
-            "api_name": result.get("api_name", ""),
-            "data_source_name": result.get("data_source_name", ""),
-            "url": result.get("url", ""),
-            "method": result.get("method", ""),
-            "params": result.get("params", {}),
-            "response": result.get("response", {}),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"智能解析失败: {str(e)}")
-
-
 # ─── Smart Align ────────────────────────────────────────────────────────────────
 
 @router.post("/{engine_name}/smart-align")
@@ -224,86 +162,14 @@ async def smart_align(ontology_id: int, engine_name: str):
 
 @router.post("/{engine_name}/call")
 async def call_engine(ontology_id: int, engine_name: str, body: dict):
-    """Call target API or execute SQL query via data engine."""
-    sc_name, on_name = await get_ontology_names(ontology_id)
-    data = load_ontology_data(sc_name, on_name)
+    """Call target API or execute SQL query via data engine — 降级转发 data-engine-mcp。
 
-    de = next((d for d in data.data_engines if d.name == engine_name), None)
-    if de is None:
-        raise HTTPException(status_code=404, detail="数据引擎不存在")
-
-    params = body.get("params", {})
-
-    if de.engine_type == "SQL":
-        from services.data_engine import execute_sql
-        return await execute_sql(sc_name, on_name, de, params, ontology_id)
-
-    # API type — use existing data engine
-
-    # API type — use existing data engine
-    try:
-        from services.data_engine import call_data_engine
-        result = await call_data_engine(data, engine_name, params)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except httpx.ConnectError:
-        raise HTTPException(status_code=400, detail="无法连接到目标接口，请检查 URL 是否正确")
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=408, detail="目标接口请求超时")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
-
-    # 同 behaviors.call_behavior_endpoint:下游 4xx/5xx 必须转成 HTTP 错误码,
-    # 否则 MCP 层(只认状态行)把失败当成功,isError 永不置位。
-    if isinstance(result, dict) and result.get("status_code", 200) >= 400:
-        detail_data = json.dumps(result.get("data", ""), ensure_ascii=False)[:500]
-        raise HTTPException(
-            status_code=result["status_code"],
-            detail=f"数据引擎 {engine_name} 调用失败 (下游 HTTP {result['status_code']}): {detail_data}",
-        )
-    return result
-
-
-# ─── Generate SQL ─────────────────────────────────────────────────────────
-
-
-@router.post("/{engine_name}/generate-sql")
-async def generate_sql(ontology_id: int, engine_name: str):
-    """Use LLM to generate SQL from schema + behavior definition."""
-    sc_name, on_name = await get_ontology_names(ontology_id)
-    data = load_ontology_data(sc_name, on_name)
-
-    de = next((d for d in data.data_engines if d.name == engine_name), None)
-    if de is None:
-        raise HTTPException(status_code=404, detail="数据引擎不存在")
-
-    beh = next((b for b in data.behaviors if b.name == de.behavior_name), None)
-    if beh is None:
-        raise HTTPException(status_code=404, detail="关联的本体行为不存在")
-
-    # Read schema
-    schema_path = DATA_DIR / "onto_market" / sc_name / on_name / "db_schema" / "db_schema.md"
-    db_schema = ""
-    if schema_path.exists():
-        db_schema = schema_path.read_text(encoding="utf-8")
-
-    from config import DB_GENERATE_SYSTEM_PROMPT, DB_GENERATE_PROMPT
-
-    import json
-    prompt = DB_GENERATE_PROMPT.format(
-        db_schema=db_schema or "（未上传数据库 Schema）",
-        behavior_name=beh.name,
-        behavior_description=beh.description or "",
-        params=json.dumps(beh.params, ensure_ascii=False, indent=2),
-        response=json.dumps(beh.response, ensure_ascii=False, indent=2),
+    设计器连接测试与 Agent 行为调用走同一执行器（消灭双执行路径）；
+    状态码与 detail 原样透传（下游 4xx/5xx 保持错误形态，isError 语义不破坏）。
+    """
+    from services.runtime_forward import DATA_ENGINE_MCP_URL, forward_call
+    return await forward_call(
+        DATA_ENGINE_MCP_URL, "/call-engine",
+        {"ontology_id": ontology_id, "engine_name": engine_name, "params": body.get("params", {})},
+        "data-engine-mcp",
     )
-
-    try:
-        sql, _ = await llm_text(DB_GENERATE_SYSTEM_PROMPT, prompt, 0.3)
-        if sql is None:
-            raise HTTPException(status_code=400, detail="未配置 LLM API Key")
-        return {"sql": sql}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"SQL 生成失败: {str(e)}")

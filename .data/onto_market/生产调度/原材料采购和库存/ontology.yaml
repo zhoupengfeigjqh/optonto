@@ -44,6 +44,7 @@ concepts:
     display_name: 安全库存
     example: '100'
   display_name: 原材料
+  instance_label: rawMaterialName
 - name: Supplier
   description: 原材料的供应方，可以供应一种或多种原材料。
   attributes:
@@ -78,6 +79,7 @@ concepts:
     display_name: 联系电话
     example: '13800138000'
   display_name: 供应商
+  instance_label: supplierName
 - name: PurchaseRecord
   description: 一次具体的原材料采购行为，关联了采购的原材料、供应商以及驱动采购的客户订单。
   attributes:
@@ -131,6 +133,7 @@ concepts:
     display_name: 关联订单名称
     example: 客户A-项目X订单
   display_name: 原材料采购记录
+  instance_label: purchaseRecordId
 - name: RawMaterialInventory
   description: 特定原材料在当前时刻的库存状态快照，包括待入库、可用和累计库存量。
   attributes:
@@ -172,6 +175,7 @@ concepts:
     display_name: 单位
     example: 吨
   display_name: 原材料库存
+  instance_label: availableStock
 - name: CustomerOrder
   description: 客户下达的销售订单或询单，是驱动原材料采购的源头需求。
   attributes:
@@ -205,6 +209,7 @@ concepts:
     display_name: 订单状态
     example: 有效
   display_name: 客户订单
+  instance_label: customerOrderName
 - name: DeliveryCapability
   description: 供应商的交货能力，包括交货周期、最低交货数量等
   attributes:
@@ -233,6 +238,7 @@ concepts:
     display_name: 最小交货数
     example: ''
   display_name: 交货能力
+  instance_label: leadTime
 relations:
 - name: hasRawInventory
   source: RawMaterial
@@ -327,10 +333,46 @@ functions:
           display_name: 未到位总量
           example: 100
   code_file: functions/sumRawNotArrivalQty.py
+- name: checkRawMaterialUnit
+  display_name: 校验采购原材料单位一致性
+  description: 校验采购单的 rawMaterialId 存在于原材料主数据，且 unit 与原材料定义单位一致。服务于前置规则 V01。
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterial
+  params:
+    rawMaterialId:
+      type: string
+      display_name: 原材料ID
+      example: RM-001
+      required: true
+    unit:
+      type: string
+      display_name: 计量单位
+      example: 吨
+      required: true
+    rawMaterialSet:
+      type: array
+      display_name: 原材料主数据集
+      required: true
+      items:
+        type: object
+        properties:
+          rawMaterialId:
+            type: string
+            display_name: 原材料ID
+            required: true
+          unit:
+            type: string
+            display_name: 单位
+            required: true
+  response:
+    result:
+      type: object
+      display_name: 校验结果
+  code_file: functions/checkRawMaterialUnit.py
 behaviors:
 - name: CreatePurchaseRecord
   description: 创建一笔新的原材料采购记录。
-  behavior_type: API
   op_type: command
   params:
     rawMaterialId:
@@ -433,7 +475,6 @@ behaviors:
   display_name: 创建原材料采购单
 - name: CancelPurchaseRecord
   description: 取消一笔已创建但尚未入库的采购记录。
-  behavior_type: API
   op_type: command
   params:
     purchaseRecordId:
@@ -465,7 +506,6 @@ behaviors:
   display_name: 取消原材料采购单
 - name: ReceiveRawMaterial
   description: 将原材料采购入库。
-  behavior_type: API
   op_type: command
   params:
     purchaseRecordId:
@@ -497,7 +537,6 @@ behaviors:
   display_name: 入库原材料
 - name: QueryInventory
   description: 根据原材料ID或名称查询其最新的库存快照。
-  behavior_type: API
   op_type: query
   params:
     rawMaterialId:
@@ -556,7 +595,6 @@ behaviors:
   display_name: 查询原材料库存信息
 - name: QueryPurchaseRecords
   description: 根据采购单/原材料/关联客单来查询采购记录列表。
-  behavior_type: API
   op_type: query
   params:
     purchaseRecordId:
@@ -632,7 +670,6 @@ behaviors:
   display_name: 查询原材料采购单信息
 - name: QueryRawMaterials
   description: 根据原材料ID或名称查询原材料的基础信息。
-  behavior_type: API
   op_type: query
   params:
     rawMaterialId:
@@ -675,7 +712,6 @@ behaviors:
   display_name: 查询原材料基本信息
 - name: QuerySuppliers
   description: 根据供应商名或原材料名查询供应商
-  behavior_type: API
   op_type: query
   params:
     supplierName:
@@ -722,7 +758,6 @@ behaviors:
   display_name: 查询供应商信息
 - name: QuerySupplierCapability
   description: 根据供应商名或原材料名，查询供应商供货能力
-  behavior_type: API
   op_type: query
   params:
     supplierName:
@@ -763,52 +798,13 @@ behaviors:
   related_concepts:
   - DeliveryCapability
   display_name: 查询供应商供货能力
-- name: QuerySupplierCapabilitySQL
-  description: 根据供应商名或原材料名，查询供应能力
-  behavior_type: SQL
-  op_type: query
-  params:
-    supplierName:
-      type: string
-      required: true
-      description: ''
-      example: 宝钢钢铁集团
-    rawMaterialName:
-      type: string
-      required: true
-      description: ''
-      example: 钢板008
-  response:
-    data:
-      type: array
-      items:
-        type: object
-        properties:
-          supplierName:
-            type: string
-            display_name: 供应商名称
-            example: 宝钢钢铁集团
-          rawMaterialId:
-            type: string
-            display_name: 原材料ID
-            example: RM-001
-          rawMaterialName:
-            type: string
-            display_name: 原材料名称
-            example: 高强度钢板
-          leadTime:
-            type: number
-            display_name: 交货周期
-            example: 100
-  related_concepts:
-  - DeliveryCapability
-  display_name: 查询供应商供货能力SQL
 rules:
 - name: V01_UnitConsistency_Purchase
   description: 创建采购单时，提供的原材料ID（rawMaterialId）必须存在，且单位也必须与原材料的定义一致。
   related_behaviors:
   - CreatePurchaseRecord
-  related_functions: []
+  related_functions:
+  - checkRawMaterialUnit
   display_name: 采购-原料存在且单位一致
   rule_type: 验证规则
   position: 前置

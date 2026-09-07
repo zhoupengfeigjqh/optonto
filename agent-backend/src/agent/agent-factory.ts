@@ -4,6 +4,7 @@ import { Type } from '@sinclair/typebox';
 import { MCPClient } from '../services/mcp-client.js';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
+import { VisibilityGuard } from '../services/visibility-guard.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
 import { buildParentPrompt, buildGeneralPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from '../utils/text-utils.js';
@@ -49,16 +50,20 @@ export class AgentFactory {
   constructor(
     private mcpConfigStore: MCPConfigStore,
     private skillLoader: SkillLoader,
+    /** 可见性收编守卫（配映射即收编）：可选注入，缺省不收编（单测便捷） */
+    private visibilityGuard?: VisibilityGuard,
   ) {}
 
   /**
-   * 获取（或创建）指定 URL 的 MCP 客户端。同一 URL 全程复用一条连接。
+   * 获取（或创建）指定 URL 的 MCP 客户端。同一 URL+headers 组合全程复用一条连接。
    */
-  private getOrCreateClient(url: string): MCPClient {
-    let client = this.clientCache.get(url);
+  private getOrCreateClient(url: string, headers?: Record<string, string>): MCPClient {
+    // headers 进缓存键：同 URL 不同凭据是两条不同连接，不可串
+    const key = headers && Object.keys(headers).length > 0 ? `${url}#${JSON.stringify(headers)}` : url;
+    let client = this.clientCache.get(key);
     if (!client) {
-      client = new MCPClient(url);
-      this.clientCache.set(url, client);
+      client = new MCPClient(url, headers);
+      this.clientCache.set(key, client);
     }
     return client;
   }
@@ -498,16 +503,23 @@ export class AgentFactory {
 
       let client: MCPClient | null = null;
       try {
-        // 复用缓存连接（connect 幂等），避免每个 Agent 新建 SSE 连接
-        client = this.getOrCreateClient(server.url);
+        // 复用缓存连接（connect 幂等），避免每个 Agent 新建 SSE 连接；headers（远程鉴权）随配置下发
+        client = this.getOrCreateClient(server.url, server.headers);
         await client.connect();
 
         const result = await client.listTools();
         const mcpTools = result.tools || [];
+        let hiddenCount = 0;
 
         for (const t of mcpTools) {
           const toolName = t.name as string;
           if (server.allowed_tools && server.allowed_tools.length > 0 && !server.allowed_tools.includes(toolName)) {
+            continue;
+          }
+          // 可见性收编（配映射即收编，架构文档 §六）：已映射接口的原始工具对 Agent 隐藏，
+          // 行为工具是唯一入口——绕过它会跳过映射翻译/RuleGate/安全管控。内置服务永不收编。
+          if (!server.builtin && this.visibilityGuard?.isHidden(server.url, toolName)) {
+            hiddenCount++;
             continue;
           }
           // 优先用 MCP 提供的原生 JSON Schema 做参数校验与类型强转，
@@ -537,7 +549,7 @@ export class AgentFactory {
           });
         }
 
-        console.log(`[MCP] ${server.name}: 发现 ${mcpTools.length} 个工具`);
+        console.log(`[MCP] ${server.name}: 发现 ${mcpTools.length} 个工具${hiddenCount > 0 ? `，收编隐藏 ${hiddenCount} 个已映射原始工具` : ''}`);
       } catch (e: any) {
         console.error(`[MCP] ${server.name} 连接失败: ${e.message}`);
       }

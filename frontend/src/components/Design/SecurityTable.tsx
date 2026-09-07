@@ -24,14 +24,10 @@ const CONFIRM_OPTIONS = [
   { label: '否', value: '否' },
 ];
 
-/** 与 agent 端 ontology-gateway 的 isWrite 推导保持一致：op_type 优先，空则按数据引擎 HTTP method 兜底（SQL 推不出写，视为读）。 */
-const WRITE_METHODS = ['POST', 'PATCH', 'DELETE', 'PUT'];
+/** 与 agent 端 ontology-gateway 的 isWrite 推导保持一致：op_type 是唯一权威来源（引擎唯一形态=MCP，无 method 语义），空按读处理。 */
 const resolveOpType = (b: Behavior, engines: DataEngine[]): { type: 'command' | 'query'; derived: boolean } => {
   if (b.op_type === 'command' || b.op_type === 'query') return { type: b.op_type, derived: false };
-  const eng = engines.find(d => d.behavior_name === b.name);
-  const isWrite = !!eng && eng.engine_type !== 'SQL'
-    && WRITE_METHODS.includes((eng.target?.method || '').toUpperCase());
-  return { type: isWrite ? 'command' : 'query', derived: true };
+  return { type: 'query', derived: true };
 };
 
 const scopeOf = (sec?: Security): string[] =>

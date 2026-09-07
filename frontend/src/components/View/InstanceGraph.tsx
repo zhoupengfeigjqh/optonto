@@ -139,13 +139,10 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
     return (sec.scope ?? []).includes('everyone');
   }, [data]);
 
-  /** 概念 → 查询行为（op_type=query 且非 SQL 引擎）。permittedOnly 区分"无行为"与"无权限"。 */
+  /** 概念 → 查询行为（op_type=query）。permittedOnly 区分"无行为"与"无权限"。 */
   const queryBehaviorsOf = useCallback((cName: string, permittedOnly: boolean): Behavior[] => {
-    const engines = data?.data_engines ?? [];
     return (data?.behaviors ?? []).filter(b => {
       if (b.op_type !== 'query' || !(b.related_concepts ?? []).includes(cName)) return false;
-      const eng = engines.find(e => e.behavior_name === b.name);
-      if (eng?.engine_type === 'SQL') return false;
       return permittedOnly ? isPermitted(b.name) : true;
     });
   }, [data, isPermitted]);
@@ -367,16 +364,15 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
 
   // ─── 渲染数据 ────────────────────────────────────────────────────────
 
-  function nodeLabel(concept: Concept | undefined, row: Record<string, any>, key: string): string {
-    const attrs = concept?.attributes ?? [];
-    // 返回行只覆盖概念声明属性的子集（output_mapping 决定），
-    // 按声明顺序取第一个在行里有值的属性：unique 优先，再全部属性，最后回退哈希尾号
-    const uniqAttrs = attrs.filter(a => a.constraint?.unique);
-    const v = [...uniqAttrs, ...attrs]
-      .map(a => row[a.name])
-      .find(x => x !== undefined && x !== null && x !== '');
-    const short = v !== undefined ? String(v) : key.slice(-8);
-    return `${concept?.display_name || concept?.name || ''}:${short}`;
+  function nodeLabel(concept: Concept | undefined, row: Record<string, any>, _key: string): string {
+    const instanceLabelField = concept?.instance_label;
+    const prefix = concept?.display_name || concept?.name || '';
+    // 使用 instance_label 指定的属性作为节点标签
+    if (instanceLabelField && row[instanceLabelField] !== undefined && row[instanceLabelField] !== null && row[instanceLabelField] !== '') {
+      return `${prefix}:${String(row[instanceLabelField])}`;
+    }
+    // 未设置 instance_label 时仅显示概念名，不附加属性值
+    return prefix;
   }
 
   const buildGraph = useCallback(() => {

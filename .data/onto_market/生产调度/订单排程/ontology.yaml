@@ -410,7 +410,6 @@ functions: []
 behaviors:
 - name: CreateOrder
   description: 用户或智能体创建新的订单及其明细
-  behavior_type: API
   op_type: ''
   params:
     orderName:
@@ -432,7 +431,6 @@ behaviors:
   display_name: 创建订单
 - name: UpdateOrder
   description: 用户或智能体更新已有订单信息及明细
-  behavior_type: API
   op_type: ''
   params:
     orderId: string
@@ -444,7 +442,6 @@ behaviors:
   display_name: 更新订单
 - name: DeleteOrder
   description: 用户或智能体删除已有订单及明细
-  behavior_type: API
   op_type: ''
   params:
     orderId: string
@@ -454,7 +451,6 @@ behaviors:
   display_name: 删除订单
 - name: QueryOrder
   description: 用户或智能体查询订单及明细
-  behavior_type: API
   op_type: ''
   params:
     orderId: string
@@ -466,7 +462,6 @@ behaviors:
   display_name: 查询订单
 - name: CreateSchedTask
   description: 用户或智能体根据订单信息创建排产任务
-  behavior_type: API
   op_type: ''
   params:
     orderId: string
@@ -477,7 +472,6 @@ behaviors:
   display_name: 创建排产任务
 - name: AddSchedTask
   description: 基于已有排产任务创建新场景下的排产任务
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -488,7 +482,6 @@ behaviors:
   display_name: 新增排产任务
 - name: CreateAlgoParams
   description: 用户或智能体为排产任务创建算法参数
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -499,7 +492,6 @@ behaviors:
   display_name: 创建算法参数
 - name: StartSchedTask
   description: 用户或智能体选择排产任务并执行
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -509,7 +501,6 @@ behaviors:
   display_name: 启动排产任务
 - name: QuerySchedTask
   description: 用户或智能体查询排产任务的当前状态
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -520,7 +511,6 @@ behaviors:
   display_name: 查询排产任务
 - name: QuerySchedResult
   description: 用户或智能体查询排产任务结果
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -531,7 +521,6 @@ behaviors:
   display_name: 查询排产结果
 - name: DeploySchedResult
   description: 用户或智能体将已成功执行的排产任务下发
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -542,7 +531,6 @@ behaviors:
   display_name: 排产结果下发
 - name: RecallSchedResult
   description: 用户或智能体取消已下发的排产结果
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -553,7 +541,6 @@ behaviors:
   display_name: 排产结果撤回
 - name: QueryShortage
   description: 用户或智能体查询订单下发后的齐套欠料信息
-  behavior_type: API
   op_type: ''
   params:
     scheduleId: string
@@ -564,7 +551,6 @@ behaviors:
   display_name: 查询欠料明细
 - name: StartPollingTask
   description: 后台启动定时任务轮询排产任务状态
-  behavior_type: API
   op_type: ''
   params:
     scheduleId:

@@ -29,7 +29,6 @@ import DeployedVersionBadge from '@/components/DeployedVersionBadge';
 import OntologyGraph from '@/components/View/OntologyGraph';
 import InstanceGraph from '@/components/View/InstanceGraph';
 import DataEngineTable from '@/components/Design/DataEngineTable';
-import DBMappingTable from '@/components/Design/DBMappingTable';
 import MCPService from '@/components/Design/MCPService';
 import SkillManagement from '@/components/Design/SkillManagement';
 import AgentApp from '@/components/Design/AgentApp';
@@ -152,9 +151,6 @@ export default function DesignPage() {
       )}
       {activeSection === 'data-engine' && activeTab === 'instance-collection' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
-      )}
-      {activeSection === 'data-engine' && activeTab === 'db-mapping' && (
-        <DBMappingTable ontologyId={ontologyId} activeTab={activeTab} />
       )}
       {activeSection === 'data-engine' && activeTab === 'mcp-service' && (
         <MCPService />
@@ -386,17 +382,7 @@ export default function DesignPage() {
                   }`}
                   onClick={() => { navigateTo('data-engine', 'api-mapping'); }}
                 >
-                  <span>API映射</span>
-                </button>
-                <button
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'db-mapping'
-                      ? 'text-accent-blue bg-accent-blue/5'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                  onClick={() => { navigateTo('data-engine', 'db-mapping'); }}
-                >
-                  <span>DB映射</span>
+                  <span>接口映射</span>
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
@@ -492,7 +478,7 @@ export default function DesignPage() {
               : activeSection === 'security'
               ? '权限控制'
               : activeSection === 'data-engine'
-              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'db-mapping' ? 'DB映射' : activeTab === 'mcp-service' ? 'MCP服务' : 'API映射'
+              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'mcp-service' ? 'MCP服务' : '接口映射'
               : activeSection === 'agent'
               ? activeTab === 'skill-management' ? '技能管理' : activeTab === 'mcp-config' ? 'MCP 配置' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}

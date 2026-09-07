@@ -52,7 +52,7 @@ def _get_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
 def _get_data_engines_path(scenario_name: str, ontology_name: str) -> Path:
     """数据引擎独立文件路径（与 ontology.yaml 同目录）。
 
-    数据引擎是物理集成绑定（URL/method/SQL/参数与响应 schema），与本体语义模型
+    数据引擎是物理集成绑定（目标 MCP 工具+映射），与本体语义模型
     职责不同、变更频率不同，单独存放；ontology.yaml 中的 data_engines 段仅作
     迁移前的读时兼容回退，保存后固定清空（单一权威来源，防双写漂移）。
     """
@@ -125,16 +125,14 @@ def _load_securities_file(scenario_name: str, ontology_name: str) -> Optional[li
 
 
 # 与前端 resolveOpType / agent ontology-gateway isWrite 同一推导规则
-_WRITE_METHODS = {"POST", "PATCH", "DELETE", "PUT"}
-
-
 def _resolve_op_type(behavior, engines: list[DataEngineItem]) -> str:
-    """推导行为操作类型：op_type 显式值优先；空则查数据引擎，非 SQL 且 method 为写方法 → command，否则 query。"""
+    """推导行为操作类型：op_type 显式值为准；空 → query。
+
+    数据引擎唯一形态为 MCP（SQL/HTTP 已删除），无 method 语义可推导——
+    写行为必须在行为上显式 op_type=command。
+    """
     if behavior.op_type in ("command", "query"):
         return behavior.op_type
-    eng = next((d for d in engines if d.behavior_name == behavior.name), None)
-    if eng and eng.engine_type != "SQL" and (eng.target.method or "").upper() in _WRITE_METHODS:
-        return "command"
     return "query"
 
 
@@ -310,31 +308,6 @@ def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dic
     return files
 
 
-def build_restricted_globals() -> dict:
-    """Restricted globals for exec'ing user function code (ontology + common).
+# 函数沙箱（build_restricted_globals / run 入口）已迁至 mcp-shared/mcp_shared/sandbox.py，
+# 由 ontology-mcp 本地执行；core 仅保留保存期静态校验 _validate_function_code（routers/functions.py）。
 
-    注意：__import__ 有意保留——现有函数代码依赖它（如公共函数在 run() 内部
-    `from datetime import ...`）。这是"可信插件执行"，不是安全沙箱。
-
-    白名单含常用异常类型与 set/frozenset：函数代码需要 try/except Exception 兜错误契约、
-    以及 isinstance(obj, (set, frozenset)) 类型判断（filterData/aggregateData/groupReduce 用到）。
-    """
-    import datetime as _datetime
-    import json as _json
-    import math as _math
-    import re as _re
-    return {
-        "datetime": _datetime, "json": _json, "math": _math, "re": _re,
-        "__builtins__": {
-            "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-            "enumerate": enumerate, "float": float, "int": int, "isinstance": isinstance,
-            "len": len, "list": list, "max": max, "min": min, "range": range,
-            "round": round, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
-            "set": set, "frozenset": frozenset,
-            "Exception": Exception, "ValueError": ValueError, "TypeError": TypeError,
-            "KeyError": KeyError, "IndexError": IndexError,
-            "type": type, "zip": zip, "map": map, "filter": filter, "reversed": reversed,
-            "True": True, "False": False, "None": None,
-            "__import__": __import__, "print": print,
-        },
-    }

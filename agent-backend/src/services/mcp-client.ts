@@ -16,7 +16,7 @@ export interface McpToolInfo {
 
 /**
  * MCP 客户端包装器（SSE 传输）。
- * 连接到 optonto-mcp 容器的 SSE 端点，通过 MCP 协议调用本体行为。
+ * 连接到 optonto-ontology-mcp 容器的 SSE 端点，通过 MCP 协议调用本体行为。
  *
  * 连接管理收在本 module 内（调用方无感知）：
  *  - SSE 断连（容器重启/网络抖动）→ transport.onclose 作废客户端，下次调用惰性重连；
@@ -27,7 +27,15 @@ export interface McpToolInfo {
 export class MCPClient {
   private client: Client | null = null;
 
-  constructor(private readonly mcpUrl: string) {}
+  /**
+   * @param mcpUrl  MCP 服务 SSE 地址
+   * @param headers 连接携带的 HTTP 头（远程 MCP 鉴权：Bearer token 等，架构文档 §九.3，阶段三落地）。
+   *                请求头走 requestInit（POST 消息）；SSE 流走 eventSourceInit（eventsource 包支持 headers）。
+   */
+  constructor(
+    private readonly mcpUrl: string,
+    private readonly headers?: Record<string, string>,
+  ) {}
 
   /** 连接 MCP 服务（幂等：已连接直接返回） */
   async connect(): Promise<void> {
@@ -40,7 +48,13 @@ export class MCPClient {
       { name: 'optonto-agent', version: '1.0.0' },
       { capabilities: {} },
     );
-    const transport = new SSEClientTransport(new URL(this.mcpUrl));
+    const transport = new SSEClientTransport(new URL(this.mcpUrl), this.headers
+      ? {
+          requestInit: { headers: this.headers },
+          // eventsource 包的扩展初始化项（标准 EventSourceInit 无 headers 字段，类型上断言放行）
+          eventSourceInit: { headers: this.headers } as any,
+        }
+      : undefined);
     // SSE 断连 → 作废当前客户端（仅当没被更新的连接替换过），下次调用惰性重连
     transport.onclose = () => { if (this.client === client) this.client = null; };
     await client.connect(transport);

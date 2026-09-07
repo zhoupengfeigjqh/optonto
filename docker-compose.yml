@@ -29,7 +29,9 @@ services:
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
       # 内置本体MCP 地址（默认同为该值，显式写出便于切换环境时一眼看到）
-      - MCP_BUILTIN_URL=http://optonto-mcp:8002/sse
+      - MCP_BUILTIN_URL=http://optonto-ontology-mcp:8002/sse
+      # 内置数据引擎MCP 地址（行为 facade 唯一入口）
+      - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-mcp:8005/sse
     networks:
       - optonto-net
 
@@ -103,7 +105,7 @@ services:
     networks:
       - optonto-net
 
-  # ─── 后端 API (FastAPI) ────────────────────────────────────────
+  # ─── 后端 API (FastAPI，纯设计面) ──────────────────────────────
   optonto-core-backend:
     build:
       context: .
@@ -119,28 +121,62 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
+      # 运行面转发目标（core 运行期执行归零，/behaviors/call 与函数 execute 降级转发）
+      - DATA_ENGINE_MCP_URL=http://optonto-data-engine-mcp:8005
+      - ONTOLOGY_MCP_URL=http://optonto-ontology-mcp:8002
     networks:
       - optonto-net
 
-  # ─── MCP 服务 (常驻 SSE) ───────────────────────────────────────
-  optonto-mcp:
+  # ─── 本体 MCP 服务（list* 查询 + 本体/公共函数沙箱，直读 .data）──────────────
+  optonto-ontology-mcp:
     build:
       context: .
-      dockerfile: core-backend/Dockerfile.mcp
-    image: optonto-mcp
-    container_name: optonto-mcp
+      dockerfile: ontology-mcp/Dockerfile
+    image: optonto-ontology-mcp
+    container_name: optonto-ontology-mcp
     ports:
       - "8002:8002"
-    depends_on:
-      - optonto-core-backend
     volumes:
       - ./.data:/app/.data
     environment:
-      - API_BASE_URL=http://optonto-core-backend:8001
       - DATA_DIR=/app/.data
       - TZ=Asia/Shanghai
-    command: >
-      sh -c "python -m uvicorn mcp_server_sse:starlette_app --host 0.0.0.0 --port 8002"
+    networks:
+      - optonto-net
+
+  # ─── 数据引擎 MCP 服务（行为 facade + 映射执行 + SQL，直读 .data）────────────
+  optonto-data-engine-mcp:
+    build:
+      context: .
+      dockerfile: data-engine-mcp/Dockerfile
+    image: optonto-data-engine-mcp
+    container_name: optonto-data-engine-mcp
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./.data:/app/.data
+    env_file:
+      - ./config/.env
+    environment:
+      - DATA_DIR=/app/.data
+      - TZ=Asia/Shanghai
+    networks:
+      - optonto-net
+
+  # ─── 业务 MCP 服务（模拟业务系统；业务侧集成边缘，非平台内置）────────────────
+  # 启停管控：只能 Docker 手动启停（docker start/stop），不进前端启停白名单，
+  # 故不配 restart 策略（默认不自动拉起，由人控制）。
+  optonto-business-mcp:
+    build:
+      context: .
+      dockerfile: business-mcp/Dockerfile
+    image: optonto-business-mcp
+    container_name: optonto-business-mcp
+    ports:
+      - "8004:8004"
+    environment:
+      - BUSINESS_API_BASE=http://optonto-business-backend:8080
+      - TZ=Asia/Shanghai
     networks:
       - optonto-net
 

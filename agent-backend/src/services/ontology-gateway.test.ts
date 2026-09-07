@@ -32,10 +32,12 @@ function writeOverlay(filename: string, key: string, items: any[], wrap: boolean
 }
 
 function httpEngine(behavior: string, method: string): any {
-  return { behavior_name: behavior, engine_type: 'HTTP', target: { method, url: 'http://x' } };
+  return { behavior_name: behavior, target: { method, url: 'http://x' } };
 }
-function sqlEngine(behavior: string): any {
-  return { behavior_name: behavior, engine_type: 'SQL', target: { method: 'POST', sql: 'select 1' } };
+
+/** 观测 data_engines overlay 结果：直读私有加载方法的缓存数据（引擎字段不再驱动 isWrite） */
+function loadedEngines(): any[] {
+  return ((gateway as any).loadOntologyData(SC, ON)?.data_engines) || [];
 }
 
 beforeEach(() => {
@@ -50,15 +52,15 @@ afterEach(() => {
 });
 
 describe('契约 §2 Overlay 回退', () => {
-  it('O1：data_engines.yaml 存在 → 覆盖 ontology.yaml 旧段（POST 压过 GET → 判写）', () => {
+  it('O1：data_engines.yaml 存在 → 覆盖 ontology.yaml 旧段', () => {
     writeOntology({ behaviors: [{ name: 'B1' }], data_engines: [httpEngine('B1', 'GET')] });
     writeOverlay('data_engines.yaml', 'data_engines', [httpEngine('B1', 'POST')], true);
-    expect(gateway.getBehaviorMeta(SC, ON, 'B1').isWrite).toBe(true);
+    expect(loadedEngines()[0].target.method).toBe('POST');
   });
 
   it('O2：data_engines.yaml 不存在 → 回退 ontology.yaml 旧段', () => {
     writeOntology({ behaviors: [{ name: 'B1' }], data_engines: [httpEngine('B1', 'POST')] });
-    expect(gateway.getBehaviorMeta(SC, ON, 'B1').isWrite).toBe(true);
+    expect(loadedEngines()[0].target.method).toBe('POST');
   });
 
   it('O3：securities.yaml 存在 → 覆盖旧段（everyone 压过 disable）', () => {
@@ -74,47 +76,35 @@ describe('契约 §2 Overlay 回退', () => {
   it('O4：独立文件裸列表形态 → 等价接受', () => {
     writeOntology({ behaviors: [{ name: 'B1' }] });
     writeOverlay('data_engines.yaml', 'data_engines', [httpEngine('B1', 'POST')], false);
-    expect(gateway.getBehaviorMeta(SC, ON, 'B1').isWrite).toBe(true);
+    expect(loadedEngines()).toHaveLength(1);
   });
 
   it('O5：独立文件映射包裹形态 → 等价接受', () => {
     writeOntology({ behaviors: [{ name: 'B1' }] });
     writeOverlay('data_engines.yaml', 'data_engines', [httpEngine('B1', 'POST')], true);
-    expect(gateway.getBehaviorMeta(SC, ON, 'B1').isWrite).toBe(true);
+    expect(loadedEngines()).toHaveLength(1);
   });
 });
 
-describe('契约 §3 操作类型推导（isWrite）', () => {
+describe('契约 §3 操作类型推导（isWrite）——2026-09-07 起引擎不参与推导，空 op_type 一律判读', () => {
   function isWrite(behavior: any, engines?: any[]): boolean {
     writeOntology({ behaviors: [behavior], ...(engines ? { data_engines: engines } : {}) });
     return gateway.getBehaviorMeta(SC, ON, behavior.name).isWrite;
   }
 
-  it('T1：op_type=command 显式优先（SQL 引擎也判写）', () => {
-    expect(isWrite({ name: 'B1', op_type: 'command' }, [sqlEngine('B1')])).toBe(true);
+  it('T1：op_type=command → 判写', () => {
+    expect(isWrite({ name: 'B1', op_type: 'command' }, [httpEngine('B1', 'GET')])).toBe(true);
   });
 
-  it('T2：op_type=query 显式优先（POST 引擎也判读）', () => {
+  it('T2：op_type=query 显式 → 判读', () => {
     expect(isWrite({ name: 'B1', op_type: 'query' }, [httpEngine('B1', 'POST')])).toBe(false);
   });
 
-  it('T3：空 op_type + HTTP POST → command', () => {
-    expect(isWrite({ name: 'B1' }, [httpEngine('B1', 'POST')])).toBe(true);
+  it('T3：空 op_type + 有引擎 → query（引擎不参与推导）', () => {
+    expect(isWrite({ name: 'B1' }, [httpEngine('B1', 'POST')])).toBe(false);
   });
 
-  it('T4：空 op_type + HTTP GET → query', () => {
-    expect(isWrite({ name: 'B1' }, [httpEngine('B1', 'GET')])).toBe(false);
-  });
-
-  it('T5：空 op_type + SQL 引擎（即使 method=POST）→ query', () => {
-    expect(isWrite({ name: 'B1' }, [sqlEngine('B1')])).toBe(false);
-  });
-
-  it('T6：空 op_type + 无引擎 → query', () => {
+  it('T4：空 op_type + 无引擎 → query', () => {
     expect(isWrite({ name: 'B1' })).toBe(false);
-  });
-
-  it('T7：method 小写 post → command（大小写不敏感）', () => {
-    expect(isWrite({ name: 'B1' }, [httpEngine('B1', 'post')])).toBe(true);
   });
 });

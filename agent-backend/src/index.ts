@@ -8,6 +8,7 @@ import { MCPConfigStore } from './services/mcp-config-store.js';
 import { AgentFactory } from './agent/agent-factory.js';
 import { Orchestrator } from './agent/orchestrator.js';
 import { OntologyGateway } from './services/ontology-gateway.js';
+import { VisibilityGuard } from './services/visibility-guard.js';
 import { MemoryService } from './services/memory-service.js';
 import { ChatSession } from './services/chat-session.js';
 import { createThreadsRouter } from './routes/threads.js';
@@ -22,7 +23,8 @@ const skillLoader = new SkillLoader(pac);
 const mcpConfigStore = new MCPConfigStore(config.mcpConfigPath);
 
 const ontologyGateway = new OntologyGateway(pac);
-const agentFactory = new AgentFactory(mcpConfigStore, skillLoader);
+const visibilityGuard = new VisibilityGuard(pac);
+const agentFactory = new AgentFactory(mcpConfigStore, skillLoader, visibilityGuard);
 const orchestrator = new Orchestrator(agentFactory, ontologyGateway);
 const memoryService = new MemoryService();
 const chatSession = new ChatSession(threadStore, memoryService, orchestrator, skillLoader);

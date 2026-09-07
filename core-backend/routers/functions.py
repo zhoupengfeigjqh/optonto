@@ -15,7 +15,6 @@ from metadata import list_all_ontologies
 from schemas import FunctionItem
 from services import (
     load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir,
-    build_restricted_globals,
 )
 from services.entity_crud import ensure_unique, find_index
 from llm_utils import load_env, llm_text
@@ -236,36 +235,14 @@ async def generate_function_code(ontology_id: int, function_name: str):
 
 @router.post("/{function_name}/execute")
 async def execute_function(ontology_id: int, function_name: str, body: dict):
-    """Execute a function's Python code with given params."""
-    sc_name, on_name = await get_ontology_names(ontology_id)
-    data = load_ontology_data(sc_name, on_name)
+    """Execute a function's Python code — 降级转发 ontology-mcp（沙箱已随迁，core 执行归零）。
 
-    fn = next((g for g in data.functions if g.name == function_name), None)
-    if fn is None:
-        raise HTTPException(status_code=404, detail="函数不存在")
-
-    code_path = _code_path(sc_name, on_name, function_name)
-    if not code_path.exists():
-        raise HTTPException(status_code=400, detail="函数代码文件不存在，请先编写或生成代码")
-
-    code = code_path.read_text(encoding="utf-8")
-    params = body.get("params", {})
-
-    restricted_globals = build_restricted_globals()
-    local_vars = {}
-
-    try:
-        exec(code, restricted_globals, local_vars)
-        # 统一入口约定（与公共函数一致）：def run(params: dict) -> dict，整包传参。
-        # 注册名（fn.name / 文件名）只作标识与路由，不再要求代码内函数同名。
-        func = local_vars.get("run")
-        if func is None:
-            raise HTTPException(status_code=500, detail="未找到函数 run，本体函数须以 def run(params) 定义（与公共函数同约定）")
-        # 函数代码已自带 {"result": ...} 包装（与公共函数 run() 约定一致，见 common_functions.py），
-        # 故原样返回，不再包一层，避免双重嵌套。
-        result = func(params)
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"执行失败: {str(e)}")
+    统一入口约定（与公共函数一致）：def run(params: dict) -> dict，整包传参；
+    run() 自带 {"result": ...} 包装，透传返回（不再包一层）。
+    """
+    from services.runtime_forward import ONTOLOGY_MCP_URL, forward_call
+    return await forward_call(
+        ONTOLOGY_MCP_URL, "/execute-function",
+        {"ontology_id": ontology_id, "function_name": function_name, "params": body.get("params", {})},
+        "ontology-mcp",
+    )

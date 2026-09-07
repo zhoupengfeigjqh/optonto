@@ -2,12 +2,11 @@ data_engines:
 - name: CreatePurchaseRecord
   display_name: ''
   behavior_name: CreatePurchaseRecord
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 创建采购单
-    url: http://optonto-business-backend:8080/api/purchase-records
-    method: POST
+    url: ''
+    method: ''
     params:
       rawMaterialId:
         type: string
@@ -53,7 +52,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: object
         properties:
           purchaseOrderId:
@@ -100,6 +99,10 @@ data_engines:
             type: string
             display_name: 状态
             example: 待入库
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: create_purchase_record
+    output_fields: []
+    headers: {}
   input_mapping:
     rawMaterialId: rawMaterialId
     rawMaterialName: rawMaterialName
@@ -111,29 +114,27 @@ data_engines:
     unit: unit
   output_mapping:
     code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-    data.purchaseTime: data.purchaseTime
-    data.arrivalTime: data.arrivalTime
-    data.arrivalQuantity: data.arrivalQuantity
-    data.unit: data.unit
-    data.supplierName: data.supplierName
-    data.relatedOrderId: data.relatedOrderId
-    data.relatedOrderName: data.relatedOrderName
+    data: result
+    data.purchaseRecordId: result.purchaseOrderId
+    data.rawMaterialId: result.rawMaterialId
+    data.rawMaterialName: result.rawMaterialName
+    data.purchaseTime: result.purchaseTime
+    data.arrivalTime: result.arrivalTime
+    data.arrivalQuantity: result.arrivalQuantity
+    data.unit: result.unit
+    data.supplierName: result.supplierName
+    data.relatedOrderId: result.relatedOrderId
+    data.relatedOrderName: result.relatedOrderName
     data.leadTime: ''
-    data.status: data.status
-  sql: ''
+    data.status: result.status
 - name: CancelPurchaseRecord
   display_name: ''
   behavior_name: CancelPurchaseRecord
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 取消原材料采购单
-    url: http://optonto-business-backend:8080/api/purchase-records/{purchaseOrderId}/cancel
-    method: POST
+    url: ''
+    method: ''
     params:
       purchaseOrderId:
         type: string
@@ -144,7 +145,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: object
         properties:
           purchaseOrderId:
@@ -163,24 +164,26 @@ data_engines:
             type: string
             display_name: 状态
             example: 已取消
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: cancel_purchase_record
+    output_fields: []
+    headers: {}
   input_mapping:
     purchaseRecordId: purchaseOrderId
   output_mapping:
     code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-  sql: ''
+    data: result
+    data.purchaseRecordId: result.purchaseOrderId
+    data.rawMaterialId: result.rawMaterialId
+    data.rawMaterialName: result.rawMaterialName
 - name: ReceiveRawMaterial
   display_name: ''
   behavior_name: ReceiveRawMaterial
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 入库原材料
-    url: http://optonto-business-backend:8080/api/purchase-records/{purchaseOrderId}/receive
-    method: POST
+    url: ''
+    method: ''
     params:
       purchaseOrderId:
         type: string
@@ -191,7 +194,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: object
         properties:
           purchaseOrderId:
@@ -218,24 +221,26 @@ data_engines:
             type: string
             display_name: 状态
             example: 已入库
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: receive_purchase_record
+    output_fields: []
+    headers: {}
   input_mapping:
     purchaseRecordId: purchaseOrderId
   output_mapping:
     code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-  sql: ''
+    data: result
+    data.purchaseRecordId: result.purchaseOrderId
+    data.rawMaterialId: result.rawMaterialId
+    data.rawMaterialName: result.rawMaterialName
 - name: QueryInventory
   display_name: ''
   behavior_name: QueryInventory
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 查询原材料库存
-    url: http://optonto-business-backend:8080/api/inventories
-    method: GET
+    url: ''
+    method: ''
     params:
       rawMaterialId:
         type: string
@@ -251,7 +256,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -292,30 +297,32 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: query_inventories
+    output_fields: []
+    headers: {}
   input_mapping:
     rawMaterialId: rawMaterialId
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
+    data: result
     data[*].inventoryId: ''
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
     data[*].materialType: ''
-    data[*].pendingReceiptQuantity: data[*].pendingReceiptQuantity
-    data[*].cumulativeStockQuantity: data[*].cumulativeStockQuantity
-    data[*].availableStock: data[*].availableQuantity
-    data[*].unit: data[*].unit
-  sql: ''
+    data[*].pendingReceiptQuantity: result[*].pendingReceiptQuantity
+    data[*].cumulativeStockQuantity: result[*].cumulativeStockQuantity
+    data[*].availableStock: result[*].availableQuantity
+    data[*].unit: result[*].unit
 - name: QueryPurchaseRecords
   display_name: ''
   behavior_name: QueryPurchaseRecords
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 查询原材料采购订单
-    url: http://optonto-business-backend:8080/api/purchase-records
-    method: GET
+    url: ''
+    method: ''
     params:
       purchaseOrderId:
         type: string
@@ -341,7 +348,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -398,34 +405,36 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: query_purchase_records
+    output_fields: []
+    headers: {}
   input_mapping:
     purchaseRecordId: purchaseOrderId
     rawMaterialId: rawMaterialId
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
-    data[*].purchaseRecordId: data[*].purchaseOrderId
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].purchaseTime: data[*].purchaseTime
-    data[*].arrivalTime: data[*].arrivalTime
-    data[*].arrivalQuantity: data[*].arrivalQuantity
-    data[*].unit: data[*].unit
-    data[*].supplierName: data[*].supplierName
-    data[*].relatedOrderId: data[*].relatedOrderId
-    data[*].relatedOrderName: data[*].relatedOrderName
+    data: result
+    data[*].purchaseRecordId: result[*].purchaseOrderId
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
+    data[*].purchaseTime: result[*].purchaseTime
+    data[*].arrivalTime: result[*].arrivalTime
+    data[*].arrivalQuantity: result[*].arrivalQuantity
+    data[*].unit: result[*].unit
+    data[*].supplierName: result[*].supplierName
+    data[*].relatedOrderId: result[*].relatedOrderId
+    data[*].relatedOrderName: result[*].relatedOrderName
     data[*].leadTime: ''
-  sql: ''
 - name: QueryRawMaterials
   display_name: ''
   behavior_name: QueryRawMaterials
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 查询原材料基本信息
-    url: http://optonto-business-backend:8080/api/raw-materials
-    method: GET
+    url: ''
+    method: ''
     params:
       rawMaterialId:
         type: string
@@ -441,7 +450,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -470,26 +479,28 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: query_raw_materials
+    output_fields: []
+    headers: {}
   input_mapping:
     rawMaterialId: rawMaterialId
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].unit: data[*].unit
-    data[*].safetyStock: data[*].safetyStock
-  sql: ''
+    data: result
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
+    data[*].unit: result[*].unit
+    data[*].safetyStock: result[*].safetyStock
 - name: QuerySuppliers
   display_name: ''
   behavior_name: QuerySuppliers
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 供应商查询
-    url: http://optonto-business-backend:8080/api/suppliers
-    method: GET
+    url: ''
+    method: ''
     params:
       supplierName:
         type: string
@@ -505,7 +516,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -546,27 +557,29 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: query_suppliers
+    output_fields: []
+    headers: {}
   input_mapping:
     supplierName: supplierName
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
+    data: result
     data[*].supplierId: ''
-    data[*].supplierName: data[*].supplierName
-    data[*].address: data[*].address
-    data[*].contactPerson: data[*].contactPerson
-    data[*].contactPhone: data[*].contactPhone
-  sql: ''
+    data[*].supplierName: result[*].supplierName
+    data[*].address: result[*].address
+    data[*].contactPerson: result[*].contactPerson
+    data[*].contactPhone: result[*].contactPhone
 - name: QuerySupplierCapability
   display_name: ''
   behavior_name: QuerySupplierCapability
-  engine_type: API
   target:
     data_source_name: aps
     api_name: 供应商查询
-    url: http://optonto-business-backend:8080/api/suppliers
-    method: GET
+    url: ''
+    method: ''
     params:
       supplierName:
         type: string
@@ -582,7 +595,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -623,31 +636,17 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
+    server_url: http://optonto-business-mcp:8004/sse
+    tool_name: query_suppliers
+    output_fields: []
+    headers: {}
   input_mapping:
     supplierName: supplierName
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
-    data[*].supplierName: data[*].supplierName
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].leadTime: data[*].leadTime
-  sql: ''
-- name: QuerySupplierCapabilitySQL
-  display_name: ''
-  behavior_name: QuerySupplierCapabilitySQL
-  engine_type: SQL
-  target:
-    data_source_name: ''
-    api_name: ''
-    url: ''
-    method: POST
-    params: {}
-    response: {}
-  input_mapping: {}
-  output_mapping: {}
-  sql: "SELECT \n    s.supplier_name AS supplierName,\n    s.raw_material_id AS rawMaterialId,\n\
-    \    s.raw_material_name AS rawMaterialName,\n    s.lead_time AS leadTime\nFROM\
-    \ supplier s\nWHERE (s.supplier_name = :supplierName OR :supplierName IS NULL)\n\
-    \  AND (s.raw_material_name = :rawMaterialName OR :rawMaterialName IS NULL)"
+    data: result
+    data[*].supplierName: result[*].supplierName
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
+    data[*].leadTime: result[*].leadTime

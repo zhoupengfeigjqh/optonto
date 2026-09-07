@@ -1,3 +1,6 @@
 mcp>=1.0.0,<2.0.0  # pin: 2.0 removed low-level Server decorators (list_tools/call_tool)
-httpx>=0.28.0
 uvicorn>=0.34.0
+starlette>=0.41.0
+PyYAML>=6.0
+pandas>=2.0.0
+numpy>=1.26.0
