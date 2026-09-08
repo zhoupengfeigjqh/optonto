@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 load_env()
 
 
-SKILL_TEMPLATE_PATH = DATA_DIR / "skill_template.md"
+SKILL_TEMPLATE_PATH = DATA_DIR / "templates/skill_template.md"
 
 
 def _skills_dir(sc_name: str, on_name: str) -> Path:

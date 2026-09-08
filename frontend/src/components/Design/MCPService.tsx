@@ -69,10 +69,10 @@ export default function MCPService() {
     if (card.running) {
       // 停止确认（文档 §十六：中断行为调用 / Agent 基本瘫痪）
       const ok = await new Promise<boolean>(resolve => Modal.confirm({
-        title: `停止 ${label}？`,
-        content: service === 'data-engine'
+        title: <span style={{ color: '#fff' }}>停止 {label}？</span>,
+        content: <span style={{ color: '#fff' }}>{service === 'data-engine'
           ? '停止后所有本体行为调用将不可用（本体查询/函数不受影响）。确认停止？'
-          : '停止后 Agent 将基本瘫痪（本体查询/函数/行为全断）。确认停止？',
+          : '停止后 Agent 将基本瘫痪（本体查询/函数/行为全断）。确认停止？'}</span>,
         okText: '确认停止', okButtonProps: { danger: true }, cancelText: '取消',
         onOk: () => resolve(true), onCancel: () => resolve(false),
       }));

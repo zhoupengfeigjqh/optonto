@@ -22,7 +22,7 @@ async def list_ontology_template_sections():
 
     动态解析而非前端硬编码：模板增删节时前端选项自动同步。
     """
-    tp = DATA_DIR / "onto_template.yaml"
+    tp = DATA_DIR / "templates/onto_template.yaml"
     if not tp.exists():
         raise HTTPException(status_code=500, detail="本体模板文件不存在")
     return {"sections": [key for key, _ in split_yaml_top_sections(tp.read_text(encoding="utf-8"))]}

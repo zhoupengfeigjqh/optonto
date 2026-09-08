@@ -24,7 +24,8 @@ function buildConfirmRows(params: Record<string, any>): {
 }[] {
   return Object.entries(params || {}).map(([key, val]) => {
     const spec = val !== null && typeof val === 'object' ? val : null;
-    const value = spec ? (spec.value ?? '') : String(val ?? '');
+    const raw = spec ? (spec.value ?? '') : String(val ?? '');
+    const value = typeof raw === 'object' ? JSON.stringify(raw) : raw;
     return {
       key,
       name: spec?.description || key,
@@ -318,6 +319,8 @@ function AgentConversation({
   const [showPlanAdvanced, setShowPlanAdvanced] = useState(false);
   // 安全管控确认弹窗：倒计时
   const [confirmCountdown, setConfirmCountdown] = useState<number | null>(null);
+  // 规划确认弹窗：参数详情展开状态（key = `${seq}:${paramKey}`）
+  const [expandedParams, setExpandedParams] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -360,12 +363,7 @@ function AgentConversation({
   useEffect(() => {
     // 倒计时归零 → 回执拒绝（让后端即时解析；超时唯一权威在后端），再关闭弹窗
     if (planCountdown === 0 && planConfirmModal) {
-      const m = planConfirmModal;
-      fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved: false, rejectAction: 'exit' }),
-      }).catch(() => {});
-      setPlanConfirmModal(null);
+      handleRejectPlan('exit');
     }
   }, [planCountdown, planConfirmModal]);
 
@@ -450,6 +448,33 @@ function AgentConversation({
       if (visit(st.seq)) { errors.push('子任务依赖关系存在循环'); break; }
     }
     return errors;
+  };
+
+  /** 拒绝规划：统一处理 API 回执 + 更新聊天消息 + 关闭弹窗 */
+  const handleRejectPlan = (rejectAction: string, suggestion?: string) => {
+    const m = planConfirmModal; if (!m) return;
+    fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        approved: false,
+        rejectAction,
+        suggestion: suggestion || '',
+      }),
+    }).catch(() => {});
+    // 更新 assistant 消息内容，显示拒绝信息
+    const runId = runIdRef.current;
+    const planSummary = `规划共 ${m.editedPlan?.subtasks?.length ?? 0} 个子任务`;
+    const rejectText = rejectAction === 'replan'
+      ? `🚫 已拒绝规划并要求重新规划。${suggestion ? `建议：${suggestion}` : ''}`
+      : '🚫 已拒绝规划并退出。';
+    setMessages(prev => prev.map(msg => {
+      const it = msg as any;
+      if (it.role === 'assistant' && it.runId === runId) {
+        return { ...it, content: `${planSummary}\n\n${rejectText}`, narrative: undefined, narrativeStreaming: false };
+      }
+      return msg;
+    }));
+    setPlanConfirmModal(null);
   };
 
   const onConfirmExecute = () => {
@@ -876,12 +901,7 @@ function AgentConversation({
         width={560}
         onCancel={() => {
             // 关闭（X/遮罩）= 拒绝并退出
-            const m = planConfirmModal; if (!m) return;
-            fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ approved: false, rejectAction: 'exit' }),
-            }).catch(() => {});
-            setPlanConfirmModal(null);
+            handleRejectPlan('exit');
           }}
           footer={
             <div className="flex items-center justify-between gap-2">
@@ -892,16 +912,7 @@ function AgentConversation({
                     { key: 'replan', label: '拒绝并重规划' },
                   ],
                   onClick: ({ key }) => {
-                    const m = planConfirmModal; if (!m) return;
-                    fetch(`/agent-api/plan-confirm/${m.confirmId}`, {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        approved: false,
-                        rejectAction: key === 'replan' ? 'replan' : 'exit',
-                        suggestion: planSuggestion.trim(),
-                      }),
-                    }).catch(() => {});
-                    setPlanConfirmModal(null);
+                    handleRejectPlan(key === 'replan' ? 'replan' : 'exit', planSuggestion.trim());
                   },
                 }}
               >
@@ -959,10 +970,133 @@ function AgentConversation({
                 {/* 参数表：与安全确认弹窗一致的 divide 行 */}
                 <div className="divide-y divide-dark-border/60">
                   {st.params && Object.keys(st.params).length > 0 && Object.entries(st.params).map(([key, val]: [string, any]) => {
-                    const pDesc = typeof val === 'object' && val?.description ? val.description : '';
+                    const pDesc = val !== null && typeof val === 'object' && val?.description ? val.description : '';
                     const label = pDesc || key;
-                    const pVal = typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
-                    const required = typeof val === 'object' && val.required;
+                    const rawVal = val !== null && typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
+                    const required = val !== null && typeof val === 'object' && val.required;
+                    const expandKey = `${st.seq}:${key}`;
+                    const isExpanded = expandedParams.has(expandKey);
+                    const toggleExpand = () => {
+                      setExpandedParams(prev => {
+                        const next = new Set(prev);
+                        if (next.has(expandKey)) next.delete(expandKey); else next.add(expandKey);
+                        return next;
+                      });
+                    };
+
+                    // 格式化参数值展示：数组/对象显示摘要+可展开详情，普通字符串直接显示
+                    const renderValue = (editable: boolean) => {
+                      // 空值
+                      if (rawVal === '' || rawVal === null || rawVal === undefined) {
+                        return <span className="text-amber-400">（待补充）</span>;
+                      }
+
+                      // 数组 → 显示 "数组, 共 N 项"，可展开查看完整 JSON
+                      if (Array.isArray(rawVal)) {
+                        const summary = `数组, 共 ${rawVal.length} 项`;
+                        if (editable) {
+                          return (
+                            <Input
+                              size="small"
+                              value={JSON.stringify(rawVal)}
+                              onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
+                              className="bg-dark-bg border-dark-border text-text-primary flex-1 font-mono text-xs"
+                            />
+                          );
+                        }
+                        if (isExpanded) {
+                          return (
+                            <div className="w-full">
+                              <div className="text-text-muted text-xs mb-1 cursor-pointer hover:text-accent-blue select-none" onClick={toggleExpand}>
+                                ▼ {summary}
+                              </div>
+                              <pre className="text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-32 overflow-y-auto bg-dark-bg rounded p-2 border border-dark-border">{JSON.stringify(rawVal, null, 2)}</pre>
+                            </div>
+                          );
+                        }
+                        return (
+                          <span className="cursor-pointer hover:text-accent-blue select-none" onClick={toggleExpand}>
+                            ▶ {summary}
+                          </span>
+                        );
+                      }
+
+                      // 对象 → 显示 "对象, 共 N 个字段"，可展开查看完整 JSON
+                      if (typeof rawVal === 'object' && rawVal !== null) {
+                        const keys = Object.keys(rawVal);
+                        const summary = `对象, 共 ${keys.length} 个字段`;
+                        if (editable) {
+                          return (
+                            <Input
+                              size="small"
+                              value={JSON.stringify(rawVal)}
+                              onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
+                              className="bg-dark-bg border-dark-border text-text-primary flex-1 font-mono text-xs"
+                            />
+                          );
+                        }
+                        if (isExpanded) {
+                          return (
+                            <div className="w-full">
+                              <div className="text-text-muted text-xs mb-1 cursor-pointer hover:text-accent-blue select-none" onClick={toggleExpand}>
+                                ▼ {summary}
+                              </div>
+                              <pre className="text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-32 overflow-y-auto bg-dark-bg rounded p-2 border border-dark-border">{JSON.stringify(rawVal, null, 2)}</pre>
+                            </div>
+                          );
+                        }
+                        return (
+                          <span className="cursor-pointer hover:text-accent-blue select-none" onClick={toggleExpand}>
+                            ▶ {summary}
+                          </span>
+                        );
+                      }
+
+                      // 普通字符串（含 JSON 字符串）
+                      const strVal = String(rawVal);
+                      // 过长字符串截断 + 可展开
+                      if (strVal.length > 120) {
+                        if (editable) {
+                          return (
+                            <Input
+                              size="small"
+                              value={strVal}
+                              onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
+                              className="bg-dark-bg border-dark-border text-text-primary flex-1 font-mono text-xs"
+                            />
+                          );
+                        }
+                        if (isExpanded) {
+                          return (
+                            <div className="w-full">
+                              <div className="text-text-muted text-xs mb-1 cursor-pointer hover:text-accent-blue select-none" onClick={toggleExpand}>
+                                ▼ 收起
+                              </div>
+                              <span className="break-all text-xs">{strVal}</span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <span className="cursor-pointer hover:text-accent-blue select-none break-all" onClick={toggleExpand}>
+                            {strVal.slice(0, 120)}...
+                          </span>
+                        );
+                      }
+
+                      // 普通短字符串
+                      if (editable) {
+                        return (
+                          <Input
+                            size="small"
+                            value={strVal}
+                            onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
+                            className="bg-dark-bg border-dark-border text-text-primary flex-1"
+                          />
+                        );
+                      }
+                      return <span className="break-all">{strVal}</span>;
+                    };
+
                     if (!showPlanAdvanced) {
                       return (
                         <div key={key} className="flex items-center gap-3 px-3 py-2">
@@ -977,8 +1111,8 @@ function AgentConversation({
                               <span className="text-text-muted text-xs border border-dark-border rounded px-1.5 py-0.5">选填</span>
                             )}
                           </div>
-                          <div className={`flex-1 text-sm break-all ${pVal ? 'text-text-primary' : 'text-amber-400'}`}>
-                            {pVal || '（待补充）'}
+                          <div className={`flex-1 text-sm ${rawVal === '' || rawVal === null || rawVal === undefined ? 'text-amber-400' : 'text-text-primary'}`}>
+                            {renderValue(false)}
                           </div>
                         </div>
                       );
@@ -989,12 +1123,7 @@ function AgentConversation({
                           <div className="text-text-primary text-sm truncate">{label}</div>
                           <div className="text-text-muted text-xs font-mono truncate">{key}</div>
                         </div>
-                        <Input
-                          size="small"
-                          value={pVal}
-                          onChange={(e) => onUpdateSubtaskParam(st.seq, key, e.target.value)}
-                          className="bg-dark-bg border-dark-border text-text-primary flex-1"
-                        />
+                        {renderValue(true)}
                       </div>
                     );
                   })}

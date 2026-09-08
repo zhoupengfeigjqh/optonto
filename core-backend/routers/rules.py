@@ -18,7 +18,7 @@ load_env()
 
 
 COMMON_FUNCTIONS_DIR = DATA_DIR / "common_functions"
-RULE_TEMPLATE_DIR = DATA_DIR / "rule_template"
+RULE_TEMPLATE_DIR = DATA_DIR / "templates/rule_template"
 
 
 @router.get("")

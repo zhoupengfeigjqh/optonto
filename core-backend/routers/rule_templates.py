@@ -8,7 +8,7 @@ from config import DATA_DIR
 
 router = APIRouter(prefix="/api/rule-templates", tags=["规则模板"])
 
-RULE_TEMPLATE_DIR = DATA_DIR / "rule_template"
+RULE_TEMPLATE_DIR = DATA_DIR / "templates/rule_template"
 
 
 @router.get("/types")

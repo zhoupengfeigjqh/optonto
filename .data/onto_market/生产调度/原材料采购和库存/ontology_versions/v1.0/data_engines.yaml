@@ -52,7 +52,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: object
         properties:
           purchaseOrderId:
@@ -114,19 +114,19 @@ data_engines:
     unit: unit
   output_mapping:
     code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
-    data.purchaseTime: data.purchaseTime
-    data.arrivalTime: data.arrivalTime
-    data.arrivalQuantity: data.arrivalQuantity
-    data.unit: data.unit
-    data.supplierName: data.supplierName
-    data.relatedOrderId: data.relatedOrderId
-    data.relatedOrderName: data.relatedOrderName
+    data: result
+    data.purchaseRecordId: result.purchaseOrderId
+    data.rawMaterialId: result.rawMaterialId
+    data.rawMaterialName: result.rawMaterialName
+    data.purchaseTime: result.purchaseTime
+    data.arrivalTime: result.arrivalTime
+    data.arrivalQuantity: result.arrivalQuantity
+    data.unit: result.unit
+    data.supplierName: result.supplierName
+    data.relatedOrderId: result.relatedOrderId
+    data.relatedOrderName: result.relatedOrderName
     data.leadTime: ''
-    data.status: data.status
+    data.status: result.status
 - name: CancelPurchaseRecord
   display_name: ''
   behavior_name: CancelPurchaseRecord
@@ -145,7 +145,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: object
         properties:
           purchaseOrderId:
@@ -172,10 +172,10 @@ data_engines:
     purchaseRecordId: purchaseOrderId
   output_mapping:
     code: code
-    data: data
-    data.purchaseRecordId: data.purchaseOrderId
-    data.rawMaterialId: data.rawMaterialId
-    data.rawMaterialName: data.rawMaterialName
+    data: result
+    data.purchaseRecordId: result.purchaseOrderId
+    data.rawMaterialId: result.rawMaterialId
+    data.rawMaterialName: result.rawMaterialName
 - name: ReceiveRawMaterial
   display_name: ''
   behavior_name: ReceiveRawMaterial
@@ -194,7 +194,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: object
         properties:
           purchaseOrderId:
@@ -228,9 +228,11 @@ data_engines:
   input_mapping:
     purchaseRecordId: purchaseOrderId
   output_mapping:
-    data.purchaseRecordId: purchaseOrderId
-    data.rawMaterialId: rawMaterialId
-    data.rawMaterialName: rawMaterialName
+    code: code
+    data: result
+    data.purchaseRecordId: result.purchaseOrderId
+    data.rawMaterialId: result.rawMaterialId
+    data.rawMaterialName: result.rawMaterialName
 - name: QueryInventory
   display_name: ''
   behavior_name: QueryInventory
@@ -254,7 +256,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -304,15 +306,15 @@ data_engines:
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
+    data: result
     data[*].inventoryId: ''
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
     data[*].materialType: ''
-    data[*].pendingReceiptQuantity: data[*].pendingReceiptQuantity
-    data[*].cumulativeStockQuantity: data[*].cumulativeStockQuantity
-    data[*].availableStock: data[*].availableQuantity
-    data[*].unit: data[*].unit
+    data[*].pendingReceiptQuantity: result[*].pendingReceiptQuantity
+    data[*].cumulativeStockQuantity: result[*].cumulativeStockQuantity
+    data[*].availableStock: result[*].availableQuantity
+    data[*].unit: result[*].unit
 - name: QueryPurchaseRecords
   display_name: ''
   behavior_name: QueryPurchaseRecords
@@ -346,7 +348,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -413,17 +415,17 @@ data_engines:
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
-    data[*].purchaseRecordId: data[*].purchaseOrderId
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].purchaseTime: data[*].purchaseTime
-    data[*].arrivalTime: data[*].arrivalTime
-    data[*].arrivalQuantity: data[*].arrivalQuantity
-    data[*].unit: data[*].unit
-    data[*].supplierName: data[*].supplierName
-    data[*].relatedOrderId: data[*].relatedOrderId
-    data[*].relatedOrderName: data[*].relatedOrderName
+    data: result
+    data[*].purchaseRecordId: result[*].purchaseOrderId
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
+    data[*].purchaseTime: result[*].purchaseTime
+    data[*].arrivalTime: result[*].arrivalTime
+    data[*].arrivalQuantity: result[*].arrivalQuantity
+    data[*].unit: result[*].unit
+    data[*].supplierName: result[*].supplierName
+    data[*].relatedOrderId: result[*].relatedOrderId
+    data[*].relatedOrderName: result[*].relatedOrderName
     data[*].leadTime: ''
 - name: QueryRawMaterials
   display_name: ''
@@ -448,7 +450,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -486,11 +488,11 @@ data_engines:
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].unit: data[*].unit
-    data[*].safetyStock: data[*].safetyStock
+    data: result
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
+    data[*].unit: result[*].unit
+    data[*].safetyStock: result[*].safetyStock
 - name: QuerySuppliers
   display_name: ''
   behavior_name: QuerySuppliers
@@ -514,7 +516,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -564,12 +566,12 @@ data_engines:
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
+    data: result
     data[*].supplierId: ''
-    data[*].supplierName: data[*].supplierName
-    data[*].address: data[*].address
-    data[*].contactPerson: data[*].contactPerson
-    data[*].contactPhone: data[*].contactPhone
+    data[*].supplierName: result[*].supplierName
+    data[*].address: result[*].address
+    data[*].contactPerson: result[*].contactPerson
+    data[*].contactPhone: result[*].contactPhone
 - name: QuerySupplierCapability
   display_name: ''
   behavior_name: QuerySupplierCapability
@@ -593,7 +595,7 @@ data_engines:
       code:
         type: number
         example: 0
-      data:
+      result:
         type: array
         items:
           type: object
@@ -643,8 +645,8 @@ data_engines:
     rawMaterialName: rawMaterialName
   output_mapping:
     code: code
-    data: data
-    data[*].supplierName: data[*].supplierName
-    data[*].rawMaterialId: data[*].rawMaterialId
-    data[*].rawMaterialName: data[*].rawMaterialName
-    data[*].leadTime: data[*].leadTime
+    data: result
+    data[*].supplierName: result[*].supplierName
+    data[*].rawMaterialId: result[*].rawMaterialId
+    data[*].rawMaterialName: result[*].rawMaterialName
+    data[*].leadTime: result[*].leadTime

@@ -270,7 +270,7 @@ async def generate_ontology(thread_id: str, body: dict):
     markdown_content = file_path.read_text(encoding="utf-8")
 
     # Read the template（config.DATA_DIR 在本地与 Docker 容器内均指向 .data）
-    tp = DATA_DIR / "onto_template.yaml"
+    tp = DATA_DIR / "templates/onto_template.yaml"
     if not tp.exists():
         raise HTTPException(status_code=500, detail="本体模板文件不存在")
     template_content = tp.read_text(encoding="utf-8")

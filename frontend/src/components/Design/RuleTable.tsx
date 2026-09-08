@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { Button, Input, Select, Modal, message, Space, Tooltip } from 'antd';
+import { Button, Input, Select, Modal, message, Space, Tooltip, Tag } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, FileTextOutlined, RobotOutlined, WarningOutlined } from '@ant-design/icons';
 import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, getRuleTemplateTypes, getRuleTemplate, getConcepts, getRelations, generateRule, Rule, Behavior, Function, Concept, Relation } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
@@ -331,6 +331,29 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
 
   useEffect(() => { if (activeTab === 'rules') load(); }, [ontologyId, activeTab]);
 
+  // 编辑态自动推导 data_supplements（关联行为/函数/规则结构变化时自动预填，用户可手工增减）
+  useEffect(() => {
+    if (!editingKey) return;
+    const mains: string[] = editData.related_behaviors || [];
+    const usedConcepts = collectRuleRefs(editData.rule_detail).concepts;
+    for (const fname of (editData.related_functions || []) as string[]) {
+      const fn = funcs.find(f => f.name === fname);
+      for (const c of fn?.related_concepts || []) usedConcepts.add(c);
+    }
+    if (usedConcepts.size === 0) {
+      if ((editData.data_supplements || []).length > 0) {
+        setEditData(p => ({ ...p, data_supplements: [] }));
+      }
+      return;
+    }
+    const derived = behaviors
+      .filter(b => b.op_type === 'query'
+        && !mains.includes(b.name)
+        && (b.related_concepts || []).some(c => usedConcepts.has(c)))
+      .map(b => b.name);
+    setEditData(p => ({ ...p, data_supplements: derived }));
+  }, [editingKey, editData.related_behaviors, editData.related_functions, editData.rule_detail, behaviors, funcs]);
+
   const isEditing = (record: Rule) => record.name === editingKey;
   const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
   const functionOptions = funcs.map(f => ({ label: f.display_name || f.name, value: f.name }));
@@ -358,28 +381,8 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const handleSave = async (record: Rule) => {
     if (!editData.name?.trim()) { message.warning('请输入规则名称'); return; }
     try {
-      // 数据补充自动推导（2026-09-05 v4：规则结构引用概念 ∪ 关联函数的关联概念，不再跑图导航）：
-      // 收集 rule_detail 里引用到的概念，以及每个关联函数（本体函数）声明的关联概念
-      // （函数的输入数据由这些概念的 query 行为供给，关联了函数就要能取到它要算的数；
-      // 公共函数无关联概念，天然不贡献）→ 取关联这些概念的 query 行为（只读接口）→
-      // 剔除规则自身关联行为（主行为结果已在手，不做自己的补充）。
-      const deriveSupplements = (): string[] => {
-        const mains: string[] = editData.related_behaviors || [];
-        const usedConcepts = collectRuleRefs(editData.rule_detail).concepts;
-        for (const fname of (editData.related_functions || []) as string[]) {
-          const fn = funcs.find(f => f.name === fname);
-          for (const c of fn?.related_concepts || []) usedConcepts.add(c);
-        }
-        if (usedConcepts.size === 0) return [];
-        return behaviors
-          .filter(b => b.op_type === 'query'
-            && !mains.includes(b.name)
-            && (b.related_concepts || []).some(c => usedConcepts.has(c)))
-          .map(b => b.name);
-      };
-      const derivedSupplements = deriveSupplements();
-
-      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], data_supplements: derivedSupplements, rule_detail: normalizeDetail(editData.rule_detail) };
+      // 数据补充：编辑态已自动推导（见上方 useEffect），用户可手工增减，此处直接使用最终值
+      const data: any = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', rule_type: editData.rule_type || '', position: editData.position || '', related_behaviors: editData.related_behaviors || [], related_functions: editData.related_functions || [], data_supplements: editData.data_supplements || [], rule_detail: normalizeDetail(editData.rule_detail) };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (rules.some(r => r.name === data.name)) { message.warning('规则名称已存在'); return; }
@@ -584,7 +587,47 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_behaviors') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_behaviors || []} onChange={v => setEditData(p => ({...p, related_behaviors: v}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'related_functions') return <Select size="small" mode="multiple" placeholder="选择" value={editData.related_functions || []} onChange={v => setEditData(p => ({...p, related_functions: v}))} options={functionOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
-    // 数据补充：保存时按规则结构引用概念 ∪ 关联函数的关联概念自动推导（见 handleSave），列只读展示
+    if (dataIndex === 'data_supplements') {
+      // 数据补充：编辑态自动推导（见上方 useEffect），用户可在此手工增减
+      const queryBehaviorOptions = behaviors
+        .filter(b => b.op_type === 'query')
+        .map(b => ({ label: b.display_name || b.name, value: b.name }));
+      return (
+        <div className="flex items-center gap-1">
+          <Select
+            size="small"
+            mode="multiple"
+            placeholder="自动推导，可手工增减"
+            value={editData.data_supplements || []}
+            onChange={v => setEditData(p => ({...p, data_supplements: v}))}
+            options={queryBehaviorOptions}
+            style={{ width: '100%' }}
+            popupClassName="!bg-dark-card"
+          />
+          <Tooltip title="重新自动推导">
+            <Button
+              size="small"
+              type="text"
+              icon={<RobotOutlined />}
+              onClick={() => {
+                const mains: string[] = editData.related_behaviors || [];
+                const usedConcepts = collectRuleRefs(editData.rule_detail).concepts;
+                for (const fname of (editData.related_functions || []) as string[]) {
+                  const fn = funcs.find(f => f.name === fname);
+                  for (const c of fn?.related_concepts || []) usedConcepts.add(c);
+                }
+                const derived = usedConcepts.size === 0 ? [] : behaviors
+                  .filter(b => b.op_type === 'query'
+                    && !mains.includes(b.name)
+                    && (b.related_concepts || []).some(c => usedConcepts.has(c)))
+                  .map(b => b.name);
+                setEditData(p => ({...p, data_supplements: derived}));
+              }}
+            />
+          </Tooltip>
+        </div>
+      );
+    }
     return render ? render(val) : (val || '-');
   };
 
