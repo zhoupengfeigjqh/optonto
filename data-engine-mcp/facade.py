@@ -7,8 +7,8 @@ tool_name 全局命名逻辑（裸名优先，跨本体重名加 onto{ontology_i
 
 from mcp.types import Tool
 
-from mcp_shared import loaders
-from mcp_shared.schema_compile import params_to_input_schema, related_concepts, with_function_scope
+import loaders
+from schema_compile import params_to_input_schema, related_concepts, with_function_scope
 
 _BEHAVIOR_CACHE: dict = {"fingerprint": None, "tools": [], "entries": {}}
 

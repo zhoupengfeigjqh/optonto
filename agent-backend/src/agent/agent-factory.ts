@@ -503,7 +503,7 @@ export class AgentFactory {
 
       let client: MCPClient | null = null;
       try {
-        // 复用缓存连接（connect 幂等），避免每个 Agent 新建 SSE 连接；headers（远程鉴权）随配置下发
+        // 复用缓存连接（connect 幂等），避免每个 Agent 新建连接；headers（远程鉴权）随配置下发
         client = this.getOrCreateClient(server.url, server.headers);
         await client.connect();
 

@@ -24,6 +24,7 @@ class AttributeItem(BaseModel):
     name: str = Field(..., description="属性名")
     type: str = Field(..., description="属性类型")
     display_name: str = Field("", description="展示名称")
+    description: str = Field("", description="属性描述，用于描述属性语义信息")
     example: str = Field("", description="示例")
     constraint: ConstraintItem | None = Field(None, description="约束")
 
@@ -186,7 +187,7 @@ class TargetApiConfig(BaseModel):
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="输出结构")
     # 下游 MCP 服务与工具（落盘自包含，不引用外部注册表；引擎唯一形态=MCP）
-    server_url: str = Field("", description="下游 MCP 服务 SSE 地址（必填）")
+    server_url: str = Field("", description="下游 MCP 服务地址（Streamable HTTP 端点，必填）")
     tool_name: str = Field("", description="下游 MCP 工具名（必填）")
     output_fields: list[str] = Field(default_factory=list, description="目标输出字段（无 outputSchema 时手工/试调录入，设计期参照）")
     headers: dict = Field(default_factory=dict, description="连接下游 MCP 携带的 HTTP 头（远程鉴权，可选）")

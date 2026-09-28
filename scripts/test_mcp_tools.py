@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-MCP_URL = "http://localhost:8002/sse"
+MCP_URL = "http://localhost:8002/mcp"
 
 passed = 0
 failed = 0

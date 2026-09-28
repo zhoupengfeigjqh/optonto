@@ -196,7 +196,7 @@ export default function MCPConfigPanel() {
           value={editData.url || ''}
           onChange={e => setEditData(p => ({...p, url: e.target.value}))}
           className="bg-dark-bg border-dark-border text-text-primary font-mono"
-          placeholder="http://example.com/sse"
+          placeholder="http://example.com/mcp"
         />
       );
     }
@@ -238,7 +238,7 @@ export default function MCPConfigPanel() {
       width: 80,
       render: (_: any, r: MCPServerConfig) => r.builtin
         ? <Tag color="green">全部工具</Tag>
-        : <Button type="link" size="small" icon={<ToolOutlined />} onClick={() => handleViewTools(r)}>选择</Button>,
+        : <Button type="link" size="small" icon={<ToolOutlined />} disabled={!r.enabled} onClick={() => handleViewTools(r)}>选择</Button>,
     },
     {
       title: '操作',

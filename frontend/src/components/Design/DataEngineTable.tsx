@@ -239,7 +239,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
     // 已配置的手工（非内置）MCP 服务 = 目标接口下拉数据源（文档 §八.1）
     try {
       const cfg = await getMCPConfig();
-      setMcpServers(cfg.servers.filter(s => !s.builtin));
+      setMcpServers(cfg.servers.filter(s => !s.builtin && s.enabled));
     } catch (e: any) { message.warning('读取 MCP 服务配置失败: ' + e.message); }
     // 回显：已配 server_url 时把工具清单拉回来（含工具名下拉回显）
     if (t.server_url) fetchToolList(t.server_url, t.headers);

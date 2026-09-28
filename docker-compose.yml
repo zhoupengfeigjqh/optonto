@@ -29,9 +29,9 @@ services:
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
       # 内置本体MCP 地址（默认同为该值，显式写出便于切换环境时一眼看到）
-      - MCP_BUILTIN_URL=http://optonto-ontology-mcp:8002/sse
+      - MCP_BUILTIN_URL=http://optonto-ontology-mcp:8002/mcp
       # 内置数据引擎MCP 地址（行为 facade 唯一入口）
-      - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-mcp:8005/sse
+      - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-mcp:8005/mcp
     networks:
       - optonto-net
 

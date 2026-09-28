@@ -16,7 +16,7 @@
 ┌─ 运行面（数据面）──────┴───────────────────────────────────────┐
 │                                                               │
 │  Agent（agent-backend 编排面：规划/规则闸/安全/记忆，本轮不变）    │
-│    │ SSE 直连三个内置 MCP 服务，对外只讲 MCP 一种协议              │
+│    │ Streamable HTTP 直连三个内置 MCP 服务，对外只讲 MCP 一种协议    │
 │    │                │                        │                │
 │    ▼                ▼                        ▼                │
 │ ┌───────────┐ ┌───────────────────┐ ┌─────────────────────┐  │
@@ -83,7 +83,7 @@ optonto/
 │   └── （mcp_server_sse.py、data_engine.py 迁出，执行职能归零）
 │
 ├── ontology-mcp/              # optonto-ontology-mcp 容器
-│   ├── server.py              # 协议层（薄）：SSE、工具注册、list*/函数路由
+│   ├── server.py              # 协议层（薄）：Streamable HTTP 挂载、工具注册、list*/函数路由
 │   ├── Dockerfile             # build context = 仓库根（要带 mcp-shared）
 │   └── requirements.txt
 │
@@ -104,7 +104,7 @@ optonto/
     ├── loaders.py             # 直读 .data + mtime 指纹热加载
     ├── mapper.py              # _translate_input / _translate_output（逐字迁自 data_engine.py）
     ├── sandbox.py             # 函数 exec + 受限 globals + run(params) 约定
-    └── mcp_base.py            # SSE Starlette 骨架、OAuth issuer 推导、/health /tools 端点
+    └── mcp_base.py            # Streamable HTTP Starlette 骨架（/mcp 单端点）、OAuth issuer 推导、/health /tools 端点
 ```
 
 **关键决策**：
@@ -120,7 +120,7 @@ optonto/
 
 ```yaml
 target:
-  server_url: http://optonto-business-mcp:8004/sse   # 下游是谁，配置说了算
+  server_url: http://optonto-business-mcp:8004/mcp   # 下游是谁，配置说了算
   tool_name: query_raw_material
 ```
 
@@ -158,7 +158,7 @@ target:
   behavior_name: queryRawMaterial
   engine_type: MCP
   target:
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_raw_material
     output_fields: [stockQty, ...]    # 可选：无 outputSchema 时手工/试调录入的目标输出字段
   input_mapping: {材料编号: materialCode}
@@ -193,7 +193,7 @@ target:
 
 ## 九、远程 MCP 支持
 
-架构对本地/远程 MCP 一视同仁（全链路只认 SSE URL），但有四个约束：
+架构对本地/远程 MCP 一视同仁（全链路只认 MCP URL；平台三服务为 Streamable HTTP 端点 /mcp，/sse 结尾的存量第三方服务仍按 SSE 连接），但有四个约束：
 
 **1. 网络可达性（两侧都要通）**
 - 设计期：映射页 listTools/试调由后端代发，**后端容器**须连通远程地址
@@ -268,7 +268,7 @@ SQL 路径：Agent → data-engine-mcp SQL 行为 → 占位替换 → 只读闸
    - 验证：pytest 20/20（新增 decls 校验 4 + MCP 分发 4）；docker 实测映射路径（中文字段换名+白名单）、直透路径、错误穿透三条全通
 3. **阶段三**：~~agent-backend 三内置挂载~~（阶段一已按"双内置"落地：business-mcp 是模拟业务系统须手工配置，不内置）+ 可见性管控（配映射即收编）+ MCPClient 鉴权扩展 ✅ 已落地（2026-09-07）
    - **可见性收编**：新模块 `agent-backend/src/services/visibility-guard.ts`——扫 `.data` 全本体 data_engines（独立文件优先 / ontology.yaml 旧段回退，与 OntologyGateway 同口径），engine_type=MCP 的 `target.server_url+tool_name` 进隐藏索引（URL 规范化去尾斜杠，`{count}:{最新mtime}` 指纹缓存免每次重扫）；discoverTools 对**非内置**服务隐藏命中工具（覆盖用户 allowed_tools），内置服务永不收编
-   - **headers 鉴权**：mcp-config 服务条目 + `headers` 字段 → MCPClient 经 SSEClientTransport 的 requestInit/eventSourceInit 携带（eventsource npm 包支持自定义头）；data-engine-mcp 侧 `target.headers` 透传 `_mcp_call_tool` 连接；/mcp-config/test 探针接受 headers 并透出 outputSchema（阶段四映射页数据源）
+   - **headers 鉴权**：mcp-config 服务条目 + `headers` 字段 → MCPClient 经 StreamableHTTPClientTransport（/sse 服务经 SSEClientTransport）的 requestInit 携带；data-engine-mcp 侧 `target.headers` 透传 `_mcp_call_tool` 连接；/mcp-config/test 探针接受 headers 并透出 outputSchema（阶段四映射页数据源）
    - 验证：vitest 291/291（新增 visibility-guard 6 + discoverTools 收编接线 2）、pytest 21/21（headers 透传 +1）、E2E `e2e-visibility-guard.py` 全过（收编日志断言 + 设计期探针不受收编影响 + 内置不收编），facade/prerule/error-budget/legal-list 回归全绿
 4. **阶段四**：前端 API 映射页改造（§八 七条 + 试调提取按钮 + 手工录入兜底）+ 三卡启停面板 ✅ 已落地（2026-09-07）
    - 后端：agent-backend 新增 `POST /mcp-config/tools`（只读 listTools，二级下拉数据源）与 `POST /mcp-config/call-tool`（试调提取：真实 callTool 一次，isError 穿透）；core `GET /api/mcp/business/status` 只读（start/stop 仍白名单 404 硬边界）；nginx 新增 `/mcp-data-engine/` 代理

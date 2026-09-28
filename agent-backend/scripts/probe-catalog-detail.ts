@@ -9,7 +9,7 @@ const PARENT_QUERY = ['listScenarios', 'listOntologies', 'listOntoBehaviors', 'l
   'listOntoRelations', 'listOntoFunctions', 'listOntoSecurities', 'listOntoProcesses'];
 
 async function main() {
-  const client = new MCPClient('http://localhost:8002/sse');
+  const client = new MCPClient('http://localhost:8002/mcp');
   await client.connect();
   const { tools } = await client.listTools();
   console.log(`MCP 工具总数: ${tools.length}`);

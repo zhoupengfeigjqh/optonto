@@ -7,7 +7,7 @@ WORKDIR /app
 COPY ontology-mcp/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
-COPY mcp-shared/mcp_shared /app/mcp_shared
+COPY mcp-shared /app/
 COPY ontology-mcp/server.py /app/server.py
 
 EXPOSE 8002

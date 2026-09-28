@@ -31,7 +31,7 @@ for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 
-from mcp_shared.mcp_base import build_sse_app
+from mcp_base import build_mcp_app
 from decls import load_tool_decls
 
 BUSINESS_API_BASE = os.environ.get("BUSINESS_API_BASE", "http://optonto-business-backend:8080")
@@ -117,4 +117,4 @@ def _strip_nulls(v):
     return v
 
 
-starlette_app = build_sse_app(server, _list_tools, "optonto-business-mcp")
+starlette_app = build_mcp_app(server, _list_tools, "optonto-business-mcp")

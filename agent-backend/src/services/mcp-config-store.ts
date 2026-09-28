@@ -19,15 +19,20 @@ export interface MCPConfig {
 
 /**
  * 内置本体MCP —— 恒存在、恒启用、恒全选，不可删除。
- * URL 默认 Docker 内网服务名，可用 MCP_BUILTIN_URL 覆盖（如本地直跑指向 http://localhost:8002/sse）。
+ * URL 默认 Docker 内网服务名，可用 MCP_BUILTIN_URL 覆盖（如本地直跑指向 http://localhost:8002/mcp）。
  * 2026-09-07 三服务拆分：optonto-mcp 更名 optonto-ontology-mcp（行为 facade 迁至 data-engine-mcp）。
+ * 2026-09-28 传输改 Streamable HTTP：端点 /sse → /mcp（旧路径仅作历史配置识别，读取时被当前 URL 顶替）。
  */
-const LEGACY_BUILTIN_URL = 'http://optonto-mcp:8002/sse';
-const DEFAULT_BUILTIN_URL = 'http://optonto-ontology-mcp:8002/sse';
+const LEGACY_BUILTIN_URLS = [
+  'http://optonto-mcp:8002/sse',           // 三服务拆分前的旧服务名
+  'http://optonto-ontology-mcp:8002/sse',  // 改造前的 SSE 端点
+];
+const DEFAULT_BUILTIN_URL = 'http://optonto-ontology-mcp:8002/mcp';
 export const BUILTIN_MCP_URL = process.env['MCP_BUILTIN_URL'] || DEFAULT_BUILTIN_URL;
 
 /** 内置数据引擎MCP —— 行为 facade 唯一入口（2026-09-07 从本体MCP 拆出）。同内置语义：恒存在、恒启用、恒全选。 */
-const DEFAULT_DATA_ENGINE_URL = 'http://optonto-data-engine-mcp:8005/sse';
+const DEFAULT_DATA_ENGINE_URL = 'http://optonto-data-engine-mcp:8005/mcp';
+const LEGACY_DATA_ENGINE_URL = 'http://optonto-data-engine-mcp:8005/sse';
 export const BUILTIN_DATA_ENGINE_MCP_URL = process.env['MCP_BUILTIN_DATA_ENGINE_URL'] || DEFAULT_DATA_ENGINE_URL;
 
 export const BUILTIN_MCP = {
@@ -53,8 +58,8 @@ const DEFAULT_CONFIG: MCPConfig = {
 /** 内置身份识别：builtin 标记 / 任一内置当前 URL / 历史默认 URL（配置文件里可能残留旧默认，env 切换后仍要正确归类） */
 function isBuiltinServer(s: MCPServerConfig | undefined | null): boolean {
   return !!s && (s.builtin === true
-    || s.url === BUILTIN_MCP_URL || s.url === LEGACY_BUILTIN_URL
-    || s.url === BUILTIN_DATA_ENGINE_MCP_URL);
+    || s.url === BUILTIN_MCP_URL || LEGACY_BUILTIN_URLS.includes(s.url)
+    || s.url === BUILTIN_DATA_ENGINE_MCP_URL || s.url === LEGACY_DATA_ENGINE_URL);
 }
 
 /**

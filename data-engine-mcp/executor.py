@@ -13,8 +13,8 @@ import asyncio
 import json
 import logging
 
-from mcp_shared import loaders
-from mcp_shared.mapper import _translate_input, _translate_output
+import loaders
+from mapper import _translate_input, _translate_output
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,11 @@ async def _mcp_call_tool(server_url: str, tool_name: str, arguments: dict,
     无文本时退 structuredContent（第三方只回 structured 的情形）。
     """
     from mcp import ClientSession
-    from mcp.client.sse import sse_client
+    from mcp.client.streamable_http import streamablehttp_client
 
     async def _once() -> dict:
-        async with sse_client(server_url, timeout=10, headers=headers or None) as (read, write):
+        # 下游为 Streamable HTTP（/mcp 单端点）；无状态模式下每次调用建连即关，无会话残留
+        async with streamablehttp_client(server_url, headers=headers or None, timeout=10) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await asyncio.wait_for(

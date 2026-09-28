@@ -23,7 +23,7 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 BASE = 'http://localhost:8003/agent-api'
 SCEN = '生产调度'
 ONTO = '原材料采购和库存'
-BIZ_URL = 'http://optonto-business-mcp:8004/sse'
+BIZ_URL = 'http://optonto-business-mcp:8004/mcp'
 REPO = Path(__file__).resolve().parent.parent.parent
 ENGINES_YAML = REPO / '.data' / 'onto_market' / SCEN / ONTO / 'data_engines.yaml'
 BAK = ENGINES_YAML.with_suffix('.yaml.e2ebak')

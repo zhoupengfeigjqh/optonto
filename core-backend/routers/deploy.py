@@ -3,6 +3,11 @@
 版本语义：以对话创建时录入的版本号（.data.json 中的 version 字段）为准。
 同一版本下的所有已生成 yaml（含 metadata.source_file 回退匹配到的）合并为该版本的完整本体。
 合并只发生在部署时的内存里，需求侧分片文件保持不动（单一事实来源）。
+
+功能：
+- 本体合并：将 thread 分片合并后输出到 ontology_versions/{version}/ 三个 yaml 文件
+- 版本预览：从 ontology_versions 读取已存档版本，或从 thread 合并预览
+- 部署：先备份当前部署 → 再将版本目录文件复制到部署目录
 """
 
 import hashlib
@@ -19,8 +24,14 @@ from dependencies import get_ontology_names
 from schemas import OntologyData
 from services import (
     save_ontology_data,
+    save_ontology_version,
+    load_ontology_version,
+    version_exists,
+    copy_ontology_to_deploy,
+    backup_deploy_to_version,
     split_yaml_top_sections,
     _get_yaml_path,
+    _get_ontology_dir,
 )
 from routers.threads import _find_thread, _thread_dir, _yaml_source_map, _match_ontology_yaml
 
@@ -188,46 +199,129 @@ async def get_deployed_ontology(ontology_id: int):
     return {"content": path.read_text(encoding="utf-8")}
 
 
+def _get_deployed_version(scenario_name: str, ontology_name: str) -> str:
+    """读取当前部署的 ontology.yaml 中的 deployed_version，不存在则返回空字符串。"""
+    current_path = _get_yaml_path(scenario_name, ontology_name)
+    if not current_path.exists():
+        return ""
+    try:
+        raw = yaml.safe_load(current_path.read_text(encoding="utf-8")) or {}
+        meta = raw.get("metadata") if isinstance(raw, dict) else None
+        if isinstance(meta, dict):
+            return str(meta.get("deployed_version") or "")
+    except Exception:
+        return ""
+    return ""
+
+
+@router.get("/version-exists")
+async def check_version_exists(ontology_id: int, version: str):
+    """检查指定版本是否已存档到 ontology_versions/{version}/。"""
+    sc_name, ontology_name = await get_ontology_names(ontology_id)
+    exists = version_exists(sc_name, ontology_name, version)
+    return {"exists": exists}
+
+
+@router.get("/version-preview")
+async def preview_version(ontology_id: int, version: str):
+    """从 ontology_versions/{version}/ 读取已存档的三个 yaml 文件，返回合并内容。"""
+    sc_name, ontology_name = await get_ontology_names(ontology_id)
+    if not version_exists(sc_name, ontology_name, version):
+        raise HTTPException(status_code=404, detail=f"版本「{version}」尚未存档，请先执行本体合并")
+
+    merged = load_ontology_version(sc_name, ontology_name, version)
+    # 构造 stats 统计
+    stats = {s: len(getattr(merged, s)) for s in _MERGE_SECTIONS}
+    return {
+        "version": version,
+        "docs": [],
+        "merged": merged.model_dump(exclude_none=True),
+        "stats": stats,
+        "from_version_dir": True,
+    }
+
+
+@router.post("/save-version")
+async def save_version(ontology_id: int, body: dict):
+    """将 thread 分片合并后输出到 ontology_versions/{version}/ 三个 yaml 文件。
+
+    这是「本体合并」按钮的 API：从 thread 合并 → 写入 version 目录。
+    """
+    sc_name, ontology_name = await get_ontology_names(ontology_id)
+    version = (body.get("version") or "").strip()
+    if not version:
+        raise HTTPException(status_code=400, detail="请提供版本号")
+
+    # 从 thread 合并
+    _, paths = _resolve_version_docs(ontology_name, version)
+    merged = _merge_yaml_files(paths, version)
+    _finalize_metadata(merged, ontology_id, ontology_name, sc_name)
+
+    # 写入 version 目录
+    save_ontology_version(sc_name, ontology_name, version, merged)
+
+    stats = {s: len(getattr(merged, s)) for s in _MERGE_SECTIONS}
+    return {
+        "message": f"已将版本「{version}」合并结果保存到 ontology_versions/{version}/",
+        "version": version,
+        "stats": stats,
+    }
+
+
+@router.get("/deployed-version")
+async def get_deployed_version_info(ontology_id: int):
+    """获取当前部署的版本号。"""
+    sc_name, ontology_name = await get_ontology_names(ontology_id)
+    deployed_version = _get_deployed_version(sc_name, ontology_name)
+    return {"deployed_version": deployed_version}
+
+
 @router.post("/deploy")
 async def deploy_ontology(ontology_id: int, body: dict):
-    """把该版本合并后的本体部署到 onto_market/{scenario}/{ontology}/ontology.yaml。
+    """部署指定版本到 onto_market/{scenario}/{ontology}/。
 
-    幂等性护栏：比较分片输入哈希（shard_hash）与上次部署记录。分片不变则
-    合并结果必然不变，跳过写入。比版本号比较更精确——同版本但分片内容变了
-    也允许重新部署。
+    新流程：
+    1. 先备份当前部署的三个文件到 ontology_versions/{当前部署版本}/
+    2. 再将 ontology_versions/{目标版本}/ 的三个文件复制到部署目录
+    3. 更新 metadata 中的 deployed_version
     """
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     version = (body.get("version") or "").strip()
     if not version:
         raise HTTPException(status_code=400, detail="请提供要部署的版本号")
 
-    _, paths = _resolve_version_docs(ontology_name, version)
-    merged = _merge_yaml_files(paths, version)
-    shard_hash = merged.metadata["shard_hash"]
+    # 检查目标版本是否已存档
+    if not version_exists(sc_name, ontology_name, version):
+        raise HTTPException(status_code=400, detail=f"版本「{version}」尚未存档，请先执行本体合并")
 
-    current_path = _get_yaml_path(sc_name, ontology_name)
-    current_shard_hash = ""
-    if current_path.exists():
-        try:
-            raw = yaml.safe_load(current_path.read_text(encoding="utf-8")) or {}
-            meta = raw.get("metadata") if isinstance(raw, dict) else None
-            if isinstance(meta, dict):
-                current_shard_hash = str(meta.get("shard_hash") or "")
-        except Exception:
-            current_shard_hash = ""
+    # 获取当前部署版本
+    current_deployed_version = _get_deployed_version(sc_name, ontology_name)
 
-    if current_shard_hash == shard_hash:
-        return {
-            "message": f"版本 {version} 分片未变化，无需重复部署",
-            "deployed_version": version,
-            "already_deployed": True,
-        }
+    # 1. 备份当前部署到版本目录
+    if current_deployed_version:
+        backup_deploy_to_version(sc_name, ontology_name, current_deployed_version)
 
-    _finalize_metadata(merged, ontology_id, ontology_name, sc_name)
-    save_ontology_data(sc_name, ontology_name, merged)
+    # 2. 从版本目录复制到部署目录
+    copy_ontology_to_deploy(sc_name, ontology_name, version)
+
+    # 3. 更新 ontology.yaml 中的 deployed_version
+    onto_path = _get_yaml_path(sc_name, ontology_name)
+    raw = yaml.safe_load(onto_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    if not isinstance(raw.get("metadata"), dict):
+        raw["metadata"] = {}
+    raw["metadata"]["deployed_version"] = version
+    with open(onto_path, "w", encoding="utf-8") as f:
+        yaml.dump(raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # 统计数据
+    merged = load_ontology_version(sc_name, ontology_name, version)
+    stats = {s: len(getattr(merged, s)) for s in _MERGE_SECTIONS} if merged else {}
+
     return {
-        "message": f"已部署版本 {version} 到 {sc_name}/{ontology_name}/ontology.yaml",
+        "message": f"已部署版本「{version}」到 {sc_name}/{ontology_name}/",
         "deployed_version": version,
-        "already_deployed": False,
-        "stats": {s: len(getattr(merged, s)) for s in _MERGE_SECTIONS},
+        "already_deployed": version == current_deployed_version,
+        "stats": stats,
     }

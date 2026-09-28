@@ -3,6 +3,9 @@
 ①本体函数 → scope.category/display_name const；②公共函数 → x-category/x-display_name；③无标记。
 raw socket 读 SSE（uvicorn 用 \r\n 行尾 + chunked，urllib 的 read 语义会踩坑）。
 用法: python probe-mcp-catalog.py [host:port]   默认 localhost:8002
+
+注意：平台三服务 2026-09-28 起改为 Streamable HTTP（/mcp 单端点），本脚本仅适用于仍以 /sse
+提供服务的第三方/历史 MCP（工具目录核对请改用 /tools 端点或 mcp SDK 客户端）。
 """
 import json
 import socket

@@ -2,7 +2,7 @@
 """阶段五一次性迁移：存量 HTTP(API) 型数据引擎改绑 MCP 型（engine_type: MCP）。
 
 改绑规则（URL↔工具一一对应，business-mcp 即这些 Java 端点的适配器）：
-- target.url/method 清空，落 server_url=http://optonto-business-mcp:8004/sse + tool_name
+- target.url/method 清空，落 server_url=http://optonto-business-mcp:8004/mcp + tool_name
 - output_mapping 目标路径重写为新响应形态：
   查询类（GET，数组负载包 {"result":[...]}）：data[*].x → result[*].x，丢弃 code/data 壳条目
   变更类（POST，envelope 解包为记录对象）：data.x → x，丢弃 code/data 壳条目
@@ -20,7 +20,7 @@ sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 REPO = Path(__file__).resolve().parent.parent
 YAML_PATH = REPO / '.data' / 'onto_market' / '生产调度' / '原材料采购和库存' / 'data_engines.yaml'
 BAK_PATH = YAML_PATH.with_suffix('.yaml.p5bak')
-BIZ = 'http://optonto-business-mcp:8004/sse'
+BIZ = 'http://optonto-business-mcp:8004/mcp'
 
 URL_TO_TOOL = {
     ('POST', '/api/purchase-records'): 'create_purchase_record',

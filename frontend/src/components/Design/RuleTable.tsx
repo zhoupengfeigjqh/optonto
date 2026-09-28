@@ -230,9 +230,7 @@ function ConditionList({ ifBlock, setIf, conceptOptions, attributeOptions, funcO
           <div key={idx} className="bg-dark-card border border-dark-border rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-text-muted text-xs">条件 {idx + 1}</span>
-              {conditions.length > 1 && (
-                <Button type="link" size="small" danger onClick={() => removeCondition(idx)}>删除</Button>
-              )}
+              <Button type="link" size="small" danger onClick={() => removeCondition(idx)}>删除</Button>
             </div>
             <OperandEditor obj={cond.left} side="left" onPatch={(p: any) => updateCondition(idx, { left: p })}
               conceptOptions={conceptOptions} attributeOptions={attributeOptions} funcOptions={funcOptions} funcs={funcs} />
@@ -551,7 +549,13 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
 
     if (editData.rule_type === '验证规则' || editData.rule_type === '推理规则') {
       const conditions = cfg.if?.conditions || [];
-      if (conditions.length === 0) { message.warning('请至少添加一个条件'); return; }
+      if (conditions.length === 0) {
+        // 条件为空 → 清空规则结构
+        setEditData(p => ({ ...p, rule_detail: null }));
+        message.success('规则结构已清空');
+        setRuleDesignModalOpen(false);
+        return;
+      }
       // 编辑形态 → 存储形态：字面值按左侧类型解析，操作符↔右侧类型矩阵校验
       const built = buildStorageConditions(conditions);
       if (!built.ok) { message.warning(built.error); return; }
@@ -725,8 +729,8 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
           <>
             <p className="text-text-muted text-xs mb-3">
               函数选项限定于「关联函数」，实例/实例集限定于「关联行为」的关联概念及其一阶关联概念（沿关联概念属性齐全的关系走一跳）
-              {!(editData.related_functions || []).length && <span className="text-yellow-500">；当前未选关联函数，函数不可选，请先在表格中填写</span>}
-              {!(editData.related_behaviors || []).length && <span className="text-yellow-500">；当前未选关联行为，实例/实例集不可选，请先在表格中填写</span>}
+              {!(editData.related_functions || []).length && <span className="text-yellow-500">；当前未选关联函数</span>}
+              {!(editData.related_behaviors || []).length && <span className="text-yellow-500">；当前未选关联行为</span>}
             </p>
             <ValidationRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={designConceptOptions} attributeOptions={attributeOptions} funcOptions={designFuncOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} getOperandType={getOperandType} />
           </>
@@ -734,8 +738,8 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
           <>
             <p className="text-text-muted text-xs mb-3">
               函数选项限定于「关联函数」，实例/实例集限定于「关联行为」的关联概念及其一阶关联概念（沿关联概念属性齐全的关系走一跳）
-              {!(editData.related_functions || []).length && <span className="text-yellow-500">；当前未选关联函数，函数不可选，请先在表格中填写</span>}
-              {!(editData.related_behaviors || []).length && <span className="text-yellow-500">；当前未选关联行为，实例/实例集不可选，请先在表格中填写</span>}
+              {!(editData.related_functions || []).length && <span className="text-yellow-500">；当前未选关联函数</span>}
+              {!(editData.related_behaviors || []).length && <span className="text-yellow-500">；当前未选关联行为</span>}
             </p>
             <InferenceRuleEditor config={ruleConfig} onChange={setRuleConfig} conceptOptions={designConceptOptions} attributeOptions={attributeOptions} funcOptions={designFuncOptions} operatorOptions={OPERATOR_OPTIONS} funcs={funcs} getOperandType={getOperandType} />
           </>

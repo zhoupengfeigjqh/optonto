@@ -8,7 +8,7 @@ WORKDIR /app
 COPY business-mcp/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
-COPY mcp-shared/mcp_shared /app/mcp_shared
+COPY mcp-shared /app/
 COPY business-mcp/server.py business-mcp/decls.py /app/
 COPY business-mcp/config /app/config
 

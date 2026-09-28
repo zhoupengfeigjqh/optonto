@@ -3,7 +3,7 @@
 职责：行为 facade 工具（唯一入口）、映射前后翻译、参数契约检查。
 引擎唯一形态=MCP（target.server_url/tool_name 分发；HTTP/SQL 型已分别于阶段五、2026-09-07 删除）。
 
-直读 .data（mcp_shared.loaders），运行期零回调 core-backend。
+直读 .data（loaders），运行期零回调 core-backend。
 core-backend 的 /behaviors/{name}/call 与 /data-engines/{name}/call 降级转发到
 本服务的 /call-behavior /call-engine（设计器测试与 Agent 走同一路径，消灭双执行路径）。
 
@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-# 本地直跑兜底：Docker 镜像内 mcp_shared 已在 /app 下可直接 import
+# 本地直跑兜底：Docker 镜像内 mcp-shared 的模块已在 /app 顶层可直接 import
 for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -25,8 +25,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from mcp_shared.mcp_base import build_sse_app
-from mcp_shared.schema_compile import FUNCTION_SCOPE_KEYS
+from mcp_base import build_mcp_app
+from schema_compile import FUNCTION_SCOPE_KEYS
 
 import executor
 import facade
@@ -112,7 +112,7 @@ async def _handle_call_engine(request: Request) -> JSONResponse:
     return _envelope_response(result, f"数据引擎 {ename}")
 
 
-starlette_app = build_sse_app(
+starlette_app = build_mcp_app(
     server, _list_tools, "optonto-data-engine-mcp",
     extra_routes=[
         Route("/call-behavior", endpoint=_handle_call_behavior, methods=["POST"]),

@@ -1,5 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 /** MCP 工具调用结果（callTool 返回的显式类型，消除 as any 类型洞） */
 export interface McpToolResult {
@@ -15,11 +17,11 @@ export interface McpToolInfo {
 }
 
 /**
- * MCP 客户端包装器（SSE 传输）。
- * 连接到 optonto-ontology-mcp 容器的 SSE 端点，通过 MCP 协议调用本体行为。
+ * MCP 客户端包装器（Streamable HTTP 传输，/sse 结尾的存量服务回退 SSE）。
+ * 连接到 optonto-ontology-mcp 等服务的 /mcp 端点，通过 MCP 协议调用本体行为。
  *
  * 连接管理收在本 module 内（调用方无感知）：
- *  - SSE 断连（容器重启/网络抖动）→ transport.onclose 作废客户端，下次调用惰性重连；
+ *  - 连接关闭（容器重启/网络抖动）→ transport.onclose 作废客户端，下次调用惰性重连；
  *    此前 connected 标志断连后永不复位，后续调用全部打在死连接上。
  *  - listTools（只读）失败时重连重试一次；callTool 一律不自动重试——
  *    写操作重发可能重复执行（首调或已生效、只是响应丢失），失败原样上抛由上层处理。
@@ -28,14 +30,34 @@ export class MCPClient {
   private client: Client | null = null;
 
   /**
-   * @param mcpUrl  MCP 服务 SSE 地址
+   * @param mcpUrl  MCP 服务地址（Streamable HTTP 单端点，如 http://svc:8002/mcp）
    * @param headers 连接携带的 HTTP 头（远程 MCP 鉴权：Bearer token 等，架构文档 §九.3，阶段三落地）。
-   *                请求头走 requestInit（POST 消息）；SSE 流走 eventSourceInit（eventsource 包支持 headers）。
    */
   constructor(
     private readonly mcpUrl: string,
     private readonly headers?: Record<string, string>,
   ) {}
+
+  /**
+   * 传输选择：平台三服务走 Streamable HTTP（/mcp 单端点）；
+   * 仅 URL 以 /sse 结尾时回退 SSE——存量第三方远程 MCP（如已配置的 antv）仍是 SSE 端点。
+   */
+  private createTransport(): Transport {
+    const url = new URL(this.mcpUrl);
+    if (url.pathname.replace(/\/+$/, '') === '/sse') {
+      return new SSEClientTransport(url, this.headers
+        ? {
+            requestInit: { headers: this.headers },
+            // eventsource 包的扩展初始化项（标准 EventSourceInit 无 headers 字段，类型上断言放行）
+            eventSourceInit: { headers: this.headers } as any,
+          }
+        : undefined);
+    }
+    return new StreamableHTTPClientTransport(
+      url,
+      this.headers ? { requestInit: { headers: this.headers } } : undefined,
+    );
+  }
 
   /** 连接 MCP 服务（幂等：已连接直接返回） */
   async connect(): Promise<void> {
@@ -48,14 +70,8 @@ export class MCPClient {
       { name: 'optonto-agent', version: '1.0.0' },
       { capabilities: {} },
     );
-    const transport = new SSEClientTransport(new URL(this.mcpUrl), this.headers
-      ? {
-          requestInit: { headers: this.headers },
-          // eventsource 包的扩展初始化项（标准 EventSourceInit 无 headers 字段，类型上断言放行）
-          eventSourceInit: { headers: this.headers } as any,
-        }
-      : undefined);
-    // SSE 断连 → 作废当前客户端（仅当没被更新的连接替换过），下次调用惰性重连
+    const transport = this.createTransport();
+    // 连接关闭 → 作废当前客户端（仅当没被更新的连接替换过），下次调用惰性重连
     transport.onclose = () => { if (this.client === client) this.client = null; };
     await client.connect(transport);
     this.client = client;
@@ -96,7 +112,7 @@ export class MCPClient {
     }
   }
 
-  /** 关闭连接，释放 SSE 传输资源 */
+  /** 关闭连接，释放传输资源 */
   async close(): Promise<void> {
     const client = this.client;
     this.client = null;

@@ -105,7 +105,7 @@ export default function MCPService() {
     if (key === 'ontology') {
       setConfigModal({
         title: '本体MCP 配置',
-        json: JSON.stringify({ mcpServers: { 'optonto-ontology': { type: 'url', url: `http://${host}:8002/sse` } } }, null, 2),
+        json: JSON.stringify({ mcpServers: { 'optonto-ontology': { type: 'url', url: `http://${host}:8002/mcp` } } }, null, 2),
         note: '将以上配置添加到你的 agent 的 MCP 配置中，即可连接本体服务。',
       });
       return;
@@ -113,7 +113,7 @@ export default function MCPService() {
     if (key === 'dataEngine') {
       setConfigModal({
         title: '数据引擎MCP 配置',
-        json: JSON.stringify({ mcpServers: { 'optonto-data-engine': { type: 'url', url: `http://${host}:8005/sse` } } }, null, 2),
+        json: JSON.stringify({ mcpServers: { 'optonto-data-engine': { type: 'url', url: `http://${host}:8005/mcp` } } }, null, 2),
         note: '将以上配置添加到你的 agent 的 MCP 配置中，即可连接数据引擎服务。',
       });
       return;
@@ -129,7 +129,7 @@ export default function MCPService() {
       } : {
         title: '业务系统MCP 配置',
         json: JSON.stringify({
-          name: '业务系统MCP', url: 'http://optonto-business-mcp:8004/sse', enabled: true,
+          name: '业务系统MCP', url: 'http://optonto-business-mcp:8004/mcp', enabled: true,
         }, null, 2),
         note: '尚未在「MCP 配置」页配置该服务。以上为参考条目——请前往 MCP 配置页手工新增（它不是平台内置服务，不会自动注册）。',
       });
@@ -198,8 +198,8 @@ export default function MCPService() {
       </div>
 
       <div className="flex gap-4 flex-wrap">
-        {renderCard('ontology', '本体MCP', `http://${host}:8002/sse`, false)}
-        {renderCard('dataEngine', '数据引擎MCP', `http://${host}:8005/sse`, false)}
+        {renderCard('ontology', '本体MCP', `http://${host}:8002/mcp`, false)}
+        {renderCard('dataEngine', '数据引擎MCP', `http://${host}:8005/mcp`, false)}
         {renderCard('business', '业务系统MCP', 'Docker 内部网络（不对外发布端口）', true)}
       </div>
 

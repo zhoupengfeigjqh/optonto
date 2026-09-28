@@ -1,7 +1,7 @@
 import { MCPClient } from '../src/services/mcp-client.js';
 import { toMountableToolInfo } from '../src/agent/tool-catalog.js';
 async function main() {
-  for (const url of ['http://localhost:8002/sse', 'http://localhost:8005/sse']) {
+  for (const url of ['http://localhost:8002/mcp', 'http://localhost:8005/mcp']) {
     const client = new MCPClient(url);
     await client.connect();
     const { tools } = await client.listTools();

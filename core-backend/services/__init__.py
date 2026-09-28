@@ -296,6 +296,142 @@ def write_yaml_raw(scenario_name: str, ontology_name: str, content: str) -> None
     _invalidate_ontology_cache(scenario_name, ontology_name)
 
 
+# ─── Ontology Versions（版本存档目录管理） ──────────────────────────────────────
+
+
+def _get_ontology_versions_dir(scenario_name: str, ontology_name: str) -> Path:
+    """获取本体版本存档目录路径（与 ontology.yaml 同级的 ontology_versions/）。"""
+    return _get_ontology_dir(scenario_name, ontology_name) / "ontology_versions"
+
+
+def _get_version_dir(scenario_name: str, ontology_name: str, version: str) -> Path:
+    """获取指定版本的存档目录路径。"""
+    return _get_ontology_versions_dir(scenario_name, ontology_name) / version
+
+
+def version_exists(scenario_name: str, ontology_name: str, version: str) -> bool:
+    """检查指定版本是否已存档（三个文件均存在才算）。"""
+    vdir = _get_version_dir(scenario_name, ontology_name, version)
+    return all((vdir / f).exists() for f in ("ontology.yaml", "securities.yaml", "data_engines.yaml"))
+
+
+def save_ontology_version(scenario_name: str, ontology_name: str, version: str, data: OntologyData) -> None:
+    """将合并后的本体数据保存到 ontology_versions/{version}/ 三个 yaml 文件。
+
+    逻辑与 save_ontology_data 一致：数据引擎/安全管控拆写独立文件。
+    """
+    vdir = _get_version_dir(scenario_name, ontology_name, version)
+    vdir.mkdir(parents=True, exist_ok=True)
+
+    # 在 metadata 中固化场景/本体名称与 id
+    from metadata import get_scenario_by_name, list_ontologies_by_scenario
+    scenario = get_scenario_by_name(scenario_name)
+    scenario_id = scenario.get("id") if scenario else None
+    ontology_id = None
+    if scenario_id is not None:
+        for o in list_ontologies_by_scenario(scenario_name):
+            if o.get("name") == ontology_name:
+                ontology_id = o.get("id")
+                break
+    if not isinstance(data.metadata, dict):
+        data.metadata = {}
+    data.metadata.pop("name", None)
+    data.metadata["scenario_name"] = scenario_name
+    data.metadata["scenario_id"] = scenario_id
+    data.metadata["ontology_name"] = ontology_name
+    data.metadata["ontology_id"] = ontology_id
+
+    # 数据引擎/安全管控拆写
+    engines = data.data_engines
+    data.securities = _sync_securities_roster(data)
+    ontology_data = data.model_copy(update={"data_engines": [], "securities": []})
+    ontology_dict = ontology_data.model_dump(exclude_none=True)
+    ontology_dict.pop("data_engines", None)
+    ontology_dict.pop("securities", None)
+
+    with open(vdir / "ontology.yaml", "w", encoding="utf-8") as f:
+        yaml.dump(ontology_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    with open(vdir / "data_engines.yaml", "w", encoding="utf-8") as f:
+        yaml.dump({"data_engines": [e.model_dump(exclude_none=True) for e in engines]}, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    with open(vdir / "securities.yaml", "w", encoding="utf-8") as f:
+        yaml.dump({"securities": [s.model_dump(exclude_none=True) for s in data.securities]}, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def load_ontology_version(scenario_name: str, ontology_name: str, version: str) -> OntologyData:
+    """从 ontology_versions/{version}/ 读取三个 yaml 文件，合并为 OntologyData。
+
+    如果版本目录不存在或文件不全，抛出 FileNotFoundError。
+    """
+    vdir = _get_version_dir(scenario_name, ontology_name, version)
+    if not vdir.exists():
+        raise FileNotFoundError(f"本体版本目录不存在: {vdir}")
+
+    data = OntologyData()
+
+    # 读取 ontology.yaml
+    onto_path = vdir / "ontology.yaml"
+    if onto_path.exists():
+        with open(onto_path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        data = OntologyData(**raw)
+
+    # 读取 securities.yaml
+    sec_path = vdir / "securities.yaml"
+    if sec_path.exists():
+        with open(sec_path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        items = raw.get("securities", []) if isinstance(raw, dict) else raw
+        if items:
+            data.securities = [SecurityItem(**e) for e in items]
+
+    # 读取 data_engines.yaml
+    de_path = vdir / "data_engines.yaml"
+    if de_path.exists():
+        with open(de_path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        items = raw.get("data_engines", []) if isinstance(raw, dict) else raw
+        if items:
+            data.data_engines = [DataEngineItem(**e) for e in items]
+
+    return data
+
+
+def copy_ontology_to_deploy(scenario_name: str, ontology_name: str, version: str) -> None:
+    """将 ontology_versions/{version}/ 的三个文件复制到部署目录，覆盖现有文件。"""
+    vdir = _get_version_dir(scenario_name, ontology_name, version)
+    if not vdir.exists():
+        raise FileNotFoundError(f"版本目录不存在: {vdir}")
+
+    deploy_dir = _get_ontology_dir(scenario_name, ontology_name)
+    deploy_dir.mkdir(parents=True, exist_ok=True)
+
+    for fname in ("ontology.yaml", "securities.yaml", "data_engines.yaml"):
+        src = vdir / fname
+        dst = deploy_dir / fname
+        if src.exists():
+            import shutil
+            shutil.copy2(src, dst)
+
+
+def backup_deploy_to_version(scenario_name: str, ontology_name: str, version: str) -> None:
+    """将当前部署目录的三个文件备份到 ontology_versions/{version}/。
+
+    用于部署前备份当前版本。如目标版本目录已存在则覆盖。
+    """
+    if not version:
+        return
+    vdir = _get_version_dir(scenario_name, ontology_name, version)
+    vdir.mkdir(parents=True, exist_ok=True)
+
+    deploy_dir = _get_ontology_dir(scenario_name, ontology_name)
+    import shutil
+    for fname in ("ontology.yaml", "securities.yaml", "data_engines.yaml"):
+        src = deploy_dir / fname
+        dst = vdir / fname
+        if src.exists():
+            shutil.copy2(src, dst)
+
+
 def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dict]:
     """List all YAML files in the ontology directory."""
     dir_path = _get_ontology_dir(scenario_name, ontology_name)
@@ -308,6 +444,5 @@ def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dic
     return files
 
 
-# 函数沙箱（build_restricted_globals / run 入口）已迁至 mcp-shared/mcp_shared/sandbox.py，
+# 函数沙箱（build_restricted_globals / run 入口）已迁至 mcp-shared/sandbox.py，
 # 由 ontology-mcp 本地执行；core 仅保留保存期静态校验 _validate_function_code（routers/functions.py）。
-

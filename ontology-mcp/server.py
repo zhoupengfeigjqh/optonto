@@ -1,17 +1,17 @@
 """optonto-ontology-mcp — 本体语义面 MCP 服务（SSE）。
 
 职责：本体 list* 查询、本体函数、公共函数（本地沙箱执行）。
-直读 .data（mcp_shared.loaders，mtime 指纹热加载），运行期零回调 core-backend。
+直读 .data（loaders，mtime 指纹热加载），运行期零回调 core-backend。
 
 运行：python -m uvicorn server:starlette_app --host 0.0.0.0 --port 8002
-Docker：build context = 仓库根（需 COPY mcp-shared/mcp_shared）。
+Docker：build context = 仓库根（需 COPY mcp-shared）。
 """
 
 import json
 import sys
 from pathlib import Path
 
-# 本地直跑兜底：Docker 镜像内 mcp_shared 已在 /app 下可直接 import
+# 本地直跑兜底：Docker 镜像内 mcp-shared 的模块已在 /app 顶层可直接 import
 for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -19,10 +19,10 @@ for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 
-from mcp_shared import loaders
-from mcp_shared.mcp_base import build_sse_app
-from mcp_shared.sandbox import run_function_code
-from mcp_shared.schema_compile import (
+import loaders
+from mcp_base import build_mcp_app
+from sandbox import run_function_code
+from schema_compile import (
     FUNCTION_SCOPE_KEYS, params_to_input_schema, related_concepts, with_function_scope,
 )
 
@@ -366,7 +366,7 @@ async def _handle_execute_common_function(request: Request) -> JSONResponse:
         return JSONResponse({"detail": f"公共函数执行失败: {str(e)}"}, status_code=500)
 
 
-starlette_app = build_sse_app(
+starlette_app = build_mcp_app(
     server, _list_tools, "optonto-ontology-mcp",
     extra_routes=[
         Route("/execute-function", endpoint=_handle_execute_function, methods=["POST"]),

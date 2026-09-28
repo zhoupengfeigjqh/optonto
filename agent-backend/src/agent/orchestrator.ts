@@ -304,47 +304,24 @@ export class Orchestrator {
     }
 
     if (!plan) {
+      const lastMsg = getLastAssistantMessage(parentAgent.state.messages);
       // 言行不一闸：文本声称"已提交规划/即将开始执行"但工具回调为空（submit_plan 调用未生效）。
-      // 只在此"无规划"分支评估，正常路径零影响。命中 → nudge 一次自救（复用修复循环思路）：
-      // 自救后拿到规划 → 落入下方正常校验链；自救后改为诚实直答 → 走直答路径；
-      // 自救后仍声称已提交 → 诚实报错，不把虚假声明原文转发给用户。
-      let lastMsg = getLastAssistantMessage(parentAgent.state.messages);
+      // 命中 → 直接报错，不重试，不把虚假声明原文转发给用户。
       if (lastMsg && looksLikePlanClaim(lastMsg)) {
-        emit.entry({ type: 'subtask_done', name: '规划提交校验', status: 'failed', source: 'parent', detail: '模型声称已提交规划，但系统未收到 submit_plan 工具调用，已提示其重新提交' });
-        console.warn('[orchestrator] 父Agent 声称已提交规划但未调用 submit_plan，nudge 一次');
-        session.submittedPlan.reset(); // 复位-重提协议（与 PlanGate poke 同一约定）
-        await this.parentPrompt(parentAgent, '系统未收到你的 submit_plan 工具调用——你上一条回复声称已提交规划，但工具调用并未生效（提交是否生效以工具返回"已接收执行规划"为准）。\n若你的意图是执行，请立即调用 submit_plan 工具提交规划；若无需执行（纯咨询/元数据查询），请直接回答用户问题，不要声称已提交。');
-        if (session.isAborted() || isChildAborted(parentAgent)) {
-          emit.raw({ type: 'narrative_end', outcome: 'aborted' });
-          return this.endPlanning(emit, { reply: '已中断', tokens: ['\n⏹ 已中断\n'] });
-        }
-        plan = session.submittedPlan.peek();
-        if (plan && (!plan.subtasks || plan.subtasks.length === 0)) {
-          plan = null;
-        }
-        lastMsg = getLastAssistantMessage(parentAgent.state.messages);
-        if (!plan && lastMsg && looksLikePlanClaim(lastMsg)) {
-          // nudge 后仍声称已提交 → 虚假声明不进聊天正文，诚实报错
-          emit.entry({ type: 'subtask_done', name: '规划提交校验', status: 'failed', source: 'parent', detail: '提示后仍未收到 submit_plan 工具调用，已拦截虚假声明' });
-          console.warn('[orchestrator] nudge 后父Agent 仍未调用 submit_plan，拦截虚假声明');
-          const msg = '⚠️ 规划提交失败：模型未能正确调用规划工具，请重新描述需求或换个说法。';
-          emit.raw({ type: 'narrative_end', outcome: 'answer' });
-          return this.endPlanning(emit, { reply: msg, error: msg });
-        }
-      }
-      if (!plan) {
-        if (lastMsg) {
-          // 直答路径：叙事块里的流式内容就是正式回答——通知前端撤块，全文回流正文（UI 与历史一致）
-          // （言行不一闸 nudge 后改为诚实直答的，也走这里——lastMsg 已是自救后的新回答）
-          emit.raw({ type: 'narrative_end', outcome: 'answer' });
-          // 结束语仅是 UI 提示：只发前端展示，不进返回值/历史——否则历史里每条直答都以它结尾，
-          // 模型会鹦鹉学舌自己说一遍，叠加后端追加变成两遍
-          return this.endPlanning(emit, { reply: lastMsg, tokens: [lastMsg, '\n\n---\n本次回答已结束，您可以根据上述内容开展进一步对话。'] });
-        }
-        const msg = '⚠️ 无法生成执行计划，请重新描述需求。';
+        emit.entry({ type: 'subtask_done', name: '规划提交校验', status: 'failed', source: 'parent', detail: '模型声称已提交规划，但系统未收到 submit_plan 工具调用，已拦截虚假声明' });
+        console.warn('[orchestrator] 父Agent 声称已提交规划但未调用 submit_plan，已拦截');
+        const msg = '⚠️ 规划提交失败：模型未能正确调用规划工具，请重新描述需求或换个说法。';
         emit.raw({ type: 'narrative_end', outcome: 'answer' });
         return this.endPlanning(emit, { reply: msg, error: msg });
       }
+      // 无规划、无虚假声明 → 直答路径
+      if (lastMsg) {
+        emit.raw({ type: 'narrative_end', outcome: 'answer' });
+        return this.endPlanning(emit, { reply: lastMsg, tokens: [lastMsg, '\n\n---\n本次回答已结束，您可以根据上述内容开展进一步对话。'] });
+      }
+      const msg = '⚠️ 无法生成执行计划，请重新描述需求。';
+      emit.raw({ type: 'narrative_end', outcome: 'answer' });
+      return this.endPlanning(emit, { reply: msg, error: msg });
     }
 
     // 规划路径：叙事块定格为"规划思考过程"（默认折叠留存），正文只放结构化规划与结论

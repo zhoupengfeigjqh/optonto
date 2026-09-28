@@ -22,7 +22,7 @@ def _de(**over):
     de = {
         "name": "查询原材料",
         "behavior_name": "queryRawMaterial",
-        "target": {"server_url": "http://optonto-business-mcp:8004/sse", "tool_name": "query_raw_materials"},
+        "target": {"server_url": "http://optonto-business-mcp:8004/mcp", "tool_name": "query_raw_materials"},
         "input_mapping": {"原材料名称": "rawMaterialName"},
         "output_mapping": {"材料编号": "rawMaterialId", "单位": "unit"},
     }
@@ -34,7 +34,7 @@ def test_missing_target_raises_value_error():
     with pytest.raises(ValueError, match="server_url"):
         asyncio.run(executor._call_engine_mcp(_de(target={}), {}))
     with pytest.raises(ValueError, match="server_url"):
-        asyncio.run(executor._call_engine_mcp(_de(target={"server_url": "http://x/sse"}), {}))
+        asyncio.run(executor._call_engine_mcp(_de(target={"server_url": "http://x/mcp"}), {}))
 
 
 def test_dispatch_translates_input_and_output(monkeypatch):
@@ -48,7 +48,7 @@ def test_dispatch_translates_input_and_output(monkeypatch):
     result = asyncio.run(executor._call_engine_mcp(
         _de(), {"原材料名称": "高强度钢板", "未映射字段": "不进下游"}))
 
-    assert captured["server_url"] == "http://optonto-business-mcp:8004/sse"
+    assert captured["server_url"] == "http://optonto-business-mcp:8004/mcp"
     assert captured["tool_name"] == "query_raw_materials"
     # 输入映射：换名，未映射字段原样透传（与 HTTP 型同口径——_translate_input 非白名单）
     assert captured["arguments"] == {"rawMaterialName": "高强度钢板", "未映射字段": "不进下游"}
@@ -92,7 +92,7 @@ def test_target_headers_forwarded(monkeypatch):
         return {"status_code": 200, "data": {}}
 
     monkeypatch.setattr(executor, "_mcp_call_tool", fake_call)
-    de = _de(target={"server_url": "http://x/sse", "tool_name": "t",
+    de = _de(target={"server_url": "http://x/mcp", "tool_name": "t",
                      "headers": {"Authorization": "Bearer tok-1"}})
     asyncio.run(executor._call_engine_mcp(de, {}))
     assert captured["headers"] == {"Authorization": "Bearer tok-1"}

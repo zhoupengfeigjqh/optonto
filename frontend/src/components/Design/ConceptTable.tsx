@@ -140,7 +140,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     }
     // 收敛 constraint：清不适用项、数字枚举解析、全缺省置 null（不落盘）
     const payload = attributes.map(a => {
-      const base = { name: a.name.trim(), type: a.type, display_name: a.display_name?.trim() || '', example: a.example?.trim() || '' };
+      const base = { name: a.name.trim(), type: a.type, display_name: a.display_name?.trim() || '', description: a.description?.trim() || '', example: a.example?.trim() || '' };
       const c = a.constraint;
       if (!c) return { ...base, constraint: null };
       const out: AttributeConstraint = {};
@@ -240,7 +240,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       <p className="text-text-muted text-xs mb-3">定义业务中的核心对象及其属性结构</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
 
-      <Modal title={`管理属性 - ${attrConcept?.display_name || attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={1200}
+      <Modal title={`管理属性 - ${attrConcept?.display_name || attrConcept?.name || ''}`} open={attrDialogOpen} onCancel={() => setAttrDialogOpen(false)} width={1400}
         footer={
           <div className="flex justify-start gap-2">
             <Button onClick={() => setAttrDialogOpen(false)}>取消</Button>
@@ -253,13 +253,16 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           rowKey="_idx"
           size="small"
           pagination={false}
-          scroll={{ x: 1240 }}
+          scroll={{ x: 1500 }}
           columns={[
             { title: '英文名称', width: 130, render: (_: any, r: any) => (
               <Input size="small" value={r.name} onChange={e => updateAttr(r._idx, { name: e.target.value })} placeholder="英文名称" className="bg-dark-bg border-dark-border text-text-primary" />
             )},
             { title: '中文名称', width: 110, render: (_: any, r: any) => (
               <Input size="small" value={r.display_name || ''} onChange={e => updateAttr(r._idx, { display_name: e.target.value })} placeholder="中文名称" className="bg-dark-bg border-dark-border text-text-primary" />
+            )},
+            { title: '描述', width: 160, render: (_: any, r: any) => (
+              <Input size="small" value={r.description || ''} onChange={e => updateAttr(r._idx, { description: e.target.value })} placeholder="属性语义描述" className="bg-dark-bg border-dark-border text-text-primary" />
             )},
             { title: '类型', width: 100, render: (_: any, r: any) => (
               <Select size="small" value={r.type} onChange={v => updateAttr(r._idx, { type: v })} style={{ width: '100%' }}

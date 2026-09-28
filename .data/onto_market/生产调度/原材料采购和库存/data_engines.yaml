@@ -99,7 +99,7 @@ data_engines:
             type: string
             display_name: 状态
             example: 待入库
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: create_purchase_record
     output_fields: []
     headers: {}
@@ -164,7 +164,7 @@ data_engines:
             type: string
             display_name: 状态
             example: 已取消
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: cancel_purchase_record
     output_fields: []
     headers: {}
@@ -221,7 +221,7 @@ data_engines:
             type: string
             display_name: 状态
             example: 已入库
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: receive_purchase_record
     output_fields: []
     headers: {}
@@ -297,7 +297,7 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_inventories
     output_fields: []
     headers: {}
@@ -405,7 +405,7 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_purchase_records
     output_fields: []
     headers: {}
@@ -479,7 +479,7 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_raw_materials
     output_fields: []
     headers: {}
@@ -557,7 +557,7 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_suppliers
     output_fields: []
     headers: {}
@@ -636,7 +636,7 @@ data_engines:
               type: string
               display_name: 更新时间
               example: '2026-07-15T22:33:33'
-    server_url: http://optonto-business-mcp:8004/sse
+    server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_suppliers
     output_fields: []
     headers: {}

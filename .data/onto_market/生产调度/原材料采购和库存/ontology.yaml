@@ -15,6 +15,7 @@ concepts:
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
+    description: ''
     example: RM-001
     constraint:
       unique: true
@@ -24,6 +25,7 @@ concepts:
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
+    description: ''
     example: 高强度钢板
     constraint:
       unique: false
@@ -33,6 +35,7 @@ concepts:
   - name: unit
     type: string
     display_name: 单位
+    description: ''
     example: 吨
     constraint:
       unique: false
@@ -42,6 +45,7 @@ concepts:
   - name: safetyStock
     type: number
     display_name: 安全库存
+    description: ''
     example: '100'
   display_name: 原材料
   instance_label: rawMaterialName
@@ -51,6 +55,7 @@ concepts:
   - name: supplierId
     type: string
     display_name: 供应商编号
+    description: ''
     example: SUP-001
     constraint:
       unique: true
@@ -60,6 +65,7 @@ concepts:
   - name: supplierName
     type: string
     display_name: 供应商名称
+    description: ''
     example: XX钢铁集团
     constraint:
       unique: true
@@ -69,14 +75,17 @@ concepts:
   - name: address
     type: string
     display_name: 地址
+    description: ''
     example: XX省XX市XX路XX号
   - name: contactPerson
     type: string
     display_name: 联系人
+    description: ''
     example: 张三
   - name: contactPhone
     type: string
     display_name: 联系电话
+    description: ''
     example: '13800138000'
   display_name: 供应商
   instance_label: supplierName
@@ -86,6 +95,7 @@ concepts:
   - name: purchaseRecordId
     type: string
     display_name: 采购单号
+    description: ''
     example: PO-20231027-001
     constraint:
       unique: true
@@ -95,42 +105,52 @@ concepts:
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
+    description: ''
     example: RM-001
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
+    description: ''
     example: 高强度钢板
   - name: purchaseTime
     type: string
     display_name: 采购时间
+    description: ''
     example: '2023-10-27'
   - name: arrivalTime
     type: string
     display_name: 到位时间
+    description: ''
     example: '2023-11-10'
   - name: arrivalQuantity
     type: number
     display_name: 到位数量
+    description: ''
     example: '50'
   - name: unit
     type: string
     display_name: 单位
+    description: ''
     example: 吨
   - name: leadTime
     type: number
     display_name: 等待周期
+    description: ''
     example: '14'
   - name: supplierName
     type: string
     display_name: 供应商名称
+    description: ''
     example: XX钢铁集团
   - name: relatedOrderId
     type: string
     display_name: 关联订单编号
+    description: ''
     example: SO-20231025-001
   - name: relatedOrderName
     type: string
     display_name: 关联订单名称
+    description: ''
     example: 客户A-项目X订单
   display_name: 原材料采购记录
   instance_label: purchaseRecordId
@@ -140,6 +160,7 @@ concepts:
   - name: inventoryId
     type: string
     display_name: 库存编号
+    description: ''
     example: INV-RM-001
     constraint:
       unique: true
@@ -149,30 +170,37 @@ concepts:
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
+    description: ''
     example: RM-001
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
+    description: ''
     example: 高强度钢板
   - name: materialType
     type: string
     display_name: 材料类型
+    description: ''
     example: 原材料
   - name: pendingReceiptQuantity
     type: number
     display_name: 待入库量
+    description: ''
     example: '50'
   - name: cumulativeStockQuantity
     type: number
     display_name: 累计库存量
+    description: ''
     example: '200'
   - name: availableStock
     type: number
     display_name: 可用库存
+    description: ''
     example: '150'
   - name: unit
     type: string
     display_name: 单位
+    description: ''
     example: 吨
   display_name: 原材料库存
   instance_label: availableStock
@@ -182,6 +210,7 @@ concepts:
   - name: customerOrderId
     type: string
     display_name: 订单编号
+    description: ''
     example: SO-20231025-001
     constraint:
       unique: true
@@ -191,22 +220,27 @@ concepts:
   - name: customerOrderName
     type: string
     display_name: 订单名称
+    description: ''
     example: 客户A-项目X订单
   - name: batchNumber
     type: string
     display_name: 订单批次号
+    description: ''
     example: BATCH-001
   - name: bufferPeriod
     type: number
     display_name: 订单缓冲周期
+    description: ''
     example: '7'
   - name: orderType
     type: enum
     display_name: 订单类型
+    description: ''
     example: 销售
   - name: status
     type: enum
     display_name: 订单状态
+    description: ''
     example: 有效
   display_name: 客户订单
   instance_label: customerOrderName
@@ -216,26 +250,32 @@ concepts:
   - name: rawMaterialId
     type: string
     display_name: 原材料编号
+    description: ''
     example: ''
   - name: rawMaterialName
     type: string
     display_name: 原材料名称
+    description: ''
     example: ''
   - name: supplierName
     type: string
     display_name: 供应商名称
+    description: ''
     example: ''
   - name: supplierId
     type: string
     display_name: 供应商编号
+    description: ''
     example: ''
   - name: leadTime
     type: number
     display_name: 交货周期
+    description: ''
     example: ''
   - name: minCount
     type: number
     display_name: 最小交货数
+    description: ''
     example: ''
   display_name: 交货能力
   instance_label: leadTime
