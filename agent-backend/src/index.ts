@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import { config } from './config.js';
 import { PathAccessController } from './security/path-access-controller.js';
@@ -50,6 +50,19 @@ const apiPrefix = '/agent-api';
 app.use(apiPrefix, createSkillsRouter(skillLoader));
 app.use(apiPrefix, createMCPConfigRouter(mcpConfigStore));
 app.use(apiPrefix, createThreadsRouter(threadStore, skillLoader, orchestrator, chatSession));
+
+// ─── 统一错误兜底（章程 VI）────────────────────────
+// 未捕获异常一律输出结构化错误体，避免 Express 默认 HTML 错误页造成前后端契约不一致。
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('[agent-backend] 未处理异常:', err);
+  if (res.headersSent) return;
+  res.status(500).json({
+    code: 500,
+    message: '服务器内部错误',
+    detail: '服务器内部错误',
+    error: '服务器内部错误',
+  });
+});
 
 // ─── 启动服务 ────────────────────────────────────
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { PlusOutlined, FolderOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
-import { Modal, Input, message, Button, Empty } from 'antd';
+import { message, Button, Empty } from 'antd';
 import {
   getScenarios, createScenario, updateScenario,
   getOntologies, createOntology, updateOntology, deleteOntology,
@@ -10,6 +10,7 @@ import {
   Scenario, Ontology,
 } from '@/api/client';
 import DeployedVersionBadge from '@/components/DeployedVersionBadge';
+import HomeDialogs from './home-dialogs';
 
 export default function HomePage() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -328,177 +329,33 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* ─── Dialogs ─── */}
-
-      {/* New Scenario */}
-      <Modal
-        title="新建业务场景"
-        open={showNewScenario}
-        onOk={handleCreateScenario}
-        onCancel={() => setShowNewScenario(false)}
-        okText="创建"
-        cancelText="取消"
-      >
-        <div className="space-y-3 pt-2">
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">业务场景名称 *</label>
-            <Input
-              placeholder="请输入业务场景名称"
-              value={newScName}
-              onChange={e => setNewScName(e.target.value)}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">业务场景描述</label>
-            <Input.TextArea
-              placeholder="请输入业务场景描述（可选）"
-              value={newScDesc}
-              onChange={e => setNewScDesc(e.target.value)}
-              rows={3}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* New Ontology */}
-      <Modal
-        title="新建本体"
-        open={showNewOntology}
-        onOk={handleCreateOntology}
-        onCancel={() => setShowNewOntology(false)}
-        okText="创建并设计"
-        cancelText="取消"
-      >
-        <div className="space-y-3 pt-2">
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">本体名称 *</label>
-            <Input
-              placeholder="请输入本体名称"
-              value={newOnName}
-              onChange={e => setNewOnName(e.target.value)}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">本体描述</label>
-            <Input.TextArea
-              placeholder="请输入本体描述（可选）"
-              value={newOnDesc}
-              onChange={e => setNewOnDesc(e.target.value)}
-              rows={3}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">创建人</label>
-            <Input
-              placeholder="请输入创建人（可选）"
-              value={newOnCreator}
-              onChange={e => setNewOnCreator(e.target.value)}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* Edit Scenario */}
-      <Modal
-        title="编辑业务场景"
-        open={!!showEditScenario}
-        onOk={handleEditScenario}
-        onCancel={() => setShowEditScenario(null)}
-        okText="保存"
-        cancelText="取消"
-      >
-        <div className="space-y-3 pt-2">
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">业务场景名称 *</label>
-            <Input
-              placeholder="请输入业务场景名称"
-              value={editScName}
-              onChange={e => setEditScName(e.target.value)}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">业务场景描述</label>
-            <Input.TextArea
-              placeholder="请输入业务场景描述"
-              value={editScDesc}
-              onChange={e => setEditScDesc(e.target.value)}
-              rows={3}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* Edit Ontology */}
-      <Modal
-        title="编辑本体"
-        open={!!showEditOntology}
-        onOk={handleEditOntology}
-        onCancel={() => setShowEditOntology(null)}
-        okText="保存"
-        cancelText="取消"
-      >
-        <div className="space-y-3 pt-2">
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">本体名称 *</label>
-            <Input
-              placeholder="请输入本体名称"
-              value={editOnName}
-              onChange={e => setEditOnName(e.target.value)}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">本体描述</label>
-            <Input.TextArea
-              placeholder="请输入本体描述"
-              value={editOnDesc}
-              onChange={e => setEditOnDesc(e.target.value)}
-              rows={3}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-          <div>
-            <label className="text-text-secondary text-sm block mb-1">创建人</label>
-            <Input
-              placeholder="请输入创建人"
-              value={editOnCreator}
-              onChange={e => setEditOnCreator(e.target.value)}
-              className="bg-dark-bg border-dark-border text-text-primary"
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* Confirm Delete Ontology */}
-      <Modal
-        title="确认删除本体"
-        open={!!showDeleteOntology}
-        onOk={handleDeleteOntology}
-        onCancel={() => { setShowDeleteOntology(null); setDeleteConfirmText(''); }}
-        okText="确认删除"
-        cancelText="取消"
-        okButtonProps={{ danger: true }}
-      >
-        <div className="space-y-3 pt-2">
-          <p className="text-text-secondary text-sm">
-            删除本体 <strong className="text-red-400">{showDeleteOntology?.name}</strong> 将同时删除其所有数据，
-            此操作不可撤回。请输入本体名称以确认：
-          </p>
-          <Input
-            placeholder={`请输入 "${showDeleteOntology?.name || ''}" 确认删除`}
-            value={deleteConfirmText}
-            onChange={e => setDeleteConfirmText(e.target.value)}
-            className="bg-dark-bg border-dark-border text-text-primary"
-          />
-        </div>
-      </Modal>
+      <HomeDialogs
+        newScenario={{
+          open: showNewScenario, name: newScName, desc: newScDesc,
+          setName: setNewScName, setDesc: setNewScDesc,
+          close: () => setShowNewScenario(false), submit: handleCreateScenario,
+        }}
+        newOntology={{
+          open: showNewOntology, name: newOnName, desc: newOnDesc, creator: newOnCreator,
+          setName: setNewOnName, setDesc: setNewOnDesc, setCreator: setNewOnCreator,
+          close: () => setShowNewOntology(false), submit: handleCreateOntology,
+        }}
+        editScenario={{
+          open: !!showEditScenario, name: editScName, desc: editScDesc,
+          setName: setEditScName, setDesc: setEditScDesc,
+          close: () => setShowEditScenario(null), submit: handleEditScenario,
+        }}
+        editOntology={{
+          open: !!showEditOntology, name: editOnName, desc: editOnDesc, creator: editOnCreator,
+          setName: setEditOnName, setDesc: setEditOnDesc, setCreator: setEditOnCreator,
+          close: () => setShowEditOntology(null), submit: handleEditOntology,
+        }}
+        deleteOntology={{
+          open: !!showDeleteOntology, name: showDeleteOntology?.name || '', confirmText: deleteConfirmText,
+          setConfirmText: setDeleteConfirmText,
+          close: () => { setShowDeleteOntology(null); setDeleteConfirmText(''); }, submit: handleDeleteOntology,
+        }}
+      />
     </div>
   );
 }

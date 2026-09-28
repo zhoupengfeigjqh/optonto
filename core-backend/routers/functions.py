@@ -9,9 +9,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from errors import DomainError
+
 from config import DATA_DIR
 from dependencies import get_ontology_names
-from metadata import list_all_ontologies
+from repositories.metadata import list_all_ontologies
+from repositories import fs_store
 from schemas import FunctionItem
 from services import (
     load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir,
@@ -57,14 +60,10 @@ _COMMON_FUNCTIONS_PATH = DATA_DIR / "common_functions" / "functions.json"
 
 
 def _common_function_names() -> set[str]:
-    try:
-        if _COMMON_FUNCTIONS_PATH.exists():
-            with open(_COMMON_FUNCTIONS_PATH, encoding="utf-8") as f:
-                entries = json.load(f)
-            return {e["name"] for e in entries if isinstance(e, dict) and e.get("name")}
-    except (json.JSONDecodeError, OSError):
-        pass
-    return set()
+    entries = fs_store.read_json(_COMMON_FUNCTIONS_PATH, default=[])
+    if not isinstance(entries, list):
+        return set()
+    return {e["name"] for e in entries if isinstance(e, dict) and e.get("name")}
 
 
 def _ensure_global_unique(name: str, sc_name: str, on_name: str) -> None:
@@ -131,9 +130,7 @@ async def delete_function(ontology_id: int, function_name: str):
     idx = find_index(data.functions, function_name, "函数")
 
     # Remove code file if exists
-    code_path = _code_path(sc_name, on_name, function_name)
-    if code_path.exists():
-        code_path.unlink()
+    fs_store.delete_file(_code_path(sc_name, on_name, function_name))
 
     data.functions.pop(idx)
     save_ontology_data(sc_name, on_name, data)
@@ -153,10 +150,9 @@ async def get_function_code(ontology_id: int, function_name: str):
         raise HTTPException(status_code=404, detail="函数不存在")
 
     code_path = _code_path(sc_name, on_name, function_name)
-    content = ""
-    if code_path.exists():
-        content = code_path.read_text(encoding="utf-8")
-    return {"content": content, "exists": code_path.exists(), "code_file": fn.code_file}
+    exists = fs_store.exists(code_path)
+    content = fs_store.read_text(code_path) if exists else ""
+    return {"content": content, "exists": exists, "code_file": fn.code_file}
 
 
 @router.put("/{function_name}/code")
@@ -170,12 +166,11 @@ async def save_function_code(ontology_id: int, function_name: str, body: dict):
         raise HTTPException(status_code=404, detail="函数不存在")
 
     ensure_functions_dir(sc_name, on_name)
-    code_path = _code_path(sc_name, on_name, function_name)
     code = body.get("code", "")
     err = _validate_function_code(code)
     if err:
         raise HTTPException(status_code=400, detail=f"函数代码校验未通过: {err}")
-    code_path.write_text(code, encoding="utf-8")
+    fs_store.write_text(_code_path(sc_name, on_name, function_name), code)
 
     # Update code_file reference in YAML
     data.functions[idx].code_file = f"functions/{function_name}.py"
@@ -217,15 +212,14 @@ async def generate_function_code(ontology_id: int, function_name: str):
 
         # Save to file
         ensure_functions_dir(sc_name, on_name)
-        code_path = _code_path(sc_name, on_name, function_name)
-        code_path.write_text(code, encoding="utf-8")
+        fs_store.write_text(_code_path(sc_name, on_name, function_name), code)
 
         # Update code_file reference in YAML
         data.functions[data.functions.index(fn)].code_file = f"functions/{function_name}.py"
         save_ontology_data(sc_name, on_name, data)
 
         return {"code": code, "code_file": f"functions/{function_name}.py"}
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"代码生成失败: {str(e)}")

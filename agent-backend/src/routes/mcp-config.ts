@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
 import { MCPClient } from '../services/mcp-client.js';
+import { sendError } from '../utils/http-error.js';
 
 /**
  * MCP 配置路由 —— 全局唯一，不区分场景/本体。
@@ -14,7 +15,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
     try {
       res.json(configStore.getConfig());
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 
@@ -24,7 +25,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
       configStore.saveConfig(req.body);
       res.json({ message: '配置已保存' });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 
@@ -37,7 +38,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
     const { url, headers } = req.body as { url: string; headers?: Record<string, string> };
 
     if (!url || typeof url !== 'string') {
-      res.status(400).json({ error: '缺少 MCP 服务 URL' });
+      sendError(res, 400, '缺少 MCP 服务 URL');
       return;
     }
 
@@ -83,7 +84,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
   router.post('/mcp-config/tools', async (req: Request, res: Response) => {
     const { url, headers } = req.body as { url: string; headers?: Record<string, string> };
     if (!url || typeof url !== 'string') {
-      res.status(400).json({ error: '缺少 MCP 服务 URL' });
+      sendError(res, 400, '缺少 MCP 服务 URL');
       return;
     }
     try {
@@ -104,7 +105,7 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
       url: string; tool_name: string; arguments?: Record<string, unknown>; headers?: Record<string, string>;
     };
     if (!url || typeof url !== 'string' || !tool_name || typeof tool_name !== 'string') {
-      res.status(400).json({ error: '缺少 MCP 服务 URL 或工具名' });
+      sendError(res, 400, '缺少 MCP 服务 URL 或工具名');
       return;
     }
     try {

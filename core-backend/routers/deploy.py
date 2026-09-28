@@ -11,16 +11,15 @@
 """
 
 import hashlib
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import yaml
 from fastapi import APIRouter, HTTPException
 
 from config import DEMAND_THREADS_DIR
 from dependencies import get_ontology_names
+from repositories import fs_store
 from schemas import OntologyData
 from services import (
     save_ontology_data,
@@ -50,17 +49,13 @@ def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:
     list_requirements 一致（同名优先 + source_file 回退）。
     """
     by_version: dict[str, list[dict]] = {}
-    if not DEMAND_THREADS_DIR.exists():
+    if not fs_store.exists(DEMAND_THREADS_DIR):
         return by_version
-    for tdir in DEMAND_THREADS_DIR.iterdir():
+    for tdir in fs_store.list_dir(DEMAND_THREADS_DIR):
         if not tdir.is_dir():
             continue
-        data_path = tdir / ".data.json"
-        if not data_path.exists():
-            continue
-        try:
-            data = json.loads(data_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, KeyError):
+        data = fs_store.read_json(tdir / ".data.json")
+        if not isinstance(data, dict):
             continue
         if data.get("ontology_name") != ontology_name:
             continue
@@ -70,7 +65,7 @@ def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:
             continue
 
         source_map = _yaml_source_map(tdir)
-        for md in sorted(tdir.glob("*.md")):
+        for md in fs_store.list_files(tdir, "*.md"):
             req_name = md.name[:-3]
             matched = _match_ontology_yaml(tdir, req_name, md.name, source_map)
             if not matched:
@@ -99,7 +94,7 @@ def _merge_yaml_files(yaml_paths: list[Path], version: str) -> OntologyData:
     created_ats: list[str] = []
 
     for path in yaml_paths:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = fs_store.read_yaml(path) or {}
         if not isinstance(raw, dict):
             continue
         doc = OntologyData(**raw)
@@ -129,7 +124,7 @@ def _merge_yaml_files(yaml_paths: list[Path], version: str) -> OntologyData:
         "source_thread": ", ".join(source_threads) if source_threads else "部署合并",
         "created_at": max(created_ats) if created_ats else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "deployed_version": version,
-        "shard_hash": hashlib.sha256(b"".join(p.read_bytes() for p in yaml_paths)).hexdigest()[:16],
+        "shard_hash": hashlib.sha256(b"".join(fs_store.read_bytes(p) for p in yaml_paths)).hexdigest()[:16],
     }
     if any(skipped.values()):
         merged.metadata["merge_skipped"] = skipped
@@ -142,7 +137,7 @@ def _finalize_metadata(merged: OntologyData, ontology_id: int, ontology_name: st
     shard_hash 已在 _merge_yaml_files 中计算，此处不再处理。
     字段读取与 save_ontology_data 对齐：meta.json 里是 id/name，不是 scenario_id/ontology_name。
     """
-    from metadata import get_scenario_by_name, list_ontologies_by_scenario
+    from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
 
     sc = get_scenario_by_name(sc_name)
     merged.metadata["scenario_name"] = sc_name
@@ -194,23 +189,20 @@ async def get_deployed_ontology(ontology_id: int):
     """获取当前已部署的 ontology.yaml 内容（用于左上角「已部署版本」查看）。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     path = _get_yaml_path(sc_name, ontology_name)
-    if not path.exists():
+    if not fs_store.exists(path):
         raise HTTPException(status_code=404, detail="当前本体尚未部署")
-    return {"content": path.read_text(encoding="utf-8")}
+    return {"content": fs_store.read_text(path)}
 
 
 def _get_deployed_version(scenario_name: str, ontology_name: str) -> str:
     """读取当前部署的 ontology.yaml 中的 deployed_version，不存在则返回空字符串。"""
     current_path = _get_yaml_path(scenario_name, ontology_name)
-    if not current_path.exists():
+    if not fs_store.exists(current_path):
         return ""
-    try:
-        raw = yaml.safe_load(current_path.read_text(encoding="utf-8")) or {}
-        meta = raw.get("metadata") if isinstance(raw, dict) else None
-        if isinstance(meta, dict):
-            return str(meta.get("deployed_version") or "")
-    except Exception:
-        return ""
+    raw = fs_store.read_yaml(current_path) or {}
+    meta = raw.get("metadata") if isinstance(raw, dict) else None
+    if isinstance(meta, dict):
+        return str(meta.get("deployed_version") or "")
     return ""
 
 
@@ -306,14 +298,13 @@ async def deploy_ontology(ontology_id: int, body: dict):
 
     # 3. 更新 ontology.yaml 中的 deployed_version
     onto_path = _get_yaml_path(sc_name, ontology_name)
-    raw = yaml.safe_load(onto_path.read_text(encoding="utf-8")) or {}
+    raw = fs_store.read_yaml(onto_path) or {}
     if not isinstance(raw, dict):
         raw = {}
     if not isinstance(raw.get("metadata"), dict):
         raw["metadata"] = {}
     raw["metadata"]["deployed_version"] = version
-    with open(onto_path, "w", encoding="utf-8") as f:
-        yaml.dump(raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    fs_store.write_yaml(onto_path, raw)
 
     # 统计数据
     merged = load_ontology_version(sc_name, ontology_name, version)

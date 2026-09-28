@@ -3,6 +3,8 @@
 import json
 
 from fastapi import APIRouter, HTTPException
+
+from errors import DomainError
 from pydantic import BaseModel
 
 from dependencies import get_ontology_names
@@ -102,7 +104,7 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
         save_ontology_data(sc_name, on_name, data)
 
         return result
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"智能映射失败: {str(e)}")
@@ -151,7 +153,7 @@ async def smart_align(ontology_id: int, engine_name: str):
         save_ontology_data(sc_name, on_name, data)
 
         return {"params": aligned_params, "response": aligned_response}
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"智能对齐失败: {str(e)}")

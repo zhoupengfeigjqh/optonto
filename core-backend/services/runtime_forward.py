@@ -6,12 +6,16 @@
 
 转发语义：状态码与响应体原样透传（下游 4xx/5xx 保持错误形态，isError 语义不破坏）；
 服务不可达返回 502（5s 连接超时 + 明确报错，见架构文档 §十四风险表）。
+
+异常类型（章程 II）：抛领域异常（``errors``）而非 ``fastapi.HTTPException``，
+业务层不依赖传输层；状态码由 ``main.py`` 全局处理器统一映射。
 """
 
 import os
 
 import httpx
-from fastapi import HTTPException
+
+from errors import UpstreamResponseError, UpstreamTimeoutError, UpstreamUnavailableError
 
 DATA_ENGINE_MCP_URL = os.getenv("DATA_ENGINE_MCP_URL", "http://optonto-data-engine-mcp:8005")
 ONTOLOGY_MCP_URL = os.getenv("ONTOLOGY_MCP_URL", "http://optonto-ontology-mcp:8002")
@@ -20,17 +24,17 @@ _TIMEOUT = httpx.Timeout(30.0, connect=5.0)
 
 
 async def forward_call(base: str, path: str, payload: dict, service_label: str):
-    """POST 转发并透传结果。>=400 抛 HTTPException（detail 原样透传），否则返回响应体。"""
+    """POST 转发并透传结果。>=400 抛领域异常（detail 原样透传），否则返回响应体。"""
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.post(f"{base}{path}", json=payload)
     except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail=f"{service_label} 不可达（{base}），请确认服务已启动")
+        raise UpstreamUnavailableError(service_label, base)
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail=f"{service_label} 响应超时")
+        raise UpstreamTimeoutError(service_label)
 
     body = resp.json() if "json" in resp.headers.get("content-type", "") else {"detail": resp.text}
     if resp.status_code >= 400:
         detail = body.get("detail") if isinstance(body, dict) else None
-        raise HTTPException(status_code=resp.status_code, detail=detail or str(body))
+        raise UpstreamResponseError(resp.status_code, detail or str(body))
     return body

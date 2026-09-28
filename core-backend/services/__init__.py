@@ -1,13 +1,15 @@
-"""Service for reading/writing ontology YAML files."""
+"""Service for reading/writing ontology YAML files.
 
-import os
+分层（章程 II）：本模块为业务层；文件读写一律经数据访问层 ``repositories.fs_store``，
+不直接 open / Path.write_text / shutil。
+"""
+
 import re
 from pathlib import Path
 from typing import Optional
 
-import yaml
-
 from config import ONTO_MARKET_DIR
+from repositories import fs_store
 from schemas import DataEngineItem, OntologyData, SecurityItem
 
 # 顶层节名：`key:` 且顶格（无缩进），排除注释行
@@ -82,16 +84,12 @@ def _get_functions_dir(scenario_name: str, ontology_name: str) -> Path:
 
 def ensure_functions_dir(scenario_name: str, ontology_name: str) -> Path:
     """Ensure the functions directory exists and return its path."""
-    dir_path = _get_functions_dir(scenario_name, ontology_name)
-    dir_path.mkdir(parents=True, exist_ok=True)
-    return dir_path
+    return fs_store.ensure_dir(_get_functions_dir(scenario_name, ontology_name))
 
 
 def ensure_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
     """Ensure the ontology directory exists and return its path."""
-    dir_path = _get_ontology_dir(scenario_name, ontology_name)
-    dir_path.mkdir(parents=True, exist_ok=True)
-    return dir_path
+    return fs_store.ensure_dir(_get_ontology_dir(scenario_name, ontology_name))
 
 
 def _load_data_engines_file(scenario_name: str, ontology_name: str) -> Optional[list[DataEngineItem]]:
@@ -101,10 +99,9 @@ def _load_data_engines_file(scenario_name: str, ontology_name: str) -> Optional[
     解析失败抛错给调用方——宁可报错也不静默回退到旧段（避免新旧内容不一致难排查）。
     """
     path = _get_data_engines_path(scenario_name, ontology_name)
-    if not path.exists():
+    if not fs_store.exists(path):
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+    raw = fs_store.read_yaml_strict(path) or {}
     items = raw.get("data_engines", []) if isinstance(raw, dict) else raw
     return [DataEngineItem(**e) for e in (items or [])]
 
@@ -116,10 +113,9 @@ def _load_securities_file(scenario_name: str, ontology_name: str) -> Optional[li
     解析失败抛错给调用方——宁可报错也不静默回退到旧段（避免新旧内容不一致难排查）。
     """
     path = _get_securities_path(scenario_name, ontology_name)
-    if not path.exists():
+    if not fs_store.exists(path):
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+    raw = fs_store.read_yaml_strict(path) or {}
     items = raw.get("securities", []) if isinstance(raw, dict) else raw
     return [SecurityItem(**e) for e in (items or [])]
 
@@ -158,9 +154,8 @@ def _sync_securities_roster(data: OntologyData) -> list[SecurityItem]:
 def _load_ontology_data_uncached(scenario_name: str, ontology_name: str) -> OntologyData:
     """读盘 + 解析（load_ontology_data 的缓存未命中路径）。"""
     yaml_path = _get_yaml_path(scenario_name, ontology_name)
-    if yaml_path.exists():
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+    if fs_store.exists(yaml_path):
+        raw = fs_store.read_yaml_strict(yaml_path) or {}
         data = OntologyData(**raw)
     else:
         data = OntologyData()
@@ -219,7 +214,7 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     ensure_ontology_dir(scenario_name, ontology_name)
 
     # 在 metadata 中固化场景/本体名称与 id（权威来源：meta.json）
-    from metadata import get_scenario_by_name, list_ontologies_by_scenario
+    from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
     scenario = get_scenario_by_name(scenario_name)
     scenario_id = scenario.get("id") if scenario else None
     ontology_id = None
@@ -248,51 +243,28 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     ontology_dict.pop("data_engines", None)
     ontology_dict.pop("securities", None)
 
-    with open(yaml_path, "w", encoding="utf-8") as f:
-        yaml.dump(
-            ontology_dict,
-            f,
-            default_flow_style=False,
-            allow_unicode=True,
-            sort_keys=False,
-        )
-
-    with open(_get_data_engines_path(scenario_name, ontology_name), "w", encoding="utf-8") as f:
-        yaml.dump(
-            {"data_engines": [e.model_dump(exclude_none=True) for e in engines]},
-            f,
-            default_flow_style=False,
-            allow_unicode=True,
-            sort_keys=False,
-        )
-
-    with open(_get_securities_path(scenario_name, ontology_name), "w", encoding="utf-8") as f:
-        yaml.dump(
-            {"securities": [s.model_dump(exclude_none=True) for s in data.securities]},
-            f,
-            default_flow_style=False,
-            allow_unicode=True,
-            sort_keys=False,
-        )
+    fs_store.write_yaml(yaml_path, ontology_dict)
+    fs_store.write_yaml(
+        _get_data_engines_path(scenario_name, ontology_name),
+        {"data_engines": [e.model_dump(exclude_none=True) for e in engines]},
+    )
+    fs_store.write_yaml(
+        _get_securities_path(scenario_name, ontology_name),
+        {"securities": [s.model_dump(exclude_none=True) for s in data.securities]},
+    )
 
     _invalidate_ontology_cache(scenario_name, ontology_name)
 
 
 def read_yaml_raw(scenario_name: str, ontology_name: str) -> Optional[str]:
     """Read YAML file content as raw string."""
-    yaml_path = _get_yaml_path(scenario_name, ontology_name)
-    if not yaml_path.exists():
-        return None
-    with open(yaml_path, "r", encoding="utf-8") as f:
-        return f.read()
+    return fs_store.read_text_if_exists(_get_yaml_path(scenario_name, ontology_name))
 
 
 def write_yaml_raw(scenario_name: str, ontology_name: str, content: str) -> None:
     """Write raw YAML string to file, then parse and return the structured data."""
-    yaml_path = _get_yaml_path(scenario_name, ontology_name)
     ensure_ontology_dir(scenario_name, ontology_name)
-    with open(yaml_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    fs_store.write_text(_get_yaml_path(scenario_name, ontology_name), content)
     _invalidate_ontology_cache(scenario_name, ontology_name)
 
 
@@ -312,7 +284,7 @@ def _get_version_dir(scenario_name: str, ontology_name: str, version: str) -> Pa
 def version_exists(scenario_name: str, ontology_name: str, version: str) -> bool:
     """检查指定版本是否已存档（三个文件均存在才算）。"""
     vdir = _get_version_dir(scenario_name, ontology_name, version)
-    return all((vdir / f).exists() for f in ("ontology.yaml", "securities.yaml", "data_engines.yaml"))
+    return all(fs_store.exists(vdir / f) for f in ("ontology.yaml", "securities.yaml", "data_engines.yaml"))
 
 
 def save_ontology_version(scenario_name: str, ontology_name: str, version: str, data: OntologyData) -> None:
@@ -320,11 +292,10 @@ def save_ontology_version(scenario_name: str, ontology_name: str, version: str, 
 
     逻辑与 save_ontology_data 一致：数据引擎/安全管控拆写独立文件。
     """
-    vdir = _get_version_dir(scenario_name, ontology_name, version)
-    vdir.mkdir(parents=True, exist_ok=True)
+    vdir = fs_store.ensure_dir(_get_version_dir(scenario_name, ontology_name, version))
 
     # 在 metadata 中固化场景/本体名称与 id
-    from metadata import get_scenario_by_name, list_ontologies_by_scenario
+    from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
     scenario = get_scenario_by_name(scenario_name)
     scenario_id = scenario.get("id") if scenario else None
     ontology_id = None
@@ -349,12 +320,9 @@ def save_ontology_version(scenario_name: str, ontology_name: str, version: str, 
     ontology_dict.pop("data_engines", None)
     ontology_dict.pop("securities", None)
 
-    with open(vdir / "ontology.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(ontology_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    with open(vdir / "data_engines.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"data_engines": [e.model_dump(exclude_none=True) for e in engines]}, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    with open(vdir / "securities.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"securities": [s.model_dump(exclude_none=True) for s in data.securities]}, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    fs_store.write_yaml(vdir / "ontology.yaml", ontology_dict)
+    fs_store.write_yaml(vdir / "data_engines.yaml", {"data_engines": [e.model_dump(exclude_none=True) for e in engines]})
+    fs_store.write_yaml(vdir / "securities.yaml", {"securities": [s.model_dump(exclude_none=True) for s in data.securities]})
 
 
 def load_ontology_version(scenario_name: str, ontology_name: str, version: str) -> OntologyData:
@@ -363,32 +331,28 @@ def load_ontology_version(scenario_name: str, ontology_name: str, version: str) 
     如果版本目录不存在或文件不全，抛出 FileNotFoundError。
     """
     vdir = _get_version_dir(scenario_name, ontology_name, version)
-    if not vdir.exists():
+    if not fs_store.exists(vdir):
         raise FileNotFoundError(f"本体版本目录不存在: {vdir}")
 
     data = OntologyData()
 
     # 读取 ontology.yaml
     onto_path = vdir / "ontology.yaml"
-    if onto_path.exists():
-        with open(onto_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
-        data = OntologyData(**raw)
+    if fs_store.exists(onto_path):
+        data = OntologyData(**(fs_store.read_yaml_strict(onto_path) or {}))
 
     # 读取 securities.yaml
     sec_path = vdir / "securities.yaml"
-    if sec_path.exists():
-        with open(sec_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+    if fs_store.exists(sec_path):
+        raw = fs_store.read_yaml_strict(sec_path) or {}
         items = raw.get("securities", []) if isinstance(raw, dict) else raw
         if items:
             data.securities = [SecurityItem(**e) for e in items]
 
     # 读取 data_engines.yaml
     de_path = vdir / "data_engines.yaml"
-    if de_path.exists():
-        with open(de_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+    if fs_store.exists(de_path):
+        raw = fs_store.read_yaml_strict(de_path) or {}
         items = raw.get("data_engines", []) if isinstance(raw, dict) else raw
         if items:
             data.data_engines = [DataEngineItem(**e) for e in items]
@@ -399,18 +363,13 @@ def load_ontology_version(scenario_name: str, ontology_name: str, version: str) 
 def copy_ontology_to_deploy(scenario_name: str, ontology_name: str, version: str) -> None:
     """将 ontology_versions/{version}/ 的三个文件复制到部署目录，覆盖现有文件。"""
     vdir = _get_version_dir(scenario_name, ontology_name, version)
-    if not vdir.exists():
+    if not fs_store.exists(vdir):
         raise FileNotFoundError(f"版本目录不存在: {vdir}")
 
-    deploy_dir = _get_ontology_dir(scenario_name, ontology_name)
-    deploy_dir.mkdir(parents=True, exist_ok=True)
+    deploy_dir = fs_store.ensure_dir(_get_ontology_dir(scenario_name, ontology_name))
 
     for fname in ("ontology.yaml", "securities.yaml", "data_engines.yaml"):
-        src = vdir / fname
-        dst = deploy_dir / fname
-        if src.exists():
-            import shutil
-            shutil.copy2(src, dst)
+        fs_store.copy_file(vdir / fname, deploy_dir / fname)
 
 
 def backup_deploy_to_version(scenario_name: str, ontology_name: str, version: str) -> None:
@@ -420,25 +379,18 @@ def backup_deploy_to_version(scenario_name: str, ontology_name: str, version: st
     """
     if not version:
         return
-    vdir = _get_version_dir(scenario_name, ontology_name, version)
-    vdir.mkdir(parents=True, exist_ok=True)
+    vdir = fs_store.ensure_dir(_get_version_dir(scenario_name, ontology_name, version))
 
     deploy_dir = _get_ontology_dir(scenario_name, ontology_name)
-    import shutil
     for fname in ("ontology.yaml", "securities.yaml", "data_engines.yaml"):
-        src = deploy_dir / fname
-        dst = vdir / fname
-        if src.exists():
-            shutil.copy2(src, dst)
+        fs_store.copy_file(deploy_dir / fname, vdir / fname)
 
 
 def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dict]:
     """List all YAML files in the ontology directory."""
     dir_path = _get_ontology_dir(scenario_name, ontology_name)
-    if not dir_path.exists():
-        return []
     files = []
-    for f in sorted(dir_path.iterdir()):
+    for f in sorted(fs_store.list_dir(dir_path)):
         if f.is_file() and f.suffix in (".yaml", ".yml"):
             files.append({"name": f.name, "path": str(f.relative_to(ONTO_MARKET_DIR))})
     return files

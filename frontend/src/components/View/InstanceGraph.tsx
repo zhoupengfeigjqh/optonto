@@ -21,69 +21,16 @@ import {
   OntologyData, Concept, Behavior, Relation,
 } from '@/api/client';
 import { instanceKey } from './instance-hash';
+import {
+  MAX_DEPTH, MAX_PER_CONCEPT, MAX_TOTAL, CONCEPT_COLORS,
+  extractRows, nodeLabel, buildResultColumns, buildChartOption,
+  type GNode, type GEdge, type Instance,
+} from './instance-graph-model';
 
 echarts.use([TooltipComponent, TitleComponent, GraphChart, CanvasRenderer]);
 
-// ─── 常量 ────────────────────────────────────────────────────────────────
-
-const MAX_DEPTH = 3;          // BFS 最多外扩 3 阶
-const MAX_PER_CONCEPT = 50;   // 每概念节点上限
-const MAX_TOTAL = 200;        // 全图节点上限
-
-const CONCEPT_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#a855f7',
-  '#ec4899', '#14b8a6', '#f97316', '#84cc16',
-];
-
-// ─── 类型 ────────────────────────────────────────────────────────────────
-
-interface Instance {
-  key: string;
-  concept: string;
-  row: Record<string, any>;
-}
-
-interface GNode {
-  id: string;           // instanceKey
-  name: string;         // 展示标签
-  concept: string;
-  row: Record<string, any>;
-  category: number;
-  symbolSize: number;
-}
-
-interface GEdge {
-  source: string;
-  target: string;
-  relation: string;     // 关系名（去重用）
-  label?: { show: boolean; formatter: string; color?: string; fontSize?: number };
-  lineStyle?: any;
-}
-
 interface Props {
   ontologyId: number;
-}
-
-// ─── 行提取：向下找第一个"对象数组"（API 信封层级不定） ─────────────────────
-
-function extractRows(payload: any): Record<string, any>[] {
-  const seen = new Set<any>();
-  const queue: any[] = [payload];
-  let emptyArr: any[] | null = null;
-  while (queue.length) {
-    const cur = queue.shift();
-    if (!cur || typeof cur !== 'object' || seen.has(cur)) continue;
-    seen.add(cur);
-    if (Array.isArray(cur)) {
-      if (cur.length > 0 && cur.every(i => i && typeof i === 'object' && !Array.isArray(i))) {
-        return cur as Record<string, any>[];
-      }
-      if (cur.length === 0 && !emptyArr) emptyArr = cur;
-      continue;
-    }
-    for (const v of Object.values(cur)) queue.push(v);
-  }
-  return (emptyArr as Record<string, any>[]) ?? [];
 }
 
 // ─── 组件 ────────────────────────────────────────────────────────────────
@@ -364,17 +311,6 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
 
   // ─── 渲染数据 ────────────────────────────────────────────────────────
 
-  function nodeLabel(concept: Concept | undefined, row: Record<string, any>, _key: string): string {
-    const instanceLabelField = concept?.instance_label;
-    const prefix = concept?.display_name || concept?.name || '';
-    // 使用 instance_label 指定的属性作为节点标签
-    if (instanceLabelField && row[instanceLabelField] !== undefined && row[instanceLabelField] !== null && row[instanceLabelField] !== '') {
-      return `${prefix}:${String(row[instanceLabelField])}`;
-    }
-    // 未设置 instance_label 时仅显示概念名，不附加属性值
-    return prefix;
-  }
-
   const buildGraph = useCallback(() => {
     const conceptList = [...new Set([...nodesRef.current.values()].map(n => n.concept))];
     const catIndex = new Map(conceptList.map((c, i) => [c, i]));
@@ -395,81 +331,18 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
   // option 引用必须稳定：参数输入/行勾选等无关重渲染若生成新 option 对象，
   // ReactEChartsCore 会重新 setOption（notMerge）→ force 布局重启 → 节点跳动。
   // 只有 graphTick（图数据真的变了）才重建。
-  const chartOption = useMemo(() => {
-    const { nodes, edges, categories } = buildGraph();
-    return {
-      tooltip: {
-        trigger: 'item' as const,
-        formatter: (params: any) => {
-          if (params.dataType === 'node') {
-            const node = params.data as GNode;
-            const concept = conceptMap.get(node.concept);
-            const attrLabel = (k: string) =>
-              concept?.attributes?.find(a => a.name === k)?.display_name || k;
-            let html = `<div style="font-size:13px;color:#e2e8f0;max-width:320px">`;
-            html += `<strong style="font-size:14px">${concept?.display_name || node.concept}</strong>`;
-            html += `<br/><span style="color:#64748b;font-size:11px">${node.concept}</span>`;
-            for (const [k, v] of Object.entries(node.row)) {
-              const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-              html += `<br/><span style="color:#94a3b8">${attrLabel(k)}: </span><span style="color:#e2e8f0">${val}</span>`;
-            }
-            html += '</div>';
-            return html;
-          }
-          if (params.dataType === 'edge') {
-            return `<div style="font-size:13px;color:#c084fc;font-weight:bold">${params.data.label?.formatter || ''}</div>`;
-          }
-          return '';
-        },
-        backgroundColor: 'rgba(17, 17, 24, 0.95)',
-        borderColor: '#1e1e2a',
-        textStyle: { color: '#e2e8f0' },
-      },
-      legend: {
-        data: categories.map(c => c.name),
-        textStyle: { color: '#94a3b8' },
-        top: 10,
-      },
-      animationDuration: 800,
-      series: [
-        {
-          type: 'graph',
-          layout: 'force',
-          force: { repulsion: 400, edgeLength: [120, 220], gravity: 0.1, friction: 0.1 },
-          roam: true,
-          draggable: true,
-          data: nodes,
-          edges: edges,
-          categories: categories,
-          emphasis: { focus: 'adjacency' as const, lineStyle: { width: 3 } },
-          edgeSymbol: ['none', 'arrow'],
-          edgeSymbolSize: [0, 8],
-          itemStyle: { borderColor: '#1e1e2a', borderWidth: 2 },
-        },
-      ],
-    };
+  const chartOption = useMemo(
+    () => buildChartOption(buildGraph(), conceptMap),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildGraph]);
+    [buildGraph],
+  );
 
   // ─── 结果表格列 ──────────────────────────────────────────────────────
 
-  const resultColumns = useMemo(() => {
-    if (!resultRows || resultRows.length === 0 || !conceptName) return [];
-    const concept = conceptMap.get(conceptName);
-    const attrOrder = (concept?.attributes ?? []).map(a => a.name);
-    const keys = [...new Set(resultRows.flatMap(r => Object.keys(r)))];
-    keys.sort((a, b) => {
-      const ia = attrOrder.indexOf(a), ib = attrOrder.indexOf(b);
-      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
-    });
-    return keys.slice(0, 8).map(k => ({
-      title: concept?.attributes?.find(a => a.name === k)?.display_name || k,
-      dataIndex: k,
-      key: k,
-      ellipsis: true,
-      render: (v: any) => (v === null || v === undefined ? '-' : typeof v === 'object' ? JSON.stringify(v) : String(v)),
-    }));
-  }, [resultRows, conceptName, conceptMap]);
+  const resultColumns = useMemo(
+    () => buildResultColumns(resultRows, conceptName, conceptMap),
+    [resultRows, conceptName, conceptMap],
+  );
 
   // ─── 渲染 ────────────────────────────────────────────────────────────
 

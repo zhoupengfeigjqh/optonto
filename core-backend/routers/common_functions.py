@@ -1,10 +1,12 @@
-"""API for common functions (list / code / execute).执行已迁至 ontology-mcp 沙箱，本路由仅设计期读写 + 转发。"""
+"""API for common functions (list / code / execute).执行已迁至 ontology-mcp 沙箱，本路由仅设计期读写 + 转发。
 
-import json
+分层（章程 II）：本模块为接口层；文件读写一律经数据访问层 ``repositories.fs_store``。
+"""
 
 from fastapi import APIRouter, HTTPException
 
 from config import DATA_DIR
+from repositories import fs_store
 
 router = APIRouter(prefix="/api/common-functions", tags=["公共函数"])
 
@@ -15,23 +17,17 @@ FUNCTIONS_PATH = COMMON_DIR / "functions.json"
 @router.get("")
 async def list_common_functions() -> list[dict]:
     """Return all common functions with full metadata."""
-    if not FUNCTIONS_PATH.exists():
-        return []
-    try:
-        with open(FUNCTIONS_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return []
+    # 缺失/损坏统一按「空清单」降级（口径见 fs_store.read_json）
+    return fs_store.read_json(FUNCTIONS_PATH, default=[])
 
 
 @router.get("/{func_name}/code")
 async def get_common_function_code(func_name: str) -> dict:
     """Read a common function's Python source code."""
     code_path = COMMON_DIR / f"{func_name}.py"
-    if not code_path.exists():
+    if not fs_store.exists(code_path):
         raise HTTPException(status_code=404, detail="函数代码文件不存在")
-    content = code_path.read_text(encoding="utf-8")
-    return {"content": content, "func_name": func_name}
+    return {"content": fs_store.read_text(code_path), "func_name": func_name}
 
 
 @router.post("/{func_name}/execute")

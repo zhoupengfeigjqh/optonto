@@ -1,4 +1,7 @@
-"""Chat API — streaming conversation using LangChain."""
+"""Chat API — streaming conversation using LangChain.
+
+分层（章程 II）：本模块为接口层；文件读写一律经数据访问层 ``repositories.fs_store``。
+"""
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -15,11 +18,10 @@ from config import (
     DATA_DIR,
 )
 
-import yaml
-
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from repositories import fs_store
 from routers.threads import _load_thread, _save_thread, _thread_dir, _resolve_ids
 from llm_utils import load_env, build_llm, strip_code_fence
 
@@ -227,13 +229,9 @@ async def export_thread(thread_id: str, body: dict):
     markdown_content = "\n".join(lines)
 
     # Save to thread directory；同名覆盖
-    dir_path = _thread_dir(thread_id)
-    dir_path.mkdir(parents=True, exist_ok=True)
     filename = f"{doc_name}.md"
-    file_path = dir_path / filename
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(markdown_content)
+    file_path = _thread_dir(thread_id) / filename
+    fs_store.write_text(file_path, markdown_content)
 
     # Update thread status to documented
     thread["status"] = "documented"
@@ -265,15 +263,15 @@ async def generate_ontology(thread_id: str, body: dict):
     if not filename:
         raise HTTPException(status_code=400, detail="请提供需求文件名")
     file_path = _thread_dir(thread_id) / filename
-    if not file_path.exists():
+    if not fs_store.exists(file_path):
         raise HTTPException(status_code=404, detail="需求文件不存在")
-    markdown_content = file_path.read_text(encoding="utf-8")
+    markdown_content = fs_store.read_text(file_path)
 
     # Read the template（config.DATA_DIR 在本地与 Docker 容器内均指向 .data）
     tp = DATA_DIR / "templates/onto_template.yaml"
-    if not tp.exists():
+    if not fs_store.exists(tp):
         raise HTTPException(status_code=500, detail="本体模板文件不存在")
-    template_content = tp.read_text(encoding="utf-8")
+    template_content = fs_store.read_text(tp)
 
     # 模板只加载勾选的一级目录（metadata 恒含）：避免模型看到无关节后被诱导生成无关内容
     if selected:
@@ -312,7 +310,7 @@ async def generate_ontology(thread_id: str, body: dict):
         yaml_text = strip_code_fence(yaml_text)
 
         # Validate YAML
-        parsed = yaml.safe_load(yaml_text)
+        parsed = fs_store.parse_yaml(yaml_text)
         if not isinstance(parsed, dict):
             raise ValueError("生成的YAML不是有效的字典结构")
 
@@ -347,14 +345,7 @@ async def generate_ontology(thread_id: str, body: dict):
         req_name = filename[:-3] if filename.endswith(".md") else filename
         yaml_filename = f"{req_name}.yaml"
         yaml_path = _thread_dir(thread_id) / yaml_filename
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.dump(
-                ontology_dict,
-                f,
-                allow_unicode=True,
-                sort_keys=False,
-                default_flow_style=False,
-            )
+        fs_store.write_yaml(yaml_path, ontology_dict)
 
         # Update thread status
         thread["status"] = "documented"

@@ -2,7 +2,7 @@
 
 from fastapi import HTTPException
 
-from metadata import get_ontology_name_by_id
+from repositories.metadata import get_ontology_name_by_id
 
 
 async def get_ontology_names(ontology_id: int):

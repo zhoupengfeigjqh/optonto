@@ -3,6 +3,8 @@
  * 通过 Nginx /agent-api/ 代理到 agent-backend:8003
  */
 
+import { extractErrorMessage } from './http-error';
+
 const AGENT_API = '/agent-api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -11,8 +13,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `Request failed (${res.status})`);
+    const body = await res.json().catch(() => null);
+    throw new Error(extractErrorMessage(body, res.status));
   }
   return res.json();
 }

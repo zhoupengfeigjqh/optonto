@@ -40,6 +40,10 @@ build/
 node_modules/
 .next/
 
+# Java / Maven（business-backend 构建产物：jar、surefire 报告、jacoco 覆盖率）
+target/
+*.class
+
 # Docker
 .docker/
 

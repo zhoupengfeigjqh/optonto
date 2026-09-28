@@ -14,6 +14,7 @@ import {
   getMCPConfig, saveMCPConfig, testMCPConnection,
   MCPConfig, MCPServerConfig, MCPToolInfo,
 } from '@/api/agent-client';
+import { clickableProps, checkboxProps } from '@/utils/a11y';
 
 export default function MCPConfigPanel() {
   const [config, setConfig] = useState<MCPConfig>({ servers: [] });
@@ -347,8 +348,8 @@ export default function MCPConfigPanel() {
                 const checked = selectedToolNames.has(t.name);
                 return (
                 <div key={t.name}>
-                  <div className="py-3 border-b border-dark-border last:border-b-0 cursor-pointer hover:bg-dark-hover -mx-6 px-6 flex items-start gap-3" onClick={() => setMcpSelectedTool(selected ? null : t.name)}>
-                    <div className="pt-0.5" onClick={e => { e.stopPropagation(); toggleTool(t.name); }}>
+                  <div className="py-3 border-b border-dark-border last:border-b-0 cursor-pointer hover:bg-dark-hover -mx-6 px-6 flex items-start gap-3" {...clickableProps(() => setMcpSelectedTool(selected ? null : t.name), `${t.name} 工具详情`)}>
+                    <div className="pt-0.5" {...checkboxProps(checked, () => toggleTool(t.name), `注册工具 ${t.name}`)}>
                       <div className={`w-4 h-4 rounded border ${checked ? 'bg-accent-blue border-accent-blue' : 'bg-white border-gray-300'} flex items-center justify-center transition-colors`}>
                         {checked && <span className="text-white text-xs leading-none">✓</span>}
                       </div>

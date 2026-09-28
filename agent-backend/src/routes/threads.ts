@@ -5,6 +5,7 @@ import { ChatSession } from '../services/chat-session.js';
 import { Orchestrator } from '../agent/orchestrator.js';
 import type { SSEEvent } from '../types.js';
 import { ForbiddenError } from '../security/path-access-controller.js';
+import { sendError } from '../utils/http-error.js';
 
 export function createThreadsRouter(
   threadStore: ThreadStore,
@@ -23,7 +24,7 @@ export function createThreadsRouter(
       const threads = threadStore.list(scenario, ontology);
       res.json(threads);
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 
@@ -38,14 +39,14 @@ export function createThreadsRouter(
       // 空数组合法——通用问答模式（父 Agent 不挂业务工具）。
       const bad = scope.filter(sel => !sel?.scenario || !sel?.ontology || !skillLoader.resolveOntologyContext(sel.scenario, sel.ontology));
       if (bad.length > 0) {
-        res.status(400).json({ error: `以下本体不存在或元数据缺失：${bad.map(b => `${b?.scenario ?? '?'}/${b?.ontology ?? '?'}`).join('、')}` });
+        sendError(res, 400, `以下本体不存在或元数据缺失：${bad.map(b => `${b?.scenario ?? '?'}/${b?.ontology ?? '?'}`).join('、')}`);
         return;
       }
 
       const thread = threadStore.create(scenario, ontology, title || '新对话', scope);
       res.status(201).json(thread);
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 
@@ -57,8 +58,8 @@ export function createThreadsRouter(
       const thread = threadStore.get(scenario, ontology, tid);
       res.json(thread);
     } catch (e: any) {
-      if (e instanceof ForbiddenError) { res.status(404).json({ error: e.message }); }
-      else { res.status(400).json({ error: e.message }); }
+      if (e instanceof ForbiddenError) { sendError(res, 404, e.message); }
+      else { sendError(res, 400, e.message); }
     }
   });
 
@@ -70,7 +71,7 @@ export function createThreadsRouter(
       threadStore.delete(scenario, ontology, tid);
       res.json({ message: '已删除' });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 
@@ -82,8 +83,8 @@ export function createThreadsRouter(
     const tid = req.params.tid as string;
     const { message } = req.body as { message: string };
 
-    if (!message || !message.trim()) { res.status(400).json({ error: '消息不能为空' }); return; }
-    if (!threadStore.exists(scenario, ontology, tid)) { res.status(404).json({ error: '对话不存在' }); return; }
+    if (!message || !message.trim()) { sendError(res, 400, '消息不能为空'); return; }
+    if (!threadStore.exists(scenario, ontology, tid)) { sendError(res, 404, '对话不存在'); return; }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

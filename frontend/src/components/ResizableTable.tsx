@@ -33,11 +33,11 @@ function ResizeHandle({ onMouseDown, active }: { onMouseDown: (e: React.MouseEve
 }
 
 const HeaderCell = (props: any) => {
-  const { children, onResize, ...rest } = props;
+  const { children, onResize, active, ...rest } = props;
   return (
     <th {...rest} style={{ ...rest.style, position: 'relative' }}>
       {children}
-      {onResize && <ResizeHandle onMouseDown={onResize} active={false} />}
+      {onResize && <ResizeHandle onMouseDown={onResize} active={!!active} />}
     </th>
   );
 };
@@ -86,6 +86,7 @@ export default function ResizableTable<T extends object>({ columns, ...rest }: R
       width,
       onHeaderCell: () => ({
         width,
+        active: activeCol === key,
         onResize: (e: React.MouseEvent) => handleResizeStart(key, e),
       }),
     };

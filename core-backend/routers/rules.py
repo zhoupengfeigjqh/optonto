@@ -4,8 +4,11 @@ import json
 
 from fastapi import APIRouter, HTTPException
 
+from errors import DomainError
+
 from config import DATA_DIR
 from dependencies import get_ontology_names
+from repositories import fs_store
 from schemas import RuleItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
@@ -112,34 +115,24 @@ async def generate_rule(ontology_id: int, body: dict):
             function_info += f"返回结构：{json.dumps(fn.response, ensure_ascii=False, default=str)}\n\n"
         else:
             # Check common functions
-            common_path = COMMON_FUNCTIONS_DIR / "functions.json"
-            if common_path.exists():
-                try:
-                    with open(common_path, encoding="utf-8") as f:
-                        common_fns = json.load(f)
-                    cf = next((c for c in common_fns if c["name"] == fname), None)
-                    if cf:
-                        function_info += f"函数：{cf['name']} ({cf.get('display_name', '')}) [公共]\n"
-                        function_info += f"描述：{cf.get('description', '')}\n"
-                        function_info += f"返回结构：{json.dumps(cf.get('response', {}), ensure_ascii=False, default=str)}\n\n"
-                except (json.JSONDecodeError, OSError):
-                    pass
+            common_fns = fs_store.read_json(COMMON_FUNCTIONS_DIR / "functions.json", default=[])
+            if isinstance(common_fns, list):
+                cf = next((c for c in common_fns if isinstance(c, dict) and c.get("name") == fname), None)
+                if cf:
+                    function_info += f"函数：{cf['name']} ({cf.get('display_name', '')}) [公共]\n"
+                    function_info += f"描述：{cf.get('description', '')}\n"
+                    function_info += f"返回结构：{json.dumps(cf.get('response', {}), ensure_ascii=False, default=str)}\n\n"
 
     # 3. Find rule template
     rule_template = ""
-    for sub_dir in sorted(RULE_TEMPLATE_DIR.iterdir()):
+    for sub_dir in sorted(fs_store.list_dir(RULE_TEMPLATE_DIR)):
         if not sub_dir.is_dir():
             continue
-        for f in sorted(sub_dir.iterdir()):
-            if f.suffix == ".json":
-                try:
-                    with open(f, encoding="utf-8") as fh:
-                        tmpl = json.load(fh)
-                    if tmpl.get("ruleName") == rule_type:
-                        rule_template = json.dumps(tmpl, ensure_ascii=False, indent=2)
-                        break
-                except (json.JSONDecodeError, OSError):
-                    continue
+        for f in fs_store.list_files(sub_dir, "*.json"):
+            tmpl = fs_store.read_json(f)
+            if isinstance(tmpl, dict) and tmpl.get("ruleName") == rule_type:
+                rule_template = json.dumps(tmpl, ensure_ascii=False, indent=2)
+                break
         if rule_template:
             break
 
@@ -166,7 +159,7 @@ async def generate_rule(ontology_id: int, body: dict):
                 raise HTTPException(status_code=400, detail="未配置 LLM API Key")
             raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {stripped[:200]}")
         return {"rule_detail": rule_detail}
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")

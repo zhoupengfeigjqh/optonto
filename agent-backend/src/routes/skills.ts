@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { SkillLoader } from '../services/skill-loader.js';
 import type { SkillInfo } from '../types.js';
+import { sendError } from '../utils/http-error.js';
 
 export function createSkillsRouter(skillLoader: SkillLoader): Router {
   const router = Router();
@@ -15,7 +16,7 @@ export function createSkillsRouter(skillLoader: SkillLoader): Router {
       const skills: SkillInfo[] = skillLoader.listAllSkills();
       res.json(skills);
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 
@@ -30,7 +31,7 @@ export function createSkillsRouter(skillLoader: SkillLoader): Router {
       const skills: SkillInfo[] = skillLoader.listSkills(scenario, ontology);
       res.json(skills);
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      sendError(res, 400, e.message);
     }
   });
 

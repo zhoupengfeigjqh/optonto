@@ -1,4 +1,7 @@
-"""API for skill management — CRUD + LLM generation."""
+"""API for skill management — CRUD + LLM generation.
+
+分层（章程 II）：本模块为接口层；文件读写一律经数据访问层 ``repositories.fs_store``。
+"""
 
 import json
 import logging
@@ -6,9 +9,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
+from errors import DomainError
+
 from config import DATA_DIR
 from dependencies import get_ontology_names
-from metadata import get_scenario_by_name
+from repositories.metadata import get_scenario_by_name
+from repositories import fs_store
 from services import load_ontology_data, _get_ontology_dir
 from llm_utils import load_env, llm_text
 
@@ -39,30 +45,28 @@ def _skill_md_path(sc_name: str, on_name: str, skill_name: str) -> Path:
 async def list_skills(ontology_id: int):
     sc_name, on_name = await get_ontology_names(ontology_id)
     skills_dir = _skills_dir(sc_name, on_name)
-    if not skills_dir.exists():
+    if not fs_store.exists(skills_dir):
         return []
     items = []
-    for d in sorted(skills_dir.iterdir()):
+    for d in sorted(fs_store.list_dir(skills_dir)):
         if not d.is_dir():
             continue
         md_path = d / "SKILL.md"
+        has_md = fs_store.exists(md_path)
         format_ok = False
-        if md_path.exists():
-            head = md_path.read_text(encoding="utf-8")[:300]
+        head = ""
+        if has_md:
+            head = fs_store.read_text(md_path)[:300]
             import re
             has_name_en = bool(re.search(r"\nname: [a-zA-Z]", head))
             has_desc = "\ndescription:" in head
             format_ok = head.startswith("---\n") and has_name_en and has_desc
         desc = ""
-        meta_path = d / "meta.json"
-        if meta_path.exists():
-            try:
-                with open(meta_path, encoding="utf-8") as mf:
-                    desc = json.load(mf).get("description", "")
-            except Exception as e:
-                logger.warning("读取技能元数据失败: %s", e)
+        meta = fs_store.read_json(d / "meta.json", default={})
+        if isinstance(meta, dict):
+            desc = meta.get("description", "")
         format_error = ""
-        if md_path.exists() and not format_ok:
+        if has_md and not format_ok:
             if not head.startswith("---\n"):
                 format_error = "文件头部缺少 ---"
             elif not has_name_en:
@@ -70,10 +74,10 @@ async def list_skills(ontology_id: int):
             elif not has_desc:
                 format_error = "缺少 description"
         items.append({
-            "name": d.name, "has_skill": md_path.exists(), "format_ok": format_ok,
+            "name": d.name, "has_skill": has_md, "format_ok": format_ok,
             "format_error": format_error,
             "description": desc,
-            "updated_at": md_path.stat().st_mtime if md_path.exists() else d.stat().st_mtime,
+            "updated_at": md_path.stat().st_mtime if has_md else d.stat().st_mtime,
         })
     return items
 
@@ -84,10 +88,9 @@ async def list_skills(ontology_id: int):
 async def get_skill_content(ontology_id: int, skill_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     md_path = _skill_md_path(sc_name, on_name, skill_name)
-    if not md_path.exists():
+    if not fs_store.exists(md_path):
         raise HTTPException(status_code=404, detail="技能文件不存在")
-    content = md_path.read_text(encoding="utf-8")
-    return {"content": content, "skill_name": skill_name}
+    return {"content": fs_store.read_text(md_path), "skill_name": skill_name}
 
 
 # ─── Save Skill Content ────────────────────────────────────────────────────
@@ -95,9 +98,7 @@ async def get_skill_content(ontology_id: int, skill_name: str):
 @router.put("/{skill_name}/content")
 async def save_skill_content(ontology_id: int, skill_name: str, body: dict):
     sc_name, on_name = await get_ontology_names(ontology_id)
-    sdir = _skill_dir(sc_name, on_name, skill_name)
-    sdir.mkdir(parents=True, exist_ok=True)
-    (_skill_dir(sc_name, on_name, skill_name) / "SKILL.md").write_text(body.get("content", ""), encoding="utf-8")
+    fs_store.write_text(_skill_md_path(sc_name, on_name, skill_name), body.get("content", ""))
     return {"message": "技能文件已保存"}
 
 
@@ -107,10 +108,9 @@ async def save_skill_content(ontology_id: int, skill_name: str, body: dict):
 async def delete_skill(ontology_id: int, skill_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     sdir = _skill_dir(sc_name, on_name, skill_name)
-    if not sdir.exists():
+    if not fs_store.exists(sdir):
         raise HTTPException(status_code=404, detail="技能不存在")
-    import shutil
-    shutil.rmtree(sdir)
+    fs_store.delete_tree(sdir)
     return {"message": "技能已删除"}
 
 
@@ -121,23 +121,16 @@ async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
     """Update skill description only (name is fixed after creation)."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     sdir = _skill_dir(sc_name, on_name, skill_name)
-    if not sdir.exists():
+    if not fs_store.exists(sdir):
         raise HTTPException(status_code=404, detail="技能不存在")
 
-    new_desc = body.get("description", "")
-
     meta_path = sdir / "meta.json"
-    meta = {"name": skill_name, "description": new_desc}
-    try:
-        if meta_path.exists():
-            with open(meta_path, encoding="utf-8") as f:
-                existing = json.load(f)
-                existing.update(meta)
-                meta = existing
-    except:
-        pass
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    meta = {"name": skill_name, "description": body.get("description", "")}
+    existing = fs_store.read_json(meta_path, default={})
+    if isinstance(existing, dict):
+        existing.update(meta)
+        meta = existing
+    fs_store.write_json(meta_path, meta)
 
     return {"message": "技能已更新"}
 
@@ -225,9 +218,9 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
     data = load_ontology_data(sc_name, on_name)
     description = body.get("description", "")
 
-    if not SKILL_TEMPLATE_PATH.exists():
+    if not fs_store.exists(SKILL_TEMPLATE_PATH):
         raise HTTPException(status_code=500, detail="技能模板文件不存在")
-    skill_template = SKILL_TEMPLATE_PATH.read_text(encoding="utf-8")
+    skill_template = fs_store.read_text(SKILL_TEMPLATE_PATH)
     ontology_summary = _build_ontology_summary(data)
 
     from config import SKILL_GENERATE_SYSTEM_PROMPT, SKILL_GENERATE_PROMPT
@@ -267,17 +260,11 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
             raise HTTPException(status_code=400, detail=f"生成结果不符合模板要求：{check_error}，请重新生成")
 
         sdir = _skill_dir(sc_name, on_name, skill_name)
-        sdir.mkdir(parents=True, exist_ok=True)
-
-        meta_path = sdir / "meta.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump({"name": skill_name, "description": description}, f, ensure_ascii=False, indent=2)
-
-        md_path = sdir / "SKILL.md"
-        md_path.write_text(content, encoding="utf-8")
+        fs_store.write_json(sdir / "meta.json", {"name": skill_name, "description": description})
+        fs_store.write_text(sdir / "SKILL.md", content)
 
         return {"message": "技能已生成", "skill_name": skill_name, "content": content}
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"技能生成失败: {str(e)}")

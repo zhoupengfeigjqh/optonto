@@ -7,6 +7,7 @@ import {
   McpServiceKey,
 } from '@/api/client';
 import { getMCPConfig } from '@/api/agent-client';
+import { clickableProps } from '@/utils/a11y';
 
 interface ToolInfo { name: string; description: string; inputSchema?: any }
 
@@ -215,7 +216,7 @@ export default function MCPService() {
               const required = t.inputSchema?.required || [];
               return (
               <div key={t.name}>
-                <div className="py-3 border-b border-dark-border last:border-b-0 cursor-pointer hover:bg-dark-hover -mx-6 px-6" onClick={() => setSelectedTool(selected ? null : t.name)}>
+                <div className="py-3 border-b border-dark-border last:border-b-0 cursor-pointer hover:bg-dark-hover -mx-6 px-6" {...clickableProps(() => setSelectedTool(selected ? null : t.name), `${t.name} 工具详情`)}>
                   <div className="text-text-primary text-sm font-medium">{t.name}</div>
                   <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
                   {Object.keys(props).length > 0 && <div className="text-accent-blue text-xs mt-1">{Object.keys(props).length} 个参数 {selected ? '▲' : '▼'}</div>}

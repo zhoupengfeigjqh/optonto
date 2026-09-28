@@ -88,6 +88,13 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         raise RuntimeError(f"业务系统不可达: {e}")
 
     if resp.status_code >= 400:
+        # 业务系统的统一错误体 ApiResponse{code,message}：优先取 message，取不到再退回原文
+        try:
+            err = resp.json()
+        except ValueError:
+            err = None
+        if isinstance(err, dict) and err.get("message"):
+            raise RuntimeError(f"业务系统拒绝: {err['message']}")
         raise RuntimeError(f"业务系统返回 HTTP {resp.status_code}: {resp.text[:300]}")
     try:
         envelope = resp.json()

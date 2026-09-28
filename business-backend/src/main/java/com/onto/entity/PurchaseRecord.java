@@ -44,6 +44,15 @@ public class PurchaseRecord {
     @Column(length = 16, nullable = false)
     private String status = "待入库";
 
+    /**
+     * 乐观锁版本号（章程 VI：并发操作必须考虑锁机制）。
+     * 并发修改同一采购单时，后提交的事务会因版本不匹配失败，由全局异常处理转为 409，
+     * 避免「读到同一份旧状态各自 save」导致的状态覆盖（丢失更新）。
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -88,6 +97,8 @@ public class PurchaseRecord {
     public void setRelatedOrderName(String v) { this.relatedOrderName = v; }
     public String getStatus() { return status; }
     public void setStatus(String v) { this.status = v; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long v) { this.version = v; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

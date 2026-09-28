@@ -1,0 +1,32 @@
+# 测试专用配置（覆盖 src/main/resources/application.yml）
+#
+# 与生产配置的差异只有数据源与 DDL 策略：
+# - 用 H2 内存库（MODE=MySQL）替代 MySQL：集成测试不依赖外部服务，可在任意环境跑；
+# - ddl-auto=create-drop：由 JPA 实体生成表结构，每个测试类上下文用完即销毁。
+# 其余（Jackson 命名策略等）与生产保持一致，避免测试通过但线上行为不同。
+server:
+  port: 0
+  tomcat:
+    uri-encoding: UTF-8
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:onto_test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ''
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    open-in-view: false
+    database-platform: org.hibernate.dialect.H2Dialect
+  jackson:
+    property-naming-strategy: LOWER_CAMEL_CASE
+
+# 测试不需要接口文档
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

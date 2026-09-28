@@ -15,24 +15,8 @@ import {
   SafetyOutlined,
 } from '@ant-design/icons';
 import { getOntology, Ontology } from '@/api/client';
-import ConceptTable from '@/components/Design/ConceptTable';
-import RelationTable from '@/components/Design/RelationTable';
-import FunctionTable from '@/components/Design/FunctionTable';
-import BehaviorTable from '@/components/Design/BehaviorTable';
-import RuleTable from '@/components/Design/RuleTable';
-import ProcessTable from '@/components/Design/ProcessTable';
-import SecurityTable from '@/components/Design/SecurityTable';
-import OntologyDeployer from '@/components/Design/OntologyDeployer';
-import ConversationManager from '@/components/Design/ConversationManager';
-import RequirementSummary from '@/components/Design/RequirementSummary';
 import DeployedVersionBadge from '@/components/DeployedVersionBadge';
-import OntologyGraph from '@/components/View/OntologyGraph';
-import InstanceGraph from '@/components/View/InstanceGraph';
-import DataEngineTable from '@/components/Design/DataEngineTable';
-import MCPService from '@/components/Design/MCPService';
-import SkillManagement from '@/components/Design/SkillManagement';
-import AgentApp from '@/components/Design/AgentApp';
-import MCPConfigPanel from '@/components/Design/MCPConfig';
+import DesignContent from '@/components/Design/DesignContent';
 
 const DESIGN_TABS = [
   { key: 'concepts', label: '概念' },
@@ -114,60 +98,14 @@ export default function DesignPage() {
   }
 
   const renderContent = () => (
-    <div className="h-full">
-      {/* ── 本体展示：轻量，保留 display:none ── */}
-      <div style={{ display: activeSection === 'view' && activeTab === 'view' ? '' : 'none' }} className="h-full"><OntologyGraph ontologyId={ontologyId} /></div>
-      <div style={{ display: activeSection === 'view' && activeTab === 'instance' ? '' : 'none' }} className="h-full">
-        <InstanceGraph ontologyId={ontologyId} />
-      </div>
-
-      {/* ── 本体构建（需求）：条件渲染，避免常驻内存 ── */}
-      {activeSection === 'requirements' && activeTab === 'requirements' && (
-        <ConversationManager activeTab={activeTab} initialThreadId={threadParam} scenarioName={ontology?.scenario_name} ontologyName={ontology?.name} />
-      )}
-      {activeSection === 'requirements' && activeTab === 'requirement-summary' && (
-        <RequirementSummary ontologyId={ontologyId} activeTab={activeTab} scenarioName={ontology?.scenario_name || ''} ontologyName={ontology?.name || ''} />
-      )}
-      {activeSection === 'requirements' && activeTab === 'deployment' && (
-        <OntologyDeployer ontologyId={ontologyId} activeTab={activeTab} />
-      )}
-
-      {/* ── 本体明细（设计）：display:none，保留编辑状态 ── */}
-      <div style={{ display: activeSection === 'design' && activeTab === 'concepts' ? '' : 'none' }}><ConceptTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'relations' ? '' : 'none' }}><RelationTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'functions' ? '' : 'none' }}><FunctionTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'behaviors' ? '' : 'none' }}><BehaviorTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'rules' ? '' : 'none' }}><RuleTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-      <div style={{ display: activeSection === 'design' && activeTab === 'processes' ? '' : 'none' }}><ProcessTable ontologyId={ontologyId} activeTab={activeTab} /></div>
-
-      {/* ── 权限控制：独立一级栏目，条件渲染 ── */}
-      {activeSection === 'security' && (
-        <SecurityTable ontologyId={ontologyId} activeTab={activeTab} />
-      )}
-
-      {/* ── 数据引擎 & 智能体：条件渲染 ── */}
-      {activeSection === 'data-engine' && activeTab === 'api-mapping' && (
-        <DataEngineTable ontologyId={ontologyId} activeTab={activeTab} />
-      )}
-      {activeSection === 'data-engine' && activeTab === 'instance-collection' && (
-        <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
-      )}
-      {activeSection === 'data-engine' && activeTab === 'mcp-service' && (
-        <MCPService />
-      )}
-      {activeSection === 'agent' && activeTab === 'skill-management' && (
-        <SkillManagement ontologyId={ontologyId} activeTab={activeTab} />
-      )}
-      {activeSection === 'agent' && activeTab === 'agent-app' && (
-        <AgentApp
-          scenarioName={ontology?.scenario_name}
-          ontologyName={ontology?.name}
-        />
-      )}
-      {activeSection === 'agent' && activeTab === 'mcp-config' && (
-        <MCPConfigPanel />
-      )}
-    </div>
+    <DesignContent
+      ontologyId={ontologyId}
+      activeSection={activeSection}
+      activeTab={activeTab}
+      threadParam={threadParam}
+      scenarioName={ontology?.scenario_name}
+      ontologyName={ontology?.name}
+    />
   );
 
   return (

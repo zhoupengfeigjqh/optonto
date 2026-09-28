@@ -1,7 +1,9 @@
-"""Thread/conversation management API — stored per-ontology under onto_market."""
+"""Thread/conversation management API — stored per-ontology under onto_market.
 
-import json
-import shutil
+分层（章程 II）：本模块为接口层，只做参数校验、编排与响应组装；
+所有文件读写一律经数据访问层 ``repositories.fs_store``，不得直接 open/Path.write_text/shutil。
+"""
+
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,9 +11,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Body, HTTPException
 
-from config import DATA_DIR, DEMAND_THREADS_DIR, ONTO_MARKET_DIR
-from metadata import get_scenario_by_name, list_ontologies_by_scenario
-from services import load_ontology_data, split_yaml_top_sections
+from config import DATA_DIR, DEMAND_THREADS_DIR
+from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
+from repositories import fs_store
+from services import split_yaml_top_sections
 
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
 
@@ -23,27 +26,21 @@ async def list_ontology_template_sections():
     动态解析而非前端硬编码：模板增删节时前端选项自动同步。
     """
     tp = DATA_DIR / "templates/onto_template.yaml"
-    if not tp.exists():
+    if not fs_store.exists(tp):
         raise HTTPException(status_code=500, detail="本体模板文件不存在")
-    return {"sections": [key for key, _ in split_yaml_top_sections(tp.read_text(encoding="utf-8"))]}
+    return {"sections": [key for key, _ in split_yaml_top_sections(fs_store.read_text(tp))]}
 
 
 def _all_thread_dirs(scenario: str = "", ontology: str = "") -> list[tuple[Path, str, str]]:
     """Scan data/threads/demand/ for threads. If scenario+ontology given, filter by thread json fields."""
     results: list[tuple[Path, str, str]] = []
-    if not DEMAND_THREADS_DIR.exists():
+    if not fs_store.exists(DEMAND_THREADS_DIR):
         return results
 
-    for thread_dir in sorted(DEMAND_THREADS_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not thread_dir.is_dir():
-            continue
-        data_path = thread_dir / ".data.json"
-        if not data_path.exists():
-            continue
-        try:
-            with open(data_path, "r", encoding="utf-8") as fp:
-                data = json.load(fp)
-        except (json.JSONDecodeError, KeyError):
+    dirs = [d for d in fs_store.list_dir(DEMAND_THREADS_DIR) if d.is_dir()]
+    for thread_dir in sorted(dirs, key=lambda p: p.stat().st_mtime, reverse=True):
+        data = fs_store.read_json(thread_dir / ".data.json")
+        if data is None:
             continue
         sc = data.get("scenario_name", "")
         onto = data.get("ontology_name", "")
@@ -67,22 +64,23 @@ def _thread_path(thread_id: str) -> Path:
 def _find_thread(thread_id: str) -> tuple[Path, str, str]:
     """Find a demand thread by ID. Returns (thread_dir, scenario, ontology)."""
     tdir = _thread_dir(thread_id)
-    if not tdir.exists():
-        raise HTTPException(status_code=404, detail="对话不存在")
     path = tdir / ".data.json"
-    if not path.exists():
+    if not fs_store.exists(path):
         raise HTTPException(status_code=404, detail="对话不存在")
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    # 文件存在却解析不出内容 = 数据损坏，与「不存在」区分开，避免用 404 掩盖故障
+    data = fs_store.read_json(path)
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail="对话数据损坏")
     return tdir, data.get("scenario_name", ""), data.get("ontology_name", "")
 
 
 def _load_thread(thread_id: str) -> tuple[dict, str, str]:
     """Load thread data. Returns (data, scenario_name, ontology_name)."""
     tdir, sc, onto = _find_thread(thread_id)
-    path = tdir / ".data.json"
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f), sc, onto
+    data = fs_store.read_json(tdir / ".data.json")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail="对话数据损坏")
+    return data, sc, onto
 
 
 def _save_thread(data: dict) -> None:
@@ -91,11 +89,7 @@ def _save_thread(data: dict) -> None:
     onto = data.get("ontology_name", "")
     if not sc or not onto:
         raise HTTPException(status_code=400, detail="缺少场景或本体名称")
-    dir_path = _thread_dir(data["id"])
-    dir_path.mkdir(parents=True, exist_ok=True)
-    path = dir_path / ".data.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    fs_store.write_json(_thread_path(data["id"]), data)
 
 
 def _resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[int], Optional[int]]:
@@ -122,33 +116,28 @@ async def list_threads(scenario: str = "", ontology: str = ""):
     """List all threads, optionally filtered by scenario/ontology."""
     threads = []
     for tdir, sc_name, onto_name in _all_thread_dirs(scenario, ontology):
-        data_path = tdir / ".data.json"
-        if not data_path.exists():
+        data = fs_store.read_json(tdir / ".data.json")
+        if data is None:
             continue
-        try:
-            with open(data_path, "r", encoding="utf-8") as fp:
-                data = json.load(fp)
-            scenario_id = data.get("scenario_id")
-            ontology_id = data.get("ontology_id")
-            if scenario_id is None or ontology_id is None:
-                # 旧线程未落盘 id，按名称从 meta.json 解析兜底
-                sid, oid = _resolve_ids(sc_name, onto_name)
-                scenario_id = scenario_id if scenario_id is not None else sid
-                ontology_id = ontology_id if ontology_id is not None else oid
-            threads.append({
-                "id": data["id"],
-                "title": data.get("title", ""),
-                "status": data.get("status", "exploring"),
-                "version": data.get("version", ""),
-                "created_at": data.get("created_at", ""),
-                "updated_at": data.get("updated_at", ""),
-                "scenario_name": sc_name,
-                "scenario_id": scenario_id,
-                "ontology_name": onto_name,
-                "ontology_id": ontology_id,
-            })
-        except (json.JSONDecodeError, KeyError):
-            continue
+        scenario_id = data.get("scenario_id")
+        ontology_id = data.get("ontology_id")
+        if scenario_id is None or ontology_id is None:
+            # 旧线程未落盘 id，按名称从 meta.json 解析兜底
+            sid, oid = _resolve_ids(sc_name, onto_name)
+            scenario_id = scenario_id if scenario_id is not None else sid
+            ontology_id = ontology_id if ontology_id is not None else oid
+        threads.append({
+            "id": data["id"],
+            "title": data.get("title", ""),
+            "status": data.get("status", "exploring"),
+            "version": data.get("version", ""),
+            "created_at": data.get("created_at", ""),
+            "updated_at": data.get("updated_at", ""),
+            "scenario_name": sc_name,
+            "scenario_id": scenario_id,
+            "ontology_name": onto_name,
+            "ontology_id": ontology_id,
+        })
     threads.sort(key=lambda t: t["updated_at"], reverse=True)
     return threads
 
@@ -162,7 +151,6 @@ async def create_thread(body: dict):
     version = body.get("version", "")
     if not version:
         raise HTTPException(status_code=400, detail="请提供版本号(version)")
-    """Create a new conversation thread within a specific ontology."""
     if not scenario_name or not ontology_name:
         raise HTTPException(status_code=400, detail="请提供场景名称(scenario_name)和本体名称(ontology_name)")
 
@@ -206,7 +194,7 @@ async def get_thread(thread_id: str, scenario: str = "", ontology: str = ""):
 async def delete_thread(thread_id: str):
     """Delete a thread directory and all its contents."""
     tdir, _, _ = _find_thread(thread_id)
-    shutil.rmtree(tdir)
+    fs_store.delete_tree(tdir)
     return {"message": "对话已删除"}
 
 
@@ -225,25 +213,20 @@ async def update_thread(thread_id: str, body: dict = Body(default={})):
 
 # ─── Requirement files ─────────────────────────────────────────────────────────
 
+
 def _yaml_source_map(tdir: Path) -> dict[str, str]:
     """扫描线程目录内的 yaml，返回 {yaml 文件名（含扩展名）: metadata.source_file}。
 
     解析失败/无 metadata 时值为 ""，供 has_ontology 的 source_file 回退判定使用。
     """
-    import yaml
-
     mapping: dict[str, str] = {}
-    for y in sorted(tdir.glob("*.yaml")):
+    for y in fs_store.list_files(tdir, "*.yaml"):
+        raw = fs_store.read_yaml(y)
         source_file = ""
-        try:
-            with open(y, encoding="utf-8") as fp:
-                raw = yaml.safe_load(fp)
-            if isinstance(raw, dict):
-                meta = raw.get("metadata")
-                if isinstance(meta, dict):
-                    source_file = str(meta.get("source_file") or "")
-        except Exception:
-            source_file = ""
+        if isinstance(raw, dict):
+            meta = raw.get("metadata")
+            if isinstance(meta, dict):
+                source_file = str(meta.get("source_file") or "")
         mapping[y.name] = source_file
     return mapping
 
@@ -260,7 +243,7 @@ def _match_ontology_yaml(tdir: Path, req_name: str, filename: str, source_map: d
     已不存在的旧 md 名，则该 yaml 成为孤儿，不会被任何行认领——此时应重新生成。
     """
     same_name = f"{req_name}.yaml"
-    if (tdir / same_name).exists():
+    if fs_store.exists(tdir / same_name):
         return same_name
     for yaml_name, source_file in source_map.items():
         if source_file == filename:
@@ -278,18 +261,11 @@ async def list_requirements(scenario: str = "", ontology: str = ""):
     items = []
     for tdir, sc_name, onto_name in _all_thread_dirs(scenario, ontology):
         thread_id = tdir.name
-        thread_data = None
-        data_path = tdir / ".data.json"
-        if data_path.exists():
-            try:
-                with open(data_path, "r", encoding="utf-8") as f:
-                    thread_data = json.load(f)
-            except (json.JSONDecodeError, KeyError):
-                continue
+        thread_data = fs_store.read_json(tdir / ".data.json")
 
         source_map = _yaml_source_map(tdir)
 
-        for f in sorted(tdir.glob("*.md")):
+        for f in fs_store.list_files(tdir, "*.md"):
             stat = f.stat()
             filename = f.name
             req_name = filename[:-3]
@@ -330,18 +306,16 @@ async def get_requirement_file(thread_id: str, filename: str, scenario: str = ""
     """Read a requirement markdown file content."""
     tdir, _, _ = _find_thread(thread_id)
     file_path = tdir / filename
-    if not file_path.exists():
+    if not fs_store.exists(file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
-    content = file_path.read_text(encoding="utf-8")
-    return {"content": content, "filename": filename, "thread_id": thread_id}
+    return {"content": fs_store.read_text(file_path), "filename": filename, "thread_id": thread_id}
 
 
 @router.put("/{thread_id}/requirements/{filename}")
 async def save_requirement_file(thread_id: str, filename: str, body: dict):
     """Save/update a requirement markdown file."""
     tdir, _, _ = _find_thread(thread_id)
-    file_path = tdir / filename
-    file_path.write_text(body.get("content", ""), encoding="utf-8")
+    fs_store.write_text(tdir / filename, body.get("content", ""))
     return {"message": "文件已保存"}
 
 
@@ -353,14 +327,12 @@ async def delete_requirement_file(thread_id: str, filename: str):
     """
     tdir, scenario_name, ontology_name = _find_thread(thread_id)
     file_path = tdir / filename
-    if not file_path.exists():
+    if not fs_store.exists(file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
 
     # 连带删除同目录下由该需求生成的 yaml（若存在）
     if filename.endswith(".md"):
-        sibling_yaml = tdir / f"{filename[:-3]}.yaml"
-        if sibling_yaml.exists():
-            sibling_yaml.unlink()
+        fs_store.delete_file(tdir / f"{filename[:-3]}.yaml")
 
-    file_path.unlink()
+    fs_store.delete_file(file_path)
     return {"message": "文件已删除"}

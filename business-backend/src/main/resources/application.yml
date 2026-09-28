@@ -17,3 +17,16 @@ spring:
     database-platform: org.hibernate.dialect.MySQLDialect
   jackson:
     property-naming-strategy: LOWER_CAMEL_CASE
+
+# 接口文档（章程 VI）：/v3/api-docs 为规范，/swagger-ui.html 为可视化调试页
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    # 生产环境可用 env 覆盖关闭（AGENT_DOCS_ENABLED=false 时不应暴露）
+    enabled: ${API_DOCS_ENABLED:true}
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+  default-produces-media-type: application/json

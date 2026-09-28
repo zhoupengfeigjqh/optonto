@@ -2,10 +2,13 @@
 
 此前每个 router 各自写 `any(x.name==item.name)`（400 查重）与
 `next((i for i,x in enumerate(...))...)`（404 定位），逻辑逐字重复约 24 处。
-统一到这里，错误消息与行为与原先完全一致。
+统一到这里，错误消息、状态码与行为与原先完全一致。
+
+异常类型（章程 II）：抛领域异常（``errors``）而非 ``fastapi.HTTPException``，
+业务层不再依赖传输层；HTTP 状态码由 ``main.py`` 全局处理器统一映射。
 """
 
-from fastapi import HTTPException
+from errors import ConflictError, NotFoundError
 
 
 def ensure_unique(items, name: str, entity_label: str, exclude_name: str | None = None, field: str = "name", duplicate_msg: str | None = None) -> None:
@@ -18,12 +21,12 @@ def ensure_unique(items, name: str, entity_label: str, exclude_name: str | None 
     for it in items:
         it_name = getattr(it, field, None)
         if it_name == name and it_name != exclude_name:
-            raise HTTPException(status_code=400, detail=duplicate_msg or f"{entity_label}名称已存在")
+            raise ConflictError(duplicate_msg or f"{entity_label}名称已存在")
 
 
 def find_index(items, name: str, entity_label: str, field: str = "name") -> int:
     """按唯一字段定位索引：不存在抛 404「{entity_label}不存在」。"""
     idx = next((i for i, it in enumerate(items) if getattr(it, field, None) == name), -1)
     if idx == -1:
-        raise HTTPException(status_code=404, detail=f"{entity_label}不存在")
+        raise NotFoundError(f"{entity_label}不存在")
     return idx

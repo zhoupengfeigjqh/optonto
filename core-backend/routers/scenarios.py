@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 
-from metadata import list_scenarios, get_scenario_by_id, get_scenario_by_name, create_scenario, update_scenario, delete_scenario, list_ontologies_by_scenario
+from repositories.metadata import list_scenarios, get_scenario_by_id, get_scenario_by_name, create_scenario, update_scenario, delete_scenario, list_ontologies_by_scenario
 
 router = APIRouter(prefix="/api/scenarios", tags=["场景"])
 
