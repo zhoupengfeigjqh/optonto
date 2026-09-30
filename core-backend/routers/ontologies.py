@@ -85,7 +85,7 @@ async def list_all_behaviors_api():
             continue
         for b in data.behaviors:
             schema, conflicts = params_to_input_schema(
-                b.params, _related_concepts(data, b.related_concepts))
+                b.params, _related_concepts(data, [b.concept] if b.concept else []))
             item = {
                 "ontology_id": oid,
                 "ontology_name": ontology_name,

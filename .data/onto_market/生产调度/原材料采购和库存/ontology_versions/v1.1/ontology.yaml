@@ -1,0 +1,985 @@
+metadata:
+  source_file: 原材料采购和库存_业务流程.md, 原材料采购和库存_关系.md, 原材料采购和库存_函数.md, 原材料采购和库存_概念和属性.md,
+    原材料采购和库存_行为.md, 原材料采购和库存_规则.md
+  source_thread: 原材料采购与库存管理v2
+  created_at: '2026-09-02 22:39:53'
+  deployed_version: v1.1
+  shard_hash: cdcf5b996e66cdb9
+  merge_skipped:
+    concepts: 6
+    relations: 0
+    functions: 0
+    behaviors: 0
+    rules: 0
+    processes: 0
+  scenario_name: 生产调度
+  scenario_id: 1
+  ontology_name: 原材料采购和库存
+  ontology_id: 1
+concepts:
+- name: RawMaterial
+  description: 原材料概念，表示生产所需的原材料
+  attributes:
+  - name: rawMaterialId
+    type: string
+    display_name: 原材料ID
+    example: RM001
+  - name: rawMaterialName
+    type: string
+    display_name: 原材料名称
+    example: 高强度钢板
+  display_name: 原材料
+  instance_label: ''
+- name: RawMaterialInventory
+  description: 原材料库存快照概念，表示原材料的最新库存状态
+  attributes:
+  - name: rawMaterialId
+    type: string
+    display_name: 原材料ID
+    example: RM001
+  - name: stockQuantity
+    type: number
+    display_name: 库存数量
+    example: '500'
+    constraint:
+      unique: false
+      required: false
+      enum: []
+      pattern: ''
+      min: 0.0
+  display_name: 原材料库存快照
+  instance_label: ''
+- name: PurchaseRecord
+  description: 采购记录概念，表示一次采购活动的记录
+  attributes:
+  - name: purchaseRecordId
+    type: string
+    display_name: 采购记录ID
+    example: PR001
+  - name: rawMaterialId
+    type: string
+    display_name: 原材料ID
+    example: RM001
+  - name: supplierId
+    type: string
+    display_name: 供应商ID
+    example: SUP001
+  - name: orderId
+    type: string
+    display_name: 客户订单ID
+    example: ORD001
+  display_name: 采购记录
+  instance_label: ''
+- name: Supplier
+  description: 供应商概念，表示提供原材料的供应商
+  attributes:
+  - name: supplierId
+    type: string
+    display_name: 供应商ID
+    example: SUP001
+  - name: supplierName
+    type: string
+    display_name: 供应商名称
+    example: 某某钢铁有限公司
+  display_name: 供应商
+  instance_label: ''
+- name: CustomerOrder
+  description: 客户订单概念，表示客户的订单
+  attributes:
+  - name: orderId
+    type: string
+    display_name: 客户订单ID
+    example: ORD001
+  display_name: 客户订单
+  instance_label: ''
+- name: SupplyCapacity
+  description: 供货能力概念，表示供应商对某种原材料的供货能力
+  attributes:
+  - name: supplyCapacityId
+    type: string
+    display_name: 供货能力ID
+    example: SC001
+  - name: supplierId
+    type: string
+    display_name: 供应商ID
+    example: SUP001
+  - name: rawMaterialId
+    type: string
+    display_name: 原材料ID
+    example: RM001
+  display_name: 供货能力
+  instance_label: ''
+relations:
+- name: hasRawInventory
+  source: RawMaterial
+  target: RawMaterialInventory
+  cardinality: '1:1'
+  source_attr: rawMaterialId
+  target_attr: rawMaterialId
+  description: 每个原材料对应一条最新的库存快照，用于实时反映该原材料的库存状态
+  display_name: 拥有库存快照
+- name: recordsRawMaterial
+  source: PurchaseRecord
+  target: RawMaterial
+  cardinality: N:1
+  source_attr: rawMaterialId
+  target_attr: rawMaterialId
+  description: 1条采购记录只采购1种原材料，1种原材料可被多条采购记录采购
+  display_name: 采购记录对应原材料
+- name: orderedFromSupplier
+  source: PurchaseRecord
+  target: Supplier
+  cardinality: N:1
+  source_attr: supplierId
+  target_attr: supplierId
+  description: 1条采购记录只向1个供应商采购，1个供应商可被多条采购记录关联
+  display_name: 向供应商采购
+- name: suppliesRawMaterial
+  source: Supplier
+  target: RawMaterial
+  cardinality: N:M
+  source_attr: supplierId
+  target_attr: rawMaterialId
+  description: 1个供应商可供应多种原材料，1种原材料可来源于多个供应商
+  display_name: 供应原材料
+- name: containsPurchaseRecord
+  source: CustomerOrder
+  target: PurchaseRecord
+  cardinality: 1:N
+  source_attr: orderId
+  target_attr: orderId
+  description: 1个客户订单可关联多条采购记录，1条采购记录最多只关联1个客户订单（orderId可为空表示补充库存）
+  display_name: 包含采购记录
+- name: providedBySupplier
+  source: SupplyCapacity
+  target: Supplier
+  cardinality: N:1
+  source_attr: supplierId
+  target_attr: supplierId
+  description: 1条供货能力记录只属于1个供应商，1个供应商可有多条供货能力记录
+  display_name: 由供应商提供
+- name: suppliesMaterial
+  source: SupplyCapacity
+  target: RawMaterial
+  cardinality: N:1
+  source_attr: rawMaterialId
+  target_attr: rawMaterialId
+  description: 1条供货能力记录只对应1种原材料，1种原材料可有多条供货能力记录
+  display_name: 对应原材料
+functions:
+- name: checkSafetyStock
+  display_name: 检查安全库存
+  description: 比较指定原材料的库存可用库存量与安全库存，判断是否触发安全库存预警
+  related_concepts:
+  - RawMaterialInventory
+  - RawMaterial
+  params:
+    rawMaterialInventory:
+      type: object
+      display_name: 原材料库存
+      properties:
+        rawMaterialId:
+          type: string
+          display_name: 原材料编号
+          example: RM-001
+          required: true
+        availableStockQuantity:
+          type: integer
+          display_name: 可用库存
+          example: 150
+          required: true
+      required: true
+    rawMaterial:
+      type: object
+      display_name: 原材料
+      properties:
+        rawMaterialId:
+          type: string
+          display_name: 原材料编号
+          example: RM-001
+          required: true
+        safetyStock:
+          type: integer
+          display_name: 安全库存
+          example: 100
+          required: true
+      required: true
+  response:
+    result:
+      type: object
+      properties:
+        rawMaterialId:
+          type: string
+          display_name: 原材料编号
+          example: RM-001
+        isWarning:
+          type: boolean
+          display_name: 是否触发安全库存预警
+          example: true
+        availableStockQuantity:
+          type: integer
+          display_name: 当前可用库存
+          example: 80
+        safetyStock:
+          type: integer
+          display_name: 安全库存阈值
+          example: 100
+  code_file: functions/checkSafetyStock.py
+- name: checkArrivalOverdue
+  display_name: 检查采购到位超期
+  description: 判断指定采购记录的到位时间是否已超过当前日期，用于触发超期预警
+  related_concepts:
+  - PurchaseRecord
+  params:
+    purchaseRecord:
+      type: object
+      display_name: 采购记录
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+          required: true
+        arriveTime:
+          type: string
+          display_name: 到位时间
+          example: '2023-11-10'
+          required: true
+      required: true
+    currentDate:
+      type: string
+      display_name: 当前日期
+      example: '2023-11-11'
+      required: true
+  response:
+    result:
+      type: object
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+        isOverdue:
+          type: boolean
+          display_name: 是否已超期
+          example: true
+        arriveTime:
+          type: string
+          display_name: 到位时间
+          example: '2023-11-10'
+  code_file: functions/checkArrivalOverdue.py
+- name: checkOrderExists
+  display_name: 检查订单存在性
+  description: 校验采购记录关联的订单编号是否存在于客户订单表中，用于判断订单是否有效
+  related_concepts:
+  - PurchaseRecord
+  - CustomerOrder
+  params:
+    purchaseRecord:
+      type: object
+      display_name: 采购记录
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+          required: true
+        orderId:
+          type: string
+          display_name: 关联订单编号（可为空）
+          example: SO-20231001-001
+          required: true
+      required: true
+    customerOrderSet:
+      type: array
+      display_name: 客户订单集
+      items:
+        type: object
+        properties:
+          orderId:
+            type: string
+            display_name: 订单编号
+            example: SO-20231001-001
+            required: true
+      required: true
+  response:
+    result:
+      type: object
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+        orderId:
+          type: string
+          display_name: 关联订单编号
+          example: SO-20231001-001
+        orderExists:
+          type: boolean
+          display_name: 订单是否存在
+          example: true
+  code_file: functions/checkOrderExists.py
+- name: inferPurchasePurpose
+  display_name: 推断采购目的
+  description: 根据采购记录关联订单编号是否为空，推断该采购是补充库存还是订单驱动
+  related_concepts:
+  - PurchaseRecord
+  - CustomerOrder
+  params:
+    purchaseRecord:
+      type: object
+      display_name: 采购记录
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+          required: true
+        orderId:
+          type: string
+          display_name: 关联订单编号（可为空）
+          example: SO-20231001-001
+          required: true
+      required: true
+  response:
+    result:
+      type: object
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+        purchasePurpose:
+          type: string
+          display_name: 采购目的
+          example: 订单驱动
+  code_file: functions/inferPurchasePurpose.py
+behaviors:
+- name: createPurchaseRecord
+  description: 智能体或用户创建原材料采购订单
+  op_type: command
+  params:
+    rawMaterialId:
+      type: string
+      display_name: 原材料编号
+      required: true
+      example: RM-001
+    rawMaterialName:
+      type: string
+      display_name: 原材料名称
+      required: true
+      example: 高强度钢板
+    arrivalQuantity:
+      type: integer
+      display_name: 采购数量
+      required: true
+      example: 100
+    supplierId:
+      type: string
+      display_name: 供应商编号
+      required: true
+      example: SUP-001
+    arriveTime:
+      type: string
+      display_name: 到位日期
+      required: true
+      example: '2023-11-10'
+    orderId:
+      type: string
+      display_name: 客户订单编号
+      required: false
+      example: SO-20231001-001
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: object
+      display_name: 返回数据
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+        rawMaterialName:
+          type: string
+          display_name: 原材料名称
+          example: 高强度钢板
+        arrivalQuantity:
+          type: integer
+          display_name: 到位数量
+          example: 100
+        arriveTime:
+          type: string
+          display_name: 到位时间
+          example: '2023-11-10'
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterial
+  - Supplier
+  - CustomerOrder
+  display_name: 创建原材料采购单
+- name: cancelPurchaseRecord
+  description: 智能体或用户取消原材料采购订单
+  op_type: command
+  params:
+    purchaseRecordId:
+      type: string
+      display_name: 采购单号
+      required: true
+      example: PO-20231027-001
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: object
+      display_name: 返回数据
+      properties:
+        purchaseRecordId:
+          type: string
+          display_name: 采购单号
+          example: PO-20231027-001
+        rawMaterialName:
+          type: string
+          display_name: 原材料名称
+          example: 高强度钢板
+  related_concepts:
+  - PurchaseRecord
+  display_name: 取消原材料采购单
+- name: confirmInbound
+  description: 智能体或用户确认原材料到货入库
+  op_type: command
+  params:
+    purchaseRecordId:
+      type: string
+      display_name: 采购单号
+      required: true
+      example: PO-20231027-001
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: object
+      display_name: 返回数据
+      properties:
+        rawMaterialId:
+          type: string
+          display_name: 原材料编号
+          example: RM-001
+        rawMaterialName:
+          type: string
+          display_name: 原材料名称
+          example: 高强度钢板
+        pendingInboundQuantity:
+          type: integer
+          display_name: 待入库量
+          example: 50
+        cumulativeStockQuantity:
+          type: integer
+          display_name: 累计库存量
+          example: 200
+        availableStockQuantity:
+          type: integer
+          display_name: 可用库存
+          example: 150
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterialInventory
+  display_name: 入库原材料
+- name: queryPurchaseRecord
+  description: 智能体或用户查询原材料采购单
+  op_type: query
+  params:
+    purchaseRecordId:
+      type: string
+      display_name: 采购单号
+      required: false
+      example: PO-20231027-001
+    rawMaterialId:
+      type: string
+      display_name: 原材料编号
+      required: false
+      example: RM-001
+    rawMaterialName:
+      type: string
+      display_name: 原材料名称
+      required: false
+      example: 高强度钢板
+    orderId:
+      type: string
+      display_name: 关联订单编号
+      required: false
+      example: SO-20231001-001
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: array
+      display_name: 返回数据
+      items:
+        type: object
+        properties:
+          purchaseRecordId:
+            type: string
+            display_name: 采购单号
+            example: PO-20231027-001
+          rawMaterialName:
+            type: string
+            display_name: 原材料名称
+            example: 高强度钢板
+          supplierId:
+            type: string
+            display_name: 供应商编号
+            example: SUP-001
+          arriveTime:
+            type: string
+            display_name: 到位时间
+            example: '2023-11-10'
+          arrivalQuantity:
+            type: integer
+            display_name: 到位数量
+            example: 100
+  related_concepts:
+  - PurchaseRecord
+  - RawMaterial
+  - Supplier
+  - CustomerOrder
+  display_name: 查询原材料采购单信息
+- name: queryRawMaterial
+  description: 智能体或用户查询原材料基本信息
+  op_type: query
+  params:
+    rawMaterialId:
+      type: string
+      display_name: 原材料编号
+      required: false
+      example: RM-001
+    rawMaterialName:
+      type: string
+      display_name: 原材料名称
+      required: false
+      example: 高强度钢板
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: array
+      display_name: 返回数据
+      items:
+        type: object
+        properties:
+          rawMaterialId:
+            type: string
+            display_name: 原材料编号
+            example: RM-001
+          rawMaterialName:
+            type: string
+            display_name: 原材料名称
+            example: 高强度钢板
+          unit:
+            type: string
+            display_name: 单位
+            example: 吨
+          safetyStock:
+            type: integer
+            display_name: 安全库存
+            example: 100
+  related_concepts:
+  - RawMaterial
+  display_name: 查询原材料基本信息
+- name: queryRawMaterialInventory
+  description: 智能体或用户查询原材料库存，计算待入库量、可用库存量和累计库存量
+  op_type: query
+  params:
+    rawMaterialId:
+      type: string
+      display_name: 原材料编号
+      required: false
+      example: RM-001
+    rawMaterialName:
+      type: string
+      display_name: 原材料名称
+      required: false
+      example: 高强度钢板
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: array
+      display_name: 返回数据
+      items:
+        type: object
+        properties:
+          rawMaterialId:
+            type: string
+            display_name: 原材料编号
+            example: RM-001
+          rawMaterialName:
+            type: string
+            display_name: 原材料名称
+            example: 高强度钢板
+          materialType:
+            type: string
+            display_name: 材料类型
+            example: 原材料
+          pendingInboundQuantity:
+            type: integer
+            display_name: 待入库量
+            example: 50
+          cumulativeStockQuantity:
+            type: integer
+            display_name: 累计库存量
+            example: 200
+          availableStockQuantity:
+            type: integer
+            display_name: 可用库存
+            example: 150
+          unit:
+            type: string
+            display_name: 单位
+            example: 吨
+  related_concepts:
+  - RawMaterialInventory
+  - RawMaterial
+  - PurchaseRecord
+  display_name: 查询原材料库存信息
+- name: querySupplier
+  description: 智能体或用户查询供应商信息
+  op_type: query
+  params:
+    supplierId:
+      type: string
+      display_name: 供应商编号
+      required: false
+      example: SUP-001
+    supplierName:
+      type: string
+      display_name: 供应商名称
+      required: false
+      example: 华东钢铁集团
+    rawMaterialId:
+      type: string
+      display_name: 原材料编号
+      required: false
+      example: RM-001
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: array
+      display_name: 返回数据
+      items:
+        type: object
+        properties:
+          supplierId:
+            type: string
+            display_name: 供应商编号
+            example: SUP-001
+          supplierName:
+            type: string
+            display_name: 供应商名称
+            example: 华东钢铁集团
+          address:
+            type: string
+            display_name: 地址
+            example: 上海市宝山区xx路xx号
+          contactPerson:
+            type: string
+            display_name: 联系人
+            example: 张伟
+          contactPhone:
+            type: string
+            display_name: 联系电话
+            example: 138****1234
+  related_concepts:
+  - Supplier
+  - SupplyCapacity
+  display_name: 查询供应商信息
+- name: queryCustomerOrder
+  description: 智能体或用户查询客户订单信息
+  op_type: query
+  params:
+    orderId:
+      type: string
+      display_name: 订单编号
+      required: false
+      example: SO-20231001-001
+    orderName:
+      type: string
+      display_name: 订单名称
+      required: false
+      example: 华东区域10月订单
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: array
+      display_name: 返回数据
+      items:
+        type: object
+        properties:
+          orderId:
+            type: string
+            display_name: 订单编号
+            example: SO-20231001-001
+          orderName:
+            type: string
+            display_name: 订单名称
+            example: 华东区域10月订单
+          orderBatchNumber:
+            type: string
+            display_name: 订单批次号
+            example: BATCH-202310
+          bufferPeriod:
+            type: integer
+            display_name: 订单缓冲周期
+            example: 3
+          orderType:
+            type: string
+            display_name: 订单类型
+            example: 销售
+  related_concepts:
+  - CustomerOrder
+  display_name: 查询客户订单信息
+- name: querySupplyCapacity
+  description: 智能体或用户查询供应商的供货能力信息
+  op_type: query
+  params:
+    supplierId:
+      type: string
+      display_name: 供应商编号
+      required: false
+      example: SUP-001
+    supplierName:
+      type: string
+      display_name: 供应商名称
+      required: false
+      example: 华东钢铁集团
+    rawMaterialId:
+      type: string
+      display_name: 原材料编号
+      required: false
+      example: RM-001
+    rawMaterialName:
+      type: string
+      display_name: 原材料名称
+      required: false
+      example: 高强度钢板
+  response:
+    code:
+      type: number
+      display_name: 状态码
+      example: 200
+    data:
+      type: array
+      display_name: 返回数据
+      items:
+        type: object
+        properties:
+          supplyCapacityId:
+            type: string
+            display_name: 供货能力编号
+            example: SC-001
+          supplierId:
+            type: string
+            display_name: 供应商编号
+            example: SUP-001
+          supplierName:
+            type: string
+            display_name: 供应商名称
+            example: 华东钢铁集团
+          rawMaterialId:
+            type: string
+            display_name: 原材料编号
+            example: RM-001
+          rawMaterialName:
+            type: string
+            display_name: 原材料名称
+            example: 高强度钢板
+          unitPrice:
+            type: number
+            display_name: 单价
+            example: 4500.0
+          deliveryCycle:
+            type: integer
+            display_name: 交货周期（天）
+            example: 15
+          monthlySupplyCapacity:
+            type: integer
+            display_name: 月供货能力
+            example: 500
+          qualityGrade:
+            type: string
+            display_name: 质量等级
+            example: A
+          minOrderQuantity:
+            type: integer
+            display_name: 最小起订量
+            example: 50
+          isPreferred:
+            type: boolean
+            display_name: 是否优选
+            example: true
+  related_concepts:
+  - SupplyCapacity
+  - Supplier
+  - RawMaterial
+  display_name: 查询供货能力
+rules:
+- name: validateUnitConsistency
+  description: 校验采购记录的单位与原材料单位一致，防止单位错误导致库存计算偏差
+  related_behaviors:
+  - createPurchaseRecord
+  related_functions: []
+  display_name: 采购-原料单位一致性
+  rule_type: 验证规则
+  position: 前置
+  data_supplements: []
+- name: validateArriveTimeAfterPurchaseTime
+  description: 校验采购记录的到位时间晚于采购时间，防止时间逻辑错误
+  related_behaviors:
+  - createPurchaseRecord
+  related_functions: []
+  display_name: 到位时间合理性
+  rule_type: 验证规则
+  position: 前置
+  data_supplements: []
+- name: validateRawMaterialExists
+  description: 校验采购记录中的原材料编号/名称必须存在于原材料表中，防止无效采购
+  related_behaviors:
+  - createPurchaseRecord
+  related_functions: []
+  display_name: 采购-原料存在性
+  rule_type: 验证规则
+  position: 前置
+  data_supplements: []
+- name: validateSupplierExists
+  description: 校验采购记录中的供应商编号必须存在于供应商表中，防止无效供应商
+  related_behaviors:
+  - createPurchaseRecord
+  related_functions: []
+  display_name: 采购-供应商存在性
+  rule_type: 验证规则
+  position: 前置
+  data_supplements: []
+- name: validateOrderExists
+  description: 校验采购记录关联订单编号非空时，必须存在于客户订单表中，防止无效关联
+  related_behaviors:
+  - createPurchaseRecord
+  related_functions:
+  - checkOrderExists
+  display_name: 采购-订单存在性
+  rule_type: 验证规则
+  position: 前置
+  data_supplements: []
+- name: warnSafetyStock
+  description: 当库存可用库存量低于原材料安全库存时，触发预警，提示需要采购或关注库存
+  related_behaviors:
+  - queryRawMaterialInventory
+  related_functions:
+  - checkSafetyStock
+  display_name: 安全库存预警
+  rule_type: 推理规则
+  position: 后置
+  data_supplements: []
+- name: warnArrivalOverdue
+  description: 当当前日期已超过采购记录的到位时间，提示用户是否启动入库操作
+  related_behaviors:
+  - queryPurchaseRecord
+  related_functions:
+  - checkArrivalOverdue
+  display_name: 采购到位超期预警
+  rule_type: 推理规则
+  position: 后置
+  data_supplements: []
+- name: inferPurchasePurposeRule
+  description: 根据采购记录关联订单编号是否为空，推断该采购是补充库存还是订单驱动
+  related_behaviors:
+  - queryPurchaseRecord
+  related_functions:
+  - inferPurchasePurpose
+  display_name: 采购目的推理
+  rule_type: 推理规则
+  position: 后置
+  data_supplements: []
+- name: validateOrderNotCancelled
+  description: 当采购记录关联订单编号不在客户订单表中时，提示用户该客户订单可能已取消/删除，请确认是否取消该采购单
+  related_behaviors:
+  - queryPurchaseRecord
+  related_functions:
+  - checkOrderExists
+  display_name: 采购关联订单校验
+  rule_type: 推理规则
+  position: 后置
+  data_supplements: []
+processes:
+- name: purchaseDemandTriggerAndCreateFlow
+  display_name: 采购需求触发与采购单创建流程
+  goal: 从采购需求产生（客户订单驱动或安全库存预警）到创建采购单，确保采购需求被正确响应
+  description: 当客户订单产生采购需求或库存低于安全库存时，评估供应商供货能力，选择合适的供应源，创建采购单
+  steps:
+  - current_action: queryRawMaterialInventory
+    previous_action: ''
+    description: 查询原材料库存，获取可用库存量
+    connection_type: 串行
+  - current_action: queryRawMaterial
+    previous_action: queryRawMaterialInventory
+    description: 查询原材料基本信息，获取安全库存阈值
+    connection_type: 串行
+  - current_action: querySupplyCapacity
+    previous_action: queryRawMaterial
+    description: 查询供应商供货能力，评估可选供应源
+    connection_type: 串行
+  - current_action: createPurchaseRecord
+    previous_action: querySupplyCapacity
+    description: 创建采购单，关联原材料、供应商和客户订单
+    connection_type: 串行
+- name: purchaseArrivalAndInboundFlow
+  display_name: 采购到货与入库流程
+  goal: 确认原材料到货并完成入库，更新库存快照
+  description: 当采购单到位时间到达时，确认到货并执行入库操作，更新原材料库存信息
+  steps:
+  - current_action: queryPurchaseRecord
+    previous_action: ''
+    description: 查询采购单信息，确认到位时间和到货状态
+    connection_type: 串行
+  - current_action: confirmInbound
+    previous_action: queryPurchaseRecord
+    description: 确认原材料到货，执行入库操作
+    connection_type: 串行
+  - current_action: queryRawMaterialInventory
+    previous_action: confirmInbound
+    description: 查询更新后的库存快照，确认库存状态
+    connection_type: 串行
+- name: inventoryMonitoringAndAlertFlow
+  display_name: 库存监控与预警流程
+  goal: 实时监控库存状态，触发安全库存预警和采购超期预警
+  description: 定期或按需查询库存与采购单信息，通过规则判断是否触发预警，提示用户采取相应措施
+  steps:
+  - current_action: queryRawMaterialInventory
+    previous_action: ''
+    description: 查询原材料库存信息，获取可用库存量
+    connection_type: 串行
+  - current_action: queryPurchaseRecord
+    previous_action: queryRawMaterialInventory
+    description: 查询采购单信息，检查到位时间与关联订单状态
+    connection_type: 并行
+  - current_action: queryRawMaterial
+    previous_action: queryRawMaterialInventory
+    description: 查询原材料基本信息，获取安全库存阈值
+    connection_type: 并行

@@ -12,7 +12,6 @@ from .threads import router as threads_router
 from .chat import router as chat_router
 from .data_engines import router as data_engines_router
 from .mcp_ctl import router as mcp_ctl_router
-from .rule_templates import router as rule_templates_router
 from .common_functions import router as common_functions_router
 from .skills import router as skills_router
 from .deploy import router as deploy_router

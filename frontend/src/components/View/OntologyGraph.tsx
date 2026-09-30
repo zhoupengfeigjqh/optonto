@@ -113,8 +113,9 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       });
       nodeIds.add(`behavior:${b.name}`);
 
-      b.related_concepts.forEach(rc => {
-        const targetId = `concept:${rc}`;
+      // 行为关联概念唯一（标量）
+      if (b.concept) {
+        const targetId = `concept:${b.concept}`;
         if (nodeIds.has(targetId)) {
           edges.push({
             source: `behavior:${b.name}`,
@@ -122,7 +123,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
             lineStyle: { color: '#10b981', width: 1.5, type: 'dashed' as const },
           });
         }
-      });
+      }
     });
 
     // Rule nodes
@@ -137,17 +138,16 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       });
       nodeIds.add(`rule:${r.name}`);
 
-      if (r.related_behaviors && r.related_behaviors.length > 0) {
-        r.related_behaviors.forEach((rb: string) => {
-          const targetId = `behavior:${rb}`;
-          if (nodeIds.has(targetId)) {
-            edges.push({
-              source: `rule:${r.name}`,
-              target: targetId,
-              lineStyle: { color: '#f59e0b', width: 1.5, type: 'dotted' as const },
-            });
-          }
-        });
+      // 规则绑定行为唯一（标量）
+      if (r.behavior) {
+        const targetId = `behavior:${r.behavior}`;
+        if (nodeIds.has(targetId)) {
+          edges.push({
+            source: `rule:${r.name}`,
+            target: targetId,
+            lineStyle: { color: '#f59e0b', width: 1.5, type: 'dotted' as const },
+          });
+        }
       }
 
     });

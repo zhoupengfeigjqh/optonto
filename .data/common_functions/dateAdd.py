@@ -3,4 +3,4 @@ def run(params: dict) -> dict:
     from datetime import datetime, timedelta
     d = datetime.strptime(params["date"], "%Y-%m-%d")
     result = d + timedelta(days=params["days"])
-    return {"result": {"date": result.strftime("%Y-%m-%d")}}
+    return {"success": True, "data": {"date": result.strftime("%Y-%m-%d")}, "error": None}

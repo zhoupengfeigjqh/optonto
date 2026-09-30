@@ -28,6 +28,12 @@ from schema_compile import (
 
 server = Server("optonto-ontology-mcp")
 
+# 统一返回信封说明（追加到所有函数工具 description 尾部；response 声明描述的是 data 内容）
+_ENVELOPE_NOTE = (
+    "。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}；"
+    "类型为 VALIDATION（逻辑验证）的函数在 data 内另返回 pass（bool）/reason（str）——被规则引用时作为判断函数参与真阻断"
+)
+
 
 # ─── 公共函数工具（mtime 缓存：文件一变下次 list_tools 即生效）────────────────────
 
@@ -43,7 +49,7 @@ def _get_common_tools() -> tuple[list[Tool], set[str]]:
     tools = [
         Tool(
             name=entry["name"],
-            description=entry.get("description", ""),
+            description=entry.get("description", "") + _ENVELOPE_NOTE,
             inputSchema={
                 **entry.get("inputSchema", {"type": "object", "properties": {}}),
                 "x-category": "公共函数",
@@ -85,7 +91,7 @@ def _load_function_tools(force: bool = False) -> list[Tool]:
                 fn.get("params"), related_concepts(data, fn.get("related_concepts")))
             desc_parts = [p for p in (fn.get("display_name"), fn.get("description")) if p]
             desc = "：".join(desc_parts) if desc_parts else fn["name"]
-            desc = f"{desc}（本体「{on_name}」）"
+            desc = f"{desc}（本体「{on_name}」）" + _ENVELOPE_NOTE
             item = {**fn, "ontology_id": oid, "ontology_name": on_name,
                     "scenario_id": onto.get("scenario_id"), "scenario_name": sc_name}
             tools.append(Tool(
@@ -232,6 +238,17 @@ def _strip_scope(arguments: dict) -> dict:
 
 
 @server.call_tool()
+def _rule_behavior(rule: dict) -> str:
+    """规则绑定行为（唯一）：新格式为标量 behavior；旧数据 related_behaviors 数组读时兼容取首个。"""
+    behavior = rule.get("behavior")
+    if behavior:
+        return str(behavior)
+    legacy = rule.get("related_behaviors")
+    if isinstance(legacy, list):
+        return str(legacy[0]) if legacy else ""
+    return str(legacy or "")
+
+
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     result = None
     # 确保本体函数缓存已加载（MCP 协议先 list_tools 后 call_tool，此处兜底直连场景）
@@ -246,14 +263,14 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     elif name == "listOntoBehaviors":
         data = _ontology_or_error(arguments["ontology_id"])
         behaviors = [dict(b) for b in data.get("behaviors") or [] if isinstance(b, dict)]
-        # 附带每个行为关联的规则：规则经 related_behaviors 反向挂到行为上
+        # 附带每个行为关联的规则：规则经 绑定行为（behavior 标量；旧数据 related_behaviors 数组取首个）反向挂到行为上
         rules = data.get("rules") or []
         for b in behaviors:
             b["rules"] = [
                 {"name": r.get("name"), "display_name": r.get("display_name"),
                  "position": r.get("position"), "description": r.get("description")}
                 for r in rules
-                if isinstance(r, dict) and b.get("name") in (r.get("related_behaviors") or [])
+                if isinstance(r, dict) and _rule_behavior(r) == b.get("name")
             ]
         result = _filter_list(behaviors, arguments.get("keyword"), ["name", "display_name"])
 

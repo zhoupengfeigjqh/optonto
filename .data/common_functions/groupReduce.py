@@ -56,16 +56,16 @@ def run(params: dict) -> dict:
         top_n = params.get("top_n")
 
         if not data:
-            return {"result": [], "count": 0}
+            return {"success": True, "data": {"items": [], "count": 0}, "error": None}
 
         df = pd.DataFrame(data)
         if df.empty:
-            return {"result": [], "count": 0}
+            return {"success": True, "data": {"items": [], "count": 0}, "error": None}
 
         # 检查分组字段
         for field in group_by:
             if field not in df.columns:
-                return {"error": f"分组字段 '{field}' 不存在", "code": 400}
+                return {"success": False, "data": None, "error": {"code": "GROUP_FIELD_NOT_FOUND", "message": f"分组字段 '{field}' 不存在"}}
 
         # 构建聚合字典
         agg_dict = {}
@@ -75,7 +75,7 @@ def run(params: dict) -> dict:
             alias = agg.get("alias")
 
             if field not in df.columns:
-                return {"error": f"聚合字段 '{field}' 不存在", "code": 400}
+                return {"success": False, "data": None, "error": {"code": "FIELD_NOT_FOUND", "message": f"聚合字段 '{field}' 不存在"}}
 
             for func in functions:
                 func_name = func.lower()
@@ -100,7 +100,7 @@ def run(params: dict) -> dict:
                 elif func_name == "median":
                     agg_dict[key] = (field, "median")
                 else:
-                    return {"error": f"不支持的聚合函数: {func}", "code": 400}
+                    return {"success": False, "data": None, "error": {"code": "UNSUPPORTED_AGG", "message": f"不支持的聚合函数: {func}"}}
 
         # 执行分组聚合
         grouped = df.groupby(group_by)
@@ -170,7 +170,7 @@ def run(params: dict) -> dict:
 
         # 清理结果
         result = clean_result(result_df)
-        return {"result": result, "count": len(result)}
+        return {"success": True, "data": {"items": result, "count": len(result)}, "error": None}
 
-    except Exception as e:
-        return {"error": str(e), "code": 500}
+    except Exception:
+        raise  # 未预期异常上抛 → MCP 层置 isError（报错预算/重试通道），不吞成业务失败

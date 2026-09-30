@@ -43,7 +43,7 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 ## 3行为
 
 ### 3.1 CreatePurchaseRecord
-- **类型**: 操作行为
+- **类型**: command（命令）
 - **行为描述**: 创建一笔新的原材料采购记录。
 - **输入参数**:
 ```json
@@ -82,10 +82,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料（RawMaterial）、供应商（Supplier）、原材料采购记录（PurchaseRecord）、客户订单（CustomerOrder）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `CreatePurchaseRecord` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `CreatePurchaseRecord` 及其输入参数。
 
 ### 3.2 CancelPurchaseRecord
-- **类型**: 操作行为
+- **类型**: command（命令）
 - **行为描述**: 取消一笔已创建但尚未入库的采购记录。
 - **输入参数**:
 ```json
@@ -108,10 +108,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料采购记录（PurchaseRecord）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `CancelPurchaseRecord` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `CancelPurchaseRecord` 及其输入参数。
 
 ### 3.3 ReceiveRawMaterial
-- **类型**: 操作行为
+- **类型**: command（命令）
 - **行为描述**: 将原材料采购入库。
 - **输入参数**:
 ```json
@@ -134,10 +134,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料采购记录（PurchaseRecord）、原材料库存（RawMaterialInventory）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `ReceiveRawMaterial` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `ReceiveRawMaterial` 及其输入参数。
 
 ### 3.4 QueryInventory
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据原材料ID或名称查询其最新的库存快照。
 - **输入参数**:
 ```json
@@ -169,10 +169,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料库存（RawMaterialInventory）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QueryInventory` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QueryInventory` 及其输入参数。
 
 ### 3.5 QueryPurchaseRecords
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据采购单/原材料/关联客单来查询采购记录列表。
 - **输入参数**:
 ```json
@@ -208,10 +208,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料采购记录（PurchaseRecord）、原材料（RawMaterial）、供应商（Supplier）、客户订单（CustomerOrder）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QueryPurchaseRecords` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QueryPurchaseRecords` 及其输入参数。
 
 ### 3.6 QueryRawMaterials
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据原材料ID或名称查询原材料的基础信息。
 - **输入参数**:
 ```json
@@ -239,10 +239,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QueryRawMaterials` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QueryRawMaterials` 及其输入参数。
 
 ### 3.7 QuerySuppliers
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据供应商名或原材料名查询供应商。
 - **输入参数**:
 ```json
@@ -271,10 +271,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 供应商（Supplier）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QuerySuppliers` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySuppliers` 及其输入参数。
 
 ### 3.8 QuerySupplierCapability
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据供应商名或原材料名，查询供应商供货能力。
 - **输入参数**:
 ```json
@@ -302,10 +302,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 交货能力（DeliveryCapability）、供应商（Supplier）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QuerySupplierCapability` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySupplierCapability` 及其输入参数。
 
 ### 3.9 QuerySupplierCapabilitySQL
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据供应商名或原材料名，查询供应能力。
 - **输入参数**:
 ```json
@@ -332,4 +332,4 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 交货能力（DeliveryCapability）、供应商（Supplier）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QuerySupplierCapabilitySQL` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySupplierCapabilitySQL` 及其输入参数。

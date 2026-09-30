@@ -15,8 +15,12 @@ import { toMountableToolInfo } from './tool-catalog.js';
 // 整体替换 pi-agent-core：捕获 new Agent(config) 的 config（含 transformContext）
 vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
 
-/** MCP callTool 调用记录（验证 scopeToOntology 的 ontology_id 强制注入与剥 scope） */
-const mcpCalls = vi.hoisted(() => ({ list: [] as { name: string; args: any }[] }));
+/** MCP callTool 调用记录（验证 scopeToOntology 的 ontology_id 强制注入与剥 scope）；
+ *  responses 可按工具名注入自定义返回（闸2.5 判断用例：信封 data.pass=false） */
+const mcpCalls = vi.hoisted(() => ({
+  list: [] as { name: string; args: any }[],
+  responses: {} as Record<string, (name: string, args: any) => any>,
+}));
 
 // MCP 配置：一个启用的内置本体MCP server（供 discoverTools 发现工具）
 vi.mock('../services/mcp-config-store.js', () => ({
@@ -87,6 +91,8 @@ vi.mock('../services/mcp-client.js', () => ({
     }
     async callTool(name: string, args: any) {
       mcpCalls.list.push({ name, args });
+      const override = mcpCalls.responses[name];
+      if (override) return override(name, args);
       return { content: [{ type: 'text', text: '{"ok":true}' }], isError: false };
     }
   },
@@ -186,7 +192,7 @@ function mkPolicy(over?: { legalCalls?: LegalCalls; security?: ChildSecurityCtx;
     legalCalls: over?.legalCalls ?? { behaviors: ['CreatePurchaseRecord', 'QuerySupplier'], functions: ['calcSafetyStock', 'getCurrentDate'] },
     errorBudget: createToolErrorBudget(),
     security: over?.security ?? { disabled: new Map<string, string>(), gate: createSecurityGate() },
-    ruleGate: over?.ruleGate ?? { mainBehavior: 'CreatePurchaseRecord', pre: [], post: [], succeeded: new Set() },
+    ruleGate: over?.ruleGate ?? { mainBehavior: 'CreatePurchaseRecord', pre: [], post: [], succeeded: new Set(), verdicts: new Map() },
   };
 }
 
@@ -541,12 +547,13 @@ describe('AgentFactory 子 Agent disable 硬闸（工具层单点，terminate + 
 describe('AgentFactory 子 Agent 前置规则留痕闸（闸2：主行为调用前规则函数须已成功留痕）', () => {
   beforeEach(() => { mockedAgent.mockClear(); mcpCalls.list.length = 0; });
 
-  /** 主行为 CreatePurchaseRecord 挂前置规则 V01（要求 getCurrentDate）；无后置 */
+  /** 主行为 CreatePurchaseRecord 挂前置规则 V01（要求 getCurrentDate，纯留痕无判断函数）；无后置 */
   const mkRuleGate = (over?: Partial<RuleGate>): RuleGate => ({
     mainBehavior: 'CreatePurchaseRecord',
-    pre: [{ name: 'V01', functions: ['getCurrentDate'] }],
+    pre: [{ name: 'V01', functions: ['getCurrentDate'], judgeFunctions: [] }],
     post: [],
     succeeded: new Set(),
+    verdicts: new Map(),
     ...over,
   });
 
@@ -583,6 +590,61 @@ describe('AgentFactory 子 Agent 前置规则留痕闸（闸2：主行为调用�
     const result = await tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-r6', { rawMaterialId: 'RM-1' });
     expect(result.terminate).toBeUndefined();
     expect(mcpCalls.list).toHaveLength(1);
+  });
+});
+
+describe('AgentFactory 子 Agent 前置判断函数判断闸（闸2.5：判断函数 data.pass=false → 拒绝主行为）', () => {
+  beforeEach(() => {
+    mockedAgent.mockClear();
+    mcpCalls.list.length = 0;
+    delete mcpCalls.responses.getCurrentDate;
+  });
+
+  /** 主行为挂前置规则 V01（判断函数 getCurrentDate，口径 B：本体且 type=VALIDATION）；无后置 */
+  const mkRuleGate = (over?: Partial<RuleGate>): RuleGate => ({
+    mainBehavior: 'CreatePurchaseRecord',
+    pre: [{ name: 'V01', functions: ['getCurrentDate'], judgeFunctions: ['getCurrentDate'] }],
+    post: [],
+    succeeded: new Set(),
+    verdicts: new Map(),
+    ...over,
+  });
+
+  const envelopeResult = (data: unknown) => ({
+    content: [{ type: 'text', text: JSON.stringify({ success: true, data, error: null }) }],
+    isError: false,
+  });
+
+  it('判断函数返回 data.pass=false → 判断记入台账，主行为调用被拒且文案带 reason，重试仍拒', async () => {
+    mcpCalls.responses.getCurrentDate = () => envelopeResult({ pass: false, reason: '单位不一致：采购单为 个，原材料定义为 吨' });
+    const ruleGate = mkRuleGate();
+    const tools = await captureChildTools(undefined, undefined, ruleGate);
+    await tools.find(t => t.name === 'getCurrentDate').execute('call-v1', {});
+    expect(ruleGate.verdicts.get('getCurrentDate')).toEqual({ pass: false, reason: '单位不一致：采购单为 个，原材料定义为 吨' });
+    await expect(tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-v2', { rawMaterialId: 'RM-1' }))
+      .rejects.toThrow('前置规则 V01 判断不通过（函数 getCurrentDate）');
+    await expect(tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-v3', { rawMaterialId: 'RM-1' }))
+      .rejects.toThrow('单位不一致');
+    expect(mcpCalls.list.filter(c => c.name === 'CreatePurchaseRecord')).toHaveLength(0); // 主行为零执行
+  });
+
+  it('判断通过（data.pass=true）→ 主行为放行', async () => {
+    mcpCalls.responses.getCurrentDate = () => envelopeResult({ pass: true, reason: '原材料存在且单位一致' });
+    const ruleGate = mkRuleGate();
+    const tools = await captureChildTools(undefined, undefined, ruleGate);
+    await tools.find(t => t.name === 'getCurrentDate').execute('call-v4', {});
+    const result = await tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-v5', { rawMaterialId: 'RM-1' });
+    expect(result.terminate).toBeUndefined();
+    expect(mcpCalls.list.filter(c => c.name === 'CreatePurchaseRecord')).toHaveLength(1);
+  });
+
+  it('函数返回非信封（缺 data.pass）→ 不记判断，主行为按留痕缺失拦截（fail-closed 不静默放行）', async () => {
+    const ruleGate = mkRuleGate();
+    const tools = await captureChildTools(undefined, undefined, ruleGate);
+    await tools.find(t => t.name === 'getCurrentDate').execute('call-v6', {}); // 默认 mock 返回 {"ok":true}
+    expect(ruleGate.verdicts.size).toBe(0);
+    await expect(tools.find(t => t.name === 'CreatePurchaseRecord').execute('call-v7', { rawMaterialId: 'RM-1' }))
+      .rejects.toThrow('前置规则留痕缺失');
   });
 });
 

@@ -49,11 +49,11 @@ def run(params: dict) -> dict:
         aggregations = params.get("aggregations") or []
 
         if not data:
-            return {"error": "数据为空", "code": 400}
+            return {"success": False, "data": None, "error": {"code": "EMPTY_DATA", "message": "数据为空"}}
 
         df = pd.DataFrame(data)
         if df.empty:
-            return {"error": "数据为空", "code": 400}
+            return {"success": False, "data": None, "error": {"code": "EMPTY_DATA", "message": "数据为空"}}
 
         result = {}
 
@@ -63,7 +63,7 @@ def run(params: dict) -> dict:
             alias = agg.get("alias")
 
             if field not in df.columns:
-                return {"error": f"字段 '{field}' 不存在", "code": 400}
+                return {"success": False, "data": None, "error": {"code": "FIELD_NOT_FOUND", "message": f"字段 '{field}' 不存在"}}
 
             col = df[field]
             is_numeric = pd.api.types.is_numeric_dtype(col)
@@ -99,12 +99,12 @@ def run(params: dict) -> dict:
                             mode_val.iloc[0] if not mode_val.empty else None
                         )
                     else:
-                        return {"error": f"不支持的聚合函数: {func}", "code": 400}
+                        return {"success": False, "data": None, "error": {"code": "UNSUPPORTED_AGG", "message": f"不支持的聚合函数: {func}"}}
                 except Exception:
                     result[key] = None
 
         result = convert_to_json_serializable(result)
-        return {"result": result}
+        return {"success": True, "data": result, "error": None}
 
-    except Exception as e:
-        return {"error": str(e), "code": 500}
+    except Exception:
+        raise  # 未预期异常上抛 → MCP 层置 isError（报错预算/重试通道），不吞成业务失败

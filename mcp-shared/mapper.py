@@ -3,7 +3,37 @@
 映射本质是字典：运行期只换名不校验 schema，字段清单仅为设计期参照。
 _translate_input：本体路径 → 目标路径（原地换名不改结构，递归，含 [*] 数组路径）。
 _translate_output：目标路径 → 本体名，白名单语义（未映射字段丢弃不透传）。
+
+容器路径自动补齐（2026-09-30）：映射只声明叶子/元素行时（如
+`data[*].lines[*].prod → result[*].items[*].prod_name`），其祖先容器（`data[*].lines → result[*].items`）
+由 _complete_mapping 补齐——否则容器名会停留在目标侧名字（`items`），本体契约（`lines`）被静默破坏。
+显式声明的祖先优先；补齐只新增「已被声明路径的祖先」，故不扩大白名单覆盖（暴露面不变）。
 """
+
+
+def _strip_leaf(path: str) -> str | None:
+    """路径上推一层容器：`a[*] -> a`、`a.b -> a`、`a[*].b -> a[*]`；顶层（无容器）返回 None。"""
+    if path.endswith("[*]"):
+        return path[:-3]
+    if "." in path:
+        return path.rsplit(".", 1)[0]
+    return None
+
+
+def _complete_mapping(mapping: dict) -> dict:
+    """补齐祖先容器映射：`data[*].lines[*].prod → result[*].items[*].prod_name` 隐含
+    `data[*].lines → result[*].items`（递归至根）。显式声明优先（setdefault 不覆盖），
+    空串映射值（本体属性在目标无来源）不产生路径、不参与补齐。
+    """
+    completed = dict(mapping or {})
+    for key, value in (mapping or {}).items():
+        if not value:
+            continue
+        container, target_container = _strip_leaf(key), _strip_leaf(value)
+        while container and target_container:
+            completed.setdefault(container, target_container)
+            container, target_container = _strip_leaf(container), _strip_leaf(target_container)
+    return completed
 
 
 def _translate_input(params: dict, input_mapping: dict, _onto_path: str = "") -> dict:
@@ -15,6 +45,8 @@ def _translate_input(params: dict, input_mapping: dict, _onto_path: str = "") ->
     """
     if not input_mapping or not params:
         return params
+    if not _onto_path:  # 根调用：补齐祖先容器映射一次（递归层复用，避免重复补齐）
+        input_mapping = _complete_mapping(input_mapping)
     result = {}
     for k, v in params.items():
         onto_path = f"{_onto_path}.{k}" if _onto_path else k
@@ -48,7 +80,7 @@ def _translate_output(data, output_mapping: dict, _orig_path: str = "", _ctx: tu
     if not output_mapping or not data:
         return data
     if _ctx is None:
-        reverse_map = {v: k for k, v in output_mapping.items() if v}
+        reverse_map = {v: k for k, v in _complete_mapping(output_mapping).items() if v}
         _ctx = (reverse_map, set(reverse_map.keys()))
     reverse_map, target_paths = _ctx
 

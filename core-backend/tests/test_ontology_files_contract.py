@@ -99,6 +99,66 @@ class TestOverlay(ContractCase):
         self.assertEqual(len(data.data_engines), 1)
 
 
+class TestFieldMigration(ContractCase):
+    """契约 §6 字段契约与旧格式迁移（spec 003）
+
+    镜像 agent-backend/src/services/ontology-gateway.test.ts 的 M1-M5。
+    """
+
+    def write_sections(self, concepts: list | None = None, behaviors: list | None = None,
+                       rules: list | None = None) -> None:
+        doc: dict = {}
+        if concepts is not None:
+            doc["concepts"] = concepts
+        if behaviors is not None:
+            doc["behaviors"] = behaviors
+        if rules is not None:
+            doc["rules"] = rules
+        (self.onto_dir / "ontology.yaml").write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+
+    def test_M1_行为旧数组迁移为标量(self) -> None:
+        self.write_sections(
+            concepts=[{"name": "C1", "attributes": [{"name": "a", "type": "string"}]}],
+            behaviors=[{"name": "B1", "related_concepts": ["C1"]}],
+        )
+        self.assertEqual(self.load().behaviors[0].concept, "C1")
+
+    def test_M2_新标量优先旧数组忽略(self) -> None:
+        self.write_sections(behaviors=[{"name": "B1", "concept": "New", "related_concepts": ["Old"]}])
+        self.assertEqual(self.load().behaviors[0].concept, "New")
+
+    def test_M3_规则旧数组迁移为标量(self) -> None:
+        self.write_sections(
+            behaviors=[{"name": "B1", "op_type": "command", "concept": "C1"}],
+            rules=[{"name": "R1", "position": "前置", "related_behaviors": ["B1"], "related_functions": ["f1"]}],
+        )
+        r = self.load().rules[0]
+        self.assertEqual(r.behavior, "B1")
+        self.assertEqual(r.related_functions, ["f1"])
+
+    def test_M4_规则新标量(self) -> None:
+        self.write_sections(
+            behaviors=[{"name": "B1"}, {"name": "B2"}],
+            rules=[{"name": "R1", "position": "后置", "behavior": "B1"},
+                   {"name": "R2", "position": "后置", "behavior": "B2"}],
+        )
+        rules = self.load().rules
+        self.assertEqual([r.behavior for r in rules], ["B1", "B2"])
+
+    def test_M5_无新字段历史快照可加载(self) -> None:
+        self.write_sections(
+            concepts=[{"name": "C1", "attributes": [{"name": "a", "type": "string"}]}],
+            behaviors=[{"name": "B1", "related_concepts": ["C1"]}],
+            rules=[{"name": "R1", "related_behaviors": ["B1"]}],
+        )
+        data = self.load()
+        self.assertEqual(data.concepts[0].terms, [])
+        self.assertEqual(data.relations, [])
+        self.assertEqual(data.functions, [])
+        self.assertEqual(data.behaviors[0].from_status, "")
+        self.assertEqual(data.behaviors[0].to_status, "")
+
+
 class TestOpType(ContractCase):
     """契约 §3 操作类型推导（_resolve_op_type）——2026-09-07 起引擎不参与推导，空即 query"""
 

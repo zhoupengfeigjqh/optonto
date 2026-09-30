@@ -7,6 +7,7 @@ import { getFunctions, createFunction, updateFunction, deleteFunction, getConcep
 import ResizableTable from '@/components/ResizableTable';
 import PythonEditor from '@/components/PythonEditor';
 import JsonEditor from '@/components/JsonEditor';
+import { FUNCTION_TYPE_OPTIONS, functionTypeLabel } from './function-type-labels';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -52,12 +53,12 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', related_concepts: [], params: '{}', response: '{}', code_file: '' });
+    setEditData({ name: '', display_name: '', description: '', related_concepts: [], params: '{}', response: '{}', code_file: '', type: '' });
     setEditingKey('__new__');
   };
 
   const handleEdit = (g: Function) => {
-    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_concepts: g.related_concepts || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '' });
+    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_concepts: g.related_concepts || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '', type: g.type || '' });
     setEditingKey(g.name);
   };
 
@@ -142,8 +143,9 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         }
       }
       const result = await executeFunction(ontologyId, editData.name, parsed);
-      setTestResult(result.result);
-    } catch (e: any) { setTestResult({ error: e.message }); }
+      // 统一信封（2026-09-30）：{success, data, error}；业务失败在 error，成功数据在 data
+      setTestResult(result);
+    } catch (e: any) { setTestResult({ success: false, error: { message: e.message } }); }
     finally { setTestLoading(false); }
   };
 
@@ -166,6 +168,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         params: parsedParams,
         response: parsedResponse,
         code_file: editData.code_file || '',
+        type: editData.type || '',
       };
       const isNew = editingKey === '__new__';
       if (isNew) {
@@ -199,6 +202,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={setF('display_name')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_concepts') return <Select size="small" mode="multiple" placeholder="选" value={editData.related_concepts || []} onChange={setF('related_concepts')} options={conceptOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'type') return <Select size="small" allowClear placeholder="选" value={editData.type || undefined} onChange={v => setEditData((p: any) => ({...p, type: v || ''}))} options={FUNCTION_TYPE_OPTIONS} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
     if (dataIndex === 'code') return <Button size="small" icon={<CodeOutlined />} onClick={openCodeEditor}>编辑</Button>;
@@ -206,12 +210,13 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   };
 
   const dataSource = funcs.map(g => ({ ...g, _key: g.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_concepts: [] } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_concepts: [], type: '' } as any);
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Function) => renderCell(v, r, 'name') },
     { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '计算逻辑', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'description') },
+    { title: '函数类型', dataIndex: 'type', key: 'type', width: 110, render: (v: any, r: Function) => renderCell(v, r, 'type', (v2: string) => ((r as any)._source === 'common' ? '-' : functionTypeLabel(v2))) },
     { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
@@ -353,10 +358,14 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
             <div>
               <span className="text-text-muted text-xs mb-1 block">执行结果</span>
               <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap">
-                {testResult.error ? (
-                  <span className="text-red-400">{testResult.error}</span>
+                {testResult.success === false || testResult.error ? (
+                  <span className="text-red-400">
+                    {typeof testResult.error === 'string'
+                      ? testResult.error
+                      : (testResult.error?.message || JSON.stringify(testResult.error ?? '执行失败'))}
+                  </span>
                 ) : (
-                  <span className="text-accent-green">{JSON.stringify(testResult, null, 2)}</span>
+                  <span className="text-accent-green">{JSON.stringify(testResult.data ?? testResult, null, 2)}</span>
                 )}
               </pre>
             </div>

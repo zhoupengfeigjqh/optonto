@@ -6,6 +6,7 @@ target 校验、输入映射翻译（换名，未映射字段透传）、输出�
 target.headers 鉴权头透传、已删除类型（SQL/HTTP）显式标注的报错兜底。
 """
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -99,6 +100,42 @@ def test_target_headers_forwarded(monkeypatch):
 
     asyncio.run(executor._call_engine_mcp(_de(), {}))
     assert captured["headers"] is None
+
+
+def test_映射值重复时告警(monkeypatch, caplog):
+    """同一映射值被两个源字段指向 → 翻译时后者覆盖前者，warn-only 留痕（设计期难自查）。"""
+    async def fake_call(server_url, tool_name, arguments, headers=None):
+        return {"status_code": 200, "data": {}}
+
+    monkeypatch.setattr(executor, "_mcp_call_tool", fake_call)
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(executor._call_engine_mcp(_de(input_mapping={"a": "z", "b": "z"}), {"a": 1, "b": 2}))
+    assert "同指" in caplog.text
+
+
+def test_输出映射全未命中时告警(monkeypatch, caplog):
+    """响应根结构与 target.response 声明不一致（裸数组 vs result[*].x）→ 白名单滤空并告警。"""
+    async def fake_call(server_url, tool_name, arguments, headers=None):
+        return {"status_code": 200, "data": [{"rawMaterialId": "RM-1"}]}
+
+    monkeypatch.setattr(executor, "_mcp_call_tool", fake_call)
+    de = _de(output_mapping={"data": "result", "data[*].rawMaterialId": "result[*].rawMaterialId"})
+    with caplog.at_level(logging.WARNING):
+        result = asyncio.run(executor._call_engine_mcp(de, {}))
+    assert result["data"] == [{}]
+    assert "输出映射未命中任何字段" in caplog.text
+
+
+def test_正常白名单过滤不误报零命中(monkeypatch, caplog):
+    """有字段被丢弃但仍有映射命中（或未配映射）时，不得触发零命中告警。"""
+    async def fake_call(server_url, tool_name, arguments, headers=None):
+        return {"status_code": 200, "data": {"rawMaterialId": "RM-1", "extra": "丢"}}
+
+    monkeypatch.setattr(executor, "_mcp_call_tool", fake_call)
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(executor._call_engine_mcp(_de(), {}))          # 部分命中
+        asyncio.run(executor._call_engine_mcp(_de(output_mapping={}), {}))  # 无映射：原样返回
+    assert "输出映射未命中任何字段" not in caplog.text
 
 
 def test_deleted_engine_type_raises(monkeypatch):

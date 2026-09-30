@@ -1,0 +1,64 @@
+securities:
+- action_name: createPurchaseRecord
+  display_name: 创建原材料采购单
+  op_type: command
+  scope:
+  - everyone
+  confirm: true
+  confirm_content: ''
+- action_name: cancelPurchaseRecord
+  display_name: 取消原材料采购单
+  op_type: command
+  scope:
+  - everyone
+  confirm: true
+  confirm_content: ''
+- action_name: confirmInbound
+  display_name: 入库原材料
+  op_type: command
+  scope:
+  - everyone
+  confirm: true
+  confirm_content: ''
+- action_name: queryPurchaseRecord
+  display_name: 查询原材料采购单信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: queryRawMaterial
+  display_name: 查询原材料基本信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: queryRawMaterialInventory
+  display_name: 查询原材料库存信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: querySupplier
+  display_name: 查询供应商信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: queryCustomerOrder
+  display_name: 查询客户订单信息
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''
+- action_name: querySupplyCapacity
+  display_name: 查询供货能力
+  op_type: query
+  scope:
+  - everyone
+  confirm: false
+  confirm_content: ''

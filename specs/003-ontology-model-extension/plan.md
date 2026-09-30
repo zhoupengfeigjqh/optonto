@@ -15,7 +15,7 @@
 - **后端分层（002 收口）**：`routers/`（接口）→ `services/`（业务，0 fastapi 依赖）→ `repositories/`（数据访问，唯一文件 I/O 出口）；领域异常 `errors.py`
 - **统一错误契约**：`main.py` 注册 4 个处理器 —— `HTTPException` / `DomainError` → 各自 code，`RequestValidationError` → **422**，兜底 `Exception` → 500；错误体恒为 `{code,message,detail}`
 - **前端**：Next.js + antd；表格组件在 `frontend/src/components/Design/`；规则编辑器已拆为 `RuleTable.tsx` + `rule/RuleEditors.tsx` + `rule/rule-operands.ts`
-- **agent 面**：`agent-backend/src/services/ontology-gateway.ts` 从 YAML 投影运行期元信息（只透传固定字段）；`subtask-runner.ts` 把 `rule_detail` 序列化喂 LLM
+- **agent 面**：`agent-backend/src/services/ontology-gateway.ts` 从 YAML 投影运行期元信息（只透传固定字段）；`subtask-runner.ts` 把旧条件树序列化喂 LLM
 - **MCP 面**：`data-engine-mcp/facade.py`、`ontology-mcp/server.py`、`mcp-shared/schema_compile.py`（`related_concepts(data, names: list[str])` 签名不变，函数侧继续传数组）
 - **测试**：后端 `pytest`（`core-backend/tests`、`data-engine-mcp/tests`、`business-mcp/tests`）；前端 `vitest` + 覆盖率门槛 80%
 
@@ -47,7 +47,7 @@
 2. 新增 `core-backend/services/validators.py`：
    - `validate_status_attribute(attributes)`：至多一个 `name == 'status'`；若存在则 `type == 'string'` 且 `constraint.enum` 非空；
    - `validate_behavior_status(behavior, concepts)`：`concept` 必须命中某概念；`from/to` 非空时必须落在该概念 `status` 属性的 `constraint.enum` 内；
-   - `validate_self_requires_behavior(rule, behaviors)`：`rule_detail`（含嵌套树）中出现 `type: self` 操作数时，规则的 `behavior` 必须非空且命中该本体行为。
+   - `validate_self_requires_behavior(rule, behaviors)`：旧条件树（含嵌套树）中出现 `type: self` 操作数时，规则的 `behavior` 必须非空且命中该本体行为。
    三者失败一律抛 `errors.InvalidInputError`（→ 400 统一错误体）。
 3. 路由接入：`routers/concepts.py`（PUT `/…/attributes`）、`routers/behaviors.py`（POST/PUT）、`routers/rules.py`（POST/PUT）。
 4. 消费点适配（两处数组 → 标量）：
@@ -79,7 +79,7 @@
 2. `rule-operands.ts`：`storageToEditing` 递归 + 旧扁平 → 树迁移。
 3. `RuleEditors.tsx`：递归组合节点编辑器（切逻辑、增删子节点、嵌套缩进；`not` 限 1 子节点）。
 4. `RuleTable.tsx`：`buildStorageConditions`、`collectRuleRefs`、`data_supplements` 推导、候选收窄四处适配树。
-5. 运行期：`subtask-runner.ts` 的 `rule_detail` 序列化改缩进输出（层级可读）。
+5. 运行期：`subtask-runner.ts` 的旧条件树序列化改缩进输出（层级可读）。
 6. 提示词：`RULE_GENERATE_PROMPT` 示例改树形 + 与/或/非说明。
 7. 测试：`rule-operands.test.ts` 重写（树遍历 / 旧格式迁移 / `not` 单子节点 / 三层嵌套）。
 

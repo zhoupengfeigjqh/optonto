@@ -6,6 +6,7 @@ from dependencies import get_ontology_names
 from schemas import ConceptItem, AttributeItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
+from services.validators import validate_status_attribute
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/concepts", tags=["概念"])
 
@@ -28,6 +29,8 @@ async def update_attributes(ontology_id: int, concept_name: str, attributes: lis
         raise HTTPException(status_code=404, detail="概念不存在")
 
     concept.attributes = [AttributeItem(**a) for a in attributes]
+    # 强耦合校验：status（生命周期状态）属性至多一个、必须 string 且枚举非空（spec 003 FR-004）
+    validate_status_attribute(concept.attributes)
     save_ontology_data(sc_name, on_name, data)
     return concept.attributes
 
@@ -72,13 +75,15 @@ async def delete_concept(ontology_id: int, concept_name: str):
         r for r in data.relations
         if r.source != concept_name and r.target != concept_name
     ]
-    # Remove from related_concepts in behaviors and rules
+    # 级联清理引用该概念的行为（行为关联概念唯一，故置空即可）。
+    # 顺带修掉既有缺陷：原实现对 RuleItem 访问不存在的 related_concepts 会抛 AttributeError → 500，
+    # 且规则已改为绑定行为（behavior），不再直接引用概念，故规则侧无需清理。
     for b in data.behaviors:
-        if concept_name in b.related_concepts:
-            b.related_concepts.remove(concept_name)
-    for r in data.rules:
-        if concept_name in r.related_concepts:
-            r.related_concepts.remove(concept_name)
+        if b.concept == concept_name:
+            b.concept = ""
+            # 关联概念消失 → 状态跃迁失去取值来源，一并清空
+            b.from_status = ""
+            b.to_status = ""
 
     save_ontology_data(sc_name, on_name, data)
     return {"message": "概念已删除"}

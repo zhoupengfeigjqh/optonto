@@ -47,12 +47,12 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
 
   const handleAdd = () => {
     const newKey = '__new__';
-    setEditData({ name: '', display_name: '', description: '', instance_label: '' });
+    setEditData({ name: '', display_name: '', description: '', instance_label: '', terms: [] });
     setEditingKey(newKey);
   };
 
   const handleEdit = (record: Concept) => {
-    setEditData({ name: record.name, display_name: record.display_name || '', description: record.description, instance_label: record.instance_label || '' });
+    setEditData({ name: record.name, display_name: record.display_name || '', description: record.description, instance_label: record.instance_label || '', terms: record.terms || [] });
     setEditingKey(record.name);
   };
 
@@ -64,7 +64,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const handleSave = async (record: Concept) => {
     if (!editData.name?.trim()) { message.warning('请输入概念名称'); return; }
     try {
-      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', instance_label: editData.instance_label || '', attributes: editingKey === '__new__' ? [] : (record.attributes || []) };
+      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '', instance_label: editData.instance_label || '', terms: editData.terms || [], attributes: editingKey === '__new__' ? [] : (record.attributes || []) };
       const isNew = editingKey === '__new__';
       if (isNew) {
         // Check duplicate
@@ -129,6 +129,13 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     const names = attributes.map(a => a.name.trim());
     if (names.some(n => !n)) { message.warning('属性名不能为空'); return; }
     if (new Set(names).size !== names.length) { message.warning('属性名重复'); return; }
+    // 生命周期状态属性（spec 003）：至多一个，且必须 string 类型 + 枚举非空（后端同样校验，此处提前拦截给出可读提示）
+    const statusAttrs = attributes.filter(a => a.name.trim() === 'status');
+    if (statusAttrs.length > 1) { message.warning('只能有一个 status（生命周期状态）属性'); return; }
+    if (statusAttrs.length === 1) {
+      if (statusAttrs[0].type !== 'string') { message.warning('status（生命周期状态）属性的类型必须是 string'); return; }
+      if (!(statusAttrs[0].constraint?.enum || []).length) { message.warning('status（生命周期状态）属性必须填写枚举值（生命周期状态集合）'); return; }
+    }
     for (const a of attributes) {
       if (patternInvalid(a.constraint?.pattern)) { message.error(`属性「${a.name}」的匹配模式不是合法正则`); return; }
       if (canEnum(a.type) && a.type !== 'string' && (a.constraint?.enum || []).some(v => isNaN(Number(v)))) {
@@ -183,13 +190,19 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           options={attrOptions} className="bg-dark-bg border-dark-border text-text-primary" />
       );
     }
+    if (dataIndex === 'terms') {
+      // 术语集：回车新增（tags 模式），后端保存时统一去重去空
+      return <Select size="small" mode="tags" value={editData.terms || []} onChange={vals => setEditData(p => ({...p, terms: vals}))}
+        style={{ width: '100%' }} open={false} suffixIcon={null} placeholder="回车新增术语"
+        className="bg-dark-bg border-dark-border text-text-primary" />;
+    }
     return render ? render(val) : (val || '-');
   };
 
   // 显示数据：加上新增空行
   const dataSource = concepts.map(c => ({ ...c, _key: c.name }));
   if (editingKey === '__new__') {
-    dataSource.push({ name: '__new__', description: '', display_name: '', instance_label: '', attributes: [] } as any);
+    dataSource.push({ name: '__new__', description: '', display_name: '', instance_label: '', terms: [], attributes: [] } as any);
   }
 
   const columns = [
@@ -205,6 +218,15 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           return renderCell(v, r, 'instance_label');
         }
         return v ? <Tag color="purple">{v}</Tag> : <span className="text-text-muted">-</span>;
+      } },
+    { title: '术语集', dataIndex: 'terms', key: 'terms', width: 180, render: (v: any, r: Concept) => {
+        if (isEditing(r) || (editingKey === '__new__' && r.name === '__new__')) {
+          return renderCell(v, r, 'terms');
+        }
+        const list: string[] = v || [];
+        return list.length
+          ? <Space size={4} wrap>{list.map(t => <Tag key={t} color="geekblue" style={{ marginInlineEnd: 0 }}>{t}</Tag>)}</Space>
+          : <span className="text-text-muted">-</span>;
       } },
     { title: '属性数', key: 'attr_count', width: 70,
       render: (_: any, r: Concept) => <Tag color="blue">{r.attributes?.length || 0}</Tag> },
@@ -248,6 +270,11 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
           </div>
         }
       >
+        <p className="text-text-muted text-xs mb-2">
+          每个概念应有一个 <span className="text-text-primary">name 为 status</span> 的生命周期状态属性：
+          类型固定 <span className="text-text-primary">string</span>，且必须填写枚举值（该对象的生命周期状态集合）。
+          写入行为的状态跃迁（源状态/目标状态）只能取该枚举内的值。
+        </p>
         <Table
           dataSource={attributes.map((a, i) => ({ ...a, _idx: i }))}
           rowKey="_idx"

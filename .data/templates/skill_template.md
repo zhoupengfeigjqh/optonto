@@ -14,12 +14,12 @@ description: 技能描述
 ## 1 概念详情
 【重点：特别注意，概念-属性-关系代表着该领域的最基本业务逻辑，智能体的任务生成和执行都必须从该网络出发展开】
 
-（以表格列出全部概念：概念名（英文）、展示名称（中文）、概念描述。所有内容原封不动来自本体数据，不要自行编造或增删）
+（以表格列出全部概念：概念名（英文）、展示名称（中文）、概念描述、术语集。术语集为该概念的其他说法（同义词/别名/简称等），多个用「；」分隔，无则填 -；所有内容原封不动来自本体数据，不要自行编造或增删）
 
-| 概念名 | 展示名称 | 概念描述 |
-|---|---|---|
-| RawMaterial | 原材料 | 表示企业生产所需的各类原材料 |
-| Supplier | 供应商 | 为企业提供原材料的供应商主体 |
+| 概念名 | 展示名称 | 概念描述 | 术语集 |
+|---|---|---|---|
+| RawMaterial | 原材料 | 表示企业生产所需的各类原材料 | 物料；原料 |
+| Supplier | 供应商 | 为企业提供原材料的供应商主体 | 供货商 |
 
 ## 2 概念间的关系
 
@@ -61,13 +61,13 @@ description: 技能描述
 
 例子如下：
 ### 5.1 QuerySuppliers
-- **类型**: 查询行为
+- **类型**: query（查询）
 - **行为描述**: 根据供应商名或原材料名查询供应商。
 - **输入参数**:
 ```json
 {
-  "supplierName": {"type": "string", "required": false, "example": "宝钢钢铁集团", "display_name": "供应商名称，模糊匹配"},
-  "rawMaterialName": {"type": "string", "required": false, "example": "钢板008", "display_name": "原材料名称"}
+  "supplierName": {"type": "string", "required": false, "example": "宝钢钢铁集团", "description": "供应商名称，模糊匹配"},
+  "rawMaterialName": {"type": "string", "required": false, "example": "钢板008", "description": "原材料名称"}
 }
 ```
 - **输出结构**:
@@ -90,4 +90,4 @@ description: 技能描述
 }
 ```
 - **相关概念**: 供应商（Supplier）、原材料（RawMaterial）
-- **接口MCP工具**: 调用 `executeOntoBehavior` 执行行为，参数为 `QuerySuppliers` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `QuerySuppliers`，参数即上述输入参数。

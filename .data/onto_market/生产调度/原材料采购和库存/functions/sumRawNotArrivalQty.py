@@ -8,7 +8,7 @@ def run(params: dict) -> dict:
         purchaseRecordSet: list，采购记录列表，每条记录包含rawMaterialName, arrivalTime, arrivalQuantity
 
     Returns:
-        dict: 返回包含原材料名称和未到货总数量的字典
+        dict: {success: True, data: {rawMaterialName: str, sumNotArrivalQty: int}}
     """
     import datetime
     filter_raw_material_name = params.get("filterRawMaterialName")
@@ -21,4 +21,4 @@ def run(params: dict) -> dict:
             arrival_time = datetime.datetime.strptime(record["arrivalTime"], "%Y-%m-%d")
             if arrival_time >= current_date:
                 total_not_arrival += record["arrivalQuantity"]
-    return {"result": {"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}}
+    return {"success": True, "data": {"rawMaterialName": filter_raw_material_name, "sumNotArrivalQty": total_not_arrival}, "error": None}

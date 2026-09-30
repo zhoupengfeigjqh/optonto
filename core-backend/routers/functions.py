@@ -232,7 +232,7 @@ async def execute_function(ontology_id: int, function_name: str, body: dict):
     """Execute a function's Python code — 降级转发 ontology-mcp（沙箱已随迁，core 执行归零）。
 
     统一入口约定（与公共函数一致）：def run(params: dict) -> dict，整包传参；
-    run() 自带 {"result": ...} 包装，透传返回（不再包一层）。
+    返回值已由沙箱出口归一为统一信封 {"success", "data", "error"}（读时兼容旧式 {"result": ...}），透传返回。
     """
     from services.runtime_forward import ONTOLOGY_MCP_URL, forward_call
     return await forward_call(

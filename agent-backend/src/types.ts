@@ -116,9 +116,14 @@ export interface RuleDetail {
   name: string;
   description: string;
   position: '前置' | '后置';
-  related_behaviors: string[];
-  rule_detail?: any;
+  /** 绑定行为（唯一）：spec 003 起由 related_behaviors 数组收缩为标量 */
+  behavior: string;
+  /** 关联函数（本体函数∪公共函数）：执行过即留痕；其中 judge_functions 为判断函数 */
   related_functions?: string[];
+  /** 判断函数（2026-09-30 口径 B：类型即角色）：本体且 type=VALIDATION 的关联函数子集——
+   *  gateway 解析产物，运行期闸在主行为工具调用前核查其统一信封 data.pass/reason
+   *  （pass=false 或缺失 pass → fail-closed 拒绝主行为）。 */
+  judge_functions?: string[];
   data_supplements?: string[];
 }
 
@@ -157,6 +162,8 @@ export interface FunctionMeta {
   display_name: string;
   description?: string;
   params: Record<string, any>;
+  /** 函数类型英文码（本体函数 functions[].type：VALIDATION 即判断函数；公共函数恒为空串） */
+  type?: string;
 }
 
 /** 子任务执行结果 */

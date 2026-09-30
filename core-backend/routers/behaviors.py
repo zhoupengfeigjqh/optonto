@@ -6,6 +6,7 @@ from dependencies import get_ontology_names
 from schemas import BehaviorItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
+from services.validators import validate_behavior_status
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/behaviors", tags=["行为"])
 
@@ -23,6 +24,8 @@ async def create_behavior(ontology_id: int, item: BehaviorItem):
     data = load_ontology_data(sc_name, on_name)
 
     ensure_unique(data.behaviors, item.name, "行为")
+    # 强耦合校验：关联概念必须存在；声明 from/to 时必须落在该概念 status 枚举内（spec 003 FR-007）
+    validate_behavior_status(item, data)
 
     data.behaviors.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -37,6 +40,7 @@ async def update_behavior(ontology_id: int, behavior_name: str, item: BehaviorIt
 
     idx = find_index(data.behaviors, behavior_name, "行为")
     ensure_unique(data.behaviors, item.name, "行为", exclude_name=behavior_name)
+    validate_behavior_status(item, data)
 
     data.behaviors[idx] = item
     # 行为改名联动：数据引擎按 behavior_name 挂接，同步换名防悬空

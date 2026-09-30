@@ -25,6 +25,7 @@
 import { createToolErrorBudget } from './error-budget.js';
 import type { ToolErrorBudget } from './error-budget.js';
 import type { ChildSecurityCtx, SecurityGate } from './security-policy.js';
+import { toolResultToText } from '../utils/text-utils.js';
 import type { SubTask, BehaviorMeta, RuleDetail } from '../types.js';
 
 /**
@@ -53,12 +54,24 @@ export interface SubtaskPolicy {
 }
 
 /**
+ * 规则判断结论（2026-09-30 规则函数化）：判断函数按统一信封返回 data.pass/reason。
+ * pass=false 是「成功执行的失败判定」——与系统级异常（isError）严格二分。
+ */
+export interface RuleVerdict {
+  pass: boolean;
+  reason: string;
+}
+
+/**
  * 规则函数留痕闸（per-子任务）——"规则必挂函数"审计闭环的运行期核查机制。
- * 语义（2026-09-05 拍板）：只保证"规则关联函数成功跑过"（留痕），规则裁决仍由子 Agent 自行判断；
- * 无关联函数的规则在派生期剔除，不检查。
- * - 前置：主行为工具调用前检查 pre 全部函数已在台账中，缺失则报错（子 Agent 补跑后重试，不中止子任务）；
- * - 后置：子任务收尾时检查 post 全部函数已在台账中，缺失则 nudge 子 Agent 补跑（有界）；
- * - "成功"粒度：函数名在本子任务内出现一次成功调用（execute 正常 resolve）即计入台账，不核对参数。
+ * 语义（2026-09-05 拍板，2026-09-30 口径 B：类型即角色）：规则约束逻辑由 related_functions 承载——
+ * - 前置：主行为工具调用前核查 pre 全部判断函数已成功执行且判断通过（data.pass=true）；
+ *   未执行 → 报错引导补跑（可恢复）；已执行但 pass=false → 判断拒绝（结论已定，重试无意义）；
+ *   函数返回缺 pass 字段 → 视为未执行（fail-closed，不静默放行）。
+ * - 后置：子任务收尾时核查 post 全部判断函数已在台账中，缺失则 nudge 子 Agent 补跑（有界）。
+ * - 无关联函数的规则在派生期剔除，不检查。
+ * - "成功"粒度：函数名在本子任务内出现一次成功调用（execute 正常 resolve）即计入台账，不核对参数；
+ *   判断函数额外解析 data.pass/reason 存入 verdicts 台账。
  */
 export interface RuleGate {
   /** 主行为裸名（前置闸只闸主行为；data_supplements 补充接口不闸——闸了则鸡生蛋，取数无路） */
@@ -69,14 +82,20 @@ export interface RuleGate {
   post: RuleGateInfo[];
   /** 本子任务内已成功调用的工具名台账（工具层写入：execute 正常 resolve 即记，抛错不记） */
   succeeded: Set<string>;
+  /** 判断结论台账（工具层写入：规则关联函数成功执行后解析信封 data.pass/reason；缺 pass 不记 → fail-closed） */
+  verdicts: Map<string, RuleVerdict>;
 }
 
-/** 单条规则的函数留痕要求（关联函数为空的规则不进入此结构——无函数即无留痕义务） */
+/** 单条规则的函数留痕要求（无函数的规则不进入此结构——无函数即无留痕义务） */
 export interface RuleGateInfo {
   /** 规则名（报错/nudge 文案用） */
   name: string;
-  /** 该规则要求成功执行的关联函数名（去重、非空） */
+  /** 该规则要求成功执行的关联函数名（本体∪公共，去重、非空） */
   functions: string[];
+  /** 判断函数子集（本体且 type=VALIDATION）：succeeded 之外还须有 verdicts 台账，
+   *  否则视为未满足（返回非信封/缺 data.pass → fail-closed 拒绝主行为）；
+   *  其余关联函数（CALCULATION 等本体函数 / 公共函数）succeeded 即满足 */
+  judgeFunctions: string[];
 }
 
 /** 子 Agent 合法调用名集合（行为工具挂载集合 + 函数工具挂载集合） */
@@ -144,20 +163,61 @@ export function buildSubtaskPolicy(
       pre: toRuleGateInfo(meta.preRules),
       post: toRuleGateInfo(meta.postRules),
       succeeded: new Set(),
+      verdicts: new Map(),
     },
   };
 }
 
-/** 规则数组 → 留痕要求：仅保留声明了关联函数的规则（无函数 = 无留痕义务，跳过不检查），函数名去重剔空 */
+/**
+ * 规则数组 → 留痕/判断要求（口径 B：类型即角色）：
+ * functions = related_functions（全部关联函数，执行过即留痕）；
+ * judgeFunctions = judge_functions（本体且 type=VALIDATION 的判断函数子集，须有判断结论）。
+ * 无关联函数的规则才不进入闸检查。
+ */
 function toRuleGateInfo(rules: RuleDetail[]): RuleGateInfo[] {
   return rules
-    .filter(r => r.related_functions?.length)
-    .map(r => ({ name: r.name, functions: [...new Set(r.related_functions!.filter(Boolean))] }));
+    .map(r => ({
+      name: r.name,
+      functions: [...new Set((r.related_functions || []).filter(Boolean))],
+      judgeFunctions: [...new Set((r.judge_functions || []).filter(Boolean))],
+    }))
+    .filter(r => r.functions.length > 0);
 }
 
-/** 计算留痕缺口：哪些规则的哪些关联函数尚未成功调用（前置闸报错 / 后置闸 nudge / 收尾警告 三处同一判定） */
-export function missingRuleFunctions(rules: RuleGateInfo[], succeeded: ReadonlySet<string>): { rule: string; functions: string[] }[] {
+/**
+ * 从工具执行结果（MCP content）解析规则判断结论：统一信封 data.pass/reason。
+ * 解析失败 / 非 JSON / data 缺 pass 字段 → 返回 null（闸按「未执行」处理，fail-closed 不静默放行）。
+ */
+export function parseRuleVerdict(result: unknown): RuleVerdict | null {
+  try {
+    const text = toolResultToText((result as { content?: any[] })?.content);
+    const parsed = JSON.parse(text) as { data?: { pass?: unknown; reason?: unknown } };
+    const data = parsed?.data;
+    if (data && typeof data === 'object' && typeof (data as Record<string, unknown>).pass === 'boolean') {
+      const d = data as { pass: boolean; reason?: unknown };
+      return { pass: d.pass, reason: typeof d.reason === 'string' ? d.reason : '' };
+    }
+  } catch {
+    // 非 JSON / 无信封 → 无判断结论
+  }
+  return null;
+}
+
+/**
+ * 计算留痕缺口：哪些规则的哪些函数尚未满足（前置闸报错 / 后置闸 nudge / 收尾警告 三处同一判定）。
+ * 普通关联函数：已成功执行（succeeded）即满足；判断函数（judgeFunctions）：还须有判断结论（verdicts），
+ * 返回非信封（缺 data.pass）→ 持续缺口 → fail-closed（前置拒主行为 / 后置 nudge）。
+ */
+export function missingRuleFunctions(
+  rules: RuleGateInfo[],
+  succeeded: ReadonlySet<string>,
+  verdicts?: ReadonlyMap<string, RuleVerdict>,
+): { rule: string; functions: string[] }[] {
   return rules
-    .map(r => ({ rule: r.name, functions: r.functions.filter(f => !succeeded.has(f)) }))
+    .map(r => ({
+      rule: r.name,
+      functions: r.functions.filter(f =>
+        !succeeded.has(f) || (r.judgeFunctions.includes(f) && !verdicts?.has(f))),
+    }))
     .filter(m => m.functions.length > 0);
 }

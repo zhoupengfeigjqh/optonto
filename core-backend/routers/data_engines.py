@@ -11,6 +11,7 @@ from dependencies import get_ontology_names
 from schemas import DataEngineItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
+from services.mapping_sanitize import sanitize_mapping
 from llm_utils import load_env, llm_json
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/data-engines", tags=["数据引擎"])
@@ -99,10 +100,20 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
             return {"status": "error", "message": f"LLM 返回格式异常: {stripped[:200]}", "issues": []}
 
         # Save mapping results to data engine
-        de.input_mapping = result.get("input_mapping", {})
-        de.output_mapping = result.get("output_mapping", {})
+        # 落盘前清洗：剔除字段清单中不存在的条目（UI 不可见、运行期不命中的静默垃圾），
+        # 剔除项并入 issues 回报给用户（见 services/mapping_sanitize.py）
+        de.input_mapping, issues_in = sanitize_mapping(
+            result.get("input_mapping", {}), body.onto_input_fields, body.target_input_fields)
+        de.output_mapping, issues_out = sanitize_mapping(
+            result.get("output_mapping", {}), body.onto_output_fields, body.target_output_fields)
         save_ontology_data(sc_name, on_name, data)
 
+        if issues_in or issues_out:
+            result = {
+                **result,
+                "issues": list(result.get("issues") or []) + issues_in + issues_out,
+                "status": "warning" if result.get("status", "ok") == "ok" else result.get("status"),
+            }
         return result
     except (HTTPException, DomainError):
         raise

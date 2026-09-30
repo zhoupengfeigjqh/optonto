@@ -573,7 +573,6 @@ rules:
   - CreateOrder
   related_functions: []
   display_name: 订单类型校验
-  rule_type: 验证规则
   position: 前置
   data_supplements: []
 - name: ProductExistsValid
@@ -582,7 +581,6 @@ rules:
   - CreateOrder
   related_functions: []
   display_name: 货品存在性校验
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: DueDateValid
@@ -591,7 +589,6 @@ rules:
   - CreateOrder
   related_functions: []
   display_name: 截止日期约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: QtyValid
@@ -600,7 +597,6 @@ rules:
   - CreateOrder
   related_functions: []
   display_name: 交付数量约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: PriorityValid
@@ -609,7 +605,6 @@ rules:
   - CreateOrder
   related_functions: []
   display_name: 优先级约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: NoSchedOnUpdate
@@ -618,7 +613,6 @@ rules:
   - UpdateOrder
   related_functions: []
   display_name: 未排产约束（更新）
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: NoSchedOnDelete
@@ -627,7 +621,6 @@ rules:
   - DeleteOrder
   related_functions: []
   display_name: 未排产约束（删除）
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: SchedUniqueValid
@@ -636,7 +629,6 @@ rules:
   - CreateSchedTask
   related_functions: []
   display_name: 排产唯一性约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: AddSchedStateValid
@@ -645,7 +637,6 @@ rules:
   - AddSchedTask
   related_functions: []
   display_name: 新增任务状态约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: StartSchedStateValid
@@ -654,7 +645,6 @@ rules:
   - StartSchedTask
   related_functions: []
   display_name: 启动任务状态约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: DeployStateValid
@@ -663,7 +653,6 @@ rules:
   - DeploySchedResult
   related_functions: []
   display_name: 下发状态约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: RecallStateValid
@@ -672,7 +661,6 @@ rules:
   - RecallSchedResult
   related_functions: []
   display_name: 撤回状态约束
-  rule_type: 验证规则
   position: ''
   data_supplements: []
 - name: CanAddAfterSched
@@ -681,7 +669,6 @@ rules:
   - QuerySchedTask
   related_functions: []
   display_name: 已排产可新增任务
-  rule_type: 推理规则
   position: ''
   data_supplements: []
 - name: PromptSchedAfterOrder
@@ -690,7 +677,6 @@ rules:
   - CreateOrder
   related_functions: []
   display_name: 创建后提示排产
-  rule_type: 推理规则
   position: ''
   data_supplements: []
 - name: PromptWaitAfterStart
@@ -699,7 +685,6 @@ rules:
   - StartSchedTask
   related_functions: []
   display_name: 启动后提示等待
-  rule_type: 推理规则
   position: ''
   data_supplements: []
 processes: []

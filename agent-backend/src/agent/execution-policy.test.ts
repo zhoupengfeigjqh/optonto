@@ -25,10 +25,10 @@ const meta: BehaviorMeta = {
   display_name: '创建采购记录',
   params: { rawMaterialId: { required: true }, note: { required: false } },
   preRules: [
-    { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: [], data_supplements: ['QueryRawMaterials'], related_functions: [] },
+    { name: 'V01', description: '单位一致性', position: '前置', behavior: '', data_supplements: ['QueryRawMaterials'], related_functions: [] },
   ],
   postRules: [
-    { name: 'I02', description: '超期预警', position: '后置', related_behaviors: [], data_supplements: [], related_functions: ['getCurrentDate'] },
+    { name: 'I02', description: '超期预警', position: '后置', behavior: '', data_supplements: [], related_functions: ['getCurrentDate'] },
   ],
   concepts: [],
   isWrite: true,
@@ -86,8 +86,8 @@ describe('buildSubtaskPolicy — 子任务执行策略单一派生点', () => {
   it('主行为在 data_supplements 里重复出现 → 去重；规则函数与父 Agent 函数重复 → 去重', () => {
     const dup: BehaviorMeta = {
       params: {},
-      preRules: [{ name: 'V01', description: '', position: '前置', related_behaviors: [], data_supplements: ['CreatePurchaseRecord'], related_functions: ['getCurrentDate'] }],
-      postRules: [{ name: 'I02', description: '', position: '后置', related_behaviors: [], data_supplements: ['QueryRawMaterials'], related_functions: ['calcSafetyStock', 'getCurrentDate'] }],
+      preRules: [{ name: 'V01', description: '', position: '前置', behavior: '', data_supplements: ['CreatePurchaseRecord'], related_functions: ['getCurrentDate'] }],
+      postRules: [{ name: 'I02', description: '', position: '后置', behavior: '', data_supplements: ['QueryRawMaterials'], related_functions: ['calcSafetyStock', 'getCurrentDate'] }],
       concepts: [],
       isWrite: true,
     };
@@ -103,31 +103,39 @@ describe('buildSubtaskPolicy — 规则函数留痕闸（ruleGate）派生', () 
     expect(policy.ruleGate.mainBehavior).toBe('CreatePurchaseRecord');
     // V01 related_functions=[] → 剔除；I02 有 getCurrentDate → 入 post
     expect(policy.ruleGate.pre).toEqual([]);
-    expect(policy.ruleGate.post).toEqual([{ name: 'I02', functions: ['getCurrentDate'] }]);
+    expect(policy.ruleGate.post).toEqual([{ name: 'I02', functions: ['getCurrentDate'], judgeFunctions: [] }]);
     expect(policy.ruleGate.succeeded.size).toBe(0);
   });
 
   it('规则函数去重剔空；台账每子任务一份新实例（不共享）', () => {
     const m: BehaviorMeta = {
       params: {},
-      preRules: [{ name: 'V02', description: '', position: '前置', related_behaviors: [], related_functions: ['f1', 'f1', ''] }],
+      preRules: [{ name: 'V02', description: '', position: '前置', behavior: '', related_functions: ['f1', 'f1', ''] }],
       postRules: [],
       concepts: [],
       isWrite: false,
     };
     const p1 = buildSubtaskPolicy(subTask, m, mkInfo(), createSecurityGate());
     const p2 = buildSubtaskPolicy(subTask, m, mkInfo(), createSecurityGate());
-    expect(p1.ruleGate.pre).toEqual([{ name: 'V02', functions: ['f1'] }]);
+    expect(p1.ruleGate.pre).toEqual([{ name: 'V02', functions: ['f1'], judgeFunctions: [] }]);
     expect(p1.ruleGate.succeeded).not.toBe(p2.ruleGate.succeeded); // 台账 per-子任务独立
   });
 
-  it('missingRuleFunctions：按规则列出缺口；全部留痕 → 空', () => {
-    const rules = [{ name: 'I02', functions: ['f1', 'f2'] }, { name: 'I03', functions: ['f3'] }];
+  it('missingRuleFunctions：按规则列出缺口；判断函数须「执行过 + 有判断结论」双满足才不留缺口', () => {
+    const rules = [
+      { name: 'I02', functions: ['f1', 'f2'], judgeFunctions: [] },
+      { name: 'I03', functions: ['f3'], judgeFunctions: ['f3'] },
+    ];
+    // f3 是判断函数：仅 succeeded 还不够（须有 verdicts 台账），故 I03 仍缺
     expect(missingRuleFunctions(rules, new Set(['f1']))).toEqual([
       { rule: 'I02', functions: ['f2'] },
       { rule: 'I03', functions: ['f3'] },
     ]);
-    expect(missingRuleFunctions(rules, new Set(['f1', 'f2', 'f3']))).toEqual([]);
+    expect(missingRuleFunctions(rules, new Set(['f1', 'f2', 'f3']))).toEqual([
+      { rule: 'I03', functions: ['f3'] },
+    ]);
+    // 判断函数已产出判断结论 → 缺口清空
+    expect(missingRuleFunctions(rules, new Set(['f1', 'f2', 'f3']), new Map([['f3', { pass: true, reason: '' }]]))).toEqual([]);
   });
 });
 

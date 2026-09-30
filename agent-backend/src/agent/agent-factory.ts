@@ -15,7 +15,7 @@ import { PARENT_TOOL_LABELS, SCOPE_KEY, bareBehaviorName, toMountableToolInfo } 
 import type { MountableToolInfo } from './tool-catalog.js';
 import type { AgentPort } from './agent-ports.js';
 import type { SubtaskPolicy } from './execution-policy.js';
-import { missingRuleFunctions } from './execution-policy.js';
+import { missingRuleFunctions, parseRuleVerdict } from './execution-policy.js';
 import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection, ConversationScope } from '../types.js';
 
 // ─── 工具集配置 ─────────────────────────────
@@ -281,6 +281,11 @@ export class AgentFactory {
       nextParameters = { ...schema, properties: nextProps, ...(required ? { required } : {}) };
     }
     const originalExecute = tool.execute;
+    // 判断函数集合（裁决解析触发名单）：仅本体且 type=VALIDATION 的判断函数会产生裁决结论；
+    // 普通关联函数（CALCULATION/公共函数）即使返回同名 pass 字段也不进裁决台账（口径 B：类型即角色）。
+    const judgeFnNames = new Set(
+      [...policy.ruleGate.pre, ...policy.ruleGate.post].flatMap(r => r.judgeFunctions),
+    );
     const execute = async (toolCallId: string, params: any) => {
       // ── 闸0 入口短路（所有工具）：run 内任一调用已命中 disable（violation 置位）→ 一律 terminate ──
       // 中断信号的广播器：兄弟子 Agent 共享同一 gate，一个出事全场后续工具调用零执行；
@@ -301,11 +306,26 @@ export class AgentFactory {
           security.gate.violation ??= buildDisableMessage(bare, security.disabled.get(bare));
           return securityTerminateResult(security.gate.violation);
         }
-        // ── 闸2 前置规则留痕（仅主行为；补充接口不闸——闸了则规则取数无路）──
-        // 前置规则的关联函数须先成功执行（留痕）才放行主行为；缺失则抛错，文案列出缺哪个规则的哪个函数，
-        // 子 Agent 据此前置补跑后重试（可恢复，不中止子任务；连续硬闯由报错预算熔断）。
+        // ── 闸2.5 前置判断函数判断核查（仅主行为，2026-09-30 口径 B）──
+        // 判断函数（本体且 type=VALIDATION 的关联函数）已执行且 data.pass=false →
+        // 判断拒绝：结论已定，重试无意义（抛错由报错预算熔断）。
         if (bare === policy.ruleGate.mainBehavior && policy.ruleGate.pre.length > 0) {
-          const missing = missingRuleFunctions(policy.ruleGate.pre, policy.ruleGate.succeeded);
+          for (const info of policy.ruleGate.pre) {
+            for (const fn of info.judgeFunctions) {
+              const v = policy.ruleGate.verdicts.get(fn);
+              if (v && !v.pass) {
+                throw new Error(
+                  `前置规则 ${info.name} 判断不通过（函数 ${fn}）：${v.reason || '未提供原因'}。` +
+                  `规则判断已拒绝本次执行，请勿重试主行为；如需继续请先处理规则不通过的原因。`
+                );
+              }
+            }
+          }
+          // ── 闸2 前置规则留痕（仅主行为；补充接口不闸——闸了则规则取数无路）──
+          // 关联函数须先成功执行（留痕）；其中判断函数还须有判断结论（缺 pass → fail-closed），
+          // 否则抛错列出缺哪个规则的哪个函数，子 Agent 据此前置补跑后重试
+          // （可恢复，不中止子任务；连续硬闯由报错预算熔断）。
+          const missing = missingRuleFunctions(policy.ruleGate.pre, policy.ruleGate.succeeded, policy.ruleGate.verdicts);
           if (missing.length > 0) {
             throw new Error(
               `前置规则留痕缺失，本行为暂不能执行。请先成功调用以下规则关联函数完成前置验证，再重试本行为：\n` +
@@ -318,6 +338,12 @@ export class AgentFactory {
       // 行为名也一并记录（可能带前缀，台账查询只按函数名，行为条目自然不被命中，无副作用）。
       const result = await originalExecute(toolCallId, p);
       policy.ruleGate.succeeded.add(tool.name);
+      // 判断台账：规则关联函数成功执行后解析信封 data.pass/reason；
+      // 解析失败（非信封/缺 pass）不记 → 前置闸按「未执行」fail-closed，不静默放行。
+      if (judgeFnNames.has(tool.name)) {
+        const verdict = parseRuleVerdict(result);
+        if (verdict) policy.ruleGate.verdicts.set(tool.name, verdict);
+      }
       return result;
     };
     return {

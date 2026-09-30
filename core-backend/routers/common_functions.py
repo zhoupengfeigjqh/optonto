@@ -34,7 +34,7 @@ async def get_common_function_code(func_name: str) -> dict:
 async def execute_common_function(func_name: str, body: dict):
     """Execute a common function — 降级转发 ontology-mcp（沙箱已随迁，core 执行归零）。
 
-    Convention: def run(params: dict) -> dict。run() 已自带 {"result": ...} 包装，透传返回。
+    Convention: def run(params: dict) -> dict。返回值已由沙箱出口归一为统一信封（success/data/error），透传返回。
     """
     from services.runtime_forward import ONTOLOGY_MCP_URL, forward_call
     return await forward_call(

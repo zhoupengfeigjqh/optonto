@@ -57,11 +57,11 @@ def run(params: dict) -> dict:
         logic = params.get("logic", "AND")
 
         if not data:
-            return {"result": [], "count": 0}
+            return {"success": True, "data": {"items": [], "count": 0}, "error": None}
 
         df = pd.DataFrame(data)
         if df.empty:
-            return {"result": [], "count": 0}
+            return {"success": True, "data": {"items": [], "count": 0}, "error": None}
 
         mask = None
 
@@ -111,7 +111,7 @@ def run(params: dict) -> dict:
                 elif operator == "regex":
                     cond_mask = col.astype(str).str.contains(value, regex=True, na=False)
                 else:
-                    return {"error": f"不支持的运算符: {operator}", "code": 400}
+                    return {"success": False, "data": None, "error": {"code": "UNSUPPORTED_OPERATOR", "message": f"不支持的运算符: {operator}"}}
 
             if isinstance(cond_mask, pd.Series):
                 cond_mask = cond_mask.fillna(False)
@@ -129,7 +129,7 @@ def run(params: dict) -> dict:
             result_df = df[mask]
             result = clean_result(result_df)
 
-        return {"result": result, "count": len(result)}
+        return {"success": True, "data": {"items": result, "count": len(result)}, "error": None}
 
-    except Exception as e:
-        return {"error": str(e), "code": 500}
+    except Exception:
+        raise  # 未预期异常上抛 → MCP 层置 isError（报错预算/重试通道），不吞成业务失败

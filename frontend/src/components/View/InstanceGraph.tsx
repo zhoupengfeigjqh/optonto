@@ -89,7 +89,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
   /** 概念 → 查询行为（op_type=query）。permittedOnly 区分"无行为"与"无权限"。 */
   const queryBehaviorsOf = useCallback((cName: string, permittedOnly: boolean): Behavior[] => {
     return (data?.behaviors ?? []).filter(b => {
-      if (b.op_type !== 'query' || !(b.related_concepts ?? []).includes(cName)) return false;
+      if (b.op_type !== 'query' || b.concept !== cName) return false;
       return permittedOnly ? isPermitted(b.name) : true;
     });
   }, [data, isPermitted]);

@@ -65,6 +65,34 @@ async def _mcp_call_tool(server_url: str, tool_name: str, arguments: dict,
         raise RuntimeError(f"下游 MCP 不可达或超时（{server_url}）: {e}")
 
 
+def _has_content(value) -> bool:
+    """翻译后是否仍有实际内容：空字典/空列表（含逐层空）视为无内容，标量（含 None）视为有内容。"""
+    if isinstance(value, dict):
+        return any(_has_content(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_content(v) for v in value)
+    return True
+
+
+def _check_mapping_duplicates(de: dict) -> list[str]:
+    """同一映射值被多个源字段指向（warn-only）。
+
+    翻译是逐键写入 dict，两个源字段指向同一目标字段时后者覆盖前者——输入向丢参数、
+    输出向丢字段，且无任何报错。设计期难自查，运行期记录成警告。
+    """
+    dupes = []
+    for label in ("input_mapping", "output_mapping"):
+        seen: dict = {}
+        for src, dst in (de.get(label) or {}).items():
+            if not dst:
+                continue  # 空串映射（本体属性在目标无来源）不产生目标路径
+            if dst in seen:
+                dupes.append(f"{label}: {seen[dst]} 与 {src} 同指 {dst}")
+            else:
+                seen[dst] = src
+    return dupes
+
+
 async def _call_engine_mcp(de: dict, params: dict) -> dict:
     """MCP 型引擎：输入映射 → callTool(target.server_url, target.tool_name) → 输出映射。"""
     target = de.get("target") or {}
@@ -72,10 +100,21 @@ async def _call_engine_mcp(de: dict, params: dict) -> dict:
     tool_name = target.get("tool_name")
     if not server_url or not tool_name:
         raise ValueError("MCP 型数据引擎的 target 未配置 server_url / tool_name")
+    for dupe in _check_mapping_duplicates(de):
+        logger.warning("映射值重复（翻译时后者覆盖前者）: %s", dupe)
     translated = _translate_input(params, de.get("input_mapping") or {})
     result = await _mcp_call_tool(server_url, tool_name, translated,
                                   headers=target.get("headers") or None)
-    result["data"] = _translate_output(result["data"], de.get("output_mapping") or {})
+    output_mapping = de.get("output_mapping") or {}
+    raw = result["data"]
+    result["data"] = _translate_output(raw, output_mapping)
+    if output_mapping and _has_content(raw) and not _has_content(result["data"]):
+        # 白名单把映射字段全滤掉：响应根结构大概率与 target.response 声明不一致
+        # （映射目标路径需与响应根键对齐，如声明 result[*].x 时响应根必须是 {"result": [...]}）
+        logger.warning(
+            "输出映射未命中任何字段（下游响应 %s 被白名单滤空）：请核对 target.response 的根结构与映射目标路径",
+            type(raw).__name__,
+        )
     return result
 
 

@@ -32,8 +32,19 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const isNewRow = (record: Behavior) => editingKey === '__new__' && record.name === '__new__';
   const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
+  /**
+   * 取某概念 status 属性的枚举值（生命周期状态全集）。
+   * 行为的状态跃迁只能取该枚举内的值；概念无 status 属性时无可选项（下拉禁用）。
+   */
+  const statusOptionsOf = (conceptName: string) => {
+    const c = concepts.find(x => x.name === conceptName);
+    const attr = (c?.attributes || []).find(a => a.name === 'status');
+    const enums = (attr?.constraint?.enum || []) as (string | number)[];
+    return enums.map(e => ({ label: String(e), value: String(e) }));
+  };
+
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', op_type: '', params: '{}', response: '{}', related_concepts: [] });
+    setEditData({ name: '', display_name: '', description: '', op_type: '', params: '{}', response: '{}', concept: '', from_status: '', to_status: '' });
     setEditingKey('__new__');
   };
 
@@ -46,7 +57,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       else if (typeof v === 'object' && v !== null) normParams[k] = { type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' };
       else normParams[k] = { type: String(v), required: true, description: '', example: '' };
     }
-    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, op_type: b.op_type || '', params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', related_concepts: b.related_concepts });
+    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, op_type: b.op_type || '', params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', concept: b.concept || '', from_status: b.from_status || '', to_status: b.to_status || '' });
     setEditingKey(b.name);
   };
 
@@ -66,7 +77,8 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     try {
       const data: Behavior = {
         name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '',
-        op_type: editData.op_type || '', params: parsedParams, response: parsedResponse, related_concepts: editData.related_concepts || [],
+        op_type: editData.op_type || '', params: parsedParams, response: parsedResponse,
+        concept: editData.concept || '', from_status: editData.from_status || '', to_status: editData.to_status || '',
       };
       const isNew = editingKey === '__new__';
       if (isNew) {
@@ -101,12 +113,32 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={openResponseEditor}>编辑</Button>;
-    if (dataIndex === 'related_concepts') return <Select size="small" mode="multiple" placeholder="选" value={editData.related_concepts || []} onChange={setF('related_concepts')} options={conceptOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'concept') {
+      // 行为关联概念唯一（标量）：切换概念时清空状态跃迁（旧状态枚举已失效）
+      return <Select size="small" allowClear placeholder="选" value={editData.concept || undefined}
+        onChange={v => setEditData((p: any) => ({ ...p, concept: v || '', from_status: '', to_status: '' }))}
+        options={conceptOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
+    }
+    if (dataIndex === 'status_transition') {
+      const opts = statusOptionsOf(editData.concept);
+      // 仅 command 行为有状态语义；概念无 status 属性时无可选值
+      const disabled = editData.op_type !== 'command' || !editData.concept || opts.length === 0;
+      return (
+        <Space.Compact block>
+          <Select size="small" allowClear placeholder="源状态" value={editData.from_status || undefined}
+            onChange={v => setEditData((p: any) => ({ ...p, from_status: v || '' }))}
+            options={opts} disabled={disabled} style={{width:'50%'}} popupClassName="!bg-dark-card" />
+          <Select size="small" allowClear placeholder="目标状态" value={editData.to_status || undefined}
+            onChange={v => setEditData((p: any) => ({ ...p, to_status: v || '' }))}
+            options={opts} disabled={disabled} style={{width:'50%'}} popupClassName="!bg-dark-card" />
+        </Space.Compact>
+      );
+    }
     return render ? render(val) : (val || '-');
   };
 
   const dataSource = behaviors.map(b => ({ ...b, _key: b.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', params: {}, response: {}, related_concepts: [] } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', params: {}, response: {}, concept: '', from_status: '', to_status: '' } as any);
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
@@ -116,7 +148,12 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
       return v ? <Tag color={v === 'command' ? 'orange' : 'cyan'}>{v}</Tag> : '-';
     }},
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'description') },
-    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
+    { title: '关联概念', dataIndex: 'concept', key: 'concept', width: 140, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'concept', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
+    { title: '状态跃迁', key: 'status_transition', width: 190, ellipsis: true, render: (_: any, r: Behavior) => renderCell(null, r, 'status_transition', () => {
+      if (r.op_type !== 'command') return <span className="text-text-muted">-</span>;
+      if (!r.from_status && !r.to_status) return <span className="text-text-muted">未声明</span>;
+      return <span className="text-accent-blue">{r.from_status || '∅'} → {r.to_status || '∅'}</span>;
+    }) },
     { title: '输入参数', key: 'params', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
       const raw = r.params || {};

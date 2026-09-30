@@ -13,6 +13,15 @@ from schema_compile import params_to_input_schema, related_concepts, with_functi
 _BEHAVIOR_CACHE: dict = {"fingerprint": None, "tools": [], "entries": {}}
 
 
+def _behavior_concept_names(behavior: dict) -> list[str]:
+    """行为关联概念（唯一）：新格式为标量 concept；旧数据 related_concepts 数组读时兼容。"""
+    concept = behavior.get("concept")
+    if concept:
+        return [concept]
+    legacy = behavior.get("related_concepts")
+    return list(legacy) if isinstance(legacy, list) else []
+
+
 def load_behavior_tools(force: bool = False) -> list[Tool]:
     """直读 .data 聚合所有本体行为并转成 Tool（与 ontology-mcp 函数工具共用 mtime 指纹语义）。"""
     fingerprint = loaders.ontology_fingerprint()
@@ -33,7 +42,7 @@ def load_behavior_tools(force: bool = False) -> list[Tool]:
             if not isinstance(b, dict) or not b.get("name"):
                 continue
             schema, _conflicts = params_to_input_schema(
-                b.get("params"), related_concepts(data, b.get("related_concepts")))
+                b.get("params"), related_concepts(data, _behavior_concept_names(b)))
             entries_raw.append({
                 "ontology_id": oid,
                 "ontology_name": on_name,

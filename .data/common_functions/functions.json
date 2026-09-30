@@ -3,14 +3,14 @@
     "name": "getCurrentDate",
     "display_name": "当前日期",
     "description": "获取当前日期。无参数，返回 yyyy-MM-dd 格式的日期字符串。",
-    "response": {"result": {"properties": {"date": {"type": "string", "display_name": "当前日期", "description": "当前日期，格式 yyyy-MM-dd"}}}},
+    "response": {"type": "object", "properties": {"date": {"type": "string", "display_name": "当前日期", "description": "当前日期，格式 yyyy-MM-dd"}}},
     "inputSchema": {"type": "object", "properties": {}}
   },
   {
     "name": "dateAdd",
     "display_name": "日期加减",
     "description": "日期加减指定天数。传入 date 和 days，返回计算后的日期。",
-    "response": {"result": {"properties": {"date": {"type": "string", "display_name": "计算结果", "description": "计算后的日期，格式 yyyy-MM-dd"}}}},
+    "response": {"type": "object", "properties": {"date": {"type": "string", "display_name": "计算结果", "description": "计算后的日期，格式 yyyy-MM-dd"}}},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -24,7 +24,7 @@
     "name": "dateDiff",
     "display_name": "日期差",
     "description": "计算两个日期相差的天数。返回 endDate - startDate（可为负数）。",
-    "response": {"result": {"properties": {"days": {"type": "integer", "display_name": "相差天数", "description": "两个日期相差的天数"}}}},
+    "response": {"type": "object", "properties": {"days": {"type": "integer", "display_name": "相差天数", "description": "两个日期相差的天数"}}},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -39,11 +39,10 @@
     "display_name": "星期几",
     "description": "返回日期对应的星期（1=周一 ... 7=周日）和中文名称。",
     "response": {
-      "result": {
-        "properties": {
-          "weekday": {"type": "integer", "display_name": "星期数字", "description": "星期对应的数字 1-7"},
-          "name": {"type": "string", "display_name": "星期名称", "description": "星期中文名称"}
-        }
+      "type": "object",
+      "properties": {
+        "weekday": {"type": "integer", "display_name": "星期数字", "description": "星期对应的数字 1-7"},
+        "name": {"type": "string", "display_name": "星期名称", "description": "星期中文名称"}
       }
     },
     "inputSchema": {
@@ -58,7 +57,7 @@
     "name": "filterData",
     "display_name": "筛选过滤",
     "description": "按条件数组过滤 JSON 记录集，支持多条件 AND/OR 组合。操作符：eq, ne, gt, gte, lt, lte, in, not_in, contains, not_contains, starts_with, ends_with, is_null, is_not_null, regex。返回满足条件的记录数组及条数。",
-    "response": {"result": {"type": "array", "display_name": "过滤结果", "description": "满足条件的记录数组（另附 count 条数）"}},
+    "response": {"type": "object", "properties": {"items": {"type": "array", "display_name": "过滤结果", "description": "满足条件的记录数组"}, "count": {"type": "integer", "display_name": "条数", "description": "满足条件的记录条数"}}},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -72,8 +71,8 @@
   {
     "name": "aggregateData",
     "display_name": "聚合统计",
-    "description": "对 JSON 数组做整体聚合统计。聚合函数：sum, avg/mean, count, count_distinct, min, max, std, var, median, mode。返回各指标键值对（键为 字段_聚合函数 或指定 alias）。",
-    "response": {"result": {"type": "object", "display_name": "聚合结果", "description": "各聚合指标的键值对"}},
+    "description": "对 JSON 数组做整体聚合统计。聚合函数：sum, avg/mean, count, count_distinct, min, max, std, var, median, mode。返回各指标键值对（键为 字段_聚合函数 或指定 alias）。数据为空/字段不存在/聚合函数不支持时 success=false。",
+    "response": {"type": "object", "display_name": "聚合结果", "description": "各聚合指标的键值对（键为 字段_聚合函数 或指定 alias）"},
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -87,7 +86,7 @@
     "name": "groupReduce",
     "display_name": "分组汇总",
     "description": "按字段分组后聚合统计，支持 having 过滤、order_by 排序、top_n 截取。聚合函数：sum, avg/mean, count, count_distinct, min, max, std, var, median。返回分组结果记录数组及条数。",
-    "response": {"result": {"type": "array", "display_name": "分组结果", "description": "分组聚合后的记录数组（另附 count 条数）"}},
+    "response": {"type": "object", "properties": {"items": {"type": "array", "display_name": "分组结果", "description": "分组聚合后的记录数组"}, "count": {"type": "integer", "display_name": "条数", "description": "分组结果条数"}}},
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -297,10 +297,10 @@ describe('SubtaskRunner · 指令组装（facade 化后：挂载即白名单，�
       display_name: '创建采购记录',
       params: {},
       preRules: [
-        { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: ['QueryRawMaterials'], related_functions: [] },
+        { name: 'V01', description: '单位一致性', position: '前置', behavior: 'CreatePurchaseRecord', data_supplements: ['QueryRawMaterials'], related_functions: [] },
       ],
       postRules: [
-        { name: 'I02', description: '超期预警', position: '后置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: [], related_functions: ['getCurrentDate', 'calcSafetyStock'] },
+        { name: 'I02', description: '超期预警', position: '后置', behavior: 'CreatePurchaseRecord', data_supplements: [], related_functions: ['getCurrentDate', 'calcSafetyStock'] },
       ],
       concepts: [{ name: 'PurchaseRecord', display_name: '采购记录', attributes: [{ name: 'purchaseRecordId', type: 'string', display_name: '采购单号' }] }],
       isWrite: true,
@@ -323,6 +323,37 @@ describe('SubtaskRunner · 指令组装（facade 化后：挂载即白名单，�
     expect(instruction).toContain('### 关联概念属性');
   });
 
+  it('口径 B：判断函数（本体 VALIDATION）在关联函数列表标注「判断函数」，并附判断硬闸说明', async () => {
+    let instruction = '';
+    const metaWithJudge: BehaviorMeta = {
+      display_name: '创建采购记录',
+      params: {},
+      preRules: [
+        {
+          name: 'V01', description: '采购-原料存在且单位一致', position: '前置', behavior: 'CreatePurchaseRecord',
+          related_functions: ['checkRawMaterialUnit', 'getCurrentDate'],
+          judge_functions: ['checkRawMaterialUnit'],
+        },
+      ],
+      postRules: [],
+      concepts: [],
+      isWrite: true,
+    };
+    const deps = makeDeps(async () => ({
+      prompt: async (msg: string) => { if (!instruction) instruction = msg; },
+      abort: () => {},
+      subscribe: () => {},
+      state: { messages: [{ role: 'assistant', content: [{ type: 'text', text: '执行成功\n【状态】成功' }] }] },
+    } satisfies AgentPort));
+
+    const result = await new SubtaskRunner(deps).run(subTask, metaWithJudge, noopChannel);
+    expect(result.success).toBe(true);
+    // 判断函数在列表中显式标注，供子 Agent 区分「判定」与「取数」
+    expect(instruction).toContain('关联函数: checkRawMaterialUnit（判断函数）, getCurrentDate');
+    // 硬闸语义提前告知：判断不通过或缺 pass 将拒绝主行为
+    expect(instruction).toContain('调用主行为前会核查上述「判断函数」已成功执行且判断通过');
+  });
+
   it('父 Agent 指定 related_functions 时：规则外函数并入合法清单（经 policy 透传给挂载过滤，不再进指令文案）', async () => {
     let captured: SubtaskPolicy | undefined;
     const subTaskWithFuncs: SubTask = { ...subTask, related_functions: ['sumRawNotArrivalQty'] };
@@ -331,7 +362,7 @@ describe('SubtaskRunner · 指令组装（facade 化后：挂载即白名单，�
       params: {},
       preRules: [],
       postRules: [
-        { name: 'I02', description: '超期预警', position: '后置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: [], related_functions: ['getCurrentDate', 'calcSafetyStock'] },
+        { name: 'I02', description: '超期预警', position: '后置', behavior: 'CreatePurchaseRecord', data_supplements: [], related_functions: ['getCurrentDate', 'calcSafetyStock'] },
       ],
       concepts: [],
       isWrite: true,
@@ -387,7 +418,7 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
     const metaWithRules: BehaviorMeta = {
       ...meta,
       preRules: [
-        { name: 'V01', description: '单位一致性', position: '前置', related_behaviors: ['CreatePurchaseRecord'], data_supplements: ['QueryRawMaterials'], related_functions: [] },
+        { name: 'V01', description: '单位一致性', position: '前置', behavior: 'CreatePurchaseRecord', data_supplements: ['QueryRawMaterials'], related_functions: [] },
       ],
     };
     const deps = makeDeps(async (_ctx, policy) => {
@@ -509,7 +540,7 @@ describe('SubtaskRunner · 后置规则留痕闸（成功收尾前核查后置�
     params: {},
     preRules: [],
     postRules: [
-      { name: 'I02', description: '超期预警', position: '后置', related_behaviors: ['CreatePurchaseRecord'], related_functions: ['getCurrentDate'] },
+      { name: 'I02', description: '超期预警', position: '后置', behavior: 'CreatePurchaseRecord', related_functions: ['getCurrentDate'] },
     ],
     concepts: [],
     isWrite: false,
@@ -573,7 +604,7 @@ describe('SubtaskRunner · 后置规则留痕闸（成功收尾前核查后置�
   it('后置规则无关联函数 → 派生期剔除，闸自动跳过（不 nudge 不警告）', async () => {
     const metaNoFn: BehaviorMeta = {
       ...metaPostRule,
-      postRules: [{ name: 'I03', description: '无函数规则', position: '后置', related_behaviors: ['CreatePurchaseRecord'], related_functions: [] }],
+      postRules: [{ name: 'I03', description: '无函数规则', position: '后置', behavior: 'CreatePurchaseRecord', related_functions: [] }],
     };
     const prompts: string[] = [];
     const deps = makeDeps(async () => ({

@@ -12,6 +12,18 @@ const CARDINALITY_OPTIONS = [
   { label: '1:1', value: '1:1' }, { label: '1:N', value: '1:N' }, { label: 'N:1', value: 'N:1' }, { label: 'N:M', value: 'N:M' },
 ];
 
+/**
+ * 关系类型（可多选，5 值）。symmetric 与 asymmetric 语义互斥，在 UI 层做互斥（后端不拦截，
+ * 保持既有的「元数据不因不自洽而阻断保存」惯例）。
+ */
+const RELATION_TYPE_OPTIONS = [
+  { label: '非对称 (asymmetric)', value: 'asymmetric' },
+  { label: '对称 (symmetric)', value: 'symmetric' },
+  { label: '传递 (transitive)', value: 'transitive' },
+  { label: '函数性 (functional)', value: 'functional' },
+  { label: '反函数性 (inverse_functional)', value: 'inverse_functional' },
+];
+
 export default function RelationTable({ ontologyId, activeTab }: Props) {
   const [relations, setRelations] = useState<Relation[]>([]);
   const [concepts, setConcepts] = useState<Concept[]>([]);
@@ -40,8 +52,8 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
   const attrType = (conceptName?: string, attrName?: string) =>
     concepts.find(c => c.name === conceptName)?.attributes?.find(a => a.name === attrName)?.type;
 
-  const handleAdd = () => { setEditData({ name: '', display_name: '', source: undefined, target: undefined, cardinality: '1:N', source_attr: undefined, target_attr: undefined, description: '' }); setEditingKey('__new__'); };
-  const handleEdit = (r: Relation) => { setEditData({ name: r.name, display_name: r.display_name || '', source: r.source, target: r.target, cardinality: r.cardinality, source_attr: r.source_attr || undefined, target_attr: r.target_attr || undefined, description: r.description }); setEditingKey(r.name); };
+  const handleAdd = () => { setEditData({ name: '', display_name: '', source: undefined, target: undefined, cardinality: '1:N', relation_type: [], source_attr: undefined, target_attr: undefined, description: '' }); setEditingKey('__new__'); };
+  const handleEdit = (r: Relation) => { setEditData({ name: r.name, display_name: r.display_name || '', source: r.source, target: r.target, cardinality: r.cardinality, relation_type: r.relation_type || [], source_attr: r.source_attr || undefined, target_attr: r.target_attr || undefined, description: r.description }); setEditingKey(r.name); };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
 
   const handleSave = async (record: Relation) => {
@@ -58,7 +70,7 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
       return;
     }
     try {
-      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', source: editData.source, target: editData.target, cardinality: editData.cardinality, source_attr: editData.source_attr, target_attr: editData.target_attr, description: editData.description?.trim() || '' };
+      const data = { name: editData.name.trim(), display_name: editData.display_name?.trim() || '', source: editData.source, target: editData.target, cardinality: editData.cardinality, relation_type: editData.relation_type || [], source_attr: editData.source_attr, target_attr: editData.target_attr, description: editData.description?.trim() || '' };
       const isNew = editingKey === '__new__';
       if (isNew) {
         if (relations.some(r => r.name === data.name)) { message.warning('关系名称已存在'); return; }
@@ -88,6 +100,18 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'source') return <Select size="small" placeholder="选择" options={conceptOptions} value={editData.source} onChange={v => setEditData(p => ({...p, source: v, source_attr: undefined}))} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'target') return <Select size="small" placeholder="选择" options={conceptOptions} value={editData.target} onChange={v => setEditData(p => ({...p, target: v, target_attr: undefined}))} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'cardinality') return <Select size="small" value={editData.cardinality} onChange={v => setEditData(p => ({...p, cardinality: v}))} options={CARDINALITY_OPTIONS} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
+    if (dataIndex === 'relation_type') {
+      const onTypeChange = (vals: string[]) => {
+        let v = [...vals];
+        // 对称与非对称语义互斥：保留最后勾选的那个
+        if (v.includes('symmetric') && v.includes('asymmetric')) {
+          const last = v[v.length - 1];
+          v = v.filter(x => x !== (last === 'symmetric' ? 'asymmetric' : 'symmetric'));
+        }
+        setEditData(p => ({...p, relation_type: v}));
+      };
+      return <Select size="small" mode="multiple" allowClear placeholder="选" value={editData.relation_type || []} onChange={onTypeChange} options={RELATION_TYPE_OPTIONS} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
+    }
     if (dataIndex === 'link_attr') {
       return (
         <Space.Compact block>
@@ -101,7 +125,7 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
   };
 
   const dataSource = relations.map(r => ({ ...r, _key: r.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', source: '', target: '', cardinality: '1:N', source_attr: '', target_attr: '', description: '' } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', source: '', target: '', cardinality: '1:N', relation_type: [], source_attr: '', target_attr: '', description: '' } as any);
 
   // 展示：源.源属性 = 目标.目标属性（中文展示名，yaml 仍存英文名）
   const linkAttrText = (r: Relation) => {
@@ -120,6 +144,7 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
     { title: '源概念', dataIndex: 'source', key: 'source', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'source', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
     { title: '目标概念', dataIndex: 'target', key: 'target', width: 100, render: (v: any, r: Relation) => renderCell(v, r, 'target', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
     { title: '基数', dataIndex: 'cardinality', key: 'cardinality', width: 65, render: (v: any, r: Relation) => renderCell(v, r, 'cardinality', (v2: string) => <span className="text-accent-blue">{v2}</span>) },
+    { title: '关系类型', dataIndex: 'relation_type', key: 'relation_type', width: 150, ellipsis: true, render: (v: any, r: Relation) => renderCell(v, r, 'relation_type', (list: string[]) => list?.length ? list.join(', ') : '-') },
     { title: '关联概念属性', dataIndex: 'link_attr', key: 'link_attr', width: 220, ellipsis: true, render: (v: any, r: Relation) => renderCell(v, r, 'link_attr', () => linkAttrText(r)) },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Relation) => renderCell(v, r, 'description') },
     {

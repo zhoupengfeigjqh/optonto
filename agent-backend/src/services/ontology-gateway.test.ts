@@ -18,9 +18,13 @@ let root: string;
 let ontoDir: string;
 let gateway: OntologyGateway;
 
-/** 写 ontology.yaml；behaviors/engines/securities 任意组合 */
-function writeOntology(opts: { behaviors: any[]; data_engines?: any[]; securities?: any[] }): void {
-  const doc: any = { behaviors: opts.behaviors };
+/** 写 ontology.yaml；concepts/behaviors/functions/rules/engines/securities 任意组合 */
+function writeOntology(opts: { behaviors?: any[]; concepts?: any[]; functions?: any[]; rules?: any[]; data_engines?: any[]; securities?: any[] }): void {
+  const doc: any = {};
+  if (opts.behaviors) doc.behaviors = opts.behaviors;
+  if (opts.concepts) doc.concepts = opts.concepts;
+  if (opts.functions) doc.functions = opts.functions;
+  if (opts.rules) doc.rules = opts.rules;
   if (opts.data_engines) doc.data_engines = opts.data_engines;
   if (opts.securities) doc.securities = opts.securities;
   writeFileSync(join(ontoDir, 'ontology.yaml'), dump(doc), 'utf-8');
@@ -106,5 +110,101 @@ describe('契约 §3 操作类型推导（isWrite）——2026-09-07 起引擎�
 
   it('T4：空 op_type + 无引擎 → query', () => {
     expect(isWrite({ name: 'B1' })).toBe(false);
+  });
+});
+
+describe('契约 §6 字段契约与旧格式迁移（spec 003）', () => {
+  it('M1：行为旧 related_concepts 数组 → 标量 concept 参与概念解析', () => {
+    writeOntology({
+      concepts: [{ name: 'C1', display_name: '概念一', attributes: [{ name: 'a', type: 'string' }] }],
+      behaviors: [{ name: 'B1', related_concepts: ['C1'] }],
+    });
+    expect(gateway.getBehaviorMeta(SC, ON, 'B1').concepts.map(c => c.name)).toEqual(['C1']);
+  });
+
+  it('M2：行为新 concept 标量优先，旧数组被忽略', () => {
+    writeOntology({
+      concepts: [
+        { name: 'New', display_name: '新', attributes: [] },
+        { name: 'Old', display_name: '旧', attributes: [] },
+      ],
+      behaviors: [{ name: 'B1', concept: 'New', related_concepts: ['Old'] }],
+    });
+    expect(gateway.getBehaviorMeta(SC, ON, 'B1').concepts.map(c => c.name)).toEqual(['New']);
+  });
+
+  it('M3：规则旧 related_behaviors 数组 → 标量 behavior，前置规则正确挂载', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1', op_type: 'command', concept: 'C1' }],
+      rules: [{ name: 'R1', position: '前置', related_behaviors: ['B1'], related_functions: [] }],
+    });
+    expect(gateway.getBehaviorMeta(SC, ON, 'B1').preRules.map(r => r.name)).toEqual(['R1']);
+  });
+
+  it('M4：规则新 behavior 标量 → 后置规则按行为精确挂载，不串行为', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1', concept: 'C1' }, { name: 'B2', concept: 'C1' }],
+      rules: [
+        { name: 'R1', position: '后置', behavior: 'B1' },
+        { name: 'R2', position: '后置', behavior: 'B2' },
+      ],
+    });
+    expect(gateway.getBehaviorMeta(SC, ON, 'B1').postRules.map(r => r.name)).toEqual(['R1']);
+    expect(gateway.getBehaviorMeta(SC, ON, 'B2').postRules.map(r => r.name)).toEqual(['R2']);
+  });
+
+  it('M5：无任何新字段的历史快照仍可加载（新字段取缺省）', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1', related_concepts: ['C1'] }],
+      rules: [{ name: 'R1', related_behaviors: ['B1'] }],
+    });
+    const meta = gateway.getBehaviorMeta(SC, ON, 'B1');
+    expect(meta.preRules.map(r => r.name)).toEqual(['R1']);
+    expect(meta.isWrite).toBe(false);
+  });
+
+  it('M6：旧 check_functions（已取消的独立判断字段）读时并入 related_functions', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1', op_type: 'command', concept: 'C1' }],
+      functions: [{ name: 'checkU', type: 'VALIDATION' }],
+      rules: [{ name: 'R1', position: '前置', behavior: 'B1', check_functions: ['checkU'] }],
+    });
+    const rule = gateway.getBehaviorMeta(SC, ON, 'B1').preRules[0];
+    expect(rule.related_functions).toEqual(['checkU']);
+    expect(rule.judge_functions).toEqual(['checkU']);
+  });
+});
+
+describe('契约 §7 判断函数解析（口径 B：类型即角色）', () => {
+  const functions = [
+    { name: 'checkU', type: 'VALIDATION' },
+    { name: 'calcQ', type: 'CALCULATION' },
+    { name: 'getCurrentDate' }, // 本体无此声明 → 视为公共函数（无类型）
+  ];
+
+  it('J1：本体且 type=VALIDATION 的关联函数入 judge_functions；CALCULATION 与公共函数不入', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1', op_type: 'command', concept: 'C1' }],
+      functions,
+      rules: [{ name: 'R1', position: '前置', behavior: 'B1', related_functions: ['checkU', 'calcQ', 'getCurrentDate'] }],
+    });
+    const rule = gateway.getBehaviorMeta(SC, ON, 'B1').preRules[0];
+    expect(rule.related_functions).toEqual(['checkU', 'calcQ', 'getCurrentDate']);
+    expect(rule.judge_functions).toEqual(['checkU']);
+  });
+
+  it('J2：无 VALIDATION 型关联函数 → judge_functions 为空（纯留痕规则）', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1' }],
+      functions: [{ name: 'calcQ', type: 'CALCULATION' }],
+      rules: [{ name: 'R1', position: '后置', behavior: 'B1', related_functions: ['calcQ'] }],
+    });
+    expect(gateway.getBehaviorMeta(SC, ON, 'B1').postRules[0].judge_functions).toEqual([]);
+  });
+
+  it('J3：getFunctionInfo 返回本体函数 type；公共函数 type 恒空串（不可能成为判断函数）', () => {
+    writeOntology({ functions: [{ name: 'checkU', type: 'VALIDATION', display_name: '单位校验' }] });
+    expect(gateway.getFunctionInfo(SC, ON, 'checkU')?.type).toBe('VALIDATION');
+    expect(gateway.getFunctionInfo(SC, ON, 'getCurrentDate')?.type).toBe('');
   });
 });

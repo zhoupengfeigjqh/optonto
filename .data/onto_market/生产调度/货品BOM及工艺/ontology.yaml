@@ -342,7 +342,6 @@ rules:
   - QueryBOMInfo
   related_functions: []
   display_name: 查询BOM后引导
-  rule_type: 推理规则
   position: 后置
   data_supplements: []
 - name: PromptAfterBOMDetailQuery
@@ -351,7 +350,6 @@ rules:
   - QueryBOMDetail
   related_functions: []
   display_name: 查询BOM明细后引导
-  rule_type: 推理规则
   position: 后置
   data_supplements: []
 processes: []

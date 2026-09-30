@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""E2E 前置规则留痕闸（闸2）：给 V01 补挂函数 checkRawMaterialUnit，验证主行为调用前的函数留痕检查。
-步骤：建函数（API 含静态校验）→ 写代码 → V01 补挂 related_functions → 等 mtime 刷新 → 真实对话看执行顺序。
-预期：checkRawMaterialUnit 先于 CreatePurchaseRecord 被调用（子Agent遵守前置要求），
-或出现"前置规则留痕缺失"报错后补跑重试（闸2实际拦截）——两种形态都证明链路生效。
+"""E2E 规则闸（闸2.5 裁决核查 + 闸2 留痕）：给 V01 补挂判断函数 checkRawMaterialUnit，验证主行为调用前的裁决核查。
+步骤：建函数（API 含静态校验）→ 写代码（统一信封 + data.pass/reason）→ V01 补挂 related_functions → 等 mtime 刷新 → 真实对话看执行顺序。
+预期：checkRawMaterialUnit 先于 CreatePurchaseRecord 被调用且裁决通过（放行）；
+若判断函数未执行 / 未返回 pass（fail-closed）或 pass=false，主行为会被拒绝——两种形态都证明链路生效。
 """
 import json
 import sys
@@ -28,18 +28,18 @@ FUNC_CODE = '''def run(params: dict) -> dict:
         rawMaterialSet: list，原材料主数据列表，每条记录包含 rawMaterialId 与 unit
 
     Returns:
-        dict: {result: {pass: bool, message: str}}
+        dict: 统一信封 {"success": bool, "data": {"pass": bool, "reason": str}, "error": None}
     """
     raw_material_id = params.get("rawMaterialId")
     unit = params.get("unit")
     raw_material_set = params.get("rawMaterialSet") or []
     matched = [r for r in raw_material_set if isinstance(r, dict) and r.get("rawMaterialId") == raw_material_id]
     if not matched:
-        return {"result": {"pass": False, "message": "原材料ID %s 不存在于原材料主数据" % raw_material_id}}
+        return {"success": True, "data": {"pass": False, "reason": "原材料ID %s 不存在于原材料主数据" % raw_material_id}, "error": None}
     defined_unit = matched[0].get("unit")
     if unit != defined_unit:
-        return {"result": {"pass": False, "message": "单位不一致：采购单为 %s，原材料定义为 %s" % (unit, defined_unit)}}
-    return {"result": {"pass": True, "message": "原材料存在且单位一致"}}
+        return {"success": True, "data": {"pass": False, "reason": "单位不一致：采购单为 %s，原材料定义为 %s" % (unit, defined_unit)}, "error": None}
+    return {"success": True, "data": {"pass": True, "reason": "原材料存在且单位一致"}, "error": None}
 '''
 
 
@@ -68,7 +68,7 @@ def main():
                 'unit': {'type': 'string', 'display_name': '单位', 'required': True},
             }}},
         },
-        'response': {'result': {'type': 'object', 'display_name': '校验结果'}},
+        'response': {'pass': {'type': 'boolean', 'display_name': '裁决是否通过'}, 'reason': {'type': 'string', 'display_name': '裁决说明'}},
         'code_file': f'functions/{FN}.py',
     })
     print('1. 建函数:', s, '' if s in (200, 201) else d)

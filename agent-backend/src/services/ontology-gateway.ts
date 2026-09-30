@@ -3,7 +3,7 @@
  *
  * 提取内容：
  *   - 行为的参数结构
- *   - 关联的规则（含 rule_detail、data_supplements）
+ *   - 关联的规则（含 related_functions / judge_functions、data_supplements）
  *   - 安全管控
  *   - 关联的概念属性
  */
@@ -88,23 +88,40 @@ export class OntologyGateway {
     // 行为定义 → 取 params 参数结构
     const behavior = data?.behaviors?.find((b: any) => b.name === behaviorName);
 
-    // 读取规则列表
-    const allRules: RuleDetail[] = (data?.rules || []).map((r: any) => ({
-      name: r.name || '',
-      description: r.description || '',
-      position: r.position || '前置',
-      related_behaviors: r.related_behaviors || [],
-      rule_detail: r.rule_detail || null,
-      related_functions: r.related_functions || [],
-      // 只采用 yaml 手写的 data_supplements
-      data_supplements: [...(r.data_supplements || [])],
-    }));
+    // 判断函数判定依据（口径 B：类型即角色）：本体函数且 type=VALIDATION 者即判断函数
+    // （公共函数无本体类型 → 恒不参与判断；本体 CALCULATION 等为计算函数，仅提供数据不拦执行）
+    const fnTypeByName = new Map<string, string>(
+      (data?.functions || [])
+        .filter((f: any) => f && f.name)
+        .map((f: any) => [f.name as string, String(f.type || '')]),
+    );
+    const judgeFnsOf = (related: string[]): string[] =>
+      related.filter(n => fnTypeByName.get(n) === 'VALIDATION');
+
+    // 读取规则列表（规则绑定行为唯一：标量 behavior；旧数据 related_behaviors 数组读时兼容取首个）
+    const allRules: RuleDetail[] = (data?.rules || []).map((r: any) => {
+      // 读时兼容：旧 check_functions（2026-09-30 口径 B 已取消的独立判断字段）并入 related_functions
+      const related = [...new Set([
+        ...(Array.isArray(r.related_functions) ? r.related_functions : []),
+        ...(Array.isArray(r.check_functions) ? r.check_functions : []),
+      ].filter(Boolean))] as string[];
+      return {
+        name: r.name || '',
+        description: r.description || '',
+        position: r.position || '前置',
+        behavior: r.behavior ?? (Array.isArray(r.related_behaviors) ? (r.related_behaviors[0] || '') : (r.related_behaviors || '')),
+        related_functions: related,
+        judge_functions: judgeFnsOf(related),
+        // 只采用 yaml 手写的 data_supplements
+        data_supplements: [...(r.data_supplements || [])],
+      };
+    });
 
     const preRules = allRules.filter(
-      r => r.position === '前置' && r.related_behaviors.includes(behaviorName),
+      r => r.position === '前置' && r.behavior === behaviorName,
     );
     const postRules = allRules.filter(
-      r => r.position === '后置' && r.related_behaviors.includes(behaviorName),
+      r => r.position === '后置' && r.behavior === behaviorName,
     );
 
     // 安全管控
@@ -113,7 +130,11 @@ export class OntologyGateway {
     );
 
     // 关联概念属性
-    const concepts = this.resolveConcepts(data, behavior?.related_concepts || []);
+    // 行为关联概念唯一（标量 concept；旧数据 related_concepts 数组读时兼容）
+    const conceptNames: string[] = behavior?.concept
+      ? [behavior.concept]
+      : (Array.isArray(behavior?.related_concepts) ? behavior.related_concepts : []);
+    const concepts = this.resolveConcepts(data, conceptNames);
 
     // 写操作判定：op_type 是唯一权威来源（command=写/query=读）；
     // 引擎唯一形态为 MCP（SQL/HTTP 已删除），无 method 语义可推导——空 op_type 一律按读处理。
@@ -165,9 +186,11 @@ export class OntologyGateway {
         display_name: fn?.display_name || fn?.description || '',
         description: fn?.description,
         params: fn?.params || {},
+        type: fn?.type || '',
       };
     }
     const common = getCommonFunctionInfo(functionName);
-    return common ? { display_name: common.display_name, description: common.description, params: common.params } : null;
+    // 公共函数无本体类型 → type 恒空串（不可能成为判断函数）
+    return common ? { display_name: common.display_name, description: common.description, params: common.params, type: '' } : null;
   }
 }

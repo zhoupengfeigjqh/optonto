@@ -4,7 +4,7 @@
 
 **创建日期**: 2026-09-28
 
-**状态**: 草稿
+**状态**: 已实现（2026-09-28；验收记录见 [tasks.md](./tasks.md)）
 
 **输入**: 用户提出的 8 项本体模型扩展需求，及决策回合答复（D1–D8 / P1–P3）
 
@@ -58,7 +58,7 @@
 **验收场景**：
 
 1. **Given** 一条规则关联行为 `CancelPurchaseRecord`（主体概念 `PurchaseRecord`），**When** 左侧选「实体自身」+ 属性 `status`，**Then** 落盘为 `{"type":"self","attribute":"status"}` 并回读一致。
-2. **Given** 一条未绑定行为的规则，**When** 其 `rule_detail` 使用「实体自身」并保存，**Then** 返回 400（`self` 无从确定指代）；**When** 先绑定行为再保存，**Then** 成功。
+2. **Given** 一条未绑定行为的规则，**When** 其旧条件树字段使用「实体自身」并保存，**Then** 返回 400（`self` 无从确定指代）；**When** 先绑定行为再保存，**Then** 成功。
 
 ---
 
@@ -125,16 +125,16 @@
 
 **F. 规则操作数「实体自身」**
 
-- **FR-017**: 规则操作数 MUST 支持 `type: self`，语义为「规则所绑定行为的唯一主体概念的那个实例」；`self` MUST 仍指定 `attribute`（属性候选来自主体概念），MUST NOT 需要指定 `concept`。若 `rule_detail` 中出现 `self` 操作数，则规则 MUST 已绑定行为（`behavior` 非空且命中该本体的行为），否则 MUST 返回 400。
+- **FR-017**: 规则操作数 MUST 支持 `type: self`，语义为「规则所绑定行为的唯一主体概念的那个实例」；`self` MUST 仍指定 `attribute`（属性候选来自主体概念），MUST NOT 需要指定 `concept`。若旧条件树中出现 `self` 操作数，则规则 MUST 已绑定行为（`behavior` 非空且命中该本体的行为），否则 MUST 返回 400。
 - **FR-018**: 规则绑定行为 MUST 收缩为单一行为：`RuleItem.related_behaviors: list[str]` 改为标量 `behavior: str`；旧数据 `related_behaviors: [x]` MUST 在读时无损迁移（取唯一元素）；标量缺省为空串（允许规则暂不绑定行为）。
 
 **G. 规则条件与/或/非嵌套**
 
-- **FR-019**: `rule_detail` 的条件结构 MUST 支持递归组合节点：`{logic: 'and'|'or'|'not', children: [叶子 | 组合节点]}`；叶子 MUST 保持 `{left, operator, right}` 三段式。
+- **FR-019**: 旧条件树的条件结构 MUST 支持递归组合节点：`{logic: 'and'|'or'|'not', children: [叶子 | 组合节点]}`；叶子 MUST 保持 `{left, operator, right}` 三段式。
 - **FR-020**: `not` 组合节点 MUST 只允许 1 个 child。
 - **FR-021**: 旧扁平结构 `{logic, conditions:[叶子…]}` MUST 在读时（编辑器加载 / 运行期消费）无损迁移为 `{logic, children:[…]}`；保存 MUST 统一写新结构。
 - **FR-022**: 规则模板 JSON（`validation/compare_rule.json`、`inference/inference_rule.json`）MUST 改为递归 Schema。
-- **FR-023**: 运行期投喂 LLM 的 `rule_detail` 序列化 MUST 保留层级（缩进输出），MUST NOT 压缩为单行。
+- **FR-023**: 运行期投喂 LLM 的旧条件树序列化 MUST 保留层级（缩进输出），MUST NOT 压缩为单行。
 
 **H. 契约同步与兼容**
 
@@ -149,7 +149,7 @@
 - **概念（`ConceptItem`）**：新增 `terms: list[str]`；其属性列表中 `name == "status"` 的属性承担生命周期状态语义（`type=string` + `constraint.enum`）。
 - **行为（`BehaviorItem`）**：新增 `from_status` / `to_status`；`related_concepts: list[str]` → `concept: str`。
 - **函数（`FunctionItem`）**：新增 `type: str`（英文码 5 值）。
-- **规则（`RuleItem`）**：`rule_detail` 条件结构升级为递归树；操作数新增 `self` 类型；`related_behaviors: list[str]` → `behavior: str`。
+- **规则（`RuleItem`）**：旧条件树条件结构升级为递归树；操作数新增 `self` 类型；`related_behaviors: list[str]` → `behavior: str`。
 
 ### 明确不做（Out of Scope）
 
@@ -169,7 +169,7 @@
 - **SC-005**: 术语集落盘→回读一致；重复/空串/首尾空白被清理。
 - **SC-006**: 函数类型落盘→回读一致；非法值归一为空串。
 - **SC-007**: 规则 `self` 操作数往返一致；未绑定行为的规则使用 `self` 返回 400；旧 `related_behaviors: [x]` 无损迁移为 `behavior: x`。
-- **SC-008**: 旧扁平 `rule_detail` 打开为树、保存为树、回读一致；`not` 节点恰好 1 个子节点；三层嵌套往返无损。
+- **SC-008**: 旧扁平条件树打开为树、保存为树、回读一致；`not` 节点恰好 1 个子节点；三层嵌套往返无损。
 - **SC-009**: `.data/onto_market/*/*/ontology_versions/v1.0|v1.1` 与新模板均可加载（0 例加载失败）。
 - **SC-010**: 5 份模型副本字段清单逐项一致（0 处缺失）。
 - **SC-011**: 后端 pytest 全绿；前端 vitest 全绿且覆盖率门槛（80%）不降；`tsc --noEmit` 与 `compileall` 通过。
@@ -181,5 +181,5 @@
 - **校验强度取舍**：FR-005 选择「不强制每概念必有 status 属性」，理由是存量 6 概念中 5 个无该属性，强制会使既有概念的属性编辑全部失败。若要求强制，需同时提供存量数据迁移方案。
 - **P2 形态**：`related_behaviors` 改标量 `behavior`（与行为的 `concept` 命名对称）。消费点已完整枚举：`schemas/__init__.py:95`、`routers/rules.py:84,92`、`frontend/src/api/design.ts:143`、`RuleTable.tsx` 13 处、`View/OntologyGraph.tsx:140-141`、`agent-backend/src/types.ts:119`、`agent-backend/src/services/ontology-gateway.ts:96,104,107`、`ontology-mcp/server.py:256`、模板与 11 处 agent 测试 fixture。存量数据全部单元素（已实测 4 个本体 + 2 个历史版本），迁移无损。
 - **校验归属**：值域类走 Pydantic validator（静默归一）；跨字段强耦合走业务层 `errors.InvalidInputError` → 400。Pydantic 校验失败经 `main.py:115` 的 `RequestValidationError` 处理器返回 **422**，因此强耦合校验 MUST NOT 放在 Pydantic validator 中，否则错误契约分裂。
-- **无推理引擎**：系统当前没有任何规则求值器或关系推理器；`rule_detail` 在运行期仅被序列化为文本投喂 LLM（`agent-backend/src/agent/subtask-runner.ts:342-380`），关系类型仅作元数据登记。本特性不改变这一点。
+- **无推理引擎**：系统当前没有任何规则求值器或关系推理器；旧条件树在运行期仅被序列化为文本投喂 LLM（`agent-backend/src/agent/subtask-runner.ts:342-380`），关系类型仅作元数据登记。本特性不改变这一点。
 - **本特性为向后兼容的增量扩展**，不涉及存储引擎替换（`.data` 文件型存储不变）。

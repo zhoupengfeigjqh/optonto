@@ -12,25 +12,42 @@ concepts:
   attributes:
   - name: attrName
     type: string
-    required: true
     display_name: 属性展示名称
     description: 属性详细描述
     example: 示例值
-    constraint: ''
+    constraint:
+      unique: true
+      required: true
+      pattern: '^[A-Za-z0-9_-]+$'
+  - name: enumAttrName
+    type: string
+    display_name: 枚举属性示例
+    description: 取值受限于固定集合时用 constraint.enum 表达（status 属性必须如此）
+    example: 有效
+    constraint:
+      enum:
+      - 有效
+      - 无效
+      required: true
   - name: numericAttrName
     type: number
     display_name: 数值属性示例
-    description: number/integer类型属性可在constraint中填写取值范围（min/max可只填其一，无范围则constraint为''）
+    description: number/integer 类型属性可在 constraint 中填写取值范围（min/max 可只填其一）
     example: 50
     constraint:
       min: 0
       max: 100
   display_name: 概念展示名称
+  instance_label: attrName（可选：实例展示时作为节点标签的属性英文名，须是本概念已定义的属性；无则留空）
+  terms:
+  - 该概念的其他表述（同义词/别名/简称，可为空）
 relations:
 - name: relationName
   source: SourceConcept
   target: TargetConcept
   cardinality: 1:N
+  relation_type:
+  - functional
   source_attr: attrName
   target_attr: attrName
   description: 关系描述
@@ -75,18 +92,16 @@ functions:
             required: true
       required: true
   response:
-    result:
-      type: object
-      properties:
-        rawMaterialName:
-          type: string
-          display_name: 原材料名称
-          example: 高强度钢板
-        sumNotArrivalQty:
-          type: number
-          display_name: 未到位总量
-          example: 100
+    rawMaterialName:
+      type: string
+      display_name: 原材料名称
+      example: 高强度钢板
+    sumNotArrivalQty:
+      type: number
+      display_name: 未到位总量
+      example: 100
   code_file: functions/sumRawNotArrivalQty.py
+  type: CALCULATION
 behaviors:
 - name: behaviorName
   description: 行为描述
@@ -94,51 +109,51 @@ behaviors:
   params:
     tradeId:
       type: string
-      display_name: 交易编号
+      description: 交易编号
       required: true
       example: TRD001
     status:
       type: string
-      display_name: 状态
+      description: 状态
       required: true
       example: active
     user:
       type: object
-      display_name: 用户信息
+      description: 用户信息
       required: true
       properties:
         id:
           type: string
-          display_name: 用户ID
+          description: 用户ID
           required: true
           example: USR001
         name:
           type: string
-          display_name: 用户名称
+          description: 用户名称
           required: true
           example: 张三
     tags:
       type: array
-      display_name: 标签列表
+      description: 标签列表
       required: false
       items:
         type: string
         example: 加急
     products:
       type: array
-      display_name: 产品列表
+      description: 产品列表
       required: true
       items:
         type: object
         properties:
           sku:
             type: string
-            display_name: SKU
+            description: SKU
             required: true
             example: SKU-001
           quantity:
             type: number
-            display_name: 数量
+            description: 数量
             required: true
             example: 10
   response:
@@ -158,8 +173,9 @@ behaviors:
           type: number
           display_name: 订单总额
           example: 1500.5
-  related_concepts:
-  - ConceptName
+  concept: ConceptName
+  from_status: 原状态（command 行为填写，取自关联概念 status 属性的枚举；query 行为留空）
+  to_status: 新状态（command 行为填写，同上；query 行为留空）
   display_name: 行为展示名称
 - name: queryOrderSQL
   description: 根据订单状态查询订单明细
@@ -167,12 +183,12 @@ behaviors:
   params:
     status:
       type: string
-      display_name: 订单状态
+      description: 订单状态
       required: true
       example: active
     orderDate:
       type: string
-      display_name: 订单日期
+      description: 订单日期
       required: false
       example: '2026-01-01'
   response:
@@ -190,19 +206,18 @@ behaviors:
           amount:
             type: number
             example: 1500
-  related_concepts:
-  - ConceptName
+  concept: ConceptName
   display_name: SQL查询订单
 rules:
 - name: ruleName
   description: 规则描述，详细的规则逻辑
-  related_behaviors:
-  - behaviorName
+  behavior: behaviorName
   related_functions:
   - functionName
   display_name: 规则展示名称
-  rule_type: 规则类型
   position: 前置/后置
+  data_supplements:
+  - queryBehaviorName
 processes:
 - name: processName
   display_name: 流程展示名称

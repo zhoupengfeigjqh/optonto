@@ -29,6 +29,8 @@ export interface Concept {
   attributes?: Attribute[];
   display_name?: string;
   instance_label?: string;
+  /** 术语集：该概念的其他表述（同义词/别名/简称等）；与 instance_label 平级 */
+  terms?: string[];
 }
 
 export const getConcepts = (ontologyId: number) =>
@@ -53,6 +55,8 @@ export interface Relation {
   source: string;
   target: string;
   cardinality: string;
+  /** 关系类型（可多选）：asymmetric/symmetric/transitive/functional/inverse_functional */
+  relation_type?: string[];
   source_attr?: string;
   target_attr?: string;
   description: string;
@@ -81,6 +85,8 @@ export interface Function {
   params?: Record<string, unknown>;
   response?: Record<string, unknown>;
   code_file?: string;
+  /** 函数类型：TRANSFORMATION/CALCULATION/DERIVATION/VALIDATION/MODEL（英文码，单选） */
+  type?: string;
 }
 
 export const getFunctions = (ontologyId: number) =>
@@ -106,7 +112,7 @@ export const generateFunctionCode = (ontologyId: number, name: string) =>
   request<{ code: string; code_file: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/generate-code`, { method: 'POST' });
 
 export const executeFunction = (ontologyId: number, name: string, params: any) =>
-  request<{ result: any }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/execute`, { method: 'POST', body: JSON.stringify({ params }) });
+  request<{ success: boolean; data: any; error: any }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/execute`, { method: 'POST', body: JSON.stringify({ params }) });
 
 export const updateFunction = (ontologyId: number, name: string, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -119,8 +125,13 @@ export interface Behavior {
   op_type?: string;
   params: Record<string, unknown>;
   response?: Record<string, unknown>;
-  related_concepts: string[];
+  /** 关联概念（唯一）：行为只关联一个概念，其 status 属性枚举即状态机取值来源 */
+  concept: string;
   display_name?: string;
+  /** 源状态：command 行为的状态机跃迁起点（取自关联概念 status 属性的枚举） */
+  from_status?: string;
+  /** 目标状态：command 行为的状态机跃迁终点 */
+  to_status?: string;
 }
 
 export const getBehaviors = (ontologyId: number) =>
@@ -140,25 +151,19 @@ export const updateBehavior = (ontologyId: number, name: string, data: Behavior)
 export interface Rule {
   name: string;
   description: string;
-  related_behaviors: string[];
+  /** 绑定行为（唯一） */
+  behavior: string;
+  /** 关联函数（本体∪公共）；其中本体且 type=VALIDATION 者为判断函数——返回 data.pass/reason，前置判断不通过时系统拒绝主行为 */
   related_functions: string[];
   display_name?: string;
-  rule_type?: string;
   position?: string;
-  rule_detail?: any;
 }
 
 export const getRules = (ontologyId: number) =>
   request<Rule[]>(`/api/ontologies/${ontologyId}/rules`);
 
-export const getRuleTemplateTypes = () =>
-  request<string[]>("/api/rule-templates/types");
-
-export const getRuleTemplate = (ruleName: string) =>
-  request<any>(`/api/rule-templates/${encodeURIComponent(ruleName)}`);
-
 export const generateRule = (ontologyId: number, data: any) =>
-  request<{ rule_detail: any }>(`/api/ontologies/${ontologyId}/rules/generate`, { method: 'POST', body: JSON.stringify(data) });
+  request<{ related_functions: string[]; reasoning: string }>(`/api/ontologies/${ontologyId}/rules/generate`, { method: 'POST', body: JSON.stringify(data) });
 export const createRule = (ontologyId: number, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules`, { method: 'POST', body: JSON.stringify(data) });
 

@@ -241,7 +241,7 @@ export class SubtaskRunner {
   ): Promise<SubTaskResult> {
     const rg = policy.ruleGate;
     if (!rg || rg.post.length === 0) return result;
-    let missing = missingRuleFunctions(rg.post, rg.succeeded);
+    let missing = missingRuleFunctions(rg.post, rg.succeeded, rg.verdicts);
     for (let nudge = 0; missing.length > 0 && nudge < MAX_POST_RULE_NUDGES; nudge++) {
       emit.entry({
         type: 'tool_call', name: '后置规则留痕核查', status: 'running',
@@ -258,7 +258,7 @@ export class SubtaskRunner {
       // 补跑后重提取结果（子 Agent 的新结论替换旧 summary；提取失败保留原结果）
       const refreshed = this.extractResult(childAgent.state.messages, subTask.seq, subTask.behavior);
       if (refreshed.success) result = refreshed;
-      missing = missingRuleFunctions(rg.post, rg.succeeded);
+      missing = missingRuleFunctions(rg.post, rg.succeeded, rg.verdicts);
     }
     if (missing.length > 0) {
       result.summary += `\n\n⚠️ 后置规则留痕缺失（已提醒补跑 ${MAX_POST_RULE_NUDGES} 次仍缺）：` +
@@ -343,16 +343,22 @@ export class SubtaskRunner {
       text += `\n### 前置规则（执行前必须全部验证通过）\n`;
       meta.preRules.forEach(r => {
         text += `[${r.name}] ${r.description}\n`;
-        if (r.rule_detail) text += `  配置: ${JSON.stringify(r.rule_detail)}\n`;
+        // 口径 B（类型即角色）：本体且 type=VALIDATION 的关联函数是判断函数（data.pass 决定阻断）
+        if (r.related_functions?.length) {
+          const judges = new Set(r.judge_functions || []);
+          const parts = r.related_functions.map(f => (judges.has(f) ? `${f}（判断函数）` : f));
+          text += `  关联函数: ${parts.join(', ')}\n`;
+        }
         if (r.data_supplements?.length) {
           text += `  需要接口: ${r.data_supplements.join(', ')}（已挂载为同名工具，参数以其 schema 为准）\n`;
         }
-        if (r.related_functions?.length) {
-          text += `  关联函数: ${r.related_functions.join(', ')}\n`;
-        }
       });
-      // 与闸2（前置规则留痕）同语义：提前告知，报错时不意外
-      if (meta.preRules.some(r => r.related_functions?.length)) {
+      // 与闸2.5（判断函数判断核查）同语义：提前告知，报错时不意外
+      if (meta.preRules.some(r => (r.judge_functions || []).length > 0)) {
+        text += `⚠️ 系统硬闸：调用主行为前会核查上述「判断函数」已成功执行且判断通过（统一信封 data.pass=true）；判断不通过（pass=false）或缺少 pass 字段时本行为将被拒绝且重试无效——请先调用判断函数完成验证，确认通过后再调主行为。\n`;
+      }
+      // 无判断函数的规则走纯留痕闸：与闸2 同语义
+      if (meta.preRules.some(r => (r.related_functions || []).length > 0 && (r.judge_functions || []).length === 0)) {
         text += `⚠️ 系统硬闸：调用主行为前会强制检查上述规则的关联函数已成功执行，未执行将被拒绝——请先调用关联函数再调主行为。\n`;
       }
     }
@@ -365,17 +371,19 @@ export class SubtaskRunner {
       text += `\n### 后置规则（执行后进行推理验证）\n`;
       meta.postRules.forEach(r => {
         text += `[${r.name}] ${r.description}\n`;
-        if (r.rule_detail) text += `  配置: ${JSON.stringify(r.rule_detail)}\n`;
+        // 口径 B：后置规则按关联函数/判断函数的统一信封结果得出核查结论
+        if (r.related_functions?.length) {
+          const judges = new Set(r.judge_functions || []);
+          const parts = r.related_functions.map(f => (judges.has(f) ? `${f}（判断函数）` : f));
+          text += `  关联函数: ${parts.join(', ')}\n`;
+        }
         if (r.data_supplements?.length) {
           text += `  需要接口: ${r.data_supplements.join(', ')}（已挂载为同名工具，参数以其 schema 为准）\n`;
         }
-        if (r.related_functions?.length) {
-          text += `  关联函数: ${r.related_functions.join(', ')}\n`;
-        }
       });
       // 与后置留痕闸同语义：收尾核查缺函数会被要求补跑，提前告知
-      if (meta.postRules.some(r => r.related_functions?.length)) {
-        text += `⚠️ 系统核查：子任务结束前会检查后置规则的关联函数已成功执行，缺失将要求你补充执行后才能收尾。\n`;
+      if (meta.postRules.some(r => (r.related_functions || []).length > 0)) {
+        text += `⚠️ 系统核查：子任务结束前会检查后置规则的关联/判断函数已成功执行，缺失将要求你补充执行后才能收尾。\n`;
       }
     }
 

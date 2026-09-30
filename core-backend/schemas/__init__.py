@@ -1,6 +1,23 @@
-"""Pydantic schemas for ontology YAML data structures."""
+"""Pydantic schemas for ontology YAML data structures.
+
+枚举值域口径（spec 003 假设）：值域类非法值一律**静默归一**（不报错、不阻断保存），
+跨字段强耦合校验放业务层（`services/validators.py` → `errors.InvalidInputError` → 400）。
+"""
+
+import logging
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+logger = logging.getLogger("core-backend")
+
+# ─── 枚举值域（spec 003）──────────────────────────────────────────────────────
+
+# 关系类型：5 值，可多选（值域外的值静默丢弃）
+RELATION_TYPES = ('asymmetric', 'symmetric', 'transitive', 'functional', 'inverse_functional')
+# 函数类型：5 值单选，英文码（值域外归一为空串）
+FUNCTION_TYPES = ('TRANSFORMATION', 'CALCULATION', 'DERIVATION', 'VALIDATION', 'MODEL')
+# 概念生命周期状态属性名：该属性承担对象生命周期语义，其 constraint.enum 即状态全集
+STATUS_ATTR_NAME = 'status'
 
 
 # ─── Ontology Components (YAML-based) ─────────────────────────────────────────
@@ -59,6 +76,24 @@ class ConceptItem(BaseModel):
     attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表")
     display_name: str = Field("", description="展示名称")
     instance_label: str = Field("", description="实例标签：用于实例展示时作为节点标签，可选值为属性的英文名")
+    terms: list[str] = Field(default_factory=list, description="术语集：该概念的其他表述（同义词/别名/简称等）")
+
+    @field_validator('terms', mode='before')
+    @classmethod
+    def coerce_terms(cls, v: any) -> list[str]:
+        """术语集规范化：去重、去空串、去首尾空白（顺序保持首次出现）。"""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        if not isinstance(v, list):
+            return []
+        out: list[str] = []
+        for t in v:
+            s = str(t).strip()
+            if s and s not in out:
+                out.append(s)
+        return out
 
 
 class RelationItem(BaseModel):
@@ -71,6 +106,11 @@ class RelationItem(BaseModel):
     description: str = Field("", description="关系说明")
     display_name: str = Field("", description="展示名称")
 
+    relation_type: list[str] = Field(
+        default_factory=list,
+        description="关系类型（可多选）：asymmetric/symmetric/transitive/functional/inverse_functional",
+    )
+
     @field_validator('cardinality', mode='before')
     @classmethod
     def coerce_cardinality(cls, v: any) -> str:
@@ -78,27 +118,111 @@ class RelationItem(BaseModel):
         s = str(v) if v is not None else "1:N"
         return s if s in valid else "1:N"
 
+    @field_validator('relation_type', mode='before')
+    @classmethod
+    def coerce_relation_type(cls, v: any) -> list[str]:
+        """关系类型规范化：值域外丢弃、去重保序（不阻断保存）。"""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        if not isinstance(v, list):
+            return []
+        out: list[str] = []
+        for t in v:
+            s = str(t)
+            if s in RELATION_TYPES and s not in out:
+                out.append(s)
+        return out
+
 
 class BehaviorItem(BaseModel):
+    """本体行为。
+
+    行为关联概念**唯一**（``concept`` 标量）；command 行为可声明状态机跃迁
+    ``from_status`` → ``to_status``，取值来自关联概念 ``status`` 属性的 ``constraint.enum``
+    （强耦合校验见 ``services/validators.py``：越界 → 400）。
+    """
+
     name: str = Field(..., description="行为名称")
     description: str = Field("", description="行为描述")
     op_type: str = Field("", description="操作类型（command/query）")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
-    related_concepts: list[str] = Field(default_factory=list, description="关联概念")
+    concept: str = Field("", description="关联概念（唯一）")
     display_name: str = Field("", description="展示名称")
+    from_status: str = Field("", description="源状态：command 状态机跃迁起点（取自关联概念 status 枚举）")
+    to_status: str = Field("", description="目标状态：command 状态机跃迁终点（取自关联概念 status 枚举）")
+
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_related_concepts(cls, v: any) -> any:
+        """旧字段 related_concepts（数组）→ concept（标量）。
+
+        spec 003：行为关联概念收缩为唯一。存量数据实测恒为单元素，迁移无损；
+        意外多元素时取首个并记 warning（不报错，保持读时兼容口径）。
+        """
+        if isinstance(v, dict) and 'related_concepts' in v and 'concept' not in v:
+            legacy = v.get('related_concepts') or []
+            if isinstance(legacy, str):
+                legacy = [legacy]
+            if isinstance(legacy, list) and len(legacy) > 1:
+                logger.warning("行为 %s 的 related_concepts 含 %d 个元素，迁移取首个", v.get('name'), len(legacy))
+            v = {**v, 'concept': str(legacy[0]) if isinstance(legacy, list) and legacy else ""}
+        return v
 
 
 class RuleItem(BaseModel):
+    """本体规则：附着于行为的约束逻辑。
+
+    2026-09-30 口径 B（类型即角色 → 真阻断）：
+    - 规则的约束逻辑由 ``related_functions``（关联函数）承载，可含**本体函数与公共函数**；
+      其中**本体函数且 ``type=VALIDATION``（逻辑验证）者为「判断函数」**——运行期由 agent 侧规则闸
+      在主行为工具调用前核查其统一信封返回值 ``data.pass/reason``：``pass=false`` 或缺失 ``pass``
+      （fail-closed）即拒绝主行为（真阻断）；其余函数（CALCULATION 等本体函数 / 公共函数）只要求
+      执行过（留痕审计）。
+    - ``data_supplements``：按关联函数声明关联的概念（``related_concepts``）推出对应 query 行为（前端自动推导，可手工增减）。
+    - 旧条件树字段已退役（字段移除，不再读时兼容）；旧 ``check_functions`` 读时并入
+      ``related_functions``（口径 B 取消独立裁决函数字段——角色由函数类型承载）。
+    - 绑定行为唯一（``behavior`` 标量）口径不变。
+    """
+
     name: str = Field(..., description="规则名")
     description: str = Field("", description="规则描述")
-    related_behaviors: list[str] = Field(default_factory=list, description="关联行为（可多选）")
-    related_functions: list[str] = Field(default_factory=list, description="关联函数（可多选）")
+    behavior: str = Field("", description="绑定行为（唯一）")
+    related_functions: list[str] = Field(default_factory=list, description="关联函数（本体函数∪公共函数；本体且 type=VALIDATION 者为判断函数，返回 data.pass/reason 并参与真阻断）")
     display_name: str = Field("", description="展示名称")
-    rule_type: str = Field("", description="规则类型（验证规则/推理规则）")
     position: str = Field("", description="介入位置（前置/后置）")
-    rule_detail: dict | None = Field(None, description="规则结构配置（条件结构）")
-    data_supplements: list[str] = Field(default_factory=list, description="数据补充（可多选行为）")
+    data_supplements: list[str] = Field(default_factory=list, description="数据补充（可多选 query 行为；自动推导自关联函数声明的关联概念，可手工增减）")
+
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_rule_fields(cls, v: any) -> any:
+        """读时迁移（口径同项目既有惯例）：
+        ① 旧字段 related_behaviors（数组）→ behavior（标量）：取唯一元素；
+        ② 旧字段 check_functions（裁决函数列表，2026-09-30 口径 B 已取消）→ 并入 related_functions
+           （角色改由函数类型承载：VALIDATION 型本体函数即判断函数）。
+        """
+        if not isinstance(v, dict):
+            return v
+        if 'related_behaviors' in v and 'behavior' not in v:
+            legacy = v.get('related_behaviors') or []
+            if isinstance(legacy, str):
+                legacy = [legacy]
+            if isinstance(legacy, list) and len(legacy) > 1:
+                logger.warning("规则 %s 的 related_behaviors 含 %d 个元素，迁移取首个", v.get('name'), len(legacy))
+            v = {**v, 'behavior': str(legacy[0]) if isinstance(legacy, list) and legacy else ""}
+        if 'check_functions' in v:
+            legacy_checks = v.get('check_functions') or []
+            if isinstance(legacy_checks, str):
+                legacy_checks = [legacy_checks]
+            current = v.get('related_functions') or []
+            if isinstance(current, str):
+                current = [current]
+            merged = [f for f in [*current, *legacy_checks] if f]
+            v = {k: val for k, val in v.items() if k != 'check_functions'}
+            v = {**v, 'related_functions': list(dict.fromkeys(merged))}
+        return v
 
 
 class ProcessStep(BaseModel):
@@ -176,6 +300,14 @@ class FunctionItem(BaseModel):
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构")
     code_file: str = Field("", description="函数代码文件路径（functions/函数名.py）")
+    type: str = Field("", description="函数类型：TRANSFORMATION/CALCULATION/DERIVATION/VALIDATION/MODEL")
+
+    @field_validator('type', mode='before')
+    @classmethod
+    def coerce_function_type(cls, v: any) -> str:
+        """函数类型规范化：值域外归一为空串（不推断、不阻断）。"""
+        s = str(v) if v is not None else ""
+        return s if s in FUNCTION_TYPES else ""
 
 
 class TargetApiConfig(BaseModel):
