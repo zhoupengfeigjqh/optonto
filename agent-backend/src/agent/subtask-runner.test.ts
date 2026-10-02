@@ -2,7 +2,7 @@
  * SubtaskRunner 集成测试 —— 工具报错预算（errorBudget）接线 + 指令组装 + disable 闸 + 函数子任务直连。
  * 用真实 wrapExecuteWithErrorBudget + 真实 SubtaskRunner，替换 createChildAgent 返回的 AgentPort，
  * 验证"连续报错 3 次 → 返回失败+明确原因、prompt 只调 1 次不再外层重试"。
- * （2026-09 facade 化：指令不再渲染合法名单/参数结构——挂载期过滤即白名单，结构约束以工具 schema 为准；
+ * （2026-09 行为工具化：指令不再渲染合法名单/参数结构——挂载期过滤即白名单，结构约束以工具 schema 为准；
  *   运行期白名单闸/必填闸/requiredParamsMap 已退役。）
  * 注：vitest4 的 beforeEach mockReset 会让 mock 抛错被误报未捕获，统一用 afterEach 清。
  */
@@ -232,7 +232,7 @@ describe('SubtaskRunner · 工具报错预算', () => {
   });
 });
 
-describe('SubtaskRunner · 指令组装（facade 化后：挂载即白名单，结构约束以工具 schema 为准）', () => {
+describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名单，结构约束以工具 schema 为准）', () => {
   it('参数段只渲染已填值（key: value 行）；空值包装渲染（待补充）', async () => {
     let instruction = '';
     const subWithParams: SubTask = {

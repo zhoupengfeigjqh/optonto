@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Body, HTTPException
 
 from config import DATA_DIR, DEMAND_THREADS_DIR
-from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
+from repositories.metadata import ontology_identity_by_name
 from repositories import fs_store
 from services import split_yaml_top_sections
 
@@ -93,17 +93,15 @@ def _save_thread(data: dict) -> None:
 
 
 def _resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[int], Optional[int]]:
-    """Resolve scenario_id and ontology_id from meta.json. Returns (scenario_id, ontology_id), None when not found."""
+    """(scenario_id, ontology_id)：**身份唯一来源 = ontology.yaml.metadata**；不可信时 (None, None)。
+
+    线程/对话记录要落 id 时统一走这里（与清单、依赖注入同一口径），不再读 meta.json/目录名。
+    """
     try:
-        scenario = get_scenario_by_name(scenario_name)
-        scenario_id = scenario.get("id") if scenario else None
-        ontology_id = None
-        if scenario_id is not None:
-            for o in list_ontologies_by_scenario(scenario_name):
-                if o.get("name") == ontology_name:
-                    ontology_id = o.get("id")
-                    break
-        return scenario_id, ontology_id
+        ident = ontology_identity_by_name(scenario_name, ontology_name)
+        if not ident:
+            return None, None
+        return int(ident["scenario_id"]), int(ident["ontology_id"])
     except Exception:
         return None, None
 
@@ -122,7 +120,7 @@ async def list_threads(scenario: str = "", ontology: str = ""):
         scenario_id = data.get("scenario_id")
         ontology_id = data.get("ontology_id")
         if scenario_id is None or ontology_id is None:
-            # 旧线程未落盘 id，按名称从 meta.json 解析兜底
+            # 旧线程未落盘 id，按名称从 ontology.yaml.metadata 解析兜底（与清单同一身份来源）
             sid, oid = _resolve_ids(sc_name, onto_name)
             scenario_id = scenario_id if scenario_id is not None else sid
             ontology_id = ontology_id if ontology_id is not None else oid

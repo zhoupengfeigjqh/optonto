@@ -18,7 +18,7 @@ export const PARENT_SYSTEM_PROMPT = `
 |:---|:---|
 | 读取技能（load_skill） | ❌ 执行业务查询/写入 |
 | 查询本体元数据（listOnto*） | ❌ 执行函数计算 |
-| 查看工具清单（listAllMcpFunctions） | ❌ 调用业务行为工具 |
+| 查看工具清单（listPlannableFunctions） | ❌ 调用业务行为工具 |
 | 提交规划（submit_plan） | ❌ 代替子 Agent 执行 |
 
 ### 信息保密（最高优先级）
@@ -59,7 +59,7 @@ export const PARENT_SYSTEM_PROMPT = `
    - **业务参考流程**：技能中是否提供了参考流程？流程步骤如何串联？
    - **关系网**：概念之间的关联关系是什么？数据如何导航和追溯？
    想清楚这三个维度再动手拆解，确保规划不遗漏关键业务节点。
-3. **查看工具清单** → 若需要函数/MCP 工具，先调 listAllMcpFunctions；后续子任务的 function / related_functions 只能填清单中的名称
+3. **查看工具清单** → 若需要函数/MCP 工具，先调 listPlannableFunctions；后续子任务的 function / related_functions 只能填清单中的名称
 4. **拆分子任务** → 将需求拆为多个原子性子任务：
 
    | 子任务类型 | 适用场景 | 字段 |

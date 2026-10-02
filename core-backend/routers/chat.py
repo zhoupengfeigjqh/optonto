@@ -283,7 +283,7 @@ async def generate_ontology(thread_id: str, body: dict):
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    # metadata 的场景/本体名称与 id 直接引用 meta.json（权威来源），不交给模型猜测
+    # metadata 的场景/本体名称与 id 取自 ontology.yaml.metadata（身份唯一来源），不交给模型猜测
     created_at = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
     scenario_id, ontology_id = _resolve_ids(sc, onto)
 
@@ -317,7 +317,7 @@ async def generate_ontology(thread_id: str, body: dict):
         # Validate structure (OntologyData allows partial: missing top-level sections default to empty)
         ontology_data = OntologyData(**parsed)
 
-        # metadata 结构固化：7 个约定字段，顺序固定；scenario/ontology 名称与 id 取自 meta.json；移除已废弃的 name
+        # metadata 结构固化：7 个约定字段，顺序固定；scenario/ontology 名称与 id 取自 ontology.yaml.metadata；移除已废弃的 name
         meta_in = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
         ontology_data.metadata = {
             "source_file": str(meta_in.get("source_file") or filename),

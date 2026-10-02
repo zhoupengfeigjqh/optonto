@@ -59,6 +59,31 @@ export class OntologyGateway {
     return (data?.behaviors || []).map((b: any) => b.name).filter(Boolean);
   }
 
+  /**
+   * **就绪**行为名（契约 ⑥，与 data-engine-mcp 的发布判据同源，勿单边改动）：
+   * 行为有可用数据引擎才就绪——引擎 `behavior_name` 匹配、`engine_type` 缺省/'MCP'、
+   * `target.server_url` 与 `target.tool_name` 非空（与 visibility-guard 收编同口径；
+   * Python 侧对应 `mcp-shared/tool_contract.is_engine_ready`）。
+   *
+   * 与 getBehaviorNames（全量花名册）分工：元数据查询仍列全部（设计期视角），
+   * 规划可行集只认就绪者——未就绪行为不发布为工具，放行会"能规划、挂不上"。
+   */
+  getReadyBehaviorNames(scenario: string, ontology: string): string[] {
+    const data = this.loadOntologyData(scenario, ontology);
+    const ready = new Set<string>();
+    for (const de of ((data?.data_engines || []) as any[])) {
+      if (!de || typeof de !== 'object') continue;
+      if (de.engine_type && de.engine_type !== 'MCP') continue;
+      const url = String(de.target?.server_url ?? '').trim();
+      const tool = String(de.target?.tool_name ?? '').trim();
+      if (!url || !tool) continue;
+      if (de.behavior_name) ready.add(String(de.behavior_name));
+    }
+    return (data?.behaviors || [])
+      .map((b: any) => b.name)
+      .filter((n: string) => Boolean(n) && ready.has(n));
+  }
+
   /** 按关联概念名解析概念属性（含 constraint）。行为 related_concepts 与函数 related_concepts 同源共用。 */
   private resolveConcepts(data: any, relatedNames: string[]): ConceptInfo[] {
     return (data?.concepts || [])

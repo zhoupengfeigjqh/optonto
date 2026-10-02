@@ -63,17 +63,22 @@ export class SkillLoader {
   }
 
   /**
-   * 解析单个本体选择为权威四元组（id 取自 core meta.json 注册表，实时权威）。
-   * meta 缺失/解析失败返回 null——路由层据此 400（用户选了不存在的本体）。
+   * 解析单个本体选择为权威四元组 —— **唯一来源 = ontology.yaml 的 metadata**
+   * （与 core repositories/metadata、mcp-shared/data_store 同口径；meta.json 只是创建期注册，
+   * 不再作为身份读取来源）。
+   * 口径：四元组必须完整、且与所选场景/本体一致，否则返回 null（路由层据此 400：所选本体不可用）。
    */
   resolveOntologyContext(scenario: string, ontology: string): SkillContext | null {
     try {
-      const onMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(scenario, ontology), 'utf-8'));
-      const scMeta = JSON.parse(readFileSync(this.pac.resolveOntologyMetaPath(scenario), 'utf-8'));
-      const ontologyId = Number(onMeta?.id);
-      const scenarioId = Number(scMeta?.id ?? onMeta?.scenario_id);
+      const raw = load(readFileSync(this.pac.resolveOntologyYamlPath(scenario, ontology), 'utf-8'));
+      const md = (raw as { metadata?: Record<string, unknown> } | null)?.metadata;
+      const ontologyId = Number(md?.['ontology_id']);
+      const scenarioId = Number(md?.['scenario_id']);
+      const scenarioName = String(md?.['scenario_name'] ?? '');
+      const ontologyName = String(md?.['ontology_name'] ?? '');
       if (!Number.isFinite(ontologyId) || !Number.isFinite(scenarioId)) return null;
-      return { scenario_name: scenario, scenario_id: scenarioId, ontology_name: ontology, ontology_id: ontologyId };
+      if (scenarioName !== scenario || ontologyName !== ontology) return null; // 身份只认 metadata 的自述
+      return { scenario_name: scenarioName, scenario_id: scenarioId, ontology_name: ontologyName, ontology_id: ontologyId };
     } catch {
       return null;
     }

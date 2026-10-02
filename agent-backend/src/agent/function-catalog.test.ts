@@ -17,6 +17,7 @@ afterEach(() => {
 function fakeGateway(): OntologyGatewayPort {
   return {
     getBehaviorNames: () => [],
+    getReadyBehaviorNames: () => [],
     getBehaviorMeta: () => ({ params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
     getFunctionNames: () => ['sumRawNotArrivalQty', 'calcSafetyStock'], // 文件两源（yaml∪json）
     getFunctionInfo: (_scenario, _ontology, fn) =>

@@ -2,7 +2,7 @@
  * topologicalSort 单元测试 —— 独立出来的图算法，补边界兜底（此前只能靠编排集成测试间接覆盖）。
  * 环不在本函数职责内（validatePlanStructure 已前置拦截），故不测环。
  *
- * validateAllParams（2026-09 facade 化后）：对 core 编译 inputSchema 跑「必填 key 齐全 + 已填值合规」，
+ * validateAllParams（2026-09 行为工具化后）：对 core 编译 inputSchema 跑「必填 key 齐全 + 已填值合规」，
  * 数据源 = run 级目录快照（函数 functionInfo.schema 三源 / 行为 behaviorSchema）；无 schema → 跳过。
  * 约束（enum/pattern/min/max）已编进 schema，由同一道校验覆盖（细粒度断言见 param-contract.test.ts）。
  */
@@ -94,6 +94,7 @@ describe('validatePlanStructure', () => {
 function fakeGateway(): OntologyGatewayPort {
   return {
     getBehaviorNames: () => ['QueryPurchaseRecords', 'CreatePurchaseRecord'],
+    getReadyBehaviorNames: () => ['QueryPurchaseRecords', 'CreatePurchaseRecord'],
     getFunctionNames: () => ['sumRawNotArrivalQty', 'calcSafetyStock'],
     getBehaviorMeta: (_scenario, _ontology, behavior) => ({
       display_name: '',
@@ -124,7 +125,7 @@ function plan(subtasks: SubTask[]): SubTaskPlan {
 
 const ONTARIO_SCOPE = { name: '', ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' };
 
-/** 本体行为目录项（facade 一等工具；schema = core 编译产物，scope.name 为裸名） */
+/** 本体行为目录项（行为工具；schema = core 编译产物，scope.name 为裸名） */
 function behaviorTool(bareName: string, schema: Record<string, any>, toolName?: string): MountableToolInfo {
   return {
     name: toolName ?? bareName, category: '本体行为', description: '', params: {},
@@ -189,6 +190,31 @@ describe('validateBehaviorNames 跳过函数节点', () => {
   });
 });
 
+describe('validateBehaviorNames · 就绪才是可规划集（契约 ⑥）', () => {
+  /** 网关桩：本体声明 3 个行为，但只有 1 个就绪（其余未完成映射、未发布为工具） */
+  const gw = {
+    ...fakeGateway(),
+    getBehaviorNames: () => ['QueryPurchaseRecords', 'CreatePurchaseRecord', 'StartSchedTask'],
+    getReadyBehaviorNames: () => ['QueryPurchaseRecords'],
+  } as OntologyGatewayPort;
+
+  it('行为已声明但未就绪（未完成映射）→ 判为 notReady（与 missing 分开，自纠方向不同）', () => {
+    const invalid = validateBehaviorNames(gw, plan([behSubtask('StartSchedTask')]));
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0].reason).toBe('notReady');
+    expect(invalid[0].valid).toEqual(['QueryPurchaseRecords']); // 合法名单只含就绪行为
+  });
+
+  it('行为未声明 → 判为 missing', () => {
+    const invalid = validateBehaviorNames(gw, plan([behSubtask('NotExistAtAll')]));
+    expect(invalid[0].reason).toBe('missing');
+  });
+
+  it('就绪行为放行', () => {
+    expect(validateBehaviorNames(gw, plan([behSubtask('QueryPurchaseRecords')]))).toEqual([]);
+  });
+});
+
 describe('validateAllParams · 编译 schema 校验（行为/函数统一）', () => {
   const BEH_SCHEMA = {
     type: 'object',
@@ -222,8 +248,8 @@ describe('validateAllParams · 编译 schema 校验（行为/函数统一）', (
     expect(errors.some(e => e.includes('不在枚举值'))).toBe(true);
   });
 
-  it('行为子任务：跨本体重名工具带前缀 → 按 scope.name 裸名回溯 schema，不误判', async () => {
-    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA, 'onto1__CreatePurchaseRecord')]);
+  it('行为子任务：按 scope.name（行为名）回溯 schema，不依赖工具名', async () => {
+    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA, '工具名与行为名不同时的兜底')]);
     const errors = validateAllParams(view, plan([behSubtask('CreatePurchaseRecord')]));
     expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
   });

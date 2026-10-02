@@ -208,29 +208,30 @@ def _invalidate_ontology_cache(scenario_name: str, ontology_name: str) -> None:
     _ontology_cache.pop((scenario_name, ontology_name), None)
 
 
-def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyData) -> None:
-    """Save ontology data to YAML file."""
-    yaml_path = _get_yaml_path(scenario_name, ontology_name)
-    ensure_ontology_dir(scenario_name, ontology_name)
+def _stamp_identity_metadata(data: OntologyData, scenario_name: str, ontology_name: str) -> None:
+    """把身份四元组固化进 `data.metadata`（**写侧唯一实现**，save 与 save_version 共用）。
 
-    # 在 metadata 中固化场景/本体名称与 id（权威来源：meta.json）
-    from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
-    scenario = get_scenario_by_name(scenario_name)
-    scenario_id = scenario.get("id") if scenario else None
-    ontology_id = None
-    if scenario_id is not None:
-        for o in list_ontologies_by_scenario(scenario_name):
-            if o.get("name") == ontology_name:
-                ontology_id = o.get("id")
-                break
+    - 名字取当前（目录）名；
+    - id 取注册表（分配权威）——统一经 `repositories.metadata.registry_ids`，避免多处各自查 id；
+    - 清理已废弃的 `metadata.name`（本体名以 `metadata.ontology_name` 为准）。
+    """
+    from repositories.metadata import registry_ids
+    scenario_id, ontology_id = registry_ids(scenario_name, ontology_name)
     if not isinstance(data.metadata, dict):
         data.metadata = {}
-    # name 已废弃（本体名以 meta.json / metadata.ontology_name 为准），保存时清除历史遗留值
     data.metadata.pop("name", None)
     data.metadata["scenario_name"] = scenario_name
     data.metadata["scenario_id"] = scenario_id
     data.metadata["ontology_name"] = ontology_name
     data.metadata["ontology_id"] = ontology_id
+
+
+def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyData) -> None:
+    """Save ontology data to YAML file."""
+    yaml_path = _get_yaml_path(scenario_name, ontology_name)
+    ensure_ontology_dir(scenario_name, ontology_name)
+
+    _stamp_identity_metadata(data, scenario_name, ontology_name)
 
     # 数据引擎/安全管控拆写到独立文件；ontology.yaml 彻底不含这两个键（唯一权威来源 = 独立文件）。
     # 安全管控先做全花名册同步（补新行为默认条目、刷新 display_name/op_type 快照、移除已删行为），
@@ -294,23 +295,7 @@ def save_ontology_version(scenario_name: str, ontology_name: str, version: str, 
     """
     vdir = fs_store.ensure_dir(_get_version_dir(scenario_name, ontology_name, version))
 
-    # 在 metadata 中固化场景/本体名称与 id
-    from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
-    scenario = get_scenario_by_name(scenario_name)
-    scenario_id = scenario.get("id") if scenario else None
-    ontology_id = None
-    if scenario_id is not None:
-        for o in list_ontologies_by_scenario(scenario_name):
-            if o.get("name") == ontology_name:
-                ontology_id = o.get("id")
-                break
-    if not isinstance(data.metadata, dict):
-        data.metadata = {}
-    data.metadata.pop("name", None)
-    data.metadata["scenario_name"] = scenario_name
-    data.metadata["scenario_id"] = scenario_id
-    data.metadata["ontology_name"] = ontology_name
-    data.metadata["ontology_id"] = ontology_id
+    _stamp_identity_metadata(data, scenario_name, ontology_name)
 
     # 数据引擎/安全管控拆写
     engines = data.data_engines
@@ -396,5 +381,5 @@ def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dic
     return files
 
 
-# 函数沙箱（build_restricted_globals / run 入口）已迁至 mcp-shared/sandbox.py，
+# 函数执行器（build_restricted_globals / run 入口）已迁至 mcp-shared/function_runner.py，
 # 由 ontology-mcp 本地执行；core 仅保留保存期静态校验 _validate_function_code（routers/functions.py）。

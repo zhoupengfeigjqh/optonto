@@ -10,7 +10,7 @@ import { parseResultStatus, stripResultStatus } from './result-protocol.js';
 import { isParamValueEmpty, unwrapParamValue, unwrapParamValues } from './param-contract.js';
 import type { AgentPort } from './agent-ports.js';
 import type { SecurityGate } from './security-policy.js';
-import { bareBehaviorName } from './tool-catalog.js';
+
 import { buildSubtaskPolicy, missingRuleFunctions, needsSecurityConfirm } from './execution-policy.js';
 import type { LegalCalls, SubtaskInfoPort, SubtaskPolicy } from './execution-policy.js';
 import type { SubTask, BehaviorMeta, SkillContext, SubTaskResult } from '../types.js';
@@ -290,16 +290,14 @@ export class SubtaskRunner {
 
   /**
    * 解析被调对象的中文名（工具调用展示用）：
-   *  行为工具（facade，工具名 = 裸名或 onto{id}__ 前缀名）→ 被调行为的中文 display_name；
+   *  行为工具（工具名即行为名）→ 被调行为的中文 display_name；
    *  本体函数（工具名=函数名）→ 函数中文 display_name；其它工具无中文映射 → 返回空（前端用工具原名兜底）。
    */
   private resolveCalledDisplay(subTask: SubTask, toolName: string, legal: LegalCalls): { name: string; display: string } {
-    // 前缀剥离：跨本体重名行为工具带 onto{ontology_id}__ 前缀，裸名才是 legal.behaviors / gateway 的匹配键
-    const bare = bareBehaviorName(toolName);
-    if (legal.behaviors.includes(bare)) {
+    if (legal.behaviors.includes(toolName)) {
       return {
-        name: bare,
-        display: this.deps.info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, bare),
+        name: toolName,
+        display: this.deps.info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
       };
     }
     // 本体函数是一等工具（函数名即工具名），用合法函数名判定是函数而非公共函数/新增 MCP

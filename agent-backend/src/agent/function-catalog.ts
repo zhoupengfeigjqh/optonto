@@ -11,7 +11,7 @@
  *  文件兜底模式：目录中①②全缺（= 我方 MCP server 未连接）→ ①②回落 gateway 文件声明
  *   （yaml functions[] ∪ functions.json），③仍走目录。校验可用性不绑死 MCP 连接。
  *
- * 行为侧（2026-09 facade 化）：行为已是一等 MCP 工具（category='本体行为'），其编译 inputSchema
+ * 行为侧（2026-09 行为工具化）：行为已是一等 MCP 工具（category='本体行为'），其编译 inputSchema
  * （含约束）是规划期参数校验的唯一数据源——behaviorSchema 按 scope（场景/本体/裸名）回溯。
  * 行为不进函数三源（functionNames/functionInfo 自然不含），也不设文件兜底：
  * MCP 目录缺行为工具 = 我方 MCP server 未连接，此时行为根本无法执行，校验跳过即可。
@@ -94,7 +94,7 @@ export class FunctionCatalog {
         const ext = others.get(functionName);
         return ext ? fromEntry(ext) : null;
       },
-      // 行为工具可能带 onto{ontology_id}__ 前缀（跨本体重名），匹配用 scope.name 裸名，不用工具名
+      // 行为工具匹配统一用 scope.name（行为名），不用工具名
       behaviorSchema: (scenario, ontology, behaviorName) =>
         behaviors.find(t => inOnto(t, scenario, ontology) && t.scope?.name === behaviorName)?.schema ?? null,
     };

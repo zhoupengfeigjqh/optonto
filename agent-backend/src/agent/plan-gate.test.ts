@@ -2,7 +2,7 @@
  * PlanGate 单元测试 —— 规划闸门脱离 execute() 全路径直测。
  * 测试面 = 两个深入口 validateInitial / validateAdjustment（链序编排在门内，测试经链首/链尾驱动各环）：
  * 干净放行 / nudge 一次修正 / 复验不过判废 / 未重提判废。
- * 参数校验（2026-09 facade 化后）对 core 编译 schema 统一跑「必填+类型+enum/pattern/min/max」，
+ * 参数校验（2026-09 行为工具化后）对 core 编译 schema 统一跑「必填+类型+enum/pattern/min/max」，
  * 违例一律 nudge 一次（取值范围硬中断已退役），数据源 = ctx.catalog 快照（functionInfo.schema / behaviorSchema）。
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -25,6 +25,7 @@ function mkSub(seq: number): SubTask {
 const gateway = {
   getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
   getBehaviorNames: () => ['QuerySupplier'],
+  getReadyBehaviorNames: () => ['QuerySupplier'],
   getFunctionNames: () => [],
   getFunctionInfo: () => null,
 } as unknown as OntologyGatewayPort;

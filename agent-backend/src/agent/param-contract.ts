@@ -1,7 +1,7 @@
 /**
  * 参数契约 —— 规划期参数校验与参数包装的单一权威 module。
  *
- * 形态已定（2026-09 facade 化改造）：core 端把行为/函数参数声明 + 概念属性约束
+ * 形态已定（2026-09 行为工具化改造）：core 端把行为/函数参数声明 + 概念属性约束
  * （enum/pattern/min/max/必填 minLength）确定性编译为一等 MCP 工具的 inputSchema，
  * 执行期由 harness 按 schema 校验。本 module 只保留两类职责：
  *  1. 规划期校验：把同一份编译 schema 转 TypeBox，对计划期参数（{type/required/description/value}

@@ -48,7 +48,7 @@ export class ChatSession {
       console.error(`[chat] 历史压缩失败（忽略，走原始历史）: ${e?.message || e}`);
     }
 
-    // 本体作用域一次性解析：所选本体 → 权威四元组（id 来自 meta.json）+ 目录下全部技能（自动关联）。
+    // 本体作用域一次性解析：所选本体 → 权威四元组（取自 ontology.yaml.metadata）+ 目录下全部技能（自动关联）。
     // 空范围 = 通用问答模式（父 Agent 不挂业务工具）。
     const scope = this.skillLoader.resolveScope(thread.ontology_scope || []);
     const result = await this.orchestrator.execute(message, scope, history, sendEvent);

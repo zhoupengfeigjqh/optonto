@@ -10,7 +10,7 @@
  *
  * 五个校验器共享同一骨架 repairPlan（校验 → 有错则记录执行流水 + 复位 holder + nudge 父Agent
  * 最多 1 次 → 复验），各自只差校验器与提示文案。
- * 参数校验（2026-09 facade 化后）一道覆盖类型与约束：core 编译 inputSchema 已含
+ * 参数校验（2026-09 行为工具化后）一道覆盖类型与约束：core 编译 inputSchema 已含
  * enum/pattern/min/max/必填约束，违例统一 nudge 一次（取值范围硬中断已随用户拍板退役）。
  *
  * 从 Orchestrator 拆出后本模块即测试面：修复循环与链序可脱离 execute() 全路径直测。
@@ -104,7 +104,7 @@ export class PlanGate {
     return this.repairPlan(plan, ctx, {
       label: '行为名校验',
       doneLabel: '行为名已修正',
-      detailOf: (p) => `不存在的 behavior: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}）`).join('、')}`,
+      detailOf: (p) => `不可用的 behavior: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}${iv.reason === 'notReady' ? '，未就绪' : ''}）`).join('、')}`,
       isClean: (p) => invalidOf(p).length === 0,
       nudge: (p) => {
         const invalid = invalidOf(p);
@@ -112,11 +112,15 @@ export class PlanGate {
         // 跨本体误选、白白浪费唯一的修正机会；valid 为空（本体无行为/yaml缺失）时给删除或换本体的出口
         const lines = invalid.map(iv => {
           const head = `- 子任务${iv.sub.seq}（${iv.sub.behavior}，${iv.sub.scenario_name}/${iv.sub.ontology_name}）`;
+          // 未就绪（契约 ⑥）：名字合法但未配映射、未发布为工具——列合法名单没用，要让它换行为或如实告知用户
+          if (iv.reason === 'notReady') {
+            return `${head} 尚未就绪（未完成数据引擎映射，未发布为工具）——请改用该本体下的就绪行为，或如实告知用户该能力尚未配置`;
+          }
           return iv.valid.length > 0
             ? `${head}，合法行为名有：${iv.valid.join('、')}`
             : `${head}，该本体下没有任何合法行为名——请检查 scenario_name/ontology_name 是否填错，或删除该子任务`;
         });
-        return `以下子任务的 behavior 不在其所属场景/本体的合法集合中：\n${lines.join('\n')}\n请严格按各子任务对应的合法名单修正（严禁跨子任务借用名单），保持其余子任务不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
+        return `以下子任务的 behavior 不可用（不存在或未就绪）：\n${lines.join('\n')}\n请严格按各子任务对应的合法名单修正（严禁跨子任务借用名单），保持其余子任务不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
       },
     });
   }

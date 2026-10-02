@@ -250,7 +250,7 @@ export class Orchestrator {
     );
     session.parentAgent = parentAgent;
     // 父Agent 工具调用留痕（执行记录）：load_skill 仅完成时推一条（不带 SKILL 全文，只记技能名）；
-    // list* 本体查询 running→done 成对推（结果不截断）。submit_plan / listAllMcpFunctions 不推——
+    // list* 本体查询 running→done 成对推（结果不截断）。submit_plan / listPlannableFunctions 不推——
     // 规划有 plan_confirm/plan_received 专属通道，目录查询按约定不展示。
     // start/end 参数配对走 ToolCallBridge（与子 Agent 侧同一模式）。
     const parentToolCalls = new ToolCallBridge();

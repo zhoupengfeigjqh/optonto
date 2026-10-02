@@ -2,7 +2,7 @@
  * buildSubtaskPolicy 单元测试 —— 子任务执行策略的单一派生点。
  * 验证三件套一次派生：合法清单（子 Agent 挂载过滤依据）/ 禁用集合（scope 含 disable，值带 display_name）/
  * 报错预算（每子任务一份新实例），以及 run 级安全闸按引用透传（所有子任务共享同一道闸）。
- * （2026-09 facade 化：requiredParamsMap 已退役——参数合法性由工具 inputSchema 在 harness 层校验。）
+ * （2026-09 行为工具化：requiredParamsMap 已退役——参数合法性由工具 inputSchema 在 harness 层校验。）
  */
 import { describe, it, expect } from 'vitest';
 import { buildSubtaskPolicy, missingRuleFunctions, needsSecurityConfirm } from './execution-policy.js';

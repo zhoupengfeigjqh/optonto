@@ -35,7 +35,7 @@ export function createThreadsRouter(
       const { title, ontology_scope } = req.body as { title: string; ontology_scope?: { scenario: string; ontology: string }[] };
       const scope = ontology_scope || [];
 
-      // 本体范围逐条校验：必须能解析到 core meta.json（选了不存在的本体 → 400 指出具体条目）。
+      // 本体范围逐条校验：必须能在 ontology.yaml.metadata 解析到身份四元组（选了不存在的本体 → 400 指出具体条目）。
       // 空数组合法——通用问答模式（父 Agent 不挂业务工具）。
       const bad = scope.filter(sel => !sel?.scenario || !sel?.ontology || !skillLoader.resolveOntologyContext(sel.scenario, sel.ontology));
       if (bad.length > 0) {

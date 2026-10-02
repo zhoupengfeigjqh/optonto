@@ -7,7 +7,7 @@ export interface ThreadMessage {
   timestamp: string;
 }
 
-/** 用户在新建对话时选择的本体范围单元（scenario+ontology 名定位，id 由 meta.json 解析） */
+/** 用户在新建对话时选择的本体范围单元（scenario+ontology 名定位，id 由 ontology.yaml.metadata 解析） */
 export interface OntologySelection {
   scenario: string;
   ontology: string;
@@ -45,7 +45,8 @@ export interface ThreadSummary {
 
 /**
  * 场景/本体上下文四元组。
- * id 取自 core 的 meta.json 注册表（实时权威），是 agent 所有操作的权威来源，不从 URL/body 提取。
+ * 取自 `<本体>/ontology.yaml` 的 metadata（身份唯一来源，与 core / mcp-shared 同口径），
+ * 是 agent 所有操作的权威来源，不从 URL/body 提取。
  */
 export interface SkillContext {
   scenario_name: string;
@@ -56,8 +57,8 @@ export interface SkillContext {
 
 /**
  * 一轮对话的本体作用域（ChatSession 由 thread.ontology_scope 一次性解析，编排全程只传此对象）：
- *  - contexts：所选本体的权威四元组（id 来自 core meta.json）——父 Agent 提示词注入、
- *    list* 工具/listAllMcpFunctions/PlanGate 三道硬闸的允许集，皆以此为唯一事实源
+ *  - contexts：所选本体的权威四元组（取自 ontology.yaml.metadata）——父 Agent 提示词注入、
+ *    list* 工具/listPlannableFunctions/PlanGate 三道硬闸的允许集，皆以此为唯一事实源
  *  - skills：所选本体目录下自动反查到的全部技能（用户无感），load_skill 可选集与提示词注入源
  * contexts 为空 = 通用问答模式（父 Agent 不挂任何业务工具）。
  */

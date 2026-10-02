@@ -20,6 +20,51 @@
   securities.yaml     # 行为安全管控（全花名册六字段），独立存放，可选
 ```
 
+### 本体身份（`metadata`）—— 唯一读取来源（2026-10-01 统一）
+
+`ontology.yaml` 的 `metadata` 段承载**本体身份四元组**，它是**唯一读取来源**（core / agent / mcp-shared 三端同口径）：
+
+| 键 | 含义 |
+| :-- | :-- |
+| `scenario_name` / `scenario_id` | 所属场景名 / 场景 ID |
+| `ontology_name` / `ontology_id` | 本体名 / 本体 ID（`ontology_name` 即该本体的 `name`） |
+
+- **读**：身份一律取自 metadata，**不用目录名或 meta.json 兜底**。`metadata` 缺失、四元组任一为空、
+  或与所在目录名不一致 → 视为**身份不可信**：core 跳过并告警（`repositories/metadata.list_all_ontologies`）、
+  mcp-shared 跳过并告警（`data_store.list_all_ontologies`）、agent 解析返回 null（新建对话时 400 指出条目）。
+  不接受"两种语义并存"的兜底。
+- **写**：metadata 由 core 保证恒新——新建本体即写入（`save_ontology_data`）；改名（场景/本体）与部署后
+  由 `repositories.metadata.refresh_identity_metadata` **回刷**（只 patch 身份四键，保留 `source_file` /
+  `shard_hash` 等历史字段）。
+- **目录名**仍用于拼物理路径（`{onto_market}/{scenario}/{ontology}/`）。因读侧要求二者一致，
+  目录名与 metadata 不一致即视为数据被外部篡改——请用改名接口，或同步修改两处。
+- **meta.json** 职责收窄为：本体**注册**（id 分配、创建登记、存在性判据）与非身份字段
+  （description / creator / created_at / updated_at）；**不再是身份读取来源**。
+- **`id` 键（工具/路由/`get_ontology_names` 用的对外标识）同样取自 metadata 的 `ontology_id`**：
+  core 与 mcp-shared 的清单行都把它映射为 `id`，确保"清单里的 id = 调用时能路由的 id"。
+  但 **`ontology_id` / `scenario_id` 的分配权仍在 core 注册表**（meta.json，扫描 max+1）——
+  yaml 是它的读取镜像，`refresh_identity_metadata` 会以注册表为准回填，故**不要手工改 yaml 里的 id**。
+- `deployed_version`（部署状态）同样读自 metadata；缺失/未部署为空串。
+
+**读取出口（唯一，禁止在其他地方另开读取路径）**：
+
+| 端 | 读入口 | 用途 |
+| :-- | :-- | :-- |
+| core | `repositories/metadata.list_all_ontologies` | 清单（`/api/ontologies`；工具聚合已归 MCP 服务自发布，core 不再有 `functions/all` / `behaviors/all`） |
+| core | `repositories/metadata.get_ontology_name_by_id` | **依赖注入出口**：所有按本体操作的路由（行为/函数/概念/规则/技能/数据引擎/部署/文件…） |
+| core | `repositories/metadata.ontology_identity_by_name` | 只有名字、需要 id 的读取方（线程/对话记录 id） |
+| mcp-shared | `data_store.list_all_ontologies` / `ontology_identity` / `get_ontology_names` | MCP 服务的 scope 生成、本体过滤、路由 |
+| agent | `SkillLoader.resolveOntologyContext` | 对话作用域四元组解析（新建对话校验） |
+
+**写入侧（保证 metadata 恒新，id 分配权在注册表）**：
+
+| 位置 | 职责 |
+| :-- | :-- |
+| `repositories/metadata.registry_ids` | **唯一**的"从注册表取 (scenario_id, ontology_id)"实现 |
+| `services._stamp_identity_metadata` | save / save-version 共用：把四元组写进 `data.metadata`（名字取当前名，id 取注册表） |
+| `repositories/metadata.refresh_identity_metadata` | 改名（场景/本体）与部署后回刷（只 patch 四键，保留其他字段） |
+| `routers/deploy._finalize_metadata` | 合并/预览时写入（同样经 `registry_ids`） |
+
 ## 2. Overlay 回退规则（两端一致）
 
 对 `data_engines` 与 `securities` 两段，规则相同：
@@ -93,7 +138,7 @@
 | concepts[].attributes[] | `constraint` | `{unique, required, enum, pattern, min, max}` | 属性约束对象：布尔 / 字符串数组 / 正则（仅 string）/ 数值范围（仅 number、integer）；**全缺省视为无约束，保存时不落盘**；`unique=true` 隐式要求 `required=true` |
 | rules[] | `data_supplements` | `string[]` | 规则取数接口（query 行为名）；前端按关联函数声明的关联概念自动推导，可手工增减 |
 
-**`params` 说明字段口径（两端一致）**：`behaviors[].params` 项的说明字段为 **`description`**，`functions[].params` 项为 **`display_name`**，两者不互换（`mcp-shared/schema_compile.param_spec_to_schema` 以 `display_name or description` 做读取兜底，但**写入**须按各自口径）。
+**`params` 说明字段口径（两端一致）**：`behaviors[].params` 项的说明字段为 **`description`**，`functions[].params` 项为 **`display_name`**，两者不互换（`mcp-shared/tool_contract.param_spec_to_schema` 以 `display_name or description` 做读取兜底，但**写入**须按各自口径）。
 
 **迁移规则（读时兼容，两端一致）**：
 
@@ -144,9 +189,9 @@
 | 函数正常完成但结果不可用 | `success=false` + `error` | 业务性失败，不走重试 |
 | 判断函数判「不通过」 | `success=true` + `data.pass=false` + `data.reason` | 成功执行的失败判断，**禁止用 raise 表达** |
 
-**归一化（`mcp-shared/sandbox.py::_normalize_output`，读时兼容）**：新式（带 bool `success`）原样放行；
+**归一化（`mcp-shared/function_runner.py::_normalize_output`，读时兼容）**：新式（带 bool `success`）原样放行；
 旧式 `{"result": …}` 拆包进 `data`（单 result 键取其值，多顶层键整包保留）；裸返回整包作 `data`（stderr 告警）。
-行为（facade）与外部 MCP 工具**不在信封范围**（各有既有消费方 / 源头不受控）。
+行为（behavior_tools 发布）与外部 MCP 工具**不在信封范围**（各有既有消费方 / 源头不受控）。
 
 ### 规则关联函数与判断函数（口径 B：类型即角色 → 真阻断）
 

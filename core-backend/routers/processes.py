@@ -1,6 +1,6 @@
 """CRUD API for processes within an ontology."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from dependencies import get_ontology_names
 from schemas import ProcessItem

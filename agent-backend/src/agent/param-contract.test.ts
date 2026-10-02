@@ -3,7 +3,7 @@
  *  1. unwrapParamValues 深展开：函数子任务直连 MCP 前剥 {type/required/description/value} 包装。
  *     覆盖真实 LLM 波次反馈中继的递归嵌套形态（历史教训：只做顶层剥皮会漏嵌套包装，见 tool-subtask-param-unwrap）。
  *  2. validateParamsAgainstSchema：规划期对 core 编译 inputSchema 的「必填 key 齐全 + 已填值合规」校验
- *     （facade 化后替代 validateParamStructure/validateConstraintValues——类型与 enum/pattern/min/max 一道覆盖）。
+ *     （行为工具化后替代 validateParamStructure/validateConstraintValues——类型与 enum/pattern/min/max 一道覆盖）。
  *  3. renderParamStructure：中继提示 / PlanGate nudge 的结构 sketch 渲染。
  */
 import { describe, it, expect } from 'vitest';

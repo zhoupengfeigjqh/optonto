@@ -10,15 +10,26 @@ import { validateParamsAgainstSchema } from './param-contract.js';
 export interface InvalidTaskName {
   sub: SubTask;
   valid: string[];
+  /** 非法原因（行为名专用）：missing=本体未声明该行为；notReady=已声明但未就绪（未完成映射、
+   *  未发布为工具，契约 ⑥）——两者给父 Agent 的自纠方向不同，故分开 */
+  reason?: 'missing' | 'notReady';
 }
 
-/** 行为名合法性：枚举比对行为是否存在于所属本体。函数子任务（function 非空）跳过。返回非法子任务及该本体的合法名列表。 */
+/**
+ * 行为名合法性：**就绪行为**才可规划（契约 ⑥ 的规划面同口径）。
+ *
+ * 发布面只发布已映射的行为（未就绪者不在工具清单里）；这里若按本体声明的全量名单放行，
+ * 未就绪行为会被规划、却在挂载期找不到工具——子 Agent 只能以"工具不存在"含糊失败。
+ * 故规划期即拒，并把"不存在"与"未就绪"分开报（后者要换行为或如实告知用户，不是改名）。
+ */
 export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidTaskName[] {
   const invalid: InvalidTaskName[] = [];
   for (const st of plan.subtasks) {
     if (st.function) continue; // 函数子任务不走行为名校验
-    const names = gateway.getBehaviorNames(st.scenario_name, st.ontology_name);
-    if (!names.includes(st.behavior)) invalid.push({ sub: st, valid: names });
+    const ready = gateway.getReadyBehaviorNames(st.scenario_name, st.ontology_name);
+    if (ready.includes(st.behavior)) continue;
+    const declared = gateway.getBehaviorNames(st.scenario_name, st.ontology_name);
+    invalid.push({ sub: st, valid: ready, reason: declared.includes(st.behavior) ? 'notReady' : 'missing' });
   }
   return invalid;
 }

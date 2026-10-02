@@ -5,6 +5,7 @@
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
@@ -39,47 +40,86 @@ def _skill_md_path(sc_name: str, on_name: str, skill_name: str) -> Path:
     return _skill_dir(sc_name, on_name, skill_name) / "SKILL.md"
 
 
+# ─── SKILL.md frontmatter（技能描述的**单一来源**）─────────────────────────────
+# 技能描述只存在于 SKILL.md 头部 frontmatter（agent 侧 SkillLoader 亦从此读取）。
+# 2026-10-01：删除技能级 meta.json —— 此前 description 两处表达，且 `PUT .../meta` 只改
+# meta.json，对 agent 完全不生效（agent 读 frontmatter）。现在读写都收敛到 frontmatter。
+
+def _skill_frontmatter_block(content: str) -> str | None:
+    """取 SKILL.md 头部 frontmatter 的**原文块**（不含包裹的 ---）；非 frontmatter 头返回 None。"""
+    if not content.startswith("---\n"):
+        return None
+    end = content.find("\n---", 4)
+    if end < 0:
+        return None
+    return content[4:end]
+
+
+def _skill_description(content: str) -> str:
+    """从 SKILL.md frontmatter 取 description（缺失/解析失败 → 空串）。"""
+    block = _skill_frontmatter_block(content)
+    if block is None:
+        return ""
+    fm = fs_store.parse_yaml(block, default={})
+    return str(fm.get("description") or "") if isinstance(fm, dict) else ""
+
+
+def _with_skill_description(content: str, description: str) -> str | None:
+    """把 description 写回 SKILL.md 的 frontmatter：**只重写头部块，正文与其他字段原样保留**。
+
+    frontmatter 不合法（非 `---` 包裹 / 解析不出映射）→ 返回 None，由调用方报 400（不静默改写）。
+    `name` 等既有字段保持原值（技能名创建后固定）。
+    """
+    block = _skill_frontmatter_block(content)
+    if block is None:
+        return None
+    fm = fs_store.parse_yaml(block, default={})
+    if not isinstance(fm, dict) or not fm:
+        return None
+    fm["description"] = description
+    body = content[content.find("\n---", 4) + 4:]
+    return "---\n" + fs_store.dump_yaml(fm) + "---" + body
+
+
+def _skill_entry(skill_dir: Path) -> dict:
+    """技能目录 → 列表条目（**纯函数**，供 list_skills 与测试共用）。
+
+    description 取自 SKILL.md frontmatter；格式校验沿用"头部 300 字符"口径
+    （与 `_validate_generated_skill` 的 name/description 要求一致）。
+    """
+    md_path = skill_dir / "SKILL.md"
+    has_md = fs_store.exists(md_path)
+    content = fs_store.read_text(md_path) if has_md else ""
+    head = content[:300]
+    has_name_en = bool(re.search(r"\nname: [a-zA-Z]", head))
+    has_desc = "\ndescription:" in head
+    format_ok = bool(has_md and head.startswith("---\n") and has_name_en and has_desc)
+    format_error = ""
+    if has_md and not format_ok:
+        if not head.startswith("---\n"):
+            format_error = "文件头部缺少 ---"
+        elif not has_name_en:
+            format_error = "name 必须为英文"
+        elif not has_desc:
+            format_error = "缺少 description"
+    return {
+        "name": skill_dir.name, "has_skill": has_md, "format_ok": format_ok,
+        "format_error": format_error,
+        "description": _skill_description(content) if has_md else "",
+        "updated_at": md_path.stat().st_mtime if has_md else skill_dir.stat().st_mtime,
+    }
+
+
 # ─── List Skills ───────────────────────────────────────────────────────────
 
 @router.get("")
 async def list_skills(ontology_id: int):
+    """技能列表：description 取自 SKILL.md frontmatter（不再读技能级 meta.json）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     skills_dir = _skills_dir(sc_name, on_name)
     if not fs_store.exists(skills_dir):
         return []
-    items = []
-    for d in sorted(fs_store.list_dir(skills_dir)):
-        if not d.is_dir():
-            continue
-        md_path = d / "SKILL.md"
-        has_md = fs_store.exists(md_path)
-        format_ok = False
-        head = ""
-        if has_md:
-            head = fs_store.read_text(md_path)[:300]
-            import re
-            has_name_en = bool(re.search(r"\nname: [a-zA-Z]", head))
-            has_desc = "\ndescription:" in head
-            format_ok = head.startswith("---\n") and has_name_en and has_desc
-        desc = ""
-        meta = fs_store.read_json(d / "meta.json", default={})
-        if isinstance(meta, dict):
-            desc = meta.get("description", "")
-        format_error = ""
-        if has_md and not format_ok:
-            if not head.startswith("---\n"):
-                format_error = "文件头部缺少 ---"
-            elif not has_name_en:
-                format_error = "name 必须为英文"
-            elif not has_desc:
-                format_error = "缺少 description"
-        items.append({
-            "name": d.name, "has_skill": has_md, "format_ok": format_ok,
-            "format_error": format_error,
-            "description": desc,
-            "updated_at": md_path.stat().st_mtime if has_md else d.stat().st_mtime,
-        })
-    return items
+    return [_skill_entry(d) for d in sorted(fs_store.list_dir(skills_dir)) if d.is_dir()]
 
 
 # ─── Get Skill Content ─────────────────────────────────────────────────────
@@ -114,24 +154,26 @@ async def delete_skill(ontology_id: int, skill_name: str):
     return {"message": "技能已删除"}
 
 
-# ─── Update Skill Meta ───────────────────────────────────────────────────────
+# ─── Update Skill Description ────────────────────────────────────────────────
 
 @router.put("/{skill_name}/meta")
 async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
-    """Update skill description only (name is fixed after creation)."""
+    """更新技能描述（**单一来源 = SKILL.md frontmatter**；技能名创建后固定）。
+
+    只重写头部 frontmatter 的 description，正文与其他字段原样保留。
+    因此这次修改**对 agent 立即生效**——agent 的 SkillLoader 读的就是 frontmatter
+    （此前写 meta.json，agent 侧永远看不到改动）。
+    """
     sc_name, on_name = await get_ontology_names(ontology_id)
-    sdir = _skill_dir(sc_name, on_name, skill_name)
-    if not fs_store.exists(sdir):
+    md_path = _skill_md_path(sc_name, on_name, skill_name)
+    if not fs_store.exists(md_path):
         raise HTTPException(status_code=404, detail="技能不存在")
 
-    meta_path = sdir / "meta.json"
-    meta = {"name": skill_name, "description": body.get("description", "")}
-    existing = fs_store.read_json(meta_path, default={})
-    if isinstance(existing, dict):
-        existing.update(meta)
-        meta = existing
-    fs_store.write_json(meta_path, meta)
-
+    content = fs_store.read_text(md_path) or ""
+    updated = _with_skill_description(content, str(body.get("description", "") or ""))
+    if updated is None:
+        raise HTTPException(status_code=400, detail="SKILL.md 头部 frontmatter 不合法，无法更新描述")
+    fs_store.write_text(md_path, updated)
     return {"message": "技能已更新"}
 
 
@@ -157,6 +199,13 @@ def _fmt_constraint(c) -> str:
     return "；".join(parts) if parts else "-"
 
 
+# 关系类型中文标签（与前端 RelationTable.RELATION_TYPE_OPTIONS 同口径；空则不输出，不给 LLM 噪音）
+_RELATION_TYPE_LABELS = {
+    "asymmetric": "非对称", "symmetric": "对称", "transitive": "传递",
+    "functional": "函数性", "inverse_functional": "反函数性",
+}
+
+
 def _build_ontology_summary(data) -> str:
     lines = []
     lines.append(f"概念（{len(data.concepts)}个）:")
@@ -167,7 +216,10 @@ def _build_ontology_summary(data) -> str:
     lines.append(f"\n关系（{len(data.relations)}个）:")
     for r in data.relations:
         link = f", 关联: {r.source}.{r.source_attr} = {r.target}.{r.target_attr}" if r.source_attr and r.target_attr else ""
-        lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.source} -> {r.target} ({r.cardinality}{link}) {r.description or ''}")
+        # relation_type（2026-10-02 起纳入摘要）：此前缺失导致重生成 skill 时类型信息丢失
+        rtypes = "、".join(_RELATION_TYPE_LABELS.get(t, t) for t in (r.relation_type or []))
+        type_txt = f", 类型: {rtypes}" if rtypes else ""
+        lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.source} -> {r.target} ({r.cardinality}{link}{type_txt}) {r.description or ''}")
     lines.append(f"\n行为（{len(data.behaviors)}个）:")
     for b in data.behaviors:
         lines.append(f"  - {b.name}（{b.display_name or ''}）: {b.description or ''}")
@@ -187,7 +239,6 @@ def _validate_generated_skill(content: str) -> str:
     要求：① 头部必须是 YAML frontmatter（--- 包裹）；② 必须含 name（英文）和 description；
     ③ 正文不得有额外 frontmatter 块或对话性残留（如"好的/以下是/我将…"开头）。
     """
-    import re
     if not content.startswith("---\n"):
         return "文件头部缺少 --- frontmatter"
     fm_end = content.find("\n---", 4)
@@ -208,7 +259,6 @@ def _validate_generated_skill(content: str) -> str:
 
 @router.post("/{skill_name}/generate")
 async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(default={})):
-    import re
     if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", skill_name) or len(skill_name) > 64:
         raise HTTPException(status_code=400, detail="技能名称必须为小写字母/数字/连字符，1-64字符")
     if "claude" in skill_name.lower() or "anthropic" in skill_name.lower():
@@ -216,7 +266,7 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
         raise HTTPException(status_code=400, detail="技能名称必须为英文")
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
-    description = body.get("description", "")
+    description = str(body.get("description", "") or "")
 
     if not fs_store.exists(SKILL_TEMPLATE_PATH):
         raise HTTPException(status_code=500, detail="技能模板文件不存在")
@@ -259,8 +309,13 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
             logger.warning("技能 %s 生成结果校验失败: %s", skill_name, check_error)
             raise HTTPException(status_code=400, detail=f"生成结果不符合模板要求：{check_error}，请重新生成")
 
+        # 描述单一来源 = SKILL.md frontmatter：用户填了"技能简介"就用它覆盖模型写的 description
+        #（此前只写进 meta.json：既不进 prompt 也不进 SKILL.md，agent 完全看不到；且列表读 meta.json、
+        # agent 读 frontmatter，两处可能不一致）
+        if description.strip():
+            content = _with_skill_description(content, description.strip()) or content
+
         sdir = _skill_dir(sc_name, on_name, skill_name)
-        fs_store.write_json(sdir / "meta.json", {"name": skill_name, "description": description})
         fs_store.write_text(sdir / "SKILL.md", content)
 
         return {"message": "技能已生成", "skill_name": skill_name, "content": content}

@@ -30,7 +30,7 @@ services:
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
       # 内置本体MCP 地址（默认同为该值，显式写出便于切换环境时一眼看到）
       - MCP_BUILTIN_URL=http://optonto-ontology-mcp:8002/mcp
-      # 内置数据引擎MCP 地址（行为 facade 唯一入口）
+      # 内置数据引擎MCP 地址（行为工具唯一入口）
       - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-mcp:8005/mcp
     networks:
       - optonto-net
@@ -144,7 +144,7 @@ services:
     networks:
       - optonto-net
 
-  # ─── 数据引擎 MCP 服务（行为 facade + 映射执行 + SQL，直读 .data）────────────
+  # ─── 数据引擎 MCP 服务（行为工具发布 + 映射执行，直读 .data）─────────────────
   optonto-data-engine-mcp:
     build:
       context: .

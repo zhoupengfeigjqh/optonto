@@ -13,26 +13,23 @@
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
 from config import DEMAND_THREADS_DIR
 from dependencies import get_ontology_names
 from repositories import fs_store
+from repositories.metadata import refresh_identity_metadata
 from schemas import OntologyData
 from services import (
-    save_ontology_data,
     save_ontology_version,
     load_ontology_version,
     version_exists,
     copy_ontology_to_deploy,
     backup_deploy_to_version,
-    split_yaml_top_sections,
     _get_yaml_path,
-    _get_ontology_dir,
 )
-from routers.threads import _find_thread, _thread_dir, _yaml_source_map, _match_ontology_yaml
+from routers.threads import _thread_dir, _yaml_source_map, _match_ontology_yaml
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/deploy", tags=["本体部署"])
 
@@ -132,20 +129,19 @@ def _merge_yaml_files(yaml_paths: list[Path], version: str) -> OntologyData:
 
 
 def _finalize_metadata(merged: OntologyData, ontology_id: int, ontology_name: str, sc_name: str) -> None:
-    """给合并结果补上 scenario/ontology 名称与 id（preview 与 deploy 共用，保证展示与落盘一致）。
+    """给合并结果补上身份四元组（preview 与 deploy 共用，保证展示与落盘一致）。
 
     shard_hash 已在 _merge_yaml_files 中计算，此处不再处理。
-    字段读取与 save_ontology_data 对齐：meta.json 里是 id/name，不是 scenario_id/ontology_name。
+    名字取当前（目录）名；id 由注册表分配——统一走 `registry_ids`（与 save_ontology_data 同一口径），
+    避免多处各自查 id。注册表查不到时回退调用方传入的 ontology_id（仅 preview 的极端场景）。
     """
-    from repositories.metadata import get_scenario_by_name, list_ontologies_by_scenario
+    from repositories.metadata import registry_ids
 
-    sc = get_scenario_by_name(sc_name)
+    scenario_id, oid = registry_ids(sc_name, ontology_name)
     merged.metadata["scenario_name"] = sc_name
-    merged.metadata["scenario_id"] = sc.get("id") if sc else None
-    ontos = list_ontologies_by_scenario(sc_name)
-    onto = next((o for o in ontos if o.get("name") == ontology_name), None)
+    merged.metadata["scenario_id"] = scenario_id
     merged.metadata["ontology_name"] = ontology_name
-    merged.metadata["ontology_id"] = onto.get("id") if onto else ontology_id
+    merged.metadata["ontology_id"] = oid if oid is not None else ontology_id
 
 
 def _resolve_version_docs(ontology_name: str, version: str) -> tuple[list[dict], list[Path]]:
@@ -295,6 +291,10 @@ async def deploy_ontology(ontology_id: int, body: dict):
 
     # 2. 从版本目录复制到部署目录
     copy_ontology_to_deploy(sc_name, ontology_name, version)
+
+    # 2.5 身份回刷：部署文件来自版本存档，其 metadata 可能是"存档之后改过名"的旧值
+    #（身份唯一读取来源 = ontology.yaml.metadata，落后会让清单/路由跳过本本体）
+    refresh_identity_metadata(sc_name, ontology_name)
 
     # 3. 更新 ontology.yaml 中的 deployed_version
     onto_path = _get_yaml_path(sc_name, ontology_name)

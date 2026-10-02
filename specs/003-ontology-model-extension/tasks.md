@@ -318,7 +318,7 @@
 - **配置期提示缺口（记录，未改）**：用户若把**公共函数**配进规则的 `related_functions` 并期望它阻断——公共函数无 `type`、不进 `judge_functions`，实际只留痕无阻断；
   前端下拉已用「（判断函数）」标注本体 VALIDATION 型，但未对"误把公共函数当判断"给出显式告警。属可选增强。
 - **死代码（记录，未清）**：`RuleEditors.tsx`（条件树编辑器）与 `rule-operands.ts` 的编辑器侧函数已无引用；`rule-logic.ts` 的推导函数仍在用（存量旧条件树的概念引用仍参与 `data_supplements` 推导），故整块保留，标注为待清理技术债。
-- **规划期类型透传（记录，未改）**：`MountableToolInfo`（`listAllMcpFunctions` 输出）不含函数 `type`；父 Agent 需经 `listOntoFunctions`（返回函数完整定义含 `type`）获知类型，链路可达但不直接。
+- **规划期类型透传（记录，未改）**：`MountableToolInfo`（`listPlannableFunctions` 输出）不含函数 `type`；父 Agent 需经 `listOntoFunctions`（返回函数完整定义含 `type`）获知类型，链路可达但不直接。
 - 复核结论：core（模型/校验/路由/提示词）、agent（网关解析/策略/闸/投喂）、前端（表格/契约）、数据（本体/模板/函数代码）、文档（契约）五处口径一致；三侧测试全绿（core 85 / agent 规则相关 96、全量仅既有 orchestrator 3 例失败 / 前端 356）。
 
 ### 规则函数补充：4 条 command 规则的判断/推导函数（2026-09-30）
@@ -467,6 +467,403 @@
 - **specs 三份**（spec / plan / tasks）共 27 处引用改为「旧条件树（字段）」中性表述，变更记录可读性保留。
 
 **验证**：全仓该字段名命中 **0**（含 `.data` 文件系统级扫描；`.git` 历史未改写）；core `pytest` **75 passed**、前端规则目录 **10 passed**；core / frontend 已重建，**5 个容器内产物命中均为 0**（core / frontend / agent / data-engine-mcp / ontology-mcp）；core `/health` 200、nginx 200。
+
+### MCP 调用契约收紧：ontology_id 必填 + 工具名去前缀（2026-10-01）
+
+两条口径变更（用户拍板），全部落在 MCP 服务侧；agent 侧只做配合调整。
+
+**1）本体函数与行为的 `ontology_id` 一律必填，未传即报错（不兜底）**
+
+- 新增共享校验 `mcp-shared/schema_compile.require_ontology_id(value, label)` —— **单一实现**，ontology-mcp 与 data-engine-mcp 共用（不再各自持有一份副本，避免漂移）。
+- `ontology-mcp`：本体函数 MCP 路径（原已是硬报错）改用共享函数；REST `/execute-function` 从「缺 id 时 `int(None)` → 500」改为 **400 + 明确文案**。
+- `data-engine-mcp`：行为 MCP 路径去掉 `oid = arguments.get("ontology_id") or entry.get(...)` 兜底 → **缺即报错**；REST `/call-behavior`、`/call-engine` 同样返回 400。
+- MCP 协议路径另有 SDK 层 `jsonschema.validate`（`required` 已含 `ontology_id`）先拦一道，两处口径一致。
+
+**2）本体函数名与行为名都不带本体前缀**
+
+- `data-engine-mcp/facade`：删除 `onto{ontology_id}__` 前缀命名 → **工具名 = 行为裸名**（等于本体函数口径，本体归属由调用参数决定）。
+- 跨本体重名在工具名维度无法共存（且 `entries` 字典会互相覆盖 → 静默路由到错误本体）：现**保留先出现者 + 记 ERROR 日志**，由设计侧改名解决（实测当前 4 本体 33 行为无重名）。
+- agent 侧配合：删除 `tool-catalog.bareBehaviorName`（不再需要剥前缀）及其 2 处调用（disable 闸匹配、执行记录展示回溯），改用工具名（即行为名）；`scope.name` 保持为挂载过滤 / disable 闸 / 展示回溯的统一匹配键。
+
+**测试**：新增 `mcp-shared/tests/test_schema_compile.py`（3 例）、`data-engine-mcp/tests/test_facade.py`（5 例：裸名、重名保留先出现者、schema 含 scope+required、MCP 缺 id 报错、REST 缺 id 400）；agent 侧重写 2 条、删除 1 条只对「前缀场景」成立的用例（含"调用方所传 ontology_id 被本run值覆盖"这条强化断言）。全套：mcp-shared **37 passed**、data-engine-mcp **14 passed**、agent **306 passed**。
+
+### MCP 服务入参规定 + call_tool 注册缺陷修复（2026-10-01）
+
+**规定（用户拍板，全部经 MCP 协议口实测）**
+
+| 工具类别 | `ontology_id` | 实测结果 |
+|---|---|---|
+| 本体函数 | **必填** | 缺 → `Input validation error: 'ontology_id' is a required property`；带 → 正常（判断函数返回 `{success, data:{pass, reason}}`） |
+| 本体行为 | **必填**（不兜底） | 缺 → 同上；带 → 正常（映射输出正确） |
+| listOnto\*（6 个） | **必填** | 缺 → 同上；带 → 正常 |
+| listScenarios / listOntologies | 无该参数（全局花名册，设计如此） | 不传即正常 |
+| 公共函数 | **不传**（schema 里没有） | 不传 → 正常；多传系统键 → 不报错，但按代码未剥离（多余键会进函数 params；现 7 个公共函数均不读未知键） |
+
+实现：`mcp-shared/schema_compile.require_ontology_id` **单一实现**，ontology-mcp / data-engine-mcp 共用；MCP 协议口另有 SDK 层 `jsonschema.validate`（`required` 已含 id）先拦。
+
+**scope 处理链（复核）**：发布端 `with_ontology_context` 写入 const 块 → 父 Agent `listPlannableFunctions` 读出（填子任务 scenario·ontology；分类与中文名随后改由顶层 `x-category`/`x-display_name` 承载，见下节） → 子 Agent 挂载时**整块删除** → 服务端执行前再剥（`strip_system_params`）。协议级实测：**不传=正常；传「与 const 完全一致」的值=正常且被剥；传「不一致」的值=协议层 jsonschema 直接拒**（`'本体行为' was expected`）——即 scope 只可省略或原样回传，不可乱填。
+
+**修复：`@server.call_tool()` 误挂在辅助函数上（历史缺陷，HEAD 即如此）**
+
+`ontology-mcp/server.py` 的装饰器落在辅助函数 `_rule_behavior` 上，`handle_call_tool` **从未注册** → 本服务全部工具（listOnto\* / 本体函数 / 公共函数）经 MCP 调用一律返回
+`_rule_behavior() takes 1 positional argument but 2 were given`。影响面：父 Agent 的本体浏览工具、子 Agent 的本体函数/公共函数调用（含规则判断函数）全部不可用；行为工具在 data-engine-mcp 侧不受影响（其装饰器位置正确）。修复 = 装饰器移回 `handle_call_tool`。
+
+**测试**：新增 `ontology-mcp/tests/test_server.py`（3 例，含「按协议层双参调用处理器」回归断言——函数对象同一性不可用，SDK 注册的是内层闭包）、`data-engine-mcp/tests/test_server.py`（同口径 3 例）。`ontology-mcp/tests/` 此前**不存在**：该服务此前零测试，正是本缺陷长期无守卫的原因。全套：mcp-shared **37**、ontology-mcp **3**、data-engine-mcp **17**、agent **306**。
+
+### MCP 工具发布契约统一（2026-10-01）
+
+按「分类处理 + 语义统一」重构工具契约：**单一权威**落 `mcp-shared/schema_compile.py`，**消费实现**落 `agent-backend/src/agent/tool-catalog.ts`，新增契约文档 `docs/contracts/mcp-tools.md`。
+
+**1）分类标记单一来源**：`x-category`（五类：本体行为 / 本体函数 / **本体查询（新增）** / 公共函数 / 消费端兜底"其他MCP工具"）+ `x-display_name`（发布方权威中文名）。废弃旧形态——分类曾同时写在 `scope.category`（本体工具）与 `x-category`（公共函数），同一语义两种表达。
+
+**2）scope 语义收敛为「本体上下文块」**：仅本体执行类（行为/函数）携带，只含 `name` + `ontology_id`/`scenario_id`/`scenario_name`/`ontology_name`（全 const），**不再含分类标记**。
+
+**3）发布原语统一**（`with_category` / `build_query_schema` / `with_ontology_context` / `strip_system_params`）：
+- ontology-mcp：公共函数、本体函数、8 个查询工具（改表驱动 `_QUERY_TOOL_SPECS`，替代约 90 行手写 schema）全部走同一套构造；
+- data-engine-mcp：行为走 `with_ontology_context(..., CATEGORY_BEHAVIOR)`，执行前剥离改用共享 `strip_system_params`；
+- `FUNCTION_SCOPE_KEYS` → `SYSTEM_PARAMS = {scope, ontology_id}`（语义纠正：行为也用）。
+
+**4）参数契约统一**：本体执行类与 `listOnto*` 的 `ontology_id` 必填——`require_ontology_id` 单一实现，查询分支统一走 `_ontology_of`（替代裸 `arguments["ontology_id"]`）；公共函数执行前防御性剥离系统键。
+
+**5）消费端语义边界收紧**：本体查询类**不挂子 Agent、不进子任务可规划清单**；父 Agent 查询工具改由分类标记推导（`isQueryTool`），删除硬编码名单 `PARENT_ONTOLOGY_QUERY_TOOLS`；`PARENT_TOOL_LABELS` 降级为纯展示映射（文案与发布端 `x-display_name` 一致）。
+
+**6）协议不变式快速失败**（`assertToolProtocol`，在 `discoverTools` 边界）：①带 scope 块的必须是本体执行类（旧版形态否则会**丢本体锁定**）②本体执行类必须带 scope 块 → 违反即抛错，不静默降级。
+
+**测试**：mcp-shared **46**（+9）、ontology-mcp **9**（+6）、data-engine-mcp **17**（+3）、agent **308**、core **75**（不变）。**协议级实测**（真实 MCP 客户端）：标记齐备、`scope.category` 无残留、参数矩阵逐条符合、9 条调用用例全部符合预期（缺 id 一律拒；带与 const 一致的 scope 通过且被剥；公共函数无系统参数；查询工具带 id 正常）。镜像：ontology-mcp / data-engine-mcp / business-mcp / agent-backend 已重建；五服务健康检查 200。
+
+### 本体版本可见性对齐：`listOntologies` 透出 `deployed_version`（2026-10-01）
+
+**问题（检查发现）**：`deployed_version` 只存在于 core 侧——`repositories/metadata.list_all_ontologies()`
+在返回时**读时附加**该字段（`_deployed_version_of` 现读 `ontology.yaml` 的 metadata），而 **MCP 侧的同名函数
+`mcp-shared/loaders.list_all_ontologies()` 只补了 `scenario_name`/`ontology_name`**。后果：前端设计器拿得到版本，
+但 `ontology-mcp` 的 `listOntologies` 返回给父 Agent / 外部 agent 的清单**没有版本号**——同一函数名两处口径不一。
+
+**修法（方案 A：对齐 core，不落盘）**：新增 `loaders.deployed_version_of(scenario, ontology)`，语义与
+core `_deployed_version_of` 一致（读时派生；**不写进 meta.json**，避免"部署状态"出现第二事实源），
+`list_all_ontologies()` 每条附带 `deployed_version`。两处工程决策：
+
+1. **复用 `load_ontology_data` 的 mtime 缓存**（而非像 core 那样每次重新 `read_yaml`）：
+   `list_all_ontologies` 经 `get_ontology_names` 落在**函数/行为每次调用的路由前置热路径**上，
+   按 core 写法会让每次调用重新解析全部 `ontology.yaml`（单份 29KB）；
+2. **损坏降级为空串且不外抛**（core `fs_store.read_yaml` 同口径）：否则一个坏 yaml 会连清单与路由一起打挂
+   ——新增的这条读路径不能把既有热路径的容错面变差。
+
+**测试**：新增 `mcp-shared/tests/test_loaders.py`（6 例：版本随清单透出、未部署/无 metadata/空值为空串、
+**yaml 损坏按无版本降级且清单与 `get_ontology_names` 均不受影响**、重新部署后版本即时刷新（mtime 缓存不串味）、
+多本体各取自己的版本、缺 `scenario_id` 的 meta 仍被跳过）。全套：mcp-shared **52**、ontology-mcp **9**、
+data-engine-mcp **17**、business-mcp **4**。镜像：ontology-mcp / data-engine-mcp / business-mcp 已重建（共用 `mcp-shared`）。
+文档：`docs/contracts/mcp-tools.md` §7 补 `listOntologies` 返回值口径；`ontology-mcp` 的 `listOntologies` 工具描述同步。
+
+**未采纳（方案 B，保持单一事实源）**：把 `deployed_version` 写进 `meta.json`——会引入第二写入点与漂移风险
+（`ontology_versions/{v}/ontology.yaml` 复制时会带旧值）；如需"任何读 meta.json 的地方都直接可见"再另议。
+
+### 本体身份读取口径统一：唯一来源 = ontology.yaml.metadata（2026-10-01）
+
+**问题（检查发现）**：本体身份四元组存在**三处不同来源**——`meta.json` 提供 `id` / `scenario_id`（core 与 agent），
+**目录名**提供 `scenario_name` / `ontology_name`（core、mcp-shared、agent 各自拼），而 `ontology.yaml.metadata`
+里那四元组**没有任何读取方**（只被 `save_ontology_data` 写入、被部署合并刷新）。同名语义三种读法，
+改名后必然漂移（`metadata` 要等下次保存/部署才刷新）。
+
+**统一后的口径**：`ontology.yaml.metadata` 是身份四元组与本体名 `name` 的**唯一读取来源**，
+三端同一语义、同一实现口径，**不用目录名或 meta.json 兜底**：
+
+| 端 | 读取实现 | 不可信时的姿态 |
+|---|---|---|
+| core | `repositories/metadata.read_ontology_identity` / `list_all_ontologies` | 跳过 + 告警（`logger.warning`） |
+| mcp-shared（ontology-mcp / data-engine-mcp / business-mcp） | `loaders.ontology_identity` / `_ontology_metadata`（mtime 缓存） | 跳过 + stderr 告警 |
+| agent | `SkillLoader.resolveOntologyContext`（经新的 `resolveOntologyContext` → `resolveOntologyYamlPath`） | 返回 null（新建对话 400 指出条目） |
+
+**不可信判定**（三端一致）：`metadata` 缺失 / 四元组任一为空 / **与所在目录名不一致**。
+目录名仍用于拼物理路径，因此二者必须一致（不一致=数据被外部篡改，走改名接口修）。
+
+**写侧保证 metadata 恒新**（本次补齐的两处缺口）：
+1. **改名回刷**：`repositories.metadata.refresh_identity_metadata`（只 patch 身份四键，保留 `source_file` /
+   `shard_hash` 等历史字段）——本体改名（`routers/ontologies.py` PUT）与**场景改名**
+   （`routers/scenarios.py` PUT，按目录物理枚举 `list_ontology_dir_names` 逐个回刷，避免"读身份→刷身份"自锁）后调用；
+2. **部署回刷**：`routers/deploy.py` 复制版本存档后调用（存档文件的 metadata 可能是改名前的旧值）。
+   新建本体无需额外处理——`routers/ontologies.py` 创建时已 `save_ontology_data` 落 metadata。
+
+**meta.json 职责收窄**：只负责注册（id 分配 / 创建登记 / 存在性判据）与非身份字段
+（description / creator / 时间戳）；`list_scenarios`（场景花名册）仍读场景级 meta.json——场景没有 ontology.yaml，
+且不属于"本体身份"读取。
+
+**测试**：新增 `core-backend/tests/test_metadata_identity.py`（8 例）、`agent-backend/src/services/skill-loader.test.ts`
+（5 例，该函数此前**无测试**）、重写 `mcp-shared/tests/test_loaders.py`（9 例，覆盖"身份取自 metadata 而非
+meta.json/目录名"、"缺失/不全/不一致/损坏 → 跳过且不影响其他本体与路由"、"回刷保留历史字段"）。
+全套：core **83**、mcp-shared **55**、ontology-mcp **9**、data-engine-mcp **17**、business-mcp **4**、agent **313**。
+
+**E2E 实测**（镜像重建后）：`/tools` 的 scope.const 五键正确；`listOntologies` 四元组 + `deployed_version` 正确；
+本体函数调用成功（证明 `get_ontology_names` 走 metadata 且路径解析正确）；行为调用（core→data-engine-mcp）200；
+agent 新建对话（走 `resolveOntologyContext`）正例成功并可删、负例（不存在本体名）**400**。
+
+**文档**：`docs/contracts/ontology-yaml.md` 新增 §1「本体身份（metadata）—— 唯一读取来源」；
+`docs/contracts/mcp-tools.md` §7 补身份来源口径；`repositories/metadata.py` 模块 docstring 说明职责边界。
+
+**补记（自查发现的实现不一致）**：清单行的 `id` 键原样来自 meta.json（只有 `ontology_id` 被 metadata 覆盖），
+而下游（`ontology-mcp` 生成 scope、`get_ontology_names` 路由、core `functions/all` 聚合）读的是 `id` ——
+等于"路由用的 id 仍来自 meta.json"，且同一行里 `id` 与 `ontology_id` 可能不一致。已改为
+`row["id"] = ident["ontology_id"]`（core 与 mcp-shared 两侧），并加断言锁定（两侧 id 故意不同值时以 yaml 为准）。
+**注意 id 的分配权仍在 core 注册表**（扫描 max+1），yaml 是其读取镜像，`refresh_identity_metadata` 以注册表回填。
+
+### 身份读取全链路审计（2026-10-01，承接上一节统一改造）
+
+按要求"从头到尾检查一遍、消除冗余、保持功能正确与语义一致"，对全仓做了穷尽扫描（core / agent / mcp-shared / 三个 MCP 服务 / frontend / scripts），逐条判定并收口：
+
+**1）漏网的读取路径（本次修掉）**
+
+| 位置 | 原状 | 现状 |
+|---|---|---|
+| `dependencies.get_ontology_names`（**30+ 路由共用**） | `get_ontology_name_by_id` → `get_ontology_by_id` → **meta.json + 目录名** | 改为从 yaml 清单解析（`get_ontology_name_by_id` 重写）；不可信身份等同"不存在"（404），与清单同口径 |
+| `routers/threads._resolve_ids`（线程/对话记录 id） | `get_scenario_by_name` + `list_ontologies_by_scenario` 按名匹配 | 改走 `ontology_identity_by_name`（yaml） |
+| `routers/chat.py` 生成本体时的 metadata 落盘 | 注释与取值口径写的是 meta.json | 经 `_resolve_ids` → yaml 身份；注释同步 |
+| 清单行的 `id` 键 | 来自 meta.json（只有 `ontology_id` 被 metadata 覆盖）→ **路由 id 与身份 id 可能不一致** | `row["id"] = ident["ontology_id"]`（core 与 mcp-shared 两侧），断言锁定 |
+| `services.save_ontology_version` | 与 `save_ontology_data` **各写一份相同的 10 行 id 查找逻辑** | 双双收口到新 `_stamp_identity_metadata`（写侧唯一实现） |
+| `deploy._finalize_metadata` | 自己查 scenario/ontology id | 经 `registry_ids`（唯一"注册表取 id"实现） |
+
+**2）保留项（各有正当职责，已在文档写明）**
+
+- `list_scenarios`（core 与 mcp-shared）读场景级 meta.json：场景**没有** ontology.yaml，且不属"本体身份"；
+- `get_ontology_by_id`（物理定位，改名/删除用）：优先按 yaml 身份 id 命中，**再回退注册表 id**——回退是刻意的，
+  保证身份不可信时仍能通过接口改名/删除修复（否则只能手工改文件）。返回的**目录名**只用于拼路径；
+- `ontology_fingerprint` 仍纳入 meta.json：它是"本体存在"的注册判据与目录改名触发点（docstring 已说明）；
+- ~~技能级 `skills/<技能名>/meta.json`：技能元信息，与本体系身份无关（其 description 双源问题仍在待办）。~~
+  → **已删除**，见下节「技能描述单一来源」（读写都收敛到 SKILL.md frontmatter）。
+
+**3）注释/文档同步**：`agent types.ts`（3 处）、`chat-session.ts`、`core chat.py`（2 处）、`threads.py`、
+`mcp-shared/__init__.py`、`loaders.py` 章节标题与指纹说明、`repositories/__init__.py`。
+
+**4）契约文档**：`docs/contracts/ontology-yaml.md` 新增"**读取出口（唯一）**"与"**写入侧**"两张表，
+明确禁止在其他地方另开读取路径。
+
+**测试**：core **88**（+5：依赖注入口只认 yaml／不可信即不存在／按名取身份／物理定位容忍双写／`registry_ids`）、
+mcp-shared **55**、ontology-mcp **9**、data-engine-mcp **17**、business-mcp **4**、agent **313**。
+
+**E2E（5 镜像重建后）**：core 10 条按本体操作的路由（清单/聚合/行为/函数/概念/规则/数据引擎/技能/部署）全 200，
+不存在 id → **404**；MCP `listOntologies`（`id == ontology_id`）、函数调用、行为调用（200）正常；
+agent 新建对话正例成功可删、不存在本体 → **400**；六端口健康全 200。
+
+### 技能描述单一来源：删除技能级 meta.json（2026-10-01）
+
+**问题**：技能 `description` 有两处表达（`skills/<技能名>/meta.json` 与 `SKILL.md` frontmatter），且**读的人不同**——
+core 列表读 meta.json、agent 的 `SkillLoader` 读 frontmatter。后果：① UI「编辑描述」（`PUT .../skills/{name}/meta`）
+只改 meta.json，**对 agent 完全不生效**（父 Agent prompt 里仍是旧描述）；② 新增技能时用户填的「技能简介」只写进 meta.json，
+**既不进生成 prompt 也不进 SKILL.md**，等于静默丢弃。
+
+**改法**：技能描述**唯一来源 = `SKILL.md` 的 frontmatter**，技能级 meta.json 取消。
+
+| 位置 | 原状 | 现状 |
+| :-- | :-- | :-- |
+| `GET .../skills`（列表） | 读 `meta.json.description` | 读 frontmatter（`_skill_description`） |
+| `PUT .../skills/{name}/meta`（编辑描述） | 写 `meta.json` | **改写 frontmatter 的 description**（只重写头部块，正文与其他字段原样保留）→ 对 agent 立即生效 |
+| `POST .../{name}/generate` | 同时写 `meta.json` + `SKILL.md` | 只写 `SKILL.md`；用户填的简介非空则**覆盖写入 frontmatter**（此前完全不生效） |
+| 存量数据 | — | 删除 `.data/.../skills/raw-material-inventory/meta.json`（已无读取方；列表改读 frontmatter，值不变） |
+
+**实现细节**：新增 `_skill_frontmatter_block` / `_skill_description` / `_with_skill_description` / `_skill_entry`（纯函数，便于测试）；
+序列化统一走新原语 `fs_store.dump_yaml`（与 `write_yaml` 同一格式口径，避免调用方各自 `yaml.safe_dump`）；
+`re` 收敛为模块级导入（此前 4 处函数内重复导入）。**API 契约不变**（路径与响应字段不变）→ 前端零改动。
+
+**测试**：新增 `core-backend/tests/test_skills_contract.py`（9 例：描述取自 frontmatter、**遗留 meta.json 不再被读取**、
+无 SKILL.md、三类 `format_error` 文案、改写只动 frontmatter、特殊字符往返、非法 frontmatter 返回 None、编辑后列表与 agent 同源）。
+core **97 passed**（+9）。
+
+**未改动**：agent 侧 `SkillLoader`（本就只读 frontmatter——正因如此，本次改动才让两端真正同源）。
+
+### MCP 服务端：归属一致性校验（`scope.const.ontology_id` == 顶层 `ontology_id`，2026-10-01）
+
+**问题**：本体执行类工具名是**裸名**（不带本体前缀），服务端此前**只信调用方传入的顶层 `ontology_id`**——
+`scope.const.ontology_id`（发布方声明归属）被 `strip_system_params` **只剥不读**、无任何约束力。后果分两类：
+
+- **本体行为**：跨本体重名**可构造**（无全局唯一约束，只有本体内 `ensure_unique` + facade 发布期"记 ERROR + 保留先出现者"）
+  → `executor` 按 `(ontology_id, 行为名)` 直接查 yaml，**显式传另一个本体 id 即绕过发布期去重，静默执行那个本体的同名行为**（真写错数据）；
+- **本体函数**：函数名设计期**全局唯一**（`_ensure_global_unique`），跨本体重名基本撞不上 → 不会静默执行，但报错是
+  `函数 X 不存在于本体 ontology_id=B`（**误导**：真实原因是"X 属于 A，但你指定了 B"），不利于 LLM 纠错。
+
+**触发场景（平台内真实存在）**：父 Agent 把 B 本体的函数/行为写进了 A 本体的子任务——
+`createChildAgent` 的挂载过滤**只按名字匹配 `legalCalls`**（本体行为按 `scope.name`、本体函数按工具名），**不按本体过滤**；
+本体锁定靠执行时**强制注入子任务的 `context.ontology_id`**（`scopeToOntology`）。两者来源不同 ⇒ 错配可达。
+
+**改法（本轮只做服务端；agent 侧未改）**：
+
+| 位置 | 改动 |
+| :-- | :-- |
+| `mcp-shared/schema_compile.py` | 新增契约原语 `require_ontology_match()`（归属一致性）+ `owner_label()`（中文报错文案）；docstring 增「④ 归属一致性」 |
+| `data-engine-mcp/server.py` | 行为执行前校验：MCP 分支 + REST `/call-behavior`（`entry["ontology_id"]` 即发布期权威归属） |
+| `ontology-mcp/server.py` | 新增 `_FUNCTION_CACHE["owners"]`（工具名 → 归属 id + 场景/本体名）；发布循环补**跨本体重名 keep-first + ERROR**（与 facade 同口径，保证 owners 唯一、校验不误拒）；函数执行前校验：MCP 分支 + REST `/execute-function` |
+
+**语义**：`scope.const.ontology_id` 从"建议值"升级为**硬约束**；`declared` 缺失（老数据 / REST 入口缓存未命中）→ 放行不误伤；
+数值按整数比较（`1` / `"1"` / `1.0` 等价）；报错文案含**双方 id + 本体中文名/场景**，供调用方（含 LLM）自纠。
+
+**测试**：mcp-shared **59 passed**（+4：三种数值表示 / 不一致报错含双方 id 与中文名 / 声明缺失放行 / `owner_label` 格式）；
+data-engine-mcp **22 passed**（+5，桩数据驱动：跨本体重名被拒且**不触达 executor** / 归属一致落到执行器 / 报错文案含真实归属 /
+REST 400 / 条目必带 `ontology_id`）；ontology-mcp **13 passed**（+4：归属表与对外 `scope.const` 自锁 / 不一致被拒且**不执行代码** /
+一致时放行 / REST 400）；core **97 passed**（未改，无牵连）。
+
+**契约文档**：`docs/contracts/mcp-tools.md` §4 补「归属一致性」条目（四入口同口径 / 放行条件 / 数值等价 / schema 零变化）。
+
+**未做（留待需要时）**：agent 侧**挂载期**校验（`createChildAgent` 比对 `tool.scope.ontology_id` 与 `context.ontology_id`）——
+服务端校验是**执行期兜底**（发现晚、但覆盖外部调用方），挂载期才是"抓 LLM 规划错配"的最佳位置（规划回合内即可自纠）。
+
+### MCP 服务端审计：语义收口与冗余删除（2026-10-01）
+
+**范围**：`mcp-shared` / `ontology-mcp` / `data-engine-mcp` / `business-mcp` 全量代码 + core 侧 MCP 相关残留。
+**方法**：逐文件通读 + pyflakes（F 类）静态扫描 + 全仓消费方检索 + 现有测试回归。
+
+**1）删除跨服务重复实现（同一语义两处表达）**
+
+| 删除物 | 为什么 |
+| :-- | :-- |
+| `core-backend/services/params_schema.py`（141 行） | 与 `mcp-shared/schema_compile.py` 编译段逐字重复（仅 pydantic / plain dict 之差异），其 docstring 自述"逐字对应"——两份实现必然漂移 |
+| `GET /api/ontologies/functions/all`、`GET /api/ontologies/behaviors/all` | 唯二消费该编译器的端点；**全仓无消费方**（前端走 MCP 服务 `/tools`、agent 直连 MCP、脚本与测试均不调）；`behaviors/all` 还带着已废弃的 `onto{ontology_id}__` 前缀消歧命名，与契约 §⑤"裸名 + 保留先出现者 + **不做前缀消歧**"**直接冲突**（facade 已于 2026-10-01 删除该前缀逻辑） |
+
+删除后 `schema_compile.py` 成为编译契约的**唯一实现**（docstring 同步声明）；core"执行归零、消灭双路径"（架构文档 §十一）由此补齐。
+
+**2）统一入口口径：REST 与 MCP 同剥系统参数**
+
+审计发现：MCP 入口三处都 `strip_system_params`，而 REST 入口三处**都没剥**（`/execute-function`、`/execute-common-function`、`/call-behavior`）——同一服务两条入口两种语义。已统一（REST 补剥）。
+**`/call-engine` 有意不剥**并加注释：引擎 params 是用户自定义字段，剥了会误删真名为 `scope` / `ontology_id` 的引擎参数。
+
+**3）统一「查不到」返回形态**
+
+`ontology-mcp` 查询工具此前有三种空表达：关键词无匹配 → `{"message","results":[]}`；概念不存在 → `{"error":true,"message"}`；概念无关联关系 → `[]`。统一为 `_not_found(message)` 单一形态（未加过滤的空集合仍原样返回列表——区分"集合为空"与"过滤无匹配/目标不存在"）。
+
+**4）让"记冲突警告"真正落地**
+
+`params_to_input_schema` 返回的约束冲突（同名属性约束不一致、已取先扫到的）在两个发布端**算出来即被丢弃**（`_conflicts`），违反其自身 docstring 的"记冲突警告"。现两侧均 `logger.warning` 留痕（`ontology-mcp` 函数工具、`data-engine-mcp` 行为工具）。
+
+**5）删除死代码**
+
+- `ontology-mcp`：`_ontology_or_error`（`_load_ontology_or_error` 的薄包装，仅一处调用）→ 内联；
+- `core-backend/routers/deploy.py`：5 个死导入（`Optional` / `save_ontology_data` / `split_yaml_top_sections` / `_get_ontology_dir` / `_find_thread`）；
+- `core-backend/routers/processes.py`：`HTTPException` 死导入；
+- **pyflakes 复扫：MCP 四目录 F 类告警 0**（core 余下 `routers/__init__.py` 的 F401 是 barrel 再导出的误报——main.py 从 `routers` 导入；`chat.py` / `rules.py` 的 F541 为风格项，非冗余）。
+
+**未改（有意保留）**：三处旧数据读时兼容（`ontology-mcp._rule_behavior` / `facade._behavior_concept_names` / agent `ontology-gateway`）——针对**不同字段**且删掉会破坏存量 yaml；`business-mcp` 的强制 `outputSchema` 契约（外部形态，架构文档 §九）；三服务内部层次（协议层 / 业务层 / 数据层）与单文件行数（最大 316 行 < 500，章程 FR-010 ✓）。
+
+**测试**：core **97** / mcp-shared **59** / ontology-mcp **16**（+3）/ data-engine-mcp **24**（+2）全绿；新增用例锁定 REST 剥离口径、引擎入口有意不剥、「查不到」统一形态。
+
+### MCP 命名语义对齐：模块/常量/变量更名（2026-10-02）
+
+**动机**：名字必须说它真正在做的事；同一东西不允许两个名字。判据三条 —— ①名字与语义不符 ②同一物多名字 ③名字过泛/半覆盖。
+
+**A 档｜名字与语义不符（会误导）**
+
+| 原名 | 新名 | 为什么 |
+| :-- | :-- | :-- |
+| `mcp-shared/sandbox.py` | `mcp-shared/function_runner.py` | 模块**自己**写着"这是可信插件执行、**不是安全沙箱**"，名字却承诺隔离 → 读代码/做安全审计会误判边界 |
+| `loaders.ontology_fingerprint()` | `data_store.ontology_market_fingerprint()` | 无参、实为"全体本体文件的变更指纹"，名字让人以为要传某个本体 |
+| `ontology-mcp._FIXED_TOOLS` | `_QUERY_TOOLS` | 该类别的权威名是「本体查询」（`CATEGORY_QUERY`/`_QUERY_TOOL_SPECS`），"fixed" 零信息量 |
+| `_COMMON_CACHE["mtime"]` vs `_FUNCTION_CACHE["fingerprint"]` | 统一 `fingerprint` | 同一语义（缓存失效指纹）两个字段名 |
+| `_get_common_tools()` | `_load_common_tools()` | 与 `_load_function_tools()` 同角色，动词统一 |
+| `require_ontology_match(declared, requested, …, declared_label)` + `owner_label()` | 参数 → `declared_owner` / `requested_owner` / `owner_label` | 同一物两个名字；前两参点明"归属方" |
+
+**B 档｜名字过泛/半覆盖（文件更名）**
+
+| 原名 | 新名 | 为什么 |
+| :-- | :-- | :-- |
+| `mcp-shared/schema_compile.py` | `tool_contract.py` | 内容 = 发布/调用**契约**（分类、scope、系统参数、归属一致性）+ 编译器；而它是"契约唯一权威"，旧名只说后半 |
+| `data-engine-mcp/facade.py` | `behavior_tools.py` | `facade` 是设计模式名、无领域含义；实际职责 = 把本体行为发布成一等 MCP 工具 |
+| `mcp-shared/loaders.py` | `data_store.py` | "loaders"（加载什么？）→ 运行面唯一数据源读取层 |
+| `mcp-shared/mcp_base.py` | `mcp_app.py` | 含糊 → 协议骨架 app 工厂（`build_mcp_app`） |
+
+**C 档｜局部命名**
+
+`g → fn`（ontology-mcp 函数查找，与发布循环统一）｜ `de → engine`（executor 14 处，与 `engine_name`/`execute_engine` 统一）｜ `sc_name, on_name`（未使用）→ `_sc, _on`｜ `_entry → entry`（data-engine REST 与 MCP 入口统一）｜ `e/b → entry/behavior`（behavior_tools）｜测试桩 `_patch_loaders → _stub_data_store`。
+
+**引用面同步（一处不漏）**：9 个文件 `git mv`（保留历史）；`data-engine-mcp/Dockerfile` 的 **COPY 路径**（不改会构建失败）；3 服务的 import 与调用点；4 套测试（含 import、桩目标、测试名）；`docker-compose.yml`/Dockerfile 注释；`core-backend/services/__init__.py` 注释；契约文档 2 份 + 架构文档 §一/§二/§三/§四（含架构图与目录树）；agent 侧 5 处**注释**里的模块路径；`skill_generate` 提示词去掉内部术语 `facade`（语义不变，更利于 LLM 理解）。
+
+**有意保留（非漏改）**：`mcp-shared/__init__.py` 与各模块 docstring 里的"更名记录"（loaders→data_store 等）；架构文档 §十三/§十七/§十八的**历史阶段记录**。
+
+**已继续收口（2026-10-02 同日，按用户要求）**：
+- agent 侧 24 处 **"facade 化"历史术语 → "行为工具化"**（含 mock 描述与断言 `toContain('本体行为工具')` 同步）；
+- `agent-backend/scripts/e2e-facade-behaviors.py` → **`e2e-behavior-tools.py`**（符合 `e2e-*` 命名惯例），`.claude/settings.json` 权限条目同步；E2E 线程标题 `facade-E2E` → `behavior-tools-E2E`。
+- 结果：**全仓（排除历史 spec/架构阶段记录/更名记录）`facade` 出现 0 次**；agent 侧 dist 不含注释，故无需重建 agent 镜像。
+
+**测试**：mcp-shared **59** / ontology-mcp **16** / data-engine-mcp **24** / business-mcp **4** / core **97** 全绿；pyflakes F 类告警 **0**。
+（过程中测试探针抓到 1 处漏改 —— `test_behavior_tools.py` 里 bare `facade`，已修。）
+
+### 行为就绪发布：未就绪的行为不发布为工具（2026-10-02）
+
+**问题**：行为工具此前是**无条件发布**的——`behaviors[]` 里有 `name` 就进工具清单，从不检查有没有映射。
+实测本仓数据：**发布 33 个行为工具，其中 25 个未绑定数据引擎**（「订单排程」14/14、「货品BOM及工艺」11/11 全部未映射，
+「原材料采购和库存」8/8 已映射）——即 **76% 的已发布工具是"死承诺"**：LLM 会在清单里看到、规划它、调用它，
+然后拿到 `该行为未绑定数据引擎` 并计入报错预算。且 MCP 路径上"设计未完成"与"执行失败"被抹平成同一信号
+（都是 `isError`，只差一句中文前缀），调用方无法从反馈里判断"是环境/下游问题"还是"这个能力根本还没做"。
+
+**改法**：**未就绪即不发布**（工具清单 = 对 LLM 的可调用承诺），三处同口径：
+
+| 位置 | 原状 | 现状 |
+|---|---|---|
+| `mcp-shared/tool_contract.py` | 无"就绪"概念 | 新增契约 **⑥ 就绪发布** + `is_engine_ready` / `ready_behavior_names`（判据唯一权威） |
+| 发布面 `data-engine-mcp/behavior_tools.py` | 全量发布 | 只发布就绪行为；未就绪者剔出 `/tools` 与路由，按本体记一条 WARNING；新增 `unready_behavior()` 供调用期报错 |
+| 调用端 `data-engine-mcp/server.py` | 未就绪 → `未知工具` | 专用报错 `行为 X 尚未就绪：未完成数据引擎映射，未发布为工具（本体「Y」）`，与"未知工具"分开 |
+| 规划面 `agent-backend`（gateway / plan-validation / plan-gate） | `validateBehaviorNames` 按**全量花名册**放行 | 新增 `getReadyBehaviorNames`（同一判据），规划闸**只放行就绪行为**；`missing`（未声明）与 `notReady`（已声明未就绪）分开报，nudge 给"改用就绪行为 / 如实告知用户该能力尚未配置"的出口 |
+
+**就绪判据（两侧同源，勿单边改动）**：`data_engines[]` 中存在 `behavior_name` 匹配的条目 + `engine_type` 缺省或 `MCP`
++ `target.server_url` 与 `target.tool_name` 均非空白。后两条与 agent 侧 `visibility-guard` 的收编口径同源
+——半成品映射（有引擎行、没配全 target）不算就绪：executor 对它也只会在调用期报配置错误。
+
+**为什么规划面必须一起改**（本轮唯一超出"最小改动"的部分，但属必要）：行为名校验读的是 **core 本体数据**
+（`gateway.getBehaviorNames`），挂载读的是 **MCP 已发布工具**——两者来源不同。只改发布面会造成
+"**父 Agent 能合法规划、子 Agent 挂不上任何工具**"，子任务只能以"工具不存在 / 连续报错"含糊失败，
+比改前的明确报错更糟；而本体 2/4 全部未映射，这是马上会撞上的真实路径。
+
+**测试**：mcp-shared **62**（+3 就绪判据）/ data-engine-mcp **27**（+3 发布过滤与专用报错）/ ontology-mcp 16 / core 97 全绿；
+agent-backend `tsc` 净 + vitest **320 passed（24 files）**（新增规划面 3 例 + 网关 4 例）；测试桩同步（端口新增必需方法，5 处 fake 补齐）。
+
+**同日补做（用户要求）**：`listOntoBehaviors` 查询工具**改为只列就绪行为**——至此**四处同源**
+（发布面剔除 / 调用端专用报错 / 规划闸拒绝 / 查询面不列），父 Agent 不再有机会"先规划未就绪行为、被驳回一次再改"，
+省掉那一轮；工具描述同步写明"只列已就绪行为"。**core `/api/ontologies/{id}/data` 与设计器 UI 仍列全部行为**
+（设计期花名册视角：未就绪只是"不可规划/不可调用"，不是"不存在"）。
+ontology-mcp 测试 16 → **18**（+2：只列就绪 / 全未就绪时清单为空）。
+
+**未改动（有意）**：本体函数侧无就绪概念（函数不依赖映射）。
+
+### 父 Agent 工具改名：listAllMcpFunctions → listPlannableFunctions（2026-10-02）
+
+**动机（用户提出改名，我给的判断）**：原名有三处不准，越用越误导——
+
+1. `All` 是假的：它**按对话所选本体过滤**（实测：只选「订单排程」时本体函数 6 → **0** 条），不是全量；
+2. `McpFunctions` 边界错：清单**含外部 MCP 工具**（不是"函数"）、**不含本体行为**（而行为正是 MCP 工具）、也不含本体查询（同为 MCP 工具）；
+3. 提议的 `listAllAvailMcpFunctions` **未采用**：`Avail` 是缩写（与仓库刚做完的缩写清理 `facade→behavior_tools` / `sandbox→function_runner` 方向相反），
+   且 `All`+`Avail` 语义打架；`Available` 一类词还容易被模型误解为"我可以调用"——实际它**只能规划**（写进子任务的 `function` / `related_functions`）。
+
+**定名 `listPlannableFunctions`**：`Plannable` 精确表达"只规划、不执行"的定位；`Functions` 与子任务字段口径一致（`function` / `related_functions` 本就允许填函数或外部工具）。
+
+**改动面（13 文件 / 37 处，纯改名、零语义变化）**：
+
+| 类 | 文件 |
+|---|---|
+| 定义 | `agent-factory.ts`（工具名 + label + 私有方法 `createListAllMcpFunctionsTool` → `createListPlannableFunctionsTool` + 注释） |
+| **LLM 提示词（必须同步，否则 LLM 按旧名调 → 工具不存在）** | `prompts.ts`（工具表 + 步骤 3）、`subtask-contract.ts`（`function` / `params` / `related_functions` 三处字段说明） |
+| 注释与文档 | `orchestrator.ts`、`types.ts`、`agent-ports.ts`、`common-functions.ts`、`docs/contracts/mcp-tools.md`（§3/§7）、`mcp-shared/tool_contract.py` |
+| 测试与脚本 | `agent-factory.test.ts`、`orchestrator.test.ts`、`scripts/probe-catalog.ts` |
+
+**对外零影响**：它不是发布到 MCP 面的工具（外部消费方看不到），前端 / core 均不引用 → **不是契约变更**。
+`mcp-shared/tool_contract.py` 只改了 docstring 的一处引用，**3 个 MCP 镜像无需重建**（镜像内副本仅该句注释不同，行为一致）；agent 镜像需重建（名字进 dist 与提示词）。
+
+**验证**：全仓旧名残留 **0**；`tsc` 净 + vitest **320 passed（24 files）** 全绿。
+**注意**：正在进行的旧对话，其历史里若出现过旧工具名，LLM 可能按旧名调一次（报错自纠，多一轮）——重建后建议开新对话验证。
+
+### 存量本体数据一致性清理（2026-10-02）
+
+按用户要求「冗余或不存在的删除、与当前本体设计保持一致」，对 `.data/onto_market` 四个本体做了全量审计 + 修复：
+
+**审计脚本覆盖**（一次性临时脚本，未落盘）：metadata 身份四元组 vs 目录名、遗留字段（`rule_type`/`check_functions`/`related_behaviors`/条件树/字符串 `constraint`）、关系端点与端点属性悬空、
+`relation_type` 值域与 symmetric/asymmetric 互斥、行为关联概念与 from/to 状态越界、`op_type` 值域、行为参数口径、
+规则绑定行为/关联函数（本体∪公共 7 个）/data_supplements、函数 `type` 值域与代码文件双向对账、
+引擎 `behavior_name` 与 `target.server_url/tool_name` 就绪判据、securities 花名册行为名。
+
+**修复**：
+- 订单排程 14 行为：`op_type: ''` 按语义补齐（Query* 4 条 → `query`；创建/更新/删除/排产/下发/撤回/轮询 10 条 → `command`）；
+  22 处参数旧标量简写（`orderId: string` 等）→ 对象形态 `{type, description: ''}`；7 处对象参数补 `description: ''`。
+- 货品BOM及工艺 11 行为：`op_type: ''` → 全部 `query`（均为 Query*）；17 处标量简写 → 对象形态；2 处补 `description: ''`。
+- 原材料采购和库存 / 资源（人员和设备）：审计零问题（前者此前已完成规范化；后者为空骨架本体）。
+- 删除 `functions/__pycache__/` 冗余产物；还原两个仅行尾变化的 `securities.yaml`（消除 diff 噪音）。
+
+**说明**：标量简写参数若行为将来绑定引擎发布，`param_spec_to_schema` 会对字符串 spec 抛错——本次迁移消除了该 latent 缺陷；
+`op_type` 补齐使写行为进入安全确认/串行调度口径（契约 §3），与「写行为必须显式 command」的设计一致。
+
+**验证**：审计脚本复跑 **零问题**；core `pytest` **97 passed**；agent `ontology-gateway.test.ts` **22 passed**。
 
 ### 遗留（明确未做，与 spec 的 Out of Scope 一致）
 

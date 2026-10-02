@@ -73,7 +73,7 @@ def test_execute_behavior_routes_mcp_engine(monkeypatch):
         "behaviors": [{"name": "queryRawMaterial", "params": {}}],
         "data_engines": [_de()],
     }
-    monkeypatch.setattr(executor.loaders, "load_ontology_data_by_id",
+    monkeypatch.setattr(executor.data_store, "load_ontology_data_by_id",
                         lambda oid: (data, "生产调度", "原材料采购和库存"))
 
     async def fake_call(server_url, tool_name, arguments, headers=None):
@@ -144,7 +144,7 @@ def test_deleted_engine_type_raises(monkeypatch):
         "behaviors": [{"name": "queryRawMaterial", "params": {}}],
         "data_engines": [_de(engine_type="SQL")],
     }
-    monkeypatch.setattr(executor.loaders, "load_ontology_data_by_id",
+    monkeypatch.setattr(executor.data_store, "load_ontology_data_by_id",
                         lambda oid: (data, "生产调度", "原材料采购和库存"))
     with pytest.raises(ValueError, match="已删除的 SQL 型"):
         asyncio.run(executor.execute_behavior(1, "queryRawMaterial", {}))

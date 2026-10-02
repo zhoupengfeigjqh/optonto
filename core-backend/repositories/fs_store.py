@@ -161,9 +161,18 @@ def read_yaml(path: Path, default: Any = None) -> Any:
     return parse_yaml(raw, default)
 
 
+def dump_yaml(data: Any) -> str:
+    """序列化 YAML 文本（UTF-8、不排序键、允许中文）——与 ``write_yaml`` 同一口径。
+
+    供"只重写文件某个片段"的场景复用（如技能 SKILL.md 的 frontmatter 头部），
+    避免调用方各自 ``yaml.safe_dump`` 造成格式口径分裂。
+    """
+    return yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+
+
 def write_yaml(path: Path, data: Any) -> None:
     """原子写入 YAML（UTF-8、不排序键、允许中文）。"""
-    _atomic_write(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
+    _atomic_write(path, dump_yaml(data))
 
 
 # ─── 删除 ─────────────────────────────────────────────────────────────────────

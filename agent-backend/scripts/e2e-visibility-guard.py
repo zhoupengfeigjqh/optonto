@@ -3,7 +3,7 @@
 
 断言：
 A. 把 business-mcp 手工配进 mcp-config + 在某本体 data_engines 配一条 engine_type=MCP 映射后，
-   Agent 工具发现日志出现"收编隐藏 N 个已映射原始工具"（原始工具对 Agent 不可见，行为 facade 是唯一入口）
+   Agent 工具发现日志出现"收编隐藏 N 个已映射原始工具"（原始工具对 Agent 不可见，行为工具是唯一入口）
 B. 设计期探针 /mcp-config/test 不受收编影响（仍列出 business-mcp 全部 8 个工具——映射页要靠它取 schema）
 C. 收编不碰内置服务：本体MCP/数据引擎MCP 日志无"收编隐藏"
 
@@ -30,7 +30,7 @@ BAK = ENGINES_YAML.with_suffix('.yaml.e2ebak')
 
 SCRATCH_ENGINE = (
     '\n- name: E2E收编探针\n'
-    '  behavior_name: e2eNoSuchBehavior\n'  # 不存在的占位行为：引擎条目对 facade 编译惰性，仅供收编索引扫描
+    '  behavior_name: e2eNoSuchBehavior\n'  # 不存在的占位行为：引擎条目对行为工具发布惰性，仅供收编索引扫描
     f'  target: {{server_url: "{BIZ_URL}", tool_name: query_inventories}}\n'
 )
 

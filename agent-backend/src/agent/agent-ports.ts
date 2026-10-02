@@ -41,7 +41,7 @@ export interface AgentFactoryPort {
   createChildAgent(context: SkillContext, policy: SubtaskPolicy): Promise<AgentPort>;
   /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
   callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;
-  /** 可挂载工具目录（本体行为/本体函数/公共函数/其他MCP工具四类），父 Agent listAllMcpFunctions 工具与规划校验共用 */
+  /** 可挂载工具目录（本体行为/本体函数/公共函数/其他MCP工具四类），父 Agent listPlannableFunctions 工具与规划校验共用 */
   getMountableToolCatalog(): Promise<MountableToolInfo[]>;
   closeAll(): Promise<void>;
 }
@@ -49,7 +49,12 @@ export interface AgentFactoryPort {
 /** OntologyGateway 门面 —— Orchestrator 需要的本体元信息查询能力（校验 + 展示用） */
 export interface OntologyGatewayPort {
   getBehaviorMeta(scenario: string, ontology: string, behavior: string): BehaviorMeta;
+  /** 本体声明的**全部**行为名（含未就绪者）——仅用于区分"不存在"与"未就绪"两种拒绝原因；
+   *  它不是可规划集：`listOntoBehaviors` 查询工具与规划闸都只认 `getReadyBehaviorNames`（契约 ⑥）。 */
   getBehaviorNames(scenario: string, ontology: string): string[];
+  /** **就绪**行为名（契约 ⑥：已完成映射、已发布为工具）——规划闸的最小可行集，
+   *  与发布面（未就绪不发布为工具）、查询面（`listOntoBehaviors` 只列就绪）三处同源。 */
+  getReadyBehaviorNames(scenario: string, ontology: string): string[];
   /** 本体函数名列表（本体函数 ∪ 公共函数；函数子任务名校验的文件兜底数据源，正常模式以 MCP 目录为准） */
   getFunctionNames(scenario: string, ontology: string): string[];
   /** 函数信息合一查询（中文名 + 描述 + 参数声明）：本体函数 functions[] → 公共函数 functions.json；

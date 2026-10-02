@@ -64,7 +64,7 @@ Optonto 是一个**本体驱动（Ontology-Driven）的智能体开发平台**�
 | 数据 | 载体 | 位置 |
 |---|---|---|
 | 本体定义（概念/关系/行为/规则/函数/流程） | **YAML 文件（单一事实源）** | `.data/onto_market/{场景}/{本体}/ontology.yaml` |
-| 技能文件 | Markdown | `.../skills/{技能名}/SKILL.md` + `meta.json` |
+| 技能文件 | Markdown | `.../skills/{技能名}/SKILL.md`（描述在 frontmatter，**单一来源**） |
 | 对话/线程 | JSON 文件 | `.data/threads/`（agent 端）、本体目录下 `threads/` |
 | 业务数据 | MySQL | 行为接口读写 |
 | 模型与密钥配置 | yaml + .env（不入库） | `config/config.yaml`、`config/.env` |

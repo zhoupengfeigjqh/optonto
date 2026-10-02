@@ -1,7 +1,19 @@
 """直读 .data + mtime 指纹热加载（运行面唯一数据源）。
 
-与 core-backend 的唯一耦合是 .data 文件契约：meta.json（场景/本体清单与 id）、
-ontology.yaml（语义模型）、data_engines.yaml / securities.yaml（独立文件，单一权威）。
+与 core-backend 的唯一耦合是 .data 文件契约：meta.json（场景花名册与本体注册）、
+ontology.yaml（语义模型 + **本体身份**）、data_engines.yaml / securities.yaml（独立文件，单一权威）。
+
+**身份四元组唯一读取来源 = ontology.yaml 的 ``metadata``（2026-10-01 统一）**：
+``scenario_name`` / ``scenario_id`` / ``ontology_name`` / ``ontology_id`` 以及本体名 ``name``
+一律从 metadata 读，**不用目录名或 meta.json 兜底**（与 core ``repositories/metadata`` 同口径）。
+写入侧保证其恒新：core 新建本体即落 metadata；改名（场景/本体）与部署后由
+``repositories.metadata.refresh_identity_metadata`` 回刷；metadata 缺失或与目录名不一致 →
+该本体跳过并告警（不静默兜底，避免两种语义并存）。
+
+``deployed_version`` 同样读自 metadata：版本是"部署状态"，事实源在部署产物与
+``ontology_versions/`` 存档，不写进 meta.json。``list_scenarios`` 仍读场景级 meta.json——
+场景没有 ontology.yaml，且那不属于"本体身份"读取。
+
 运行面只读不写；缓存按三文件 mtime 失效，与 core services.load_ontology_data 同语义。
 
 返回全部是 plain dict（yaml.safe_load / json.load 原物），不依赖 core 的 pydantic schemas——
@@ -10,6 +22,7 @@ ontology.yaml（语义模型）、data_engines.yaml / securities.yaml（独立�
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import yaml
@@ -41,7 +54,7 @@ def _read_yaml(path: Path):
         return yaml.safe_load(f)
 
 
-# ─── meta.json 清单（对应 core metadata.py 的读路径）────────────────────────────
+# ─── 场景花名册（场景级 meta.json；场景没有 ontology.yaml，不属"本体身份"读取）──────
 
 def list_scenarios() -> list[dict]:
     scenarios = []
@@ -57,8 +70,48 @@ def list_scenarios() -> list[dict]:
     return scenarios
 
 
+# ─── 本体身份四元组：唯一读取来源 = ontology.yaml.metadata（与 core repositories/metadata 同口径）──
+_IDENTITY_KEYS = ("scenario_name", "scenario_id", "ontology_name", "ontology_id")
+
+
+def _ontology_metadata(scenario_name: str, ontology_name: str) -> dict:
+    """`<本体>/ontology.yaml` 的 metadata 段（经 load_ontology_data 的 mtime 缓存；缺失/损坏 → {}）。
+
+    走缓存而非每次重新解析：本函数经 list_all_ontologies 进入 get_ontology_names，
+    而后者在**每次函数/行为调用的路由前置**热路径上。
+    """
+    try:
+        data = load_ontology_data(scenario_name, ontology_name)
+    except Exception:      # 损坏的 yaml 不得影响清单与路由
+        return {}
+    md = data.get("metadata") if isinstance(data, dict) else None
+    return md if isinstance(md, dict) else {}
+
+
+def _identity_from_metadata(md: dict, scenario_dir_name: str,
+                            ontology_dir_name: str) -> dict | None:
+    """metadata 段 → 身份四元组；任一项为空或与所在目录名不一致 → None（调用方跳过并告警）。"""
+    ident = {k: md.get(k) for k in _IDENTITY_KEYS}
+    if any(v is None or v == "" for v in ident.values()):
+        return None
+    if ident["scenario_name"] != scenario_dir_name or ident["ontology_name"] != ontology_dir_name:
+        return None
+    return ident
+
+
+def ontology_identity(scenario_name: str, ontology_name: str) -> dict | None:
+    """本体身份四元组（唯一来源 = ontology.yaml.metadata）；不可信时 None。"""
+    return _identity_from_metadata(_ontology_metadata(scenario_name, ontology_name),
+                                    scenario_name, ontology_name)
+
+
 def list_all_ontologies() -> list[dict]:
-    """跨场景全量本体清单（meta.json + scenario_name/ontology_name  enrichment）。"""
+    """跨场景全量本体清单（身份与本体名取自 ontology.yaml.metadata）。
+
+    meta.json 只贡献非身份字段（description / creator / created_at / updated_at）与
+    "本体存在"的注册判据；身份缺失或与目录名不一致的本体**跳过并告警**（不兜底推导，
+    见模块 docstring 的统一口径）。
+    """
     results = []
     if not ONTO_MARKET_DIR.exists():
         return results
@@ -68,12 +121,21 @@ def list_all_ontologies() -> list[dict]:
         for ontology_dir in sorted(scenario_dir.iterdir()):
             if not ontology_dir.is_dir():
                 continue
-            data = _read_json(ontology_dir / "meta.json")
-            if not isinstance(data, dict) or "scenario_id" not in data:
+            meta = _read_json(ontology_dir / "meta.json")
+            if not isinstance(meta, dict):
                 continue
-            data["scenario_name"] = scenario_dir.name
-            data["ontology_name"] = ontology_dir.name
-            results.append(data)
+            md = _ontology_metadata(scenario_dir.name, ontology_dir.name)
+            ident = _identity_from_metadata(md, scenario_dir.name, ontology_dir.name)
+            if ident is None:
+                print(f"[data_store] 本体 {scenario_dir.name}/{ontology_dir.name} 的 ontology.yaml.metadata "
+                      f"缺失或与目录名不一致，已跳过（身份唯一来源 = metadata）", file=sys.stderr)
+                continue
+            row = dict(meta)                      # 非身份字段
+            row.update(ident)                     # 身份四元组：metadata 覆盖
+            row["id"] = ident["ontology_id"]      # id 键（工具/路由/get_ontology_names 用）同样只认 metadata
+            row["name"] = ident["ontology_name"]  # 本体名同样只认 metadata
+            row["deployed_version"] = str(md.get("deployed_version") or "")
+            results.append(row)
     results.sort(key=lambda o: o.get("updated_at", ""), reverse=True)
     return results
 
@@ -92,11 +154,15 @@ def _ontology_dir(scenario_name: str, ontology_name: str) -> Path:
     return ONTO_MARKET_DIR / scenario_name / ontology_name
 
 
-def ontology_fingerprint() -> tuple[int, int]:
-    """(文件数, 最大 mtime_ns)。仅 stat 不解析，供工具清单级缓存的指纹。
+def ontology_market_fingerprint() -> tuple[int, int]:
+    """**全体本体文件**的变更指纹 (文件数, 最大 mtime_ns)：仅 stat 不解析，供工具清单级缓存失效。
 
-    覆盖新增/删除（文件数变化）与编辑（mtime 变化）；函数 .py 代码文件不影响
+    范围是 `onto_market` 下**全部** `ontology.yaml` + `meta.json`（不是某一个本体的指纹，
+    故无参数）；覆盖新增/删除（文件数变化）与编辑（mtime 变化）；函数 .py 代码文件不影响
     工具清单（name/desc/params 都在 ontology.yaml），有意不纳入。
+
+    同时纳入 meta.json：它虽不再是身份来源，但仍是"本体存在"的注册判据与目录改名的
+    触发点之一（改名会移动目录并回刷 ontology.yaml.metadata，两者都会改变指纹）。
     """
     count, latest = 0, -1
     if ONTO_MARKET_DIR.exists():
@@ -150,6 +216,15 @@ def load_ontology_data_by_id(ontology_id: int) -> tuple[dict, str, str]:
     if names is None:
         raise KeyError(f"本体不存在: ontology_id={ontology_id}")
     return load_ontology_data(*names), names[0], names[1]
+
+
+def deployed_version_of(scenario_name: str, ontology_name: str) -> str:
+    """已部署版本号（ontology.yaml 的 metadata.deployed_version）；缺失/损坏返回空串。
+
+    与身份四元组共用同一读取通道（``_ontology_metadata``，mtime 缓存），
+    口径与 core ``repositories/metadata.list_all_ontologies`` 一致（读时派生，不落盘）。
+    """
+    return str(_ontology_metadata(scenario_name, ontology_name).get("deployed_version") or "")
 
 
 # ─── 公共函数 manifest ─────────────────────────────────────────────────────────

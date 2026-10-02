@@ -1,6 +1,6 @@
 /**
  * 本地探针：以宿主机身份连 localhost:8002 拉 MCP 目录，走真实 toMountableToolInfo 分类，
- * 打印 getMountableToolCatalog 结果（父 Agent listAllMcpFunctions 的数据源）。
+ * 打印 getMountableToolCatalog 结果（父 Agent listPlannableFunctions 的数据源）。
  * 用法: npx tsx scripts/probe-catalog.ts
  */
 import { MCPClient } from '../src/services/mcp-client.js';

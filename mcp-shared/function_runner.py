@@ -1,4 +1,6 @@
-"""函数沙箱：exec + 受限 globals + run(params) 统一入口（迁自 core-backend services）。
+"""函数执行器：exec + 受限 globals + run(params) 统一入口（迁自 core-backend services）。
+
+注：原名 `sandbox` 名实不符（见下"可信插件执行"说明）→ 2026-10-02 更名 `function_runner`。
 
 本体函数与公共函数同一约定：def run(params: dict) -> dict，整包传参。
 
@@ -32,11 +34,11 @@ def _normalize_output(ret):
         if not extra:
             return {"success": True, "data": ret["result"], "error": None}
         print(
-            f"[sandbox] 函数返回旧式多顶层键 {sorted(ret.keys())}，已整包归入 data（建议改写为统一信封约定）",
+            f"[function_runner] 函数返回旧式多顶层键 {sorted(ret.keys())}，已整包归入 data（建议改写为统一信封约定）",
             file=sys.stderr,
         )
         return {"success": True, "data": ret, "error": None}
-    print("[sandbox] 函数返回未按信封约定（缺 success），已宽松归入 data", file=sys.stderr)
+    print("[function_runner] 函数返回未按信封约定（缺 success），已宽松归入 data", file=sys.stderr)
     return {"success": True, "data": ret, "error": None}
 
 

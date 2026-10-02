@@ -135,6 +135,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
     const gateway = {
       getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
       getBehaviorNames: () => ['Behavior1', 'Behavior2'],
+      getReadyBehaviorNames: () => ['Behavior1', 'Behavior2'],
       getFunctionNames: () => [],
       getFunctionInfo: () => null,
     } as unknown as OntologyGatewayPort;
@@ -161,6 +162,7 @@ describe('Orchestrator · 言行不一闸（假提交声明 → 立即拦截，�
   const claimGateway = {
     getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
     getBehaviorNames: () => ['Behavior1'],
+    getReadyBehaviorNames: () => ['Behavior1'],
     getFunctionNames: () => [],
     getFunctionInfo: () => null,
   } as unknown as OntologyGatewayPort;
@@ -323,12 +325,12 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
     expect(calls[0].result).toBeUndefined();
   });
 
-  it('submit_plan / listAllMcpFunctions 不推执行记录', async () => {
+  it('submit_plan / listPlannableFunctions 不推执行记录', async () => {
     const { factory } = mkTraceFactory(emitEv => {
       emitEv({ type: 'tool_execution_start', toolName: 'submit_plan', toolCallId: 'p1', args: { subtasks: [] } });
       emitEv({ type: 'tool_execution_end', toolName: 'submit_plan', toolCallId: 'p1', result: { content: [{ text: '已接收执行规划' }] } });
-      emitEv({ type: 'tool_execution_start', toolName: 'listAllMcpFunctions', toolCallId: 'f1', args: {} });
-      emitEv({ type: 'tool_execution_end', toolName: 'listAllMcpFunctions', toolCallId: 'f1', result: { content: [{ text: '[]' }] } });
+      emitEv({ type: 'tool_execution_start', toolName: 'listPlannableFunctions', toolCallId: 'f1', args: {} });
+      emitEv({ type: 'tool_execution_end', toolName: 'listPlannableFunctions', toolCallId: 'f1', result: { content: [{ text: '[]' }] } });
     });
     const orch = new Orchestrator(factory, noopGateway);
     const events: SSEEvent[] = [];
@@ -344,6 +346,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
   const loopGateway = {
     getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
     getBehaviorNames: () => ['Behavior1', 'Behavior2', 'Behavior3'],
+    getReadyBehaviorNames: () => ['Behavior1', 'Behavior2', 'Behavior3'],
     getFunctionNames: () => [],
     getFunctionInfo: () => null,
   } as unknown as OntologyGatewayPort;

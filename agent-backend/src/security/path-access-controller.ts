@@ -91,15 +91,15 @@ export class PathAccessController {
   }
 
   /**
-   * 取场景/本体 meta.json 只读路径（core-backend 的 id 注册表，scenario_id/ontology_id 的权威来源）。
-   * 不校验存在性——调用方自行容错（meta 缺失时静默降级）。
+   * 取本体 ontology.yaml 只读路径 —— 本体身份四元组（scenario_name / scenario_id /
+   * ontology_name / ontology_id）的**唯一读取来源**（与 core、mcp-shared/data_store 同口径；
+   * meta.json 只是创建期注册，不再作为身份读取来源）。
+   * 不校验存在性——调用方自行容错（缺失时返回 null，不静默降级到其他来源）。
    */
-  resolveOntologyMetaPath(scenario: string, ontology?: string): string {
+  resolveOntologyYamlPath(scenario: string, ontology: string): string {
     this.assertValidPathComponent(scenario, '场景');
-    if (ontology !== undefined) this.assertValidPathComponent(ontology, '本体');
-    return ontology
-      ? resolve(this.dataDir, 'onto_market', scenario, ontology, 'meta.json')
-      : resolve(this.dataDir, 'onto_market', scenario, 'meta.json');
+    this.assertValidPathComponent(ontology, '本体');
+    return resolve(this.dataDir, 'onto_market', scenario, ontology, 'ontology.yaml');
   }
 
   /** 暴露数据根目录（只读，用于跨本体扫描技能文件） */

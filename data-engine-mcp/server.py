@@ -1,9 +1,9 @@
 """optonto-data-engine-mcp — 映射执行面 MCP 服务（SSE）。
 
-职责：行为 facade 工具（唯一入口）、映射前后翻译、参数契约检查。
+职责：行为工具（唯一入口）、映射前后翻译、参数契约检查。
 引擎唯一形态=MCP（target.server_url/tool_name 分发；HTTP/SQL 型已分别于阶段五、2026-09-07 删除）。
 
-直读 .data（loaders），运行期零回调 core-backend。
+直读 .data（data_store），运行期零回调 core-backend。
 core-backend 的 /behaviors/{name}/call 与 /data-engines/{name}/call 降级转发到
 本服务的 /call-behavior /call-engine（设计器测试与 Agent 走同一路径，消灭双执行路径）。
 
@@ -25,17 +25,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from mcp_base import build_mcp_app
-from schema_compile import FUNCTION_SCOPE_KEYS
+from mcp_app import build_mcp_app
+from tool_contract import (
+    owner_label, require_ontology_id, require_ontology_match, strip_system_params,
+)
 
+import behavior_tools
 import executor
-import facade
 
 server = Server("optonto-data-engine-mcp")
 
 
 async def _list_tools() -> list[Tool]:
-    return facade.load_behavior_tools()
+    return behavior_tools.load_behavior_tools()
 
 
 @server.list_tools()
@@ -46,15 +48,25 @@ async def handle_list_tools() -> list[Tool]:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     # 确保行为缓存已加载（MCP 协议先 list_tools 后 call_tool，此处兜底直连场景）
-    entries = facade.behavior_entries()
+    entries = behavior_tools.behavior_entries()
     entry = entries.get(name)
     if entry is None:
+        # 契约 ⑥：行为存在但未就绪（未完成映射）→ 专用报错，与"未知工具"区分开（指向病根，
+        # 而不是让调用方以为是自己不存在的工具名写错了）
+        unready = behavior_tools.unready_behavior(name)
+        if unready:
+            raise ValueError(
+                f"行为 {name} 尚未就绪：未完成数据引擎映射，未发布为工具"
+                f"（本体「{unready.get('ontology_name')}」）；请先在映射页完成配置")
         raise ValueError(f"未知工具: {name}")
 
-    oid = arguments.get("ontology_id") or entry.get("ontology_id")
-    bname = entry["name"]  # 裸行为名（tool_name 可能带 onto{id}__ 前缀）
-    # scope 是规划元数据（非行为输入），剥离；ontology_id 仅路由用，亦剥离
-    params = {k: v for k, v in arguments.items() if k not in FUNCTION_SCOPE_KEYS and k != "ontology_id"}
+    bname = entry["name"]  # 工具名 = 行为裸名（无本体前缀）
+    oid = require_ontology_id(arguments.get("ontology_id"), f"行为 {bname}")
+    # 归属一致性（契约 ④）：entry["ontology_id"] 是本行为发布时的权威归属（与 scope.const 同源）。
+    # 不等说明调用方把工具挂到了错误的本体上（行为侧跨本体重名可构造，会静默执行错本体）→ 拒。
+    require_ontology_match(entry.get("ontology_id"), oid, f"行为 {bname}", owner_label(entry))
+    # scope 是规划元数据（非行为输入），剥离；ontology_id 仅路由用，亦剥离（共用实现）
+    params = strip_system_params(arguments)
 
     try:
         result = await executor.execute_behavior(int(oid), bname, params)
@@ -72,7 +84,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
 
 
-# ─── 设计期转发入口（core 降级转发，与 facade 共用 executor 同一实现）────────────────
+# ─── 设计期转发入口（core 降级转发，与 behavior_tools 共用 executor 同一实现）──────────
 
 
 def _envelope_response(result: dict, label: str) -> JSONResponse:
@@ -87,11 +99,16 @@ def _envelope_response(result: dict, label: str) -> JSONResponse:
 
 
 async def _handle_call_behavior(request: Request) -> JSONResponse:
-    """POST /call-behavior {ontology_id, behavior_name, params}。"""
+    """POST /call-behavior {ontology_id, behavior_name, params}（ontology_id 必填）。"""
     body = await request.json()
     bname = body.get("behavior_name")
     try:
-        result = await executor.execute_behavior(int(body.get("ontology_id")), bname, body.get("params") or {})
+        oid = require_ontology_id(body.get("ontology_id"), f"行为 {bname}")
+        # 归属一致性（契约 ④）：与 MCP 入口同口径（设计期转发也走这条路径）
+        entry = behavior_tools.behavior_entries().get(bname)
+        require_ontology_match((entry or {}).get("ontology_id"), oid, f"行为 {bname}", owner_label(entry))
+        # 系统参数剥离：与 MCP 入口同口径（scope/ontology_id 不进业务参数、不进映射翻译）
+        result = await executor.execute_behavior(int(oid), bname, strip_system_params(body.get("params")))
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     except Exception as e:
@@ -100,11 +117,14 @@ async def _handle_call_behavior(request: Request) -> JSONResponse:
 
 
 async def _handle_call_engine(request: Request) -> JSONResponse:
-    """POST /call-engine {ontology_id, engine_name, params}。"""
+    """POST /call-engine {ontology_id, engine_name, params}（ontology_id 必填）。"""
     body = await request.json()
     ename = body.get("engine_name")
     try:
-        result = await executor.execute_engine(int(body.get("ontology_id")), ename, body.get("params") or {})
+        oid = require_ontology_id(body.get("ontology_id"), f"数据引擎 {ename}")
+        # 有意**不**做系统参数剥离：引擎 params 是用户自定义字段（SYSTEM_PARAMS 只属本体执行类），
+        # 剥了会误删真名为 scope/ontology_id 的引擎参数。
+        result = await executor.execute_engine(int(oid), ename, body.get("params") or {})
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     except Exception as e:

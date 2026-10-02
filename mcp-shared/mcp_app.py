@@ -1,4 +1,4 @@
-"""MCP Streamable HTTP Starlette 骨架（迁自 core-backend mcp_server_sse.py 的协议层）。
+"""MCP 协议骨架 app 工厂（迁自 core-backend mcp_server_sse.py 的协议层；原名 mcp_base.py，2026-10-02 更名）。
 
 给定 mcp.server.Server 与 list_tools 回调，产出带以下端点的 Starlette app：
 - /mcp（MCP over Streamable HTTP：POST 请求 / GET 流 / DELETE 终止会话）

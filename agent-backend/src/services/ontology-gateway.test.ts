@@ -208,3 +208,39 @@ describe('契约 §7 判断函数解析（口径 B：类型即角色）', () => 
     expect(gateway.getFunctionInfo(SC, ON, 'getCurrentDate')?.type).toBe('');
   });
 });
+
+describe('契约 §6 就绪发布：getReadyBehaviorNames（与 data-engine-mcp 发布判据同源）', () => {
+  /** MCP 型引擎（唯一形态）；over 用于构造半成品/已删除类型等异常 */
+  const mcpEngine = (behavior: string, over: any = {}): any => ({
+    behavior_name: behavior, target: { server_url: 'http://downstream/mcp', tool_name: 't' }, ...over,
+  });
+
+  it('R1：只有配好可用引擎的行为才就绪；花名册仍列全部（设计期视角不变）', () => {
+    writeOntology({ behaviors: [{ name: 'B1' }, { name: 'B2' }], data_engines: [mcpEngine('B1')] });
+    expect(gateway.getBehaviorNames(SC, ON)).toEqual(['B1', 'B2']);
+    expect(gateway.getReadyBehaviorNames(SC, ON)).toEqual(['B1']);
+  });
+
+  it('R2：半成品引擎（缺 tool_name）不算就绪', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1' }],
+      data_engines: [mcpEngine('B1', { target: { server_url: 'http://x/mcp' } })],
+    });
+    expect(gateway.getReadyBehaviorNames(SC, ON)).toEqual([]);
+  });
+
+  it('R3：engine_type 非 MCP（已删除类型）不算就绪；缺省即 MCP', () => {
+    writeOntology({
+      behaviors: [{ name: 'B1' }, { name: 'B2' }],
+      data_engines: [mcpEngine('B1', { engine_type: 'SQL' }), mcpEngine('B2')],
+    });
+    expect(gateway.getReadyBehaviorNames(SC, ON)).toEqual(['B2']);
+  });
+
+  it('R4：无引擎 / 无 behaviors → 空集（不误报）', () => {
+    writeOntology({ behaviors: [{ name: 'B1' }] });
+    expect(gateway.getReadyBehaviorNames(SC, ON)).toEqual([]);
+    writeOntology({});
+    expect(gateway.getReadyBehaviorNames(SC, ON)).toEqual([]);
+  });
+});

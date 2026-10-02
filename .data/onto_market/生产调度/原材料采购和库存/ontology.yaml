@@ -306,7 +306,9 @@ relations:
   target_attr: rawMaterialId
   description: 每个原材料有且仅有一条对应的最新库存快照。
   display_name: 拥有库存
-  relation_type: []
+  relation_type:
+  - functional
+  - inverse_functional
 - name: recordsRawMaterial
   source: PurchaseRecord
   target: RawMaterial
@@ -315,7 +317,8 @@ relations:
   target_attr: rawMaterialId
   description: 多个采购记录可以指向同一种原材料，但一个采购记录只采购一种原材料。
   display_name: 记录原材料
-  relation_type: []
+  relation_type:
+  - functional
 - name: orderedFromSupplier
   source: PurchaseRecord
   target: Supplier
@@ -324,7 +327,8 @@ relations:
   target_attr: supplierName
   description: 多个采购记录可以从同一个供应商采购，但一个采购记录只对应一个供应商。
   display_name: 从...采购
-  relation_type: []
+  relation_type:
+  - functional
 - name: containsPurchaseRecord
   source: CustomerOrder
   target: PurchaseRecord
@@ -333,7 +337,8 @@ relations:
   target_attr: relatedOrderId
   description: 一个客户订单可以包含多个采购记录，但一个采购记录最多只能关联一个客户订单。
   display_name: 包含采购记录
-  relation_type: []
+  relation_type:
+  - inverse_functional
 - name: hasCapability
   source: Supplier
   target: DeliveryCapability
@@ -342,7 +347,8 @@ relations:
   target_attr: supplierId
   description: 一个供应商可以包含多个原材料的供应能力，但一个交货能力只对应一个供应商
   display_name: 拥有供应能力
-  relation_type: []
+  relation_type:
+  - inverse_functional
 functions:
 - name: sumRawNotArrivalQty
   display_name: 原材料未到位数

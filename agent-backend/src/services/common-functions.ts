@@ -51,7 +51,7 @@ export function schemaToDeclaredParams(schema: any): Record<string, any> {
  * mtime 缓存：文件变化自动重读，与 OntologyGateway 的 ontology.yaml 缓存语义一致——
  * 此前 import 期冻结（COMMON_FUNCTIONS 常量），改 functions.json 必须重启进程，与网关热加载不一致。
  * 文件缺失/解析失败时返回空数组（此时 core-backend 也不会注册这些工具，白名单空是自洽的）。
- * 单一事实源：AgentFactory（listAllMcpFunctions 目录分类 / 子 Agent 挂载）、OntologyGateway（函数子任务名校验 / 参数结构校验）共用。
+ * 单一事实源：AgentFactory（listPlannableFunctions 目录分类 / 子 Agent 挂载）、OntologyGateway（函数子任务名校验 / 参数结构校验）共用。
  */
 let cache: { data: CommonFunction[]; mtimeMs: number } | null = null;
 

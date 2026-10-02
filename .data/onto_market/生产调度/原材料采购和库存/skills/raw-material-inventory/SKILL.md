@@ -22,13 +22,11 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **交货能力（DeliveryCapability）**：表示供应商对特定原材料的供货能力，包含原材料编号（rawMaterialId）、原材料名称（rawMaterialName）、供应商名称（supplierName）、供应商编号（supplierId）、交货周期（leadTime）和最小起订量（minCount）等属性。
 
 概念之间的关系如下：
-- **hasRawInventory（拥有库存）**：原材料（RawMaterial）与原材料库存（RawMaterialInventory）之间为1:1关系，即一种原材料对应一条库存记录。
-- **recordsRawMaterial（记录原材料）**：原材料采购记录（PurchaseRecord）与原材料（RawMaterial）之间为N:1关系，即多条采购记录可对应同一种原材料。
-- **orderedFromSupplier（向供应商采购）**：原材料采购记录（PurchaseRecord）与供应商（Supplier）之间为N:1关系，即多条采购记录可对应同一供应商。
-- **suppliesRawMaterial（供应原材料）**：供应商（Supplier）与原材料（RawMaterial）之间为N:M关系，即一个供应商可供应多种原材料，一种原材料也可由多个供应商供应。
-- **containsPurchaseRecord（包含采购记录）**：客户订单（CustomerOrder）与原材料采购记录（PurchaseRecord）之间为1:N关系，即一个客户订单可包含多条采购记录。
-- **hasCapability（具备供货能力）**：供应商（Supplier）与交货能力（DeliveryCapability）之间为1:N关系，即一个供应商可具备多种原材料的交货能力。
-
+- **hasRawInventory（拥有库存）**：原材料（RawMaterial）与原材料库存（RawMaterialInventory）之间为1:1关系，即一种原材料对应一条库存记录。关系类型：functional、inverse_functional。
+- **recordsRawMaterial（记录原材料）**：原材料采购记录（PurchaseRecord）与原材料（RawMaterial）之间为N:1关系，即多条采购记录可对应同一种原材料。关系类型：functional。
+- **orderedFromSupplier（从...采购）**：原材料采购记录（PurchaseRecord）与供应商（Supplier）之间为N:1关系，即多条采购记录可对应同一供应商。关系类型：functional。
+- **containsPurchaseRecord（包含采购记录）**：客户订单（CustomerOrder）与原材料采购记录（PurchaseRecord）之间为1:N关系，即一个客户订单可包含多条采购记录。关系类型：inverse_functional。
+- **hasCapability（拥有供应能力）**：供应商（Supplier）与交货能力（DeliveryCapability）之间为1:N关系，即一个供应商可具备多种原材料的交货能力。关系类型：inverse_functional。
 整个关系体系以原材料（RawMaterial）和供应商（Supplier）为核心，通过采购记录（PurchaseRecord）将客户订单（CustomerOrder）、库存（RawMaterialInventory）和交货能力（DeliveryCapability）串联起来，形成从客户需求、采购执行到库存管理的完整业务逻辑链条。
 
 ## 2重要业务流程
@@ -303,33 +301,3 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 ```
 - **相关概念**: 交货能力（DeliveryCapability）、供应商（Supplier）、原材料（RawMaterial）
 - **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySupplierCapability` 及其输入参数。
-
-### 3.9 QuerySupplierCapabilitySQL
-- **类型**: query（查询）
-- **行为描述**: 根据供应商名或原材料名，查询供应能力。
-- **输入参数**:
-```json
-{
-  "supplierName": {"type": "string", "required": true, "description": "", "example": "宝钢钢铁集团", "display_name": "供应商名称"},
-  "rawMaterialName": {"type": "string", "required": true, "description": "", "example": "钢板008", "display_name": "原材料名称"}
-}
-```
-- **输出结构**:
-```json
-{
-  "data": {
-    "type": "array",
-    "items": {
-      "type": "object",
-      "properties": {
-        "supplierName": {"type": "string", "display_name": "供应商名称", "example": "宝钢钢铁集团"},
-        "rawMaterialId": {"type": "string", "display_name": "原材料ID", "example": "RM-001"},
-        "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"},
-        "leadTime": {"type": "number", "display_name": "交货周期", "example": 100}
-      }
-    }
-  }
-}
-```
-- **相关概念**: 交货能力（DeliveryCapability）、供应商（Supplier）、原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySupplierCapabilitySQL` 及其输入参数。

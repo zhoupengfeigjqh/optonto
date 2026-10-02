@@ -23,10 +23,10 @@
 │ │optonto-    │ │optonto-data-       │ │optonto-business-mcp │  │
 │ │ontology-mcp│ │engine-mcp（新）     │ │（新）                │  │
 │ │            │ │                   │ │                     │  │
-│ │本体查询list*│ │行为 facade 工具    │ │业务接口原始工具        │  │
+│ │本体查询list*│ │行为工具发布        │ │业务接口原始工具        │  │
 │ │本体函数     │ │★ 映射执行（前后翻译）│ │纯业务适配器，          │  │
 │ │公共函数     │ │MCP 分发：目标由     │ │不知本体/映射/Agent    │  │
-│ │本地沙箱     │ │ data_engine.target │ │                     │  │
+│ │本地执行     │ │ data_engine.target │ │                     │  │
 │ │            │ │ 决定（非固定下游）   │ │                     │  │
 │ │            │ │SQL 型行为+只读闸    │ │                     │  │
 │ └───────────┘ └─────────┬─────────┘ └─────────▲───────────┘  │
@@ -48,8 +48,8 @@
 
 | 旧名 | 新名 | 职责 |
 |---|---|---|
-| optonto-mcp | **optonto-ontology-mcp** | 本体语义面：list 查询、本体函数、公共函数（本地沙箱） |
-| —（新服务） | **optonto-data-engine-mcp** | 映射执行面：行为 facade、前后翻译、SQL、MCP 分发 |
+| optonto-mcp | **optonto-ontology-mcp** | 本体语义面：list 查询、本体函数、公共函数（本地执行） |
+| —（新服务） | **optonto-data-engine-mcp** | 映射执行面：行为工具发布、前后翻译、MCP 分发 |
 | —（新服务） | **optonto-business-mcp** | 业务集成面：业务 REST 包装为 MCP 工具 |
 
 同构命名 `optonto-<职责>-mcp`。改名在阶段一同步完成（compose/nginx/mcp-config-store/前端文案机械替换）；agent-backend 内置身份识别已有"builtin 标记 + 当前 URL + 历史默认 URL"三重判定，旧配置文件兼容。端口不变（ontology-mcp 仍 8002），Agent 侧无感。
@@ -60,8 +60,8 @@
 
 | 服务 | 唯一职责 | 不知道什么 |
 |---|---|---|
-| optonto-ontology-mcp | 本体查询、本体/公共函数沙箱 | 业务接口、映射 |
-| optonto-data-engine-mcp | **映射与执行的唯一权威**：facade、翻译、SQL+只读闸、参数契约检查、MCP 分发 | 下游接口实现细节（只见 MCP 工具） |
+| optonto-ontology-mcp | 本体查询、本体/公共函数本地执行 | 业务接口、映射 |
+| optonto-data-engine-mcp | **映射与执行的唯一权威**：行为工具发布、翻译、参数契约检查、MCP 分发 | 下游接口实现细节（只见 MCP 工具） |
 | optonto-business-mcp | 业务 REST → MCP 工具，自描述 input/outputSchema | 本体、映射、Agent |
 | core-backend | 设计期：建模、映射生成/存储、部署 | 运行期执行（归零） |
 | agent-backend | 编排：规划、RuleGate、安全确认、记忆 | 映射（从不接触，本轮不变） |
@@ -89,7 +89,7 @@ optonto/
 │
 ├── data-engine-mcp/           # optonto-data-engine-mcp 容器
 │   ├── server.py              # 协议层（薄）
-│   ├── facade.py              # 行为工具生成：命名、约束编译 schema、scope 剥离
+│   ├── behavior_tools.py      # 行为工具发布：命名、约束编译 schema、scope 剥离
 │   ├── executor.py            # MCP 分发（连接池+重连+15s 超时）/ SQL（只读闸+连接池）+ 契约检查
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -101,16 +101,17 @@ optonto/
 │   └── requirements.txt
 │
 └── mcp-shared/                # 三服务共用的构建期库（不是服务、不起容器）
-    ├── loaders.py             # 直读 .data + mtime 指纹热加载
+    ├── data_store.py          # 直读 .data + mtime 指纹热加载
     ├── mapper.py              # _translate_input / _translate_output（逐字迁自 data_engine.py）
-    ├── sandbox.py             # 函数 exec + 受限 globals + run(params) 约定
-    └── mcp_base.py            # Streamable HTTP Starlette 骨架（/mcp 单端点）、OAuth issuer 推导、/health /tools 端点
+    ├── function_runner.py     # 函数 exec + 受限 globals + run(params)（可信插件执行，非安全沙箱）
+    ├── tool_contract.py       # 工具发布/调用契约唯一权威（分类/scope/系统参数/归属）+ inputSchema 编译器
+    └── mcp_app.py             # 协议骨架（/mcp 单端点）、OAuth issuer 推导、/health /tools 端点
 ```
 
 **关键决策**：
 - `mcp-shared/` 是**构建期库**：三个 Dockerfile 的 context 均为仓库根，各自 `COPY mcp-shared/`。运行时三服务零相互依赖；映射翻译/沙箱/指纹加载只有一份实现，改一处三个服务下次构建同时获得——杜绝"复制三份必漂移"。
-- 各服务私有物留在各自文件夹（facade/executor 属 data-engine-mcp，tools.yaml 属 business-mcp）。
-- core-backend 迁出物：`mcp_server_sse.py` 拆解（骨架→mcp_base、list*/函数→ontology-mcp、行为 facade→data-engine-mcp/facade.py）；`services/data_engine.py` 拆分为 mapper+executor；`Dockerfile.mcp` 拆为三个。
+- 各服务私有物留在各自文件夹（behavior_tools/executor 属 data-engine-mcp，tools.yaml 属 business-mcp）。
+- core-backend 迁出物：`mcp_server_sse.py` 拆解（骨架→mcp_app、list*/函数→ontology-mcp、行为工具发布→data-engine-mcp/behavior_tools.py）；`services/data_engine.py` 拆分为 mapper+executor；`Dockerfile.mcp` 拆为三个。
 
 ---
 

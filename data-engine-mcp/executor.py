@@ -1,19 +1,18 @@
 """映射执行器：行为/引擎调用的唯一权威（迁自 core-backend services/data_engine.py）。
-
 engine_type 收敛史：HTTP 型阶段五删除、SQL 型 2026-09-07 随 DB 映射整体删除——
 现唯一形态 MCP：按 target.server_url/tool_name 做 MCP 分发（本服务对下游是 MCP Client，
 映射代理形态：输入映射 → callTool → 输出映射；下游 isError 穿透为 RuntimeError）。
 engine_type 字段已彻底删出 schema，缺省即 MCP；显式标其他类型的旧配置报错兜底。
 
 传输无关：配置错误抛 ValueError（对应 HTTP 400），执行失败抛 RuntimeError（对应 500）；
-HTTP 状态映射在 server.py 的 REST 层，MCP facade 层统一转 RuntimeError 置 isError。
+HTTP 状态映射在 server.py 的 REST 层，MCP 协议层统一转 RuntimeError 置 isError。
 """
 
 import asyncio
 import json
 import logging
 
-import loaders
+import data_store
 from mapper import _translate_input, _translate_output
 
 logger = logging.getLogger(__name__)
@@ -74,7 +73,7 @@ def _has_content(value) -> bool:
     return True
 
 
-def _check_mapping_duplicates(de: dict) -> list[str]:
+def _check_mapping_duplicates(engine: dict) -> list[str]:
     """同一映射值被多个源字段指向（warn-only）。
 
     翻译是逐键写入 dict，两个源字段指向同一目标字段时后者覆盖前者——输入向丢参数、
@@ -83,7 +82,7 @@ def _check_mapping_duplicates(de: dict) -> list[str]:
     dupes = []
     for label in ("input_mapping", "output_mapping"):
         seen: dict = {}
-        for src, dst in (de.get(label) or {}).items():
+        for src, dst in (engine.get(label) or {}).items():
             if not dst:
                 continue  # 空串映射（本体属性在目标无来源）不产生目标路径
             if dst in seen:
@@ -93,19 +92,19 @@ def _check_mapping_duplicates(de: dict) -> list[str]:
     return dupes
 
 
-async def _call_engine_mcp(de: dict, params: dict) -> dict:
+async def _call_engine_mcp(engine: dict, params: dict) -> dict:
     """MCP 型引擎：输入映射 → callTool(target.server_url, target.tool_name) → 输出映射。"""
-    target = de.get("target") or {}
+    target = engine.get("target") or {}
     server_url = target.get("server_url")
     tool_name = target.get("tool_name")
     if not server_url or not tool_name:
         raise ValueError("MCP 型数据引擎的 target 未配置 server_url / tool_name")
-    for dupe in _check_mapping_duplicates(de):
+    for dupe in _check_mapping_duplicates(engine):
         logger.warning("映射值重复（翻译时后者覆盖前者）: %s", dupe)
-    translated = _translate_input(params, de.get("input_mapping") or {})
+    translated = _translate_input(params, engine.get("input_mapping") or {})
     result = await _mcp_call_tool(server_url, tool_name, translated,
                                   headers=target.get("headers") or None)
-    output_mapping = de.get("output_mapping") or {}
+    output_mapping = engine.get("output_mapping") or {}
     raw = result["data"]
     result["data"] = _translate_output(raw, output_mapping)
     if output_mapping and _has_content(raw) and not _has_content(result["data"]):
@@ -119,17 +118,17 @@ async def _call_engine_mcp(de: dict, params: dict) -> dict:
 
 
 def _find_engine(data: dict, *, engine_name: str | None = None, behavior_name: str | None = None) -> dict | None:
-    for de in data.get("data_engines") or []:
-        if not isinstance(de, dict):
+    for engine in data.get("data_engines") or []:
+        if not isinstance(engine, dict):
             continue
-        if engine_name is not None and de.get("name") == engine_name:
-            return de
-        if behavior_name is not None and de.get("behavior_name") == behavior_name:
-            return de
+        if engine_name is not None and engine.get("name") == engine_name:
+            return engine
+        if behavior_name is not None and engine.get("behavior_name") == behavior_name:
+            return engine
     return None
 
 
-def _check_param_contract(data: dict, de: dict, behavior_name: str) -> list[str]:
+def _check_param_contract(data: dict, engine: dict, behavior_name: str) -> list[str]:
     """参数契约一致性检查（warn-only，不阻断执行）。
 
     behaviors[].params / data_engines[].target.params / input_mapping 三份手工对齐，
@@ -137,12 +136,12 @@ def _check_param_contract(data: dict, de: dict, behavior_name: str) -> list[str]
     的静默漂移记录成警告。返回未覆盖的必填参数名。
     """
     beh = next((b for b in data.get("behaviors") or [] if isinstance(b, dict) and b.get("name") == behavior_name), None)
-    if beh is None or de is None:
+    if beh is None or engine is None:
         return []
     required = [k for k, spec in (beh.get("params") or {}).items() if isinstance(spec, dict) and spec.get("required")]
-    target = de.get("target") or {}
+    target = engine.get("target") or {}
     covered = set(target.get("params") or {})
-    covered.update(de.get("input_mapping") or {})
+    covered.update(engine.get("input_mapping") or {})
     missing = [k for k in required if k not in covered]
     if missing:
         logger.warning(
@@ -152,38 +151,39 @@ def _check_param_contract(data: dict, de: dict, behavior_name: str) -> list[str]
     return missing
 
 
-def _ensure_mcp(de: dict) -> None:
+def _ensure_mcp(engine: dict) -> None:
     """唯一引擎类型=MCP（SQL/HTTP 已删除）。缺省视为 MCP；显式标其他类型 → 报错防静默走错路。"""
-    et = de.get("engine_type")
+    et = engine.get("engine_type")
     if et and et != "MCP":
-        raise ValueError(f"引擎 {de.get('name') or de.get('behavior_name')} 是已删除的 {et} 型，请在映射页重新选择 MCP 服务与工具")
+        raise ValueError(f"引擎 {engine.get('name') or engine.get('behavior_name')} 是已删除的 {et} 型，"
+                         f"请在映射页重新选择 MCP 服务与工具")
 
 
 async def execute_engine(ontology_id: int, engine_name: str, params: dict) -> dict:
     """按引擎名调用（设计器连接测试路径，core /data-engines/{name}/call 转发至此）。"""
     try:
-        data, sc_name, on_name = loaders.load_ontology_data_by_id(ontology_id)
+        data, _sc, _on = data_store.load_ontology_data_by_id(ontology_id)
     except KeyError as e:
         raise ValueError(str(e))
-    de = _find_engine(data, engine_name=engine_name)
-    if de is None:
+    engine = _find_engine(data, engine_name=engine_name)
+    if engine is None:
         raise ValueError(f"数据引擎不存在: {engine_name}")
-    _ensure_mcp(de)
-    return await _call_engine_mcp(de, params)
+    _ensure_mcp(engine)
+    return await _call_engine_mcp(engine, params)
 
 
 async def execute_behavior(ontology_id: int, behavior_name: str, params: dict) -> dict:
-    """按行为名调用（facade 执行路径）：查引擎绑定 → MCP 分发。"""
+    """按行为名调用（行为工具执行路径）：查引擎绑定 → MCP 分发。"""
     try:
-        data, sc_name, on_name = loaders.load_ontology_data_by_id(ontology_id)
+        data, _sc, _on = data_store.load_ontology_data_by_id(ontology_id)
     except KeyError as e:
         raise ValueError(str(e))
     beh = next((b for b in data.get("behaviors") or [] if isinstance(b, dict) and b.get("name") == behavior_name), None)
     if beh is None:
         raise ValueError(f"行为不存在: {behavior_name}")
-    de = _find_engine(data, behavior_name=behavior_name)
-    if de is None:
+    engine = _find_engine(data, behavior_name=behavior_name)
+    if engine is None:
         raise ValueError("该行为未绑定数据引擎，请先配置数据引擎")
-    _ensure_mcp(de)
-    _check_param_contract(data, de, behavior_name)  # warn-only：暴露参数契约漂移
-    return await _call_engine_mcp(de, params)
+    _ensure_mcp(engine)
+    _check_param_contract(data, engine, behavior_name)  # warn-only：暴露参数契约漂移
+    return await _call_engine_mcp(engine, params)

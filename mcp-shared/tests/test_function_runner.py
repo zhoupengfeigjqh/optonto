@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sandbox import _normalize_output, run_function_code  # noqa: E402
+from function_runner import _normalize_output, run_function_code  # noqa: E402
 
 
 # ─── _normalize_output：出口归一化 ─────────────────────────────────────────────

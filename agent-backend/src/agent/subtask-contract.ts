@@ -46,11 +46,11 @@ export const SUBTASK_FIELDS: SubtaskField[] = [
   },
   {
     name: 'function', required: false, marker: '❌', schema: Type.String(),
-    prompt: '函数/工具的**英文名**（本体函数、公共函数或其他MCP工具，如 sumRawNotArrivalQty，可用 listAllMcpFunctions 查看）。本子任务是函数计算/外部工具调用时填此字段、behavior 填空字符串；二者互斥，有且只有一个非空',
+    prompt: '函数/工具的**英文名**（本体函数、公共函数或其他MCP工具，如 sumRawNotArrivalQty，可用 listPlannableFunctions 查看）。本子任务是函数计算/外部工具调用时填此字段、behavior 填空字符串；二者互斥，有且只有一个非空',
   },
   {
     name: 'params', required: true, schema: Type.Record(Type.String(), Type.Any()),
-    prompt: '包含该行为/函数所需的完整参数JSON结构，且每个参数必须有（type/required/description/value）。用户已提供的填入 value；缺失的 value 留空字符串。**类型严格遵守声明**：函数/工具的参数类型以 listAllMcpFunctions 返回的 params 为准、行为参数以 SKILL.md 声明为准，每个参数的 type 字段与 value 实际类型都必须与声明一致（如声明 integer 就必须填数字 30，严禁填字符串 "30"/"三十"；声明 array 就填数组）',
+    prompt: '包含该行为/函数所需的完整参数JSON结构，且每个参数必须有（type/required/description/value）。用户已提供的填入 value；缺失的 value 留空字符串。**类型严格遵守声明**：函数/工具的参数类型以 listPlannableFunctions 返回的 params 为准、行为参数以 SKILL.md 声明为准，每个参数的 type 字段与 value 实际类型都必须与声明一致（如声明 integer 就必须填数字 30，严禁填字符串 "30"/"三十"；声明 array 就填数组）',
   },
   {
     name: 'description', required: true, schema: Type.String(),
@@ -84,7 +84,7 @@ export const SUBTASK_FIELDS: SubtaskField[] = [
   },
   {
     name: 'related_functions', required: false, schema: Type.Array(Type.String()),
-    prompt: '仅行为子任务可填：本子任务可能用到的函数/MCP 工具**英文名**列表（含公共函数与其他 MCP 工具）。规则已声明的关联函数系统会自动挂载，此处补充规则之外、本子任务计算/统计所需的函数或外部工具；可先调 listAllMcpFunctions 查看可用函数/工具清单。**函数子任务必须为空**（函数子任务是直连调用，无子 Agent，该字段无意义）',
+    prompt: '仅行为子任务可填：本子任务可能用到的函数/MCP 工具**英文名**列表（含公共函数与其他 MCP 工具）。规则已声明的关联函数系统会自动挂载，此处补充规则之外、本子任务计算/统计所需的函数或外部工具；可先调 listPlannableFunctions 查看可用函数/工具清单。**函数子任务必须为空**（函数子任务是直连调用，无子 Agent，该字段无意义）',
   },
 ];
 

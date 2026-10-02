@@ -28,7 +28,7 @@ vi.mock('../services/mcp-config-store.js', () => ({
   },
 }));
 
-// MCPClient 假实现：按 url 区分服务；两边各有一个同名 query_inventories（内置侧是本体行为 facade）
+// MCPClient 假实现：按 url 区分服务；两边各有一个同名 query_inventories（内置侧是本体行为工具）
 vi.mock('../services/mcp-client.js', () => ({
   MCPClient: class {
     url: string;
@@ -43,7 +43,7 @@ vi.mock('../services/mcp-client.js', () => ({
         ] };
       }
       return { tools: [
-        { name: 'query_inventories', description: '库存查询（本体行为 facade）', inputSchema: { type: 'object', properties: {} } },
+        { name: 'query_inventories', description: '库存查询（本体行为工具）', inputSchema: { type: 'object', properties: {} } },
       ] };
     }
     async callTool() { return { content: [{ type: 'text', text: '{}' }], isError: false }; }
@@ -84,8 +84,8 @@ describe('discoverTools 可见性收编', () => {
     const tools = await discover(guard);
     const biz = tools.filter(t => t.description.includes('原始'));
     expect(biz.map(t => t.name)).toEqual(['query_suppliers']); // query_inventories 被收编
-    expect(tools.filter(t => t.name === 'query_inventories')).toHaveLength(1); // 内置 facade 保留
-    expect(tools.find(t => t.name === 'query_inventories')!.description).toContain('facade');
+    expect(tools.filter(t => t.name === 'query_inventories')).toHaveLength(1); // 内置行为工具保留
+    expect(tools.find(t => t.name === 'query_inventories')!.description).toContain('本体行为工具');
   });
 
   it('无映射（空 .data）时全部可见；未注入 guard 时不收编', async () => {

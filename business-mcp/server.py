@@ -31,7 +31,7 @@ for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 
-from mcp_base import build_mcp_app
+from mcp_app import build_mcp_app
 from decls import load_tool_decls
 
 BUSINESS_API_BASE = os.environ.get("BUSINESS_API_BASE", "http://optonto-business-backend:8080")

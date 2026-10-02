@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""E2E 验证行为 facade 化：多步规划中子 Agent 直接调用行为工具（工具名即行为名，不再走 executeOntoBehavior）"""
+"""E2E 验证行为工具化：多步规划中子 Agent 直接调用行为工具（工具名即行为名，不再走 executeOntoBehavior）"""
 import json
 import sys
 import urllib.request
@@ -49,7 +49,7 @@ def chat(tid, message):
     return events
 
 
-tid = post(API, {'title': 'facade-E2E', 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
+tid = post(API, {'title': 'behavior-tools-E2E', 'ontology_scope': [{'scenario': SCEN, 'ontology': ONTO}]})['id']
 print('thread:', tid)
 evts = chat(tid, '先查一下高强度钢板（RM-001）的当前库存，然后为它创建一张 5 吨的采购单，供应商是宝钢。分两步执行。')
 
