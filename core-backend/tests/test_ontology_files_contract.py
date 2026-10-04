@@ -1,4 +1,4 @@
-"""本体文件契约测试（core 端）—— 镜像 docs/contracts/ontology-yaml.md 用例表（O1-O5 / T1-T7）。
+"""本体文件契约测试（core 端）—— 镜像 specs/contracts/ontology-yaml.md 用例表（O1-O5 / T1-T7）。
 
 与 agent-backend/src/services/ontology-gateway.test.ts 是同一组用例的双端镜像：
 改读取规则必须先改契约文档，再同步两侧用例。

@@ -1,8 +1,14 @@
 """运行面转发器 — core-backend 运行期执行归零后的唯一出口。
 
 设计器测试按钮与 Agent 真实调用必须走同一条路径（消灭双执行路径）：
-- 行为/数据引擎执行 → optonto-data-engine-mcp 的 /call-behavior /call-engine
-- 本体/公共函数执行 → optonto-ontology-mcp 的 /execute-function /execute-common-function
+
+- **本体行为 / 数据引擎**执行 → ``optonto-data-engine-executor:8005`` 的 ``/call-behavior``、``/call-engine``
+- **本体函数**执行           → ``optonto-ontology-function-executor:8006`` 的 ``/execute-function``
+- **公共函数**执行           → ``optonto-common-function-mcp:8007`` 的 ``/execute-common-function``
+
+三类函数的语义差别（勿混用）：本体函数**有本体归属**（执行前做归属一致性校验、必填 ontology_id）；
+公共函数**是平台级能力**（无 ontology_id、不做归属校验），它的执行与对外发布合体在同一个服务
+（common-function-mcp 既是发布面也是执行面）——与本体函数"执行底座不对外"的处理刻意不同。
 
 转发语义：状态码与响应体原样透传（下游 4xx/5xx 保持错误形态，isError 语义不破坏）；
 服务不可达返回 502（5s 连接超时 + 明确报错，见架构文档 §十四风险表）。
@@ -17,8 +23,11 @@ import httpx
 
 from errors import UpstreamResponseError, UpstreamTimeoutError, UpstreamUnavailableError
 
-DATA_ENGINE_MCP_URL = os.getenv("DATA_ENGINE_MCP_URL", "http://optonto-data-engine-mcp:8005")
-ONTOLOGY_MCP_URL = os.getenv("ONTOLOGY_MCP_URL", "http://optonto-ontology-mcp:8002")
+# 三个执行/能力服务的地址（键名即角色，避免"函数"一词两义）
+DATA_ENGINE_EXECUTOR_URL = os.getenv("DATA_ENGINE_EXECUTOR_URL", "http://optonto-data-engine-executor:8005")
+ONTOLOGY_FUNCTION_EXECUTOR_URL = os.getenv(
+    "ONTOLOGY_FUNCTION_EXECUTOR_URL", "http://optonto-ontology-function-executor:8006")
+COMMON_FUNCTION_MCP_URL = os.getenv("COMMON_FUNCTION_MCP_URL", "http://optonto-common-function-mcp:8007")
 
 _TIMEOUT = httpx.Timeout(30.0, connect=5.0)
 

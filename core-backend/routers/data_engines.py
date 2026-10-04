@@ -180,9 +180,9 @@ async def call_engine(ontology_id: int, engine_name: str, body: dict):
     设计器连接测试与 Agent 行为调用走同一执行器（消灭双执行路径）；
     状态码与 detail 原样透传（下游 4xx/5xx 保持错误形态，isError 语义不破坏）。
     """
-    from services.runtime_forward import DATA_ENGINE_MCP_URL, forward_call
+    from services.runtime_forward import DATA_ENGINE_EXECUTOR_URL, forward_call
     return await forward_call(
-        DATA_ENGINE_MCP_URL, "/call-engine",
+        DATA_ENGINE_EXECUTOR_URL, "/call-engine",
         {"ontology_id": ontology_id, "engine_name": engine_name, "params": body.get("params", {})},
         "data-engine-mcp",
     )

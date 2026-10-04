@@ -1,7 +1,7 @@
 """optonto-business-mcp — 业务集成面 MCP 服务（阶段二落地）。
 
 定位：模拟业务系统（真实部署时对应客户自建的 MCP 服务）。非平台内置——
-由人手工配进 Agent 的 mcp-config（与外部远程 MCP 同一入口），Docker 手动启停。
+由人手工配进 Agent 的 mcp-config（与外部远程 MCP 同一入口）；启停与平台其他固定服务同权（页面可操作）。
 
 职责：按 config/tools.yaml 声明把业务 REST 端点包装为 MCP 工具——
 自描述 input/outputSchema（强制，缺一条即启动失败），不知本体/映射/Agent。
@@ -10,7 +10,7 @@
 信封语义：Java 侧 ApiResponse {code, message, data}——code != 0 或 HTTP >= 400
 一律抛错（MCP 层置 isError 穿透）；成功返回 envelope.data 的 JSON 文本。
 
-修改 tools.yaml 后重启容器生效（本服务只能 Docker 手动启停，见架构文档 §十六）。
+修改 tools.yaml 后重启容器生效（重启方式与平台其他固定服务一致：在「MCP发布」页停止/启动）。
 
 运行：python -m uvicorn server:starlette_app --host 0.0.0.0 --port 8004
 """

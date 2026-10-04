@@ -75,9 +75,9 @@ async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dic
     执行实现已迁至 data-engine-mcp executor（唯一形态 MCP）；
     状态码与 detail 原样透传（下游 4xx/5xx 保持错误形态，isError 语义不破坏）。
     """
-    from services.runtime_forward import DATA_ENGINE_MCP_URL, forward_call
+    from services.runtime_forward import DATA_ENGINE_EXECUTOR_URL, forward_call
     return await forward_call(
-        DATA_ENGINE_MCP_URL, "/call-behavior",
+        DATA_ENGINE_EXECUTOR_URL, "/call-behavior",
         {"ontology_id": ontology_id, "behavior_name": behavior_name, "params": body.get("params", {})},
         "data-engine-mcp",
     )

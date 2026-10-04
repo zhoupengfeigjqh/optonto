@@ -29,7 +29,8 @@ core 不再需要聚合编译，留着就是"同一语义两处实现"（且 cor
 
 | 类别 | ``ontology_id`` | ``scope`` | 执行前剥离 |
 |---|---|---|---|
-| 本体行为 / 本体函数 | **必填**（schema.required + require_ontology_id 双保险） | 有 | 剥 |
+| 本体行为 / 本体函数（平台固定发布面） | **必填**（schema.required + require_ontology_id 双保险） | 有 | 剥 |
+| 本体行为 / 本体函数（**自建发布**：发布绑定单一本体） | 以 ``const`` 出现但**不进 required**——服务端转发时注入，调用方无需传 | 有 | 剥 |
 | 本体查询：``listOnto*`` | **必填** | 无 | 无需（无系统参数） |
 | 本体查询：``listScenarios`` / ``listOntologies`` | 无（全局花名册，不针对某本体） | 无 | — |
 | 公共函数 | 无 | 无 | 剥（防御性：schema 本就没有这些键） |
@@ -274,14 +275,38 @@ def param_spec_to_schema(spec: dict, attr_map: dict | None = None) -> dict:
     return schema
 
 
-def params_to_input_schema(params: dict, concepts=None) -> tuple[dict, list[str]]:
+def params_to_input_schema(params: dict, concepts=None, *,
+                          ontology_id_mode: str = "required",
+                          ontology_id=None) -> tuple[dict, list[str]]:
     """params dict → (完整 MCP Tool inputSchema, 约束冲突警告列表)。
 
-    前置 ontology_id 必填；concepts 传入时按「参数名 = 属性名」回溯合并属性约束。
+    ``ontology_id_mode`` 三种形态（发布面差异的唯一开关，其余编译逻辑完全一致）：
+
+    - ``required``（默认）：``ontology_id`` 进 properties 且 required —— **平台固定发布面**口径
+      （一次发布覆盖全部本体，归属由调用方声明，配合契约 ④ 归属校验防跨本体误路由）；
+    - ``const``：**自建发布**口径（2026-10-04）——发布**绑定单一本体**，``ontology_id`` 以
+      ``const`` 真实值出现但**不进 required**：调用方（LLM / 外部 MCP 客户端）无需传，
+      由自建发布容器在转发时注入。跨本体误路由在结构上不可能发生（契约 ④ 对该形态天然满足）；
+    - ``none``：完全不出现（无本体归属的执行类工具）。
+
+    concepts 传入时按「参数名 = 属性名」回溯合并属性约束（三形态一致）。
     """
+    if ontology_id_mode not in ("required", "const", "none"):
+        raise ValueError(f"未知 ontology_id_mode: {ontology_id_mode}")
     attr_map, conflicts = build_attr_constraint_map(concepts)
-    props: dict = {"ontology_id": {"type": "integer", "description": "本体 ID"}}
-    required: list[str] = ["ontology_id"]
+    props: dict = {}
+    required: list[str] = []
+    if ontology_id_mode == "required":
+        props["ontology_id"] = {"type": "integer", "description": "本体 ID"}
+        required.append("ontology_id")
+    elif ontology_id_mode == "const":
+        if ontology_id is None:
+            raise ValueError("ontology_id_mode='const' 必须提供 ontology_id")
+        props["ontology_id"] = {
+            "type": "integer",
+            "const": ontology_id,
+            "description": "本体 ID（本发布服务固定绑定该本体，服务端自动注入，调用方无需填写）",
+        }
     for k, v in (params or {}).items():
         if not isinstance(v, dict):
             continue
@@ -301,6 +326,19 @@ def related_concepts(data: dict, names: list[str]) -> list[dict]:
         return []
     wanted = set(names)
     return [c for c in data.get("concepts") or [] if isinstance(c, dict) and c.get("name") in wanted]
+
+
+def behavior_concept_names(behavior: dict) -> list[str]:
+    """行为关联概念（唯一）：新格式为标量 ``concept``；旧数据 ``related_concepts`` 数组读时兼容。
+
+    约束回溯需要概念列表，故统一收敛到列表形态。data-engine-mcp 内部有一份等价实现
+    （未随本次改动迁移，见其模块 docstring）；本函数是 core 动态发布面使用的权威口径。
+    """
+    concept = behavior.get("concept")
+    if concept:
+        return [concept]
+    legacy = behavior.get("related_concepts")
+    return list(legacy) if isinstance(legacy, list) else []
 
 
 def with_category(input_schema: dict, category: str, display_name: str = "") -> dict:

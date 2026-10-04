@@ -28,10 +28,11 @@ services:
       - MEMORY_DIR=/app/.data/memory
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
-      # 内置本体MCP 地址（默认同为该值，显式写出便于切换环境时一眼看到）
-      - MCP_BUILTIN_URL=http://optonto-ontology-mcp:8002/mcp
-      # 内置数据引擎MCP 地址（行为工具唯一入口）
-      - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-mcp:8005/mcp
+      # 内置本体查询 MCP 地址（平台唯一内置对外工具面，只读查询）
+      - MCP_BUILTIN_URL=http://optonto-ontology-query-mcp:8002/mcp
+      # 内置数据引擎执行服务地址（行为工具内网挂载入口，不对外发布）
+      - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-executor:8005/mcp
+      - MCP_BUILTIN_COMMON_FUNCTION_URL=http://optonto-common-function-mcp:8007/mcp
     networks:
       - optonto-net
 
@@ -122,18 +123,19 @@ services:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
       # 运行面转发目标（core 运行期执行归零，/behaviors/call 与函数 execute 降级转发）
-      - DATA_ENGINE_MCP_URL=http://optonto-data-engine-mcp:8005
-      - ONTOLOGY_MCP_URL=http://optonto-ontology-mcp:8002
+      - DATA_ENGINE_EXECUTOR_URL=http://optonto-data-engine-executor:8005
+      - ONTOLOGY_FUNCTION_EXECUTOR_URL=http://optonto-ontology-function-executor:8006
+      - COMMON_FUNCTION_MCP_URL=http://optonto-common-function-mcp:8007
     networks:
       - optonto-net
 
-  # ─── 本体 MCP 服务（list* 查询 + 本体/公共函数沙箱，直读 .data）──────────────
-  optonto-ontology-mcp:
+  # ─── 本体查询 MCP 服务（平台唯一内置对外工具面：只发布 list* 只读查询，无执行职责）──
+  optonto-ontology-query-mcp:
     build:
       context: .
-      dockerfile: ontology-mcp/Dockerfile
-    image: optonto-ontology-mcp
-    container_name: optonto-ontology-mcp
+      dockerfile: ontology-query-mcp/Dockerfile
+    image: optonto-ontology-query-mcp
+    container_name: optonto-ontology-query-mcp
     ports:
       - "8002:8002"
     volumes:
@@ -144,15 +146,51 @@ services:
     networks:
       - optonto-net
 
-  # ─── 数据引擎 MCP 服务（行为工具发布 + 映射执行，直读 .data）─────────────────
-  optonto-data-engine-mcp:
+  # ─── 公共函数 MCP 服务（平台通用算力：发布 + 执行一体，自包含）────────────────
+  # 对外：/mcp 发布 7 个公共函数工具（filterData/aggregateData/dateDiff 等，跨本体共享）
+  # 与本体函数的处理刻意不同：公共函数无本体归属、执行是纯内存计算，故"发布什么就执行什么"；
+  # 本体函数有归属、对外需按本体切片，故其执行底座不对外（见下一服务）。
+  optonto-common-function-mcp:
     build:
       context: .
-      dockerfile: data-engine-mcp/Dockerfile
-    image: optonto-data-engine-mcp
-    container_name: optonto-data-engine-mcp
+      dockerfile: common-function-mcp/Dockerfile
+    image: optonto-common-function-mcp
+    container_name: optonto-common-function-mcp
     ports:
-      - "8005:8005"
+      - "8007:8007"
+    volumes:
+      - ./.data:/app/.data
+    environment:
+      - DATA_DIR=/app/.data
+      - TZ=Asia/Shanghai
+    networks:
+      - optonto-net
+  # ─── 本体函数执行服务（函数执行唯一实现；零工具、仅内网、不发布端口）────────────
+  # 对外：不挂 /mcp 与 /sse（transport=none），外部误连直接 404
+  # 调用方：core 设计器测试按钮 + 自建发布（函数类）转发
+  optonto-ontology-function-executor:
+    build:
+      context: .
+      dockerfile: ontology-function-executor/Dockerfile
+    image: optonto-ontology-function-executor
+    container_name: optonto-ontology-function-executor
+    volumes:
+      - ./.data:/app/.data
+    environment:
+      - DATA_DIR=/app/.data
+      - TZ=Asia/Shanghai
+    networks:
+      - optonto-net
+
+  # ─── 数据引擎执行服务（行为/引擎执行唯一实现；工具面仅内网供 Agent 挂载）──────
+  # 对外：不发布宿主端口、不经 nginx 代理（外部客户端连不到）
+  # 调用方：平台 Agent 内网挂载 + 自建发布（行为类）转发
+  optonto-data-engine-executor:
+    build:
+      context: .
+      dockerfile: data-engine-executor/Dockerfile
+    image: optonto-data-engine-executor
+    container_name: optonto-data-engine-executor
     volumes:
       - ./.data:/app/.data
     env_file:
@@ -163,9 +201,9 @@ services:
     networks:
       - optonto-net
 
-  # ─── 业务 MCP 服务（模拟业务系统；业务侧集成边缘，非平台内置）────────────────
-  # 启停管控：只能 Docker 手动启停（docker start/stop），不进前端启停白名单，
-  # 故不配 restart 策略（默认不自动拉起，由人控制）。
+  # ─── 业务系统 MCP（模拟外部业务系统；业务侧集成边缘）────────────────────────
+  # 启停管控：与其他固定服务同权（页面可启停，白名单键 business）；
+  # 仍不配 restart 策略——它是"外部依赖"，掉了不该被平台自动拉起（重启由人在页面/ Docker 决定）。
   optonto-business-mcp:
     build:
       context: .
@@ -177,6 +215,20 @@ services:
     environment:
       - BUSINESS_API_BASE=http://optonto-business-backend:8080
       - TZ=Asia/Shanghai
+    networks:
+      - optonto-net
+
+  # ─── 自建发布 MCP 镜像（动态容器的唯一镜像；平时不运行，只提供镜像）──────────
+  # 一个镜像 N 个实例：用户在「MCP发布」页创建发布时，由 core-backend 用 docker SDK
+  # 起容器（配置经环境变量注入、零挂载），宿主端口取 8020-8099 段。
+  # 因此本服务只声明 build + profile：docker compose --profile published-mcp build optonto-published-mcp
+  # 一次性构建出镜像后，动态创建即可秒级完成。
+  optonto-mcp-publish:
+    build:
+      context: .
+      dockerfile: mcp-publish/Dockerfile
+    image: optonto-mcp-publish
+    profiles: ["published-mcp"]
     networks:
       - optonto-net
 

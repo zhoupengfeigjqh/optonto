@@ -1,7 +1,7 @@
 /**
  * discoverTools 可见性收编接线测试（配映射即收编，架构文档 §六）：
  * - 非内置 MCP 服务上"已被某本体 data_engine 映射"的原始工具对 Agent 隐藏
- * - 内置服务（ontology-mcp/data-engine-mcp）永不收编——同名工具照样挂载
+ * - 本体MCP（内置）与数据引擎MCP（2026-10-04 起为预置服务，按 URL 豁免）永不收编——同名工具照样挂载
  * - 未映射的普通外部工具不受影响
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -26,6 +26,7 @@ vi.mock('../services/mcp-config-store.js', () => ({
       ] };
     }
   },
+  isDataEngineMcpUrl: () => false,
 }));
 
 // MCPClient 假实现：按 url 区分服务；两边各有一个同名 query_inventories（内置侧是本体行为工具）

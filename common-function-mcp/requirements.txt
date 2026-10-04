@@ -1,0 +1,7 @@
+# optonto-common-function-mcp — 公共函数 MCP 服务
+# 依赖与本体查询服务同档（共用 mcp-shared 的 data_store / function_runner / mcp_app）
+mcp>=1.0.0,<2.0.0
+uvicorn>=0.30.0
+starlette>=0.37.0
+httpx>=0.27.0
+PyYAML>=6.0

@@ -1,11 +1,19 @@
-"""optonto-data-engine-mcp — 映射执行面 MCP 服务（SSE）。
+"""optonto-data-engine-executor — 数据引擎执行服务（行为/引擎执行的**唯一实现**）。
 
-职责：行为工具（唯一入口）、映射前后翻译、参数契约检查。
-引擎唯一形态=MCP（target.server_url/tool_name 分发；HTTP/SQL 型已分别于阶段五、2026-09-07 删除）。
+职责：把「本体行为」翻译成对外部业务系统的调用——
+
+- **执行链**：行为名 → 反查**就绪**数据引擎（契约 ⑥）→ 映射翻译入参 → 调下游 MCP
+  （``target.server_url`` + ``target.tool_name``）→ 映射翻译出参；
+- **执行端点**：``/call-behavior``（按行为名执行）、``/call-engine``（按引擎名直调）。
+
+**工具面定位**（2026-10-04 语义收敛）：本服务是**执行底座**，不作为对外发布面。
+它的 MCP 工具面（已就绪行为）仅供**平台 Agent 内网挂载**（docker 内网 URL，不发布宿主端口、
+不经 nginx 代理），对外提供"可执行行为"只有一条路：自建发布（``mcp-publish``，带令牌、
+绑定单一本体）。这样"谁能调用哪些行为"由发布配置决定，而不是底座天然全开。
 
 直读 .data（data_store），运行期零回调 core-backend。
-core-backend 的 /behaviors/{name}/call 与 /data-engines/{name}/call 降级转发到
-本服务的 /call-behavior /call-engine（设计器测试与 Agent 走同一路径，消灭双执行路径）。
+core-backend 的 ``/behaviors/{name}/call`` 与 ``/data-engines/{name}/call`` 转发到本服务
+（设计器测试与 Agent 走同一路径，消灭双执行路径）。
 
 运行：python -m uvicorn server:starlette_app --host 0.0.0.0 --port 8005
 """
@@ -33,10 +41,11 @@ from tool_contract import (
 import behavior_tools
 import executor
 
-server = Server("optonto-data-engine-mcp")
+server = Server("optonto-data-engine-executor")
 
 
 async def _list_tools() -> list[Tool]:
+    """已就绪行为的工具面：**仅内网**（平台 Agent 挂载用），不作为对外发布面。"""
     return behavior_tools.load_behavior_tools()
 
 
@@ -84,7 +93,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
 
 
-# ─── 设计期转发入口（core 降级转发，与 behavior_tools 共用 executor 同一实现）──────────
+# ─── 设计期转发入口（core 转发，与 behavior_tools 共用 executor 同一实现）─────────
 
 
 def _envelope_response(result: dict, label: str) -> JSONResponse:
@@ -133,7 +142,7 @@ async def _handle_call_engine(request: Request) -> JSONResponse:
 
 
 starlette_app = build_mcp_app(
-    server, _list_tools, "optonto-data-engine-mcp",
+    server, _list_tools, "optonto-data-engine-executor",
     extra_routes=[
         Route("/call-behavior", endpoint=_handle_call_behavior, methods=["POST"]),
         Route("/call-engine", endpoint=_handle_call_engine, methods=["POST"]),

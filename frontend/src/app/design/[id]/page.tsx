@@ -75,9 +75,13 @@ export default function DesignPage() {
       setActiveSection('requirements');
       setActiveTab('requirements');
     } else if (sec && tab) {
-      setActiveSection(sec as any);
-      setActiveTab(tab);
-      setExpandedSection(sec);
+      // 2026-10-04 菜单迁移兼容：MCP配置 自「智能体」迁至「数据引擎」，旧链接（section=agent&tab=mcp-config）自动归位
+      const sec2 = sec === 'agent' && tab === 'mcp-config' ? 'data-engine' : sec;
+      // 2026-10-04 语义更名兼容：MCP服务 → MCP发布，旧链接（tab=mcp-service）自动归位
+      const tab2 = tab === 'mcp-service' ? 'mcp-publish' : tab;
+      setActiveSection(sec2 as any);
+      setActiveTab(tab2);
+      setExpandedSection(sec2);
     }
   }, [ontologyId]);
 
@@ -324,13 +328,23 @@ export default function DesignPage() {
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'mcp-service'
+                    activeTab === 'mcp-publish'
                       ? 'text-accent-blue bg-accent-blue/5'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
-                  onClick={() => { navigateTo('data-engine', 'mcp-service'); }}
+                  onClick={() => { navigateTo('data-engine', 'mcp-publish'); }}
                 >
-                  <span>MCP服务</span>
+                  <span>MCP发布</span>
+                </button>
+                <button
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                    activeTab === 'mcp-config'
+                      ? 'text-accent-blue bg-accent-blue/5'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                  onClick={() => { navigateTo('data-engine', 'mcp-config'); }}
+                >
+                  <span>MCP配置</span>
                 </button>
                 <button
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
@@ -385,16 +399,6 @@ export default function DesignPage() {
                 >
                   <span>智能体应用</span>
                 </button>
-                <button
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    activeTab === 'mcp-config'
-                      ? 'text-accent-blue bg-accent-blue/5'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                  onClick={() => { navigateTo('agent', 'mcp-config'); }}
-                >
-                  <span>MCP配置</span>
-                </button>
               </div>
             )}
           </div>
@@ -416,9 +420,9 @@ export default function DesignPage() {
               : activeSection === 'security'
               ? '权限控制'
               : activeSection === 'data-engine'
-              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'mcp-service' ? 'MCP服务' : '接口映射'
+              ? activeTab === 'instance-collection' ? '实例集合' : activeTab === 'mcp-publish' ? 'MCP发布' : activeTab === 'mcp-config' ? 'MCP配置' : '接口映射'
               : activeSection === 'agent'
-              ? activeTab === 'skill-management' ? '技能管理' : activeTab === 'mcp-config' ? 'MCP 配置' : '智能体应用'
+              ? activeTab === 'skill-management' ? '技能管理' : '智能体应用'
               : activeTab === 'instance' ? '实例视图' : '本体视图'}
           </span>
           <div className="flex items-center gap-3">

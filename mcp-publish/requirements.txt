@@ -1,0 +1,7 @@
+# optonto-mcp-publish — 自建发布门面（配置驱动：只挂 MCP 协议 + 转发执行，不含执行实现）
+# 依赖刻意极简：无 pandas/numpy（不执行函数代码）、无业务 SDK（不直连数据引擎）——
+# 只做 MCP 协议 + HTTP 转发。启动即用，容器拉起在秒级。
+mcp>=1.0.0,<2.0.0
+uvicorn>=0.30.0
+starlette>=0.37.0
+httpx>=0.27.0

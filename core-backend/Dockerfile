@@ -14,6 +14,9 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r re
 # Copy backend source (container 内仍保持 /app/backend 结构，PYTHONPATH/config.py 路径不变)
 COPY core-backend/ ./backend/
 
+# mcp-shared：动态发布面复用其 tool_contract（约束编译的唯一权威实现，见 services/mcp_contract_bridge.py）
+COPY mcp-shared /app/mcp-shared
+
 # Create data directories
 RUN mkdir -p onto_market config
 

@@ -224,7 +224,7 @@
    （`analysis` 381 / `data_engine` 81 / `ontology_generate` 55 / `rule_generate` 53 /
    `function_code` 49 / `skill_generate` 38 / `__init__.py` 63），19 个常量经 `__init__.py` 再导出，
    `from config import X` 与 `from prompts import X` 用法不变（已实测再导出长度一致）。
-4. **契约文档同步**（仓库硬规矩）：`docs/contracts/ontology-yaml.md` 新增 §6「字段契约与旧格式迁移」
+4. **契约文档同步**（仓库硬规矩）：`specs/contracts/ontology-yaml.md` 新增 §6「字段契约与旧格式迁移」
    （8 个读写字段表 + 5 条迁移规则 + 3 条写时校验 + M1-M5 用例表），并同步双端契约测试。
 
 ### 验收后修正（2026-09-29）
@@ -266,7 +266,7 @@
 - `frontend/src/components/Design/rule/rule-operands.ts`：`OPERAND_TYPE_OPTIONS_LEFT`（实例自身/关联实例/函数）与 `OPERAND_TYPE_OPTIONS_RIGHT`（实例自身/关联实例/关联实例集/字面值/字面值集/函数）按用户给的顺序重排。
 - `rule-logic.ts` / `RuleEditors.tsx` / `RuleTable.tsx`：错误提示与注释同步。
 - 模板 `.data/templates/rule_template/{validation/inference}/rule_*.json`：left/right `type` 的 `description` 同步对偶化、重排；**enum 值未变**（left 仍 `self/instance/function`，right 仍 `self/instance/instanceSet/value/valueSet/function`）。
-- `core-backend/prompts/rule_generate.py` + `services/validators.py` + `routers/rules.py` + `schemas/__init__.py` + `docs/contracts/ontology-yaml.md` + `scripts/e2e-spec003-model-extension.py`：提示词、报错文案、契约文档、e2e 打印同步。
+- `core-backend/prompts/rule_generate.py` + `services/validators.py` + `routers/rules.py` + `schemas/__init__.py` + `specs/contracts/ontology-yaml.md` + `scripts/e2e-spec003-model-extension.py`：提示词、报错文案、契约文档、e2e 打印同步。
 
 **关键决策**：`instanceSet`（in/not in 右侧的「关联实例集」）**保留不删**。用户列 right 时未点名它，但它是 `SET_OPERAND_TYPES` 之一，模板与前端校验矩阵强制「in/not in 右侧必须是集合类型」，且存量兼容逻辑（旧 `concept`/`set` → `instance`/`instanceSet`）依赖它；删掉会削弱「x in 某概念实例集合」表达能力并破坏存量数据渲染，故以「关联实例集」对偶呈现，self/instance/value/valueSet/function 语义不变。
 
@@ -351,7 +351,7 @@
 - **前端**：删 `rule/RuleEditors.tsx`（无任何引用）、`rule/rule-operands.ts`（+测试）；`rule-logic.ts` 精简为仅 `deriveDataSupplements`（改为按关联函数声明的关联概念推导，不再读条件树）；`RuleTable.tsx` 去掉旧条件树读写及随之失效的 `concepts`/`relations` 状态；`api/design.ts` 的 `Rule` 去掉该字段。
 - **core-backend**：`schemas.RuleItem` 移除旧条件树字段；`validators.py` 删 `iter_operands`/`rule_uses_self`/`validate_self_requires_behavior` 及 `Iterator` 导入；`routers/rules.py` 去掉该校验；`prompts/ontology_generate.py`、`prompts/rule_generate.py` 文案同步。
 - **agent-backend**：`types.RuleDetail` 移除旧条件树字段；`ontology-gateway` 不再读取（投喂早已改走 `related_functions`/`judge_functions`）；`execution-policy` 注释同步。
-- **文档/脚本**：`docs/contracts/ontology-yaml.md`（字段表 / 迁移规则 / 写时校验 / 运行期口径）、`docs/Optonto项目框架评估.md`、`scripts/e2e-spec003-model-extension.py`（规则段改关联函数口径 + 新增「规则段无遗留条件树」检查）同步。
+- **文档/脚本**：`specs/contracts/ontology-yaml.md`（字段表 / 迁移规则 / 写时校验 / 运行期口径）、`specs/Optonto项目框架评估.md`、`scripts/e2e-spec003-model-extension.py`（规则段改关联函数口径 + 新增「规则段无遗留条件树」检查）同步。
 - **存量数据**：活跃本体（`.data/onto_market/生产调度/原材料采购和库存/ontology.yaml`）**已无**旧条件树字段，无需迁移；仅 `ontology_versions/v1.0` 历史快照保留（不改写历史）。
 
 **验证**：core `pytest` **67 passed**（较 75 少 8 条 = 删除的 `TestRuleSelf`）；前端分块回归 **17 files / 198 tests 全通过**（含新增 `function-label` 6 例、重写 `rule-logic` 4 例）；剩余 5 个大体积用例文件当时超出命令通道超时窗口（已在下方「收尾修正」中以独占进程补齐）；agent-backend 3 条失败位于 `orchestrator.test.ts`「言行不一闸」（已在「收尾修正」中对齐修复）。
@@ -373,7 +373,7 @@
 `core-backend/prompts/analysis.py` 阶段5B「要求4：函数的返回结构」示例仍是**旧信封**（顶层 `success` + `result` + `message`），与同段「要求5」及 `function_code.py` 的新信封（`data` / `reason`）直接冲突 → 改为 `success`/`data`/`error` 三段式、`message`→`reason`、补 `error` 段示例；并把该段 `{{…}}` 双花括号改为单花括号（该提示词经 `str.replace` 注入、**不经 `.format()`**，双括号会原样渲染给模型）。
 
 **B. 数据补充推导口径（表述对齐实现）**
-实现（`deriveDataSupplements`）按**全部关联函数**声明的 `related_concepts` 推导，文案却写作「按**判断函数**关联的概念」→ 6 处统一为「按关联函数声明关联的概念」：`RuleTable.tsx`（tooltip + 说明）、`schemas.RuleItem`（docstring + 字段描述）、`ontology_generate.py`、`analysis.py` 要求3、`docs/contracts/ontology-yaml.md`。
+实现（`deriveDataSupplements`）按**全部关联函数**声明的 `related_concepts` 推导，文案却写作「按**判断函数**关联的概念」→ 6 处统一为「按关联函数声明关联的概念」：`RuleTable.tsx`（tooltip + 说明）、`schemas.RuleItem`（docstring + 字段描述）、`ontology_generate.py`、`analysis.py` 要求3、`specs/contracts/ontology-yaml.md`。
 
 **C. 裁决台账采集范围收窄（语义精度）**
 `agent-factory.ts` 的裁决解析名单由「全部关联函数」收窄为 `judgeFunctions`：非判断函数即使返回同名 `pass` 字段也不进裁决台账，与「口径 B：类型即角色」严格一致（闸 2.5 与 `missingRuleFunctions` 本就只读判断函数，**运行期行为不变**，仅消除噪音）。
@@ -397,7 +397,7 @@
 - `prompts/ontology_generate.py`（本体构建主提示词）：要求5「行为方法只能为 GET/POST/PATCH/DELETE」——行为早已是 `op_type: command/query`，HTTP method 属数据引擎域 → 改为 op_type 值域；要求6「规则类型只能为 计算/验证/推理规则」——`rule_type` 字段已移除 → 改为「规则不设类型字段，禁止输出 `rule_type`」。
 - `.data/templates/skill_template.md` + `prompts/skill_generate.py`：仍教「调用 `executeOntoBehavior` 执行行为」——**该分发器已彻底退役**（行为 facade 化，工具名即行为名）→ 改 facade 口径；行为类型 `操作行为/查询行为` → `command（命令）/ query（查询）`；行为参数示例 `display_name` → `description`（行为参数的标准字段）。
 - **存量技能文件** `.data/onto_market/生产调度/原材料采购和库存/skills/raw-material-inventory/SKILL.md`：9 处 `executeOntoBehavior` + 9 处类型中文口径 → 同步修正（该文件被 `load_skill` 实时加载，错误信息会直接进父 Agent 上下文）。
-- `docs/Optonto项目框架评估.md`：两处 `executeOntoBehavior` → facade 口径。
+- `specs/Optonto项目框架评估.md`：两处 `executeOntoBehavior` → facade 口径。
 
 **B. 提示词内部矛盾 / 冗余**
 - `prompts/ontology_generate.py` 要求7「参考模板，只输出 YAML 内容，**不要任何新增或修改**」与要求14/16 及末段「按勾选裁剪、空节省略、示例值替换」直接冲突 → 改为「严格以模板的结构 / 字段名 / 顺序为准，模板示例值必须替换为真实内容」；要求9/10 与要求7 重复 → 改写为两条独立约束（不得虚构补全；模板未定义的字段不得输出）。
@@ -429,7 +429,7 @@
 5. `ontology_generate` 原要求13 只讲 `min/max` → 扩写为**完整的属性约束结构要求**：约束统一写在 `constraint` 对象内（`unique`/`required`/`enum`/`pattern`/`min`/`max`，只写有意义的键），**顶层不得写 `required`**，无约束时整块省略（不得写 `constraint: ''`）；要求7 补「行为用 `description`、函数用 `display_name`，不得互换」。
 
 **D. 契约文档同步**
-- `docs/contracts/ontology-yaml.md` §6 字段表补 `concepts[].instance_label`、`concepts[].attributes[].constraint`、`rules[].data_supplements` 三行，并新增「`params` 说明字段口径」段（行为 `description` / 函数 `display_name`；读取以 `display_name or description` 兜底，但**写入**须按各自口径）；顺手修正过时用例数（40 → 32）。
+- `specs/contracts/ontology-yaml.md` §6 字段表补 `concepts[].instance_label`、`concepts[].attributes[].constraint`、`rules[].data_supplements` 三行，并新增「`params` 说明字段口径」段（行为 `description` / 函数 `display_name`；读取以 `display_name or description` 兜底，但**写入**须按各自口径）；顺手修正过时用例数（40 → 32）。
 
 **复核为「非问题」**：目标侧 `data_engines.yaml` 的 `response.result` 与本体侧 `behaviors[].response.data` 是**两层**（`mcp-shared/mapper._translate_output` 按映射改名，已验证）。
 
@@ -460,7 +460,7 @@
 「已删字段的说明性提及」一并清除：全仓（代码 / 提示词 / 模型串 / 测试夹具 / 契约文档 / e2e 脚本 / specs / `.data`）不再出现该字段名。
 
 - **提示词**：`ontology_generate.py` 要求20 改为「禁止输出任何已废弃的历史字段…模板未定义的字段一律不得输出」——原要求10 的通用兜底保留，**防复活强度不减**；`rule_generate.py` 模块串同步。
-- **模型/前端/文档**：`schemas.RuleItem` 文档串改「旧条件树字段已退役」；`frontend/rule/rule-logic.ts` 注释同步；`docs/contracts/ontology-yaml.md` 迁移清单第 6 条同步。
+- **模型/前端/文档**：`schemas.RuleItem` 文档串改「旧条件树字段已退役」；`frontend/rule/rule-logic.ts` 注释同步；`specs/contracts/ontology-yaml.md` 迁移清单第 6 条同步。
 - **测试夹具**：`test_model_extension.TestBackwardCompatibleSnapshot` 改用中性未知键 `legacy_unknown_key`——语义（未知字段被静默忽略、旧快照仍可加载）不变。
 - **e2e 脚本**：原「断言无该字段」改为**规则字段白名单断言**（`set(rule) ⊆ 白名单`，比逐字段断言更严）+ 结构断言（`children:` / `logic:` 均不得出现）——不再依赖该字段名，且能拦住任何形态的条件树复活。
 - **存量数据**：`.data/threads/demand/<uuid>/原材料采购与库存_全体.yaml`（需求线程的历史附件）整块删除 7 处条件树（7 条规则各一处）；删前后逐节比对：concepts/relations/functions/behaviors **完全一致**、rules 条目数不变、仅该键消失，且 YAML 仍可解析。
@@ -512,7 +512,7 @@
 
 ### MCP 工具发布契约统一（2026-10-01）
 
-按「分类处理 + 语义统一」重构工具契约：**单一权威**落 `mcp-shared/schema_compile.py`，**消费实现**落 `agent-backend/src/agent/tool-catalog.ts`，新增契约文档 `docs/contracts/mcp-tools.md`。
+按「分类处理 + 语义统一」重构工具契约：**单一权威**落 `mcp-shared/schema_compile.py`，**消费实现**落 `agent-backend/src/agent/tool-catalog.ts`，新增契约文档 `specs/contracts/mcp-tools.md`。
 
 **1）分类标记单一来源**：`x-category`（五类：本体行为 / 本体函数 / **本体查询（新增）** / 公共函数 / 消费端兜底"其他MCP工具"）+ `x-display_name`（发布方权威中文名）。废弃旧形态——分类曾同时写在 `scope.category`（本体工具）与 `x-category`（公共函数），同一语义两种表达。
 
@@ -552,7 +552,7 @@ core `_deployed_version_of` 一致（读时派生；**不写进 meta.json**，�
 **yaml 损坏按无版本降级且清单与 `get_ontology_names` 均不受影响**、重新部署后版本即时刷新（mtime 缓存不串味）、
 多本体各取自己的版本、缺 `scenario_id` 的 meta 仍被跳过）。全套：mcp-shared **52**、ontology-mcp **9**、
 data-engine-mcp **17**、business-mcp **4**。镜像：ontology-mcp / data-engine-mcp / business-mcp 已重建（共用 `mcp-shared`）。
-文档：`docs/contracts/mcp-tools.md` §7 补 `listOntologies` 返回值口径；`ontology-mcp` 的 `listOntologies` 工具描述同步。
+文档：`specs/contracts/mcp-tools.md` §7 补 `listOntologies` 返回值口径；`ontology-mcp` 的 `listOntologies` 工具描述同步。
 
 **未采纳（方案 B，保持单一事实源）**：把 `deployed_version` 写进 `meta.json`——会引入第二写入点与漂移风险
 （`ontology_versions/{v}/ontology.yaml` 复制时会带旧值）；如需"任何读 meta.json 的地方都直接可见"再另议。
@@ -596,8 +596,8 @@ meta.json/目录名"、"缺失/不全/不一致/损坏 → 跳过且不影响其
 本体函数调用成功（证明 `get_ontology_names` 走 metadata 且路径解析正确）；行为调用（core→data-engine-mcp）200；
 agent 新建对话（走 `resolveOntologyContext`）正例成功并可删、负例（不存在本体名）**400**。
 
-**文档**：`docs/contracts/ontology-yaml.md` 新增 §1「本体身份（metadata）—— 唯一读取来源」；
-`docs/contracts/mcp-tools.md` §7 补身份来源口径；`repositories/metadata.py` 模块 docstring 说明职责边界。
+**文档**：`specs/contracts/ontology-yaml.md` 新增 §1「本体身份（metadata）—— 唯一读取来源」；
+`specs/contracts/mcp-tools.md` §7 补身份来源口径；`repositories/metadata.py` 模块 docstring 说明职责边界。
 
 **补记（自查发现的实现不一致）**：清单行的 `id` 键原样来自 meta.json（只有 `ontology_id` 被 metadata 覆盖），
 而下游（`ontology-mcp` 生成 scope、`get_ontology_names` 路由、core `functions/all` 聚合）读的是 `id` ——
@@ -632,7 +632,7 @@ agent 新建对话（走 `resolveOntologyContext`）正例成功并可删、负�
 **3）注释/文档同步**：`agent types.ts`（3 处）、`chat-session.ts`、`core chat.py`（2 处）、`threads.py`、
 `mcp-shared/__init__.py`、`loaders.py` 章节标题与指纹说明、`repositories/__init__.py`。
 
-**4）契约文档**：`docs/contracts/ontology-yaml.md` 新增"**读取出口（唯一）**"与"**写入侧**"两张表，
+**4）契约文档**：`specs/contracts/ontology-yaml.md` 新增"**读取出口（唯一）**"与"**写入侧**"两张表，
 明确禁止在其他地方另开读取路径。
 
 **测试**：core **88**（+5：依赖注入口只认 yaml／不可信即不存在／按名取身份／物理定位容忍双写／`registry_ids`）、
@@ -698,7 +698,7 @@ data-engine-mcp **22 passed**（+5，桩数据驱动：跨本体重名被拒且*
 REST 400 / 条目必带 `ontology_id`）；ontology-mcp **13 passed**（+4：归属表与对外 `scope.const` 自锁 / 不一致被拒且**不执行代码** /
 一致时放行 / REST 400）；core **97 passed**（未改，无牵连）。
 
-**契约文档**：`docs/contracts/mcp-tools.md` §4 补「归属一致性」条目（四入口同口径 / 放行条件 / 数值等价 / schema 零变化）。
+**契约文档**：`specs/contracts/mcp-tools.md` §4 补「归属一致性」条目（四入口同口径 / 放行条件 / 数值等价 / schema 零变化）。
 
 **未做（留待需要时）**：agent 侧**挂载期**校验（`createChildAgent` 比对 `tool.scope.ontology_id` 与 `context.ontology_id`）——
 服务端校验是**执行期兜底**（发现晚、但覆盖外部调用方），挂载期才是"抓 LLM 规划错配"的最佳位置（规划回合内即可自纠）。
@@ -835,7 +835,7 @@ ontology-mcp 测试 16 → **18**（+2：只列就绪 / 全未就绪时清单为
 |---|---|
 | 定义 | `agent-factory.ts`（工具名 + label + 私有方法 `createListAllMcpFunctionsTool` → `createListPlannableFunctionsTool` + 注释） |
 | **LLM 提示词（必须同步，否则 LLM 按旧名调 → 工具不存在）** | `prompts.ts`（工具表 + 步骤 3）、`subtask-contract.ts`（`function` / `params` / `related_functions` 三处字段说明） |
-| 注释与文档 | `orchestrator.ts`、`types.ts`、`agent-ports.ts`、`common-functions.ts`、`docs/contracts/mcp-tools.md`（§3/§7）、`mcp-shared/tool_contract.py` |
+| 注释与文档 | `orchestrator.ts`、`types.ts`、`agent-ports.ts`、`common-functions.ts`、`specs/contracts/mcp-tools.md`（§3/§7）、`mcp-shared/tool_contract.py` |
 | 测试与脚本 | `agent-factory.test.ts`、`orchestrator.test.ts`、`scripts/probe-catalog.ts` |
 
 **对外零影响**：它不是发布到 MCP 面的工具（外部消费方看不到），前端 / core 均不引用 → **不是契约变更**。
@@ -864,6 +864,28 @@ ontology-mcp 测试 16 → **18**（+2：只列就绪 / 全未就绪时清单为
 `op_type` 补齐使写行为进入安全确认/串行调度口径（契约 §3），与「写行为必须显式 command」的设计一致。
 
 **验证**：审计脚本复跑 **零问题**；core `pytest` **97 passed**；agent `ontology-gateway.test.ts` **22 passed**。
+
+### 数据引擎MCP 降级为预置服务：工具范围选择（2026-10-04）
+
+**用户拍板**：agent 侧 MCP 配置里，数据引擎MCP 不再「默认配置（内置恒全选）」，必须与手工配置的 MCP 服务
+（如 antv）同权——可做**工具范围选择**（`allowed_tools`）、可停用、可编辑、可删除。本体MCP 保持唯一内置
+（恒存在、恒启用、恒全选、不可删除）。
+
+**改动**：
+
+| 位置 | 改动 |
+|---|---|
+| `agent-backend/src/services/mcp-config-store.ts` | 数据引擎MCP 从 `BUILTIN_SERVERS` 除名，降级为 `PRESET_DATA_ENGINE_MCP`（仅首次默认配置作种子）；`normalize` 不再复活/强制覆盖它，存储条目原样保留（剥离 builtin 残留标记）；`isBuiltinServer` 收窄为仅本体MCP（URL 匹配，或 builtin 标记且名为「本体MCP」——**不能仅凭 builtin 标记**，否则历史配置里带 `builtin:true` 残留的数据引擎条目会被滤掉）；新增导出 `isDataEngineMcpUrl()`（URL 规范化比较，含历史 /sse 端点） |
+| `agent-backend/src/agent/agent-factory.ts` | `discoverTools` 收编判断加 `isDataEngineMcpUrl(server.url)` 豁免——「行为工具永不收编」是不变式：数据引擎MCP 既然不再是 builtin，原先靠 builtin 豁免的收编必须改按 URL 显式豁免（否则病态映射 target 指向数据引擎自己时行为工具会被「配映射即收编」隐藏） |
+| 前端 `frontend/src/components/Design/MCPConfig.tsx` | **零改动**：表格对 builtin 行渲染「全部工具/默认配置」、对非 builtin 行渲染「选择/编辑/停用/删除」，数据引擎行自动获得与 antv 一致的全套控件 |
+
+**存量迁移**：已有 `mcp-config.json` 里数据引擎条目的 `builtin:true` 残留读取时被剥离，用户若在旧版 UI 配过
+`allowed_tools`（此前被 normalize 丢弃）现生效；删除后不再复活。
+
+**测试**：新增 `mcp-config-store.test.ts`（4 例：默认种子形态 / 存储条目原样保留+残留剥离 / 删除不复活 /
+saveConfig 同口径）；新增 `agent-factory-dataengine-scope.test.ts`（4 例：allowed_tools 只注册选中 /
+未设置注册全部 / 停用不注册 / **映射指向数据引擎自己时行为工具仍可见**）；两个既有 mock 补
+`isDataEngineMcpUrl` 导出。全套：**329 passed（26 files）**；`tsc --noEmit` 净。
 
 ### 遗留（明确未做，与 spec 的 Out of Scope 一致）
 

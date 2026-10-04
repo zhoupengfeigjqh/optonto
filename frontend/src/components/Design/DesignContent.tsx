@@ -20,7 +20,7 @@ import RuleTable from './RuleTable';
 import ProcessTable from './ProcessTable';
 import SecurityTable from './SecurityTable';
 import DataEngineTable from './DataEngineTable';
-import MCPService from './MCPService';
+import MCPPublish from './MCPPublish';
 import SkillManagement from './SkillManagement';
 import AgentApp from './AgentApp';
 import MCPConfigPanel from './MCPConfig';
@@ -77,8 +77,8 @@ export default function DesignContent({
       {activeSection === 'data-engine' && activeTab === 'instance-collection' && (
         <div className="flex items-center justify-center h-48 text-text-muted"><p>实例集合 — 开发中</p></div>
       )}
-      {activeSection === 'data-engine' && activeTab === 'mcp-service' && (
-        <MCPService />
+      {activeSection === 'data-engine' && activeTab === 'mcp-publish' && (
+        <MCPPublish ontologyId={ontologyId} />
       )}
       {activeSection === 'agent' && activeTab === 'skill-management' && (
         <SkillManagement ontologyId={ontologyId} activeTab={activeTab} />
@@ -89,7 +89,7 @@ export default function DesignContent({
           ontologyName={ontologyName}
         />
       )}
-      {activeSection === 'agent' && activeTab === 'mcp-config' && (
+      {activeSection === 'data-engine' && activeTab === 'mcp-config' && (
         <MCPConfigPanel />
       )}
     </div>

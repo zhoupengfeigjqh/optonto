@@ -246,7 +246,7 @@ export default function MCPConfigPanel() {
       key: 'actions',
       width: 240,
       render: (_: any, r: MCPServerConfig) => {
-        // 内置本体MCP：默认配置，不可编辑/删除，始终启用
+        // 内置本体查询 MCP：默认配置，不可编辑/删除，始终启用
         if (r.builtin) {
           return <Tag>默认配置</Tag>;
         }

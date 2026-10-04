@@ -4,11 +4,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY ontology-mcp/requirements.txt /app/requirements.txt
+COPY ontology-query-mcp/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 COPY mcp-shared /app/
-COPY ontology-mcp/server.py /app/server.py
+COPY ontology-query-mcp/server.py /app/server.py
 
 EXPOSE 8002
 CMD ["python", "-m", "uvicorn", "server:starlette_app", "--host", "0.0.0.0", "--port", "8002"]

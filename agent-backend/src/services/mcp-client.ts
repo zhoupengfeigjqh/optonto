@@ -39,7 +39,7 @@ export class MCPClient {
   ) {}
 
   /**
-   * 传输选择：平台三服务走 Streamable HTTP（/mcp 单端点）；
+   * 传输选择：平台四个带协议端点的服务走 Streamable HTTP（/mcp 单端点）；
    * 仅 URL 以 /sse 结尾时回退 SSE——存量第三方远程 MCP（如已配置的 antv）仍是 SSE 端点。
    */
   private createTransport(): Transport {

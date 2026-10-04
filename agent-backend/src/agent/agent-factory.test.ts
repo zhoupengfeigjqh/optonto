@@ -25,6 +25,7 @@ const mcpCalls = vi.hoisted(() => ({
 // MCP 配置：一个启用的内置本体MCP server（供 discoverTools 发现工具）
 vi.mock('../services/mcp-config-store.js', () => ({
   MCPConfigStore: class { getConfig() { return { servers: [{ name: '本体MCP', url: 'http://mcp-test/sse', enabled: true, builtin: true }] }; } },
+  isDataEngineMcpUrl: () => false,
 }));
 
 /**

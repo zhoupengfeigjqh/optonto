@@ -26,6 +26,7 @@ from routers import (
     chat_router,
     data_engines_router,
     mcp_ctl_router,
+    mcp_publish_router,
     common_functions_router,
     skills_router,
     deploy_router,
@@ -58,6 +59,8 @@ app.include_router(processes_router)
 app.include_router(securities_router)
 app.include_router(functions_router)
 app.include_router(mcp_ctl_router)
+# 自建发布（动态 MCP 容器）：前缀 /api/mcp/published，刻意与 mcp_ctl 的 /{service}/* 错开
+app.include_router(mcp_publish_router)
 app.include_router(files_router)
 app.include_router(threads_router)
 app.include_router(chat_router)
