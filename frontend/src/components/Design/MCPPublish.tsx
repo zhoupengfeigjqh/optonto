@@ -3,8 +3,8 @@
 /**
  * MCP发布 —— 平台 MCP 服务的发布与管控（数据引擎分组）。
  *
- * 两段结构（语义不同，不可混为一谈）：
- * 1. **固定服务（5 个）**：平台内置，compose 常驻管理——① 本体查询 MCP 服务（内置对外工具面，只读查询）；
+ * 两块视图（语义不同，不可混为一谈），右上角切换、**每块一页最多 6 个服务**（见 ServiceGrid）：
+ * 1. **固定发布（5 个）**：平台内置，compose 常驻管理——① 本体查询 MCP 服务（内置对外工具面，只读查询）；
  *    ② 公共函数 MCP 服务（平台通用算力，发布 + 执行一体）；③ 本体函数执行服务（零工具、仅内网）；
  *    ④ 数据引擎执行服务（行为执行底座、工具面仅内网）；⑤ 业务系统 MCP（业务侧集成边缘，模拟外部业务系统）。
  *    五者均可启停，不可新建/删除。声明唯一来源见 `./mcp-publish/catalog.ts`。
@@ -15,7 +15,7 @@
  * 因此对应执行服务停机时自建发布不可用（卡片上标注依赖）。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Input, InputNumber, Modal, Radio, Select, message } from 'antd';
+import { Button, Input, InputNumber, Modal, Radio, Segmented, Select, message } from 'antd';
 import {
   getMcpStatus, startMcp, stopMcp, getMcpTools, getBusinessMcpTools, getCommonFunctionMcpTools,
   createPublished, deletePublished, getPublishMeta, listPublished, startPublished, stopPublished,
@@ -25,6 +25,7 @@ import {
 import { getMCPConfig } from '@/api/agent-client';
 import { FixedServiceCard, PublishedServiceCard } from './mcp-publish/cards';
 import { ConfigModalView, ToolsModal } from './mcp-publish/PublishModals';
+import { PAGE_SIZE, ServiceGrid } from './mcp-publish/ServiceGrid';
 import {
   CardKey, CardState, EXEC_NOTE, FIXED_SERVICES, FixedServiceDef, INIT,
   KIND_LABEL, SelectableItem, ToolInfo,
@@ -32,12 +33,17 @@ import {
 import { ConfigModalContent, staticServiceConfig } from './mcp-publish/config-snippets';
 import { readyBehaviorNames } from './mcp-publish/readiness';
 
+/** 两块视图（右上角切换）：fixed=固定发布（平台内置）/ published=自建发布（动态容器） */
+type PublishView = 'fixed' | 'published';
+
 export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
   const [cards, setCards] = useState<Record<CardKey, CardState>>({
     ontologyQuery: { ...INIT }, commonFunction: { ...INIT }, functionExecutor: { ...INIT },
     dataEngine: { ...INIT }, business: { ...INIT },
   });
   const [toolsModal, setToolsModal] = useState<{ title: string; tools: ToolInfo[] } | null>(null);
+  /** 当前视图（右上角切换按钮）：两块互斥展示，各自独立分页（切走再切回从第 1 页开始） */
+  const [view, setView] = useState<PublishView>('fixed');
   const [configModal, setConfigModal] = useState<ConfigModalContent | null>(null);
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
@@ -95,11 +101,19 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
 
   useEffect(() => { refresh(true); }, [refresh]);
 
-  const refreshPublished = useCallback(async () => {
+  /** 「固定发布」区块刷新中：任一张卡片仍在检查中——区块右上角刷新按钮的 loading（与自建发布同构） */
+  const fixedRefreshing = FIXED_SERVICES.some(def => cards[def.key].checking);
+
+  /**
+   * 读取自建发布列表。``silent`` = 不弹「状态已刷新」——首次加载与增删启停后的自动回读都传 true
+   * （那些动作自己已有提示，再弹一次就是重复），只有用户点区块右上角「刷新」才提示。
+   */
+  const refreshPublished = useCallback(async (silent = false) => {
     setLoadingPublished(true);
     try {
       const r = await listPublished();
       setPublished(r.services || []);
+      if (!silent) message.success('状态已刷新');
     } catch (e: any) {
       message.error('读取自建发布失败: ' + e.message);
     } finally {
@@ -107,7 +121,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
     }
   }, []);
 
-  useEffect(() => { refreshPublished(); }, [refreshPublished]);
+  useEffect(() => { refreshPublished(true); }, [refreshPublished]);
 
   // 打开抽屉时才拉取本体的函数/行为/数据引擎（勾选项与就绪判据都在这里收口）
   useEffect(() => {
@@ -158,7 +172,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
       message.success(`发布「${created.name}」已创建并启动（${created.tool_count} 个工具）`);
       setDrawerOpen(false);
       setForm({ name: '', kind: 'ontology_function', items: [], host_port: 8020, transport: 'streamable' });
-      await refreshPublished();
+      await refreshPublished(true);
     } catch (e: any) {
       message.error('创建发布失败: ' + e.message);
     } finally {
@@ -170,7 +184,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
     try {
       const r = svc.running ? await stopPublished(svc.name) : await startPublished(svc.name);
       message.success(`${svc.name} 已${r.running ? '启动' : '停止'}`);
-      await refreshPublished();
+      await refreshPublished(true);
     } catch (e: any) {
       message.error(`${svc.name} 操作失败: ${e.message}`);
     }
@@ -191,7 +205,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
     try {
       const r = await deletePublished(svc.name);
       message.success(r.message);
-      await refreshPublished();
+      await refreshPublished(true);
     } catch (e: any) {
       message.error('删除失败: ' + e.message);
     }
@@ -200,11 +214,19 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
   const showPublishedConfig = async (svc: PublishedService) => {
     try {
       const cfg = await getPublishedClientConfig(svc.name, host);
+      // 同一发布有两种地址（用途不同）：第一段给平台外的 AI 客户端；第二段给本平台 Agent
+      // （它在容器里，localhost 指向它自己 —— 必须走容器名 + 容器内端口）。
+      const inner = cfg.internal_mcpServers;
       setConfigModal({
         title: `自建发布「${svc.name}」客户端配置`,
-        json: JSON.stringify(cfg, null, 2),
-        note: `粘进「MCP配置」即可连接；必须携带 X-MCP-Token 请求头（访问令牌 ${svc.token}）。\n`
+        json: JSON.stringify({ mcpServers: cfg.mcpServers }, null, 2),
+        note: `第一段给平台外的 AI 客户端（Claude / Cursor 等）：宿主地址 + X-MCP-Token 请求头（令牌 ${svc.token}）。\n`
+          + '在本平台内使用时，复制第二段（容器内地址），到「MCP 配置」页点「粘贴配置」导入即可。\n'
           + `执行链路：${EXEC_NOTE[svc.kind]}，故 ${svc.kind === 'ontology_function' ? '本体函数执行服务' : '数据引擎执行服务'}需处于运行状态。`,
+        extra: inner ? [{
+          label: '本平台 Agent（容器内地址，粘进「MCP 配置」）',
+          json: JSON.stringify({ mcpServers: inner }, null, 2),
+        }] : undefined,
       });
     } catch (e: any) {
       message.error('生成客户端配置失败: ' + e.message);
@@ -277,58 +299,84 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
         <div>
           <h3 className="text-base font-semibold text-text-primary">MCP 发布</h3>
           <p className="text-text-muted text-xs mt-0.5">
-            发布 Model Context Protocol 服务端点，供 AI 客户端连接使用。固定服务由平台内置；自建发布按本体切片动态创建容器。
+            发布 Model Context Protocol 服务端点，供 AI 客户端连接使用。分「固定发布」（平台内置）与「自建发布」
+            （按本体切片动态创建容器）两块，右上角可来回切换；每块一页最多 {PAGE_SIZE} 个服务。
           </p>
         </div>
-        <Button type="primary" onClick={() => setDrawerOpen(true)}>+ 新建发布</Button>
-      </div>
-
-      <div className="text-xs text-text-muted mb-2">
-        固定服务（平台内置，compose 常驻管理）：<span className="text-accent-blue">本体查询 MCP 服务</span>是唯一内置对外工具面；
-        两个<span className="text-accent-blue">执行服务</span>只在 Docker 内网可达，不对外提供工具
-      </div>
-      <div className="flex gap-4 flex-wrap mb-8">
-        {FIXED_SERVICES.map(def => (
-          <FixedServiceCard
-            key={def.key}
-            def={def}
-            card={cards[def.key]}
-            host={host}
-            onOpenConfig={openConfig}
-            onToggle={handleToggle}
-            onRefresh={() => refresh()}
-            onShowTools={d => setToolsModal({ title: d.title, tools: cards[d.key].tools })}
+        <div className="flex items-center gap-2 shrink-0">
+          <Segmented
+            value={view}
+            onChange={v => setView(v as PublishView)}
+            options={[
+              { label: `固定发布（${FIXED_SERVICES.length}）`, value: 'fixed' },
+              { label: `自建发布（${published.length}）`, value: 'published' },
+            ]}
           />
-        ))}
+          {view === 'published' && (
+            <Button type="primary" onClick={() => setDrawerOpen(true)}>+ 新建发布</Button>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-text-muted">
-          自建发布（动态容器：对外提供执行能力的唯一出口。一个镜像多实例，宿主端口 8020-8099，发布即冻结工具清单）
-        </span>
-        <Button size="small" loading={loadingPublished} onClick={() => refreshPublished()}>刷新</Button>
-      </div>
-      {published.length === 0 ? (
-        <div className="border border-dark-border rounded-lg py-10 text-center text-text-muted text-sm">
-          还没有自建发布。点击「+ 新建发布」，勾选当前本体的函数或行为对外提供。
-        </div>
+      {view === 'fixed' ? (
+        <section aria-label="固定发布">
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <span className="text-xs text-text-muted">
+              固定发布（平台内置，compose 常驻管理，不可新建/删除）：<span className="text-accent-blue">本体查询 MCP 服务</span>与
+              <span className="text-accent-blue">公共函数 MCP 服务</span>是两个内置对外工具面（在「MCP 配置」里恒挂载、不可修改）；
+              两个<span className="text-accent-blue">执行服务</span>只在 Docker 内网可达，不对外提供工具
+            </span>
+            <Button size="small" loading={fixedRefreshing} onClick={() => refresh()}>刷新</Button>
+          </div>
+          <ServiceGrid
+            key="fixed"
+            items={FIXED_SERVICES}
+            renderItem={def => (
+              <FixedServiceCard
+                key={def.key}
+                def={def}
+                card={cards[def.key]}
+                host={host}
+                onOpenConfig={openConfig}
+                onToggle={handleToggle}
+                onShowTools={d => setToolsModal({ title: d.title, tools: cards[d.key].tools })}
+              />
+            )}
+          />
+        </section>
       ) : (
-        <div className="flex gap-4 flex-wrap">
-          {published.map(svc => (
-            <PublishedServiceCard
-              key={svc.name}
-              svc={svc}
-              host={host}
-              onShowConfig={showPublishedConfig}
-              onToggle={togglePublished}
-              onRemove={removePublished}
-            />
-          ))}
-        </div>
+        <section aria-label="自建发布">
+          <div className="flex items-center justify-between gap-4 mb-2">
+            <span className="text-xs text-text-muted">
+              自建发布（动态容器：对外提供执行能力的唯一出口。一个镜像多实例，宿主端口 8020-8099，发布即冻结工具清单）
+            </span>
+            <Button size="small" loading={loadingPublished} onClick={() => refreshPublished()}>刷新</Button>
+          </div>
+          <ServiceGrid
+            key="published"
+            items={published}
+            renderItem={svc => (
+              <PublishedServiceCard
+                key={svc.name}
+                svc={svc}
+                host={host}
+                checking={loadingPublished}
+                onShowConfig={showPublishedConfig}
+                onToggle={togglePublished}
+                onRemove={removePublished}
+              />
+            )}
+            empty={(
+              <div className="border border-dark-border rounded-lg py-10 text-center text-text-muted text-sm">
+                还没有自建发布。点击「+ 新建发布」，勾选当前本体的函数或行为对外提供。
+              </div>
+            )}
+          />
+        </section>
       )}
 
       {/* ─── 新建发布 ──────────────────────────────────────────────────── */}
@@ -409,7 +457,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
                 value={form.transport}
                 onChange={v => setForm({ ...form, transport: v as PublishTransport })}
                 options={[
-                  { value: 'streamable', label: 'http-streamable（/mcp）' },
+                  { value: 'streamable', label: 'streamable-http（/mcp）' },
                   { value: 'sse', label: 'sse（/sse + /messages/）' },
                 ]}
               />

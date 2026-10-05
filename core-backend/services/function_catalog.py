@@ -30,3 +30,13 @@ def common_function_names() -> set[str]:
 def available_function_names(data) -> set[str]:
     """可用函数全集：本体函数 ∪ 公共函数（``related_functions`` 的合法取值域）。"""
     return {f.name for f in data.functions if f.name} | common_function_names()
+
+
+def read_common_function_code(func_name: str) -> str:
+    """读取公共函数源码（不存在 → 404）。"""
+    from errors import NotFoundError
+
+    code_path = COMMON_FUNCTIONS_DIR / f"{func_name}.py"
+    if not fs_store.exists(code_path):
+        raise NotFoundError("函数代码文件不存在")
+    return fs_store.read_text(code_path)

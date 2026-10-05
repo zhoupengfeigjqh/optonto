@@ -1,6 +1,8 @@
-"""Chat API — streaming conversation using LangChain.
+"""需求对话 API —— SSE 流式问答、需求导出、本体分片生成、结构校验。
 
-分层（章程 II）：本模块为接口层；文件读写一律经数据访问层 ``repositories.fs_store``。
+分层（章程 II）：本模块为接口层，只做参数接收、编排与响应组装；
+线程与需求文件的读写一律经业务层 ``services.thread_store``（该领域唯一存储出口），
+**不直连 repositories**，也不 import 其他 router 的私有函数。
 """
 
 import json
@@ -15,15 +17,14 @@ from config import (
     VALIDATION_SYSTEM_PROMPT,
     VALIDATION_PROMPT_TEMPLATE,
     TITLE_SUMMARIZE_PROMPT,
-    DATA_DIR,
 )
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from repositories import fs_store
-from routers.threads import _load_thread, _save_thread, _thread_dir, _resolve_ids
+from errors import InternalError, InvalidInputError
 from llm_utils import load_env, build_llm, strip_code_fence
+from services import parse_yaml_text, thread_store
 
 router = APIRouter(prefix="/api/threads", tags=["对话"])
 
@@ -102,11 +103,11 @@ async def _langchain_stream(llm, messages: list, grilling: bool = False) -> Asyn
 @router.post("/{thread_id}/chat")
 async def chat(thread_id: str, body: dict):
     """Send a message and get a streaming response."""
-    thread, sc, onto = _load_thread(thread_id)
+    thread, sc, onto = thread_store.load_thread(thread_id)
 
     user_msg = body.get("message", "").strip()
     if not user_msg:
-        raise HTTPException(status_code=400, detail="消息不能为空")
+        raise InvalidInputError("消息不能为空")
     grilling = bool(body.get("grilling", False))
 
     now = datetime.now(timezone.utc).isoformat()
@@ -126,7 +127,7 @@ async def chat(thread_id: str, body: dict):
         "timestamp": now,
     })
     thread["updated_at"] = now
-    _save_thread(thread)
+    thread_store.save_thread(thread)
 
     llm = build_llm()
 
@@ -167,7 +168,7 @@ async def chat(thread_id: str, body: dict):
                         thread["title"] = msg["content"].strip()[:10]
                     break
 
-        _save_thread(thread)
+        thread_store.save_thread(thread)
 
     return StreamingResponse(
         generate(),
@@ -186,28 +187,22 @@ async def export_thread(thread_id: str, body: dict):
 
     需求：弹窗填「本体名」「内容」，md 文件名固定为 {本体名}_{内容}.md，同名覆盖。
     """
-    thread, sc, onto = _load_thread(thread_id)
+    thread, sc, onto = thread_store.load_thread(thread_id)
 
     selected_indices = body.get("selected_indices", [])
     if not selected_indices:
-        raise HTTPException(status_code=400, detail="请先选择要导出的助手回复内容")
+        raise InvalidInputError("请先选择要导出的助手回复内容")
 
     ontology_name = body.get("ontology_name", "").strip()
     content = body.get("content", "").strip()
     version = (thread.get("version") or "").strip()
     if not ontology_name or not content:
-        raise HTTPException(status_code=400, detail="本体名与内容均不能为空")
+        raise InvalidInputError("本体名与内容均不能为空")
     if not version:
-        raise HTTPException(status_code=400, detail="版本不能为空（请在创建对话时填写版本号）")
+        raise InvalidInputError("版本不能为空（请在创建对话时填写版本号）")
 
-    # 文件名合法性校验：禁路径分隔符、禁与线程元数据冲突的保留名、长度上限
-    doc_name = f"{ontology_name}_{content}"
-    if "/" in doc_name or "\\" in doc_name or doc_name in {".", ".."}:
-        raise HTTPException(status_code=400, detail="本体名或内容包含非法字符")
-    if content.lower() == "data":
-        raise HTTPException(status_code=400, detail="内容不能使用保留名 data（与线程元数据冲突）")
-    if len(doc_name) > 120:
-        raise HTTPException(status_code=400, detail="本体名+内容过长（超过120字符）")
+    # 文件名合法性校验（禁路径分隔符 / 保留名 / 超长）统一在 thread_store 收口
+    doc_name = thread_store.build_export_doc_name(ontology_name, content)
 
     # Get selected assistant messages
     selected_content: list[str] = []
@@ -218,7 +213,7 @@ async def export_thread(thread_id: str, body: dict):
                 selected_content.append(msg_content)
 
     if not selected_content:
-        raise HTTPException(status_code=400, detail="选中的内容为空，无法导出")
+        raise InvalidInputError("选中的内容为空，无法导出")
 
     # Build markdown content directly from selected messages；注明版本
     lines = [f"# {ontology_name}·{content}", f"", f"版本：{version}", f""]
@@ -230,13 +225,10 @@ async def export_thread(thread_id: str, body: dict):
 
     # Save to thread directory；同名覆盖
     filename = f"{doc_name}.md"
-    file_path = _thread_dir(thread_id) / filename
-    fs_store.write_text(file_path, markdown_content)
+    file_path = thread_store.write_requirement_md(thread_id, filename, markdown_content)
 
     # Update thread status to documented
-    thread["status"] = "documented"
-    thread["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _save_thread(thread)
+    thread_store.mark_documented(thread)
 
     return {
         "message": "文档已生成",
@@ -251,9 +243,9 @@ async def generate_ontology(thread_id: str, body: dict):
     to the SAME thread directory as the md (同名覆盖), NOT overwrite the ontology."""
     from services import OntologyData, slice_yaml_sections
 
-    thread, sc, onto = _load_thread(thread_id)
+    thread, sc, onto = thread_store.load_thread(thread_id)
     if not sc or not onto:
-        raise HTTPException(status_code=400, detail="对话未关联到本体，无法生成本体文件")
+        raise InvalidInputError("对话未关联到本体，无法生成本体文件")
 
     # 用户勾选的一级目录（顶层节名）；空 = 不限（加载完整模板）
     selected = [s for s in (body.get("sections") or []) if isinstance(s, str) and s.strip()]
@@ -261,17 +253,11 @@ async def generate_ontology(thread_id: str, body: dict):
     # Read the requirement markdown file
     filename = body.get("filename", "")
     if not filename:
-        raise HTTPException(status_code=400, detail="请提供需求文件名")
-    file_path = _thread_dir(thread_id) / filename
-    if not fs_store.exists(file_path):
-        raise HTTPException(status_code=404, detail="需求文件不存在")
-    markdown_content = fs_store.read_text(file_path)
+        raise InvalidInputError("请提供需求文件名")
+    markdown_content = thread_store.read_requirement_md(thread_id, filename)
 
-    # Read the template（config.DATA_DIR 在本地与 Docker 容器内均指向 .data）
-    tp = DATA_DIR / "templates/onto_template.yaml"
-    if not fs_store.exists(tp):
-        raise HTTPException(status_code=500, detail="本体模板文件不存在")
-    template_content = fs_store.read_text(tp)
+    # Read the template（模板缺失 → 500）
+    template_content = thread_store.read_template_text()
 
     # 模板只加载勾选的一级目录（metadata 恒含）：避免模型看到无关节后被诱导生成无关内容
     if selected:
@@ -279,13 +265,13 @@ async def generate_ontology(thread_id: str, body: dict):
 
     llm = build_llm()
     if llm is None:
-        raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法自动生成本体")
+        raise InvalidInputError("未配置 LLM API Key，无法自动生成本体")
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
     # metadata 的场景/本体名称与 id 取自 ontology.yaml.metadata（身份唯一来源），不交给模型猜测
     created_at = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    scenario_id, ontology_id = _resolve_ids(sc, onto)
+    scenario_id, ontology_id = thread_store.resolve_ids(sc, onto)
 
     prompt = ONTOLOGY_GENERATE_PROMPT_TEMPLATE.format(
         template_content=template_content,
@@ -310,7 +296,7 @@ async def generate_ontology(thread_id: str, body: dict):
         yaml_text = strip_code_fence(yaml_text)
 
         # Validate YAML
-        parsed = fs_store.parse_yaml(yaml_text)
+        parsed = parse_yaml_text(yaml_text)
         if not isinstance(parsed, dict):
             raise ValueError("生成的YAML不是有效的字典结构")
 
@@ -344,13 +330,10 @@ async def generate_ontology(thread_id: str, body: dict):
         # Output to the SAME directory as the md: {本体名}_{内容}.yaml, 同名覆盖
         req_name = filename[:-3] if filename.endswith(".md") else filename
         yaml_filename = f"{req_name}.yaml"
-        yaml_path = _thread_dir(thread_id) / yaml_filename
-        fs_store.write_yaml(yaml_path, ontology_dict)
+        thread_store.write_generated_yaml(thread_id, yaml_filename, ontology_dict)
 
         # Update thread status
-        thread["status"] = "documented"
-        thread["updated_at"] = datetime.now(timezone.utc).isoformat()
-        _save_thread(thread)
+        thread_store.mark_documented(thread)
 
         return {
             "message": f"已生成 {yaml_filename}",
@@ -369,27 +352,24 @@ async def generate_ontology(thread_id: str, body: dict):
             },
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成本体失败: {str(e)}")
+        raise InternalError(f"生成本体失败: {str(e)}")
 
 
 @router.post("/{thread_id}/clear")
 async def clear_chat(thread_id: str):
     """Clear all messages in a thread but keep the thread."""
-    thread, sc, onto = _load_thread(thread_id)
-    thread["messages"] = []
-    thread["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _save_thread(thread)
+    thread_store.clear_messages(thread_id)
     return {"message": "对话已清空"}
 
 
 @router.post("/{thread_id}/validate")
 async def validate_analysis(thread_id: str, body: dict):
     """Validate selected analysis content for consistency and logical coherence from ontology perspective."""
-    thread, sc, onto = _load_thread(thread_id)
+    thread, sc, onto = thread_store.load_thread(thread_id)
 
     selected_indices = body.get("selected_indices", [])
     if not selected_indices:
-        raise HTTPException(status_code=400, detail="请先选择要验证的助手回复内容")
+        raise InvalidInputError("请先选择要验证的助手回复内容")
 
     # Collect selected assistant messages
     selected_content: list[str] = []
@@ -400,13 +380,13 @@ async def validate_analysis(thread_id: str, body: dict):
                 selected_content.append(content)
 
     if not selected_content:
-        raise HTTPException(status_code=400, detail="选中的内容为空，无法验证")
+        raise InvalidInputError("选中的内容为空，无法验证")
 
     analysis_text = "\n\n---\n\n".join(selected_content)
 
     llm = build_llm()
     if llm is None:
-        raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行验证")
+        raise InvalidInputError("未配置 LLM API Key，无法进行验证")
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -424,7 +404,7 @@ async def validate_analysis(thread_id: str, body: dict):
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         thread["updated_at"] = datetime.now(timezone.utc).isoformat()
-        _save_thread(thread)
+        thread_store.save_thread(thread)
         return {"result": result_text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"验证失败: {str(e)}")
+        raise InternalError(f"验证失败: {str(e)}")

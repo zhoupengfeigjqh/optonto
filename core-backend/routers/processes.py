@@ -6,6 +6,7 @@ from dependencies import get_ontology_names
 from schemas import ProcessItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
+from services.validators import validate_process
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/processes", tags=["业务流程"])
 
@@ -23,6 +24,8 @@ async def create_process(ontology_id: int, item: ProcessItem):
     data = load_ontology_data(sc_name, on_name)
 
     ensure_unique(data.processes, item.name, "流程")
+    # 强耦合校验：步骤引用的动作必须是本体内已存在的行为
+    validate_process(item, data)
 
     data.processes.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -36,6 +39,7 @@ async def update_process(ontology_id: int, process_name: str, item: ProcessItem)
 
     idx = find_index(data.processes, process_name, "流程")
     ensure_unique(data.processes, item.name, "流程", exclude_name=process_name)
+    validate_process(item, data)
 
     data.processes[idx] = item
     save_ontology_data(sc_name, on_name, data)

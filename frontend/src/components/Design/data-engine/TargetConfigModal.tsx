@@ -79,7 +79,9 @@ export default function TargetConfigModal({ open, behaviorLabel, initialTarget, 
     (async () => {
       try {
         const cfg = await getMCPConfig();
-        setMcpServers(cfg.servers.filter(s => !s.builtin && s.enabled));
+        // 目标服务三条件：手工配置（非内置固定项）+ 已启用 + **标记为业务数据**
+        // （`business_data` 在「MCP 配置」页维护；不标记的服务不进映射目标下拉）
+        setMcpServers(cfg.servers.filter(s => !s.builtin && s.enabled && s.business_data === true));
       } catch (e: any) {
         message.warning('读取 MCP 服务配置失败: ' + e.message);
       }

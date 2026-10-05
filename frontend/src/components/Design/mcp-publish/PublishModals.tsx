@@ -69,11 +69,24 @@ interface ConfigModalProps {
 export function ConfigModalView({ data, onClose }: ConfigModalProps) {
   return (
     <Modal title={data?.title || 'MCP 发布配置'} open={!!data} onCancel={onClose} footer={null} width={600}>
-      {data?.note && <p className="text-text-muted text-xs mb-3">{data.note}</p>}
-      <div className="relative">
-        <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono text-yellow-400 whitespace-pre-wrap overflow-x-auto">{data?.json}</pre>
-        <Button size="small" className="absolute top-2 right-2" onClick={() => { navigator.clipboard.writeText(data?.json || ''); message.success('已复制到剪贴板'); }}>复制</Button>
-      </div>
+      {data?.note && <p className="text-text-muted text-xs mb-3 whitespace-pre-line">{data.note}</p>}
+      <JsonBlock json={data?.json} />
+      {data?.extra?.map(sec => (
+        <div key={sec.label} className="mt-4">
+          <div className="text-text-primary text-xs font-semibold mb-1">{sec.label}</div>
+          <JsonBlock json={sec.json} />
+        </div>
+      ))}
     </Modal>
+  );
+}
+
+/** 可复制 JSON 块（配置片段一律可整段复制后粘进「MCP 配置」） */
+function JsonBlock({ json }: { json?: string }) {
+  return (
+    <div className="relative">
+      <pre className="bg-dark-bg border border-dark-border rounded p-3 text-xs font-mono text-yellow-400 whitespace-pre-wrap overflow-x-auto">{json}</pre>
+      <Button size="small" className="absolute top-2 right-2" onClick={() => { navigator.clipboard.writeText(json || ''); message.success('已复制到剪贴板'); }}>复制</Button>
+    </div>
   );
 }

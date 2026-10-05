@@ -241,6 +241,110 @@ class UpstreamAddressCase(TopologyCase):
                          f"本体函数执行服务的端点清单应只含 execute-function，实际 {endpoints}")
 
 
+_UI_KEY_TO_SERVER = {
+    "ontologyQuery": "ontology-query-mcp/server.py",
+    "commonFunction": "common-function-mcp/server.py",
+    "functionExecutor": "ontology-function-executor/server.py",
+    "dataEngine": "data-engine-executor/server.py",
+    "business": "business-mcp/server.py",
+}
+# mcp-shared 的传输常量 → 前端 FixedTransport 口径
+_TRANSPORT_CONST_TO_UI = {"STREAMABLE": "streamable", "SSE": "sse", "BOTH": "sse", "NONE": "none"}
+# 前端固定服务声明的单条（`{ … }` 块，2 空格缩进的收尾）
+_UI_ITEM_RE = re.compile(r"key:\s*'(\w+)',(.*?)\n  \},", re.DOTALL)
+
+
+class TransportClaimCase(TopologyCase):
+    """传输模式声明 ⇄ 服务端实际挂载 ⇄ 客户端配置片段 type（2026-10-05 新增）。
+
+    防的是：卡片/片段上的「传输模式」是手写文案，服务端 transport 一改就没人同步——
+    用户照着 `/mcp` 去连一个已改成 SSE 的服务，只会得到"连不上"。
+    """
+
+    def _ui_items(self) -> list:
+        text = self.read(_UI_SERVICE_CATALOG)
+        items = _UI_ITEM_RE.findall(text)
+        self.assertEqual(len(items), 5, f"固定服务应恰好 5 个，解析到 {len(items)}（正则需同步）")
+        return items
+
+    def _ui_transports(self) -> dict:
+        out = {}
+        for key, body in self._ui_items():
+            hit = re.search(r"transport:\s*'(\w+)'", body)
+            self.assertIsNotNone(hit, f"前端卡片 {key} 未声明 transport（卡片要显示传输模式）")
+            out[key] = hit.group(1)
+        return out
+
+    def _server_transport(self, rel: str) -> str:
+        """服务端实际挂载：读 `build_mcp_app(transport=TRANSPORT_X)`，缺省即默认的 streamable。
+
+        只在 `build_mcp_app(` 之后的窗口里找 transport（调用有单行与多行两种写法，
+        且多行的 extra_routes 里还有别的括号，整段匹配容易错——取窗口最稳）。
+        """
+        text = self.read(rel)
+        idx = text.find("build_mcp_app(")
+        self.assertNotEqual(idx, -1, f"{rel} 未找到 build_mcp_app 调用（事实源缺失）")
+        hit = re.search(r"transport\s*=\s*TRANSPORT_(\w+)", text[idx:idx + 400])
+        if not hit:
+            return "streamable"
+        self.assertIn(hit.group(1), _TRANSPORT_CONST_TO_UI, f"{rel} 用了未知传输常量 {hit.group(1)}")
+        return _TRANSPORT_CONST_TO_UI[hit.group(1)]
+
+    def test_前端传输模式与服务端实际挂载一致(self):
+        ui = self._ui_transports()
+        self.assertEqual(set(ui) | set(_UI_KEY_TO_SERVER), set(_UI_KEY_TO_SERVER),
+                         "卡片键集合与护栏映射不一致（映射需同步）")
+        for key, rel in _UI_KEY_TO_SERVER.items():
+            actual = self._server_transport(rel)
+            self.assertEqual(ui[key], actual,
+                             f"{key}: 卡片写 {ui[key]}，而 {rel} 实际挂载 {actual}（改服务端就得同步卡片）")
+
+    def test_不挂协议端点的服务不得对外(self):
+        """`none`（无 /mcp、无 /sse）只能是「内网 + 不提供对外工具」——否则工具面无处可达。
+
+        注意反向不成立：数据引擎执行服务是 `streamable` 但 `publishTools: false`
+        （有 /mcp，仅供 Agent 内网挂载，只是不对外）。故只校验单向蕴含。
+        """
+        for key, body in self._ui_items():
+            hit = re.search(r"transport:\s*'(\w+)'", body)
+            self.assertIsNotNone(hit)
+            if hit.group(1) != "none":
+                continue
+            self.assertIn("publishTools: false", body, f"{key}: 不挂协议端点却宣称对外提供工具")
+            self.assertIn("exposure: '内网'", body, f"{key}: 不挂协议端点却宣称对外暴露")
+
+    def test_客户端配置片段的type取客户端认的取值(self):
+        """`type` 必须是客户端认的 http/sse，不能是自造的 url。
+
+        2026-10-05 用户追问「type 为 url 是啥意思」暴露：它既不是平台的传输模式（streamable/sse），
+        也不是 MCP 客户端的合法取值（http/sse/stdio），严格校验的客户端会拒收。现由传输模式推导。
+        """
+        catalog = self.read(_UI_SERVICE_CATALOG)
+        snippets = self.read(_UI_CONFIG_SNIPPETS)
+        self.assertIn("clientTypeOf", catalog, "「传输模式 → 客户端 type」的映射应定义在 catalog（唯一来源）")
+        self.assertNotIn("type: 'url'", snippets, "固定服务配置片段仍在写自造的 type: 'url'")
+        self.assertIn("clientTypeOf(def.transport)", snippets, "配置片段的 type 应由传输模式推导，不要手写")
+        core = self.read("core-backend/services/mcp_publish_containers.py")
+        self.assertNotIn('"type": "url"', core, "client_config 仍在写自造的 type: url")
+        self.assertIn('"type": client_type', core, "client_config 的 type 应由 transport 推导（http/sse）")
+
+
+    def test_展示名用规范名而不是自造词(self):
+        """UI 展示名取 MCP 规范名 `streamable-http`；`http-streamable`（词序反了）是自造词，已废。
+
+        2026-10-05 用户追问「type 不应该为 http-streamable?」后查证：规范名是 `streamable-http`，
+        客户端配置里的 `type` 则取 `http`（VS Code 枚举 stdio/http/sse；Claude Code 以 http 为取值）。
+        """
+        catalog = self.read(_UI_SERVICE_CATALOG)
+        self.assertIn("streamable-http", catalog, "传输模式展示名应为规范名 streamable-http")
+        # 只看「引号包起来的字面量」——注释里提到废词（反引号）是说明性文字，不算违规
+        for rel in (_UI_SERVICE_CATALOG,
+                    "frontend/src/components/Design/MCPPublish.tsx",
+                    "frontend/src/api/mcp.ts"):
+            self.assertNotRegex(self.read(rel), r"['\"]http-streamable",
+                                f"{rel}: 展示了自造词 http-streamable（规范名是 streamable-http）")
+
+
 class SurfaceClaimCase(TopologyCase):
     """卡片与文档对"暴露面/端口"的声明 ⇄ compose 实际暴露面。"""
 

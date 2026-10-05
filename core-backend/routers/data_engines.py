@@ -1,11 +1,15 @@
-"""CRUD API for data engines within an ontology — maps ontology behaviors to target APIs."""
+"""数据引擎（本体行为 → 目标 MCP 工具映射）CRUD 与智能映射/对齐 API。
+
+分层（章程 II）：本模块为接口层，只做参数接收与响应组装；错误一律抛领域异常
+（``errors``），状态码由 ``main.py`` 全局处理器统一映射。
+"""
 
 import json
 
-from fastapi import APIRouter, HTTPException
-
-from errors import DomainError
+from fastapi import APIRouter
 from pydantic import BaseModel
+
+from errors import DomainError, InternalError, InvalidInputError, NotFoundError
 
 from dependencies import get_ontology_names
 from schemas import DataEngineItem
@@ -77,11 +81,11 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
 
     de = next((d for d in data.data_engines if d.name == engine_name), None)
     if de is None:
-        raise HTTPException(status_code=404, detail="数据引擎不存在")
+        raise NotFoundError("数据引擎不存在")
 
     beh = next((b for b in data.behaviors if b.name == de.behavior_name), None)
     if beh is None:
-        raise HTTPException(status_code=404, detail="关联的本体行为不存在")
+        raise NotFoundError("关联的本体行为不存在")
 
     from config import MAPPING_ANALYSIS_SYSTEM_PROMPT, MAPPING_ANALYSIS_PROMPT
 
@@ -96,7 +100,8 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
         result, stripped = await llm_json(MAPPING_ANALYSIS_SYSTEM_PROMPT, prompt, 0.3)
         if result is None:
             if stripped is None:
-                raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能映射")
+                raise InvalidInputError("未配置 LLM API Key，无法进行智能映射")
+            # LLM 返回不可解析：属"分析结果"软失败，保持 200 + status=error 的既有前端契约
             return {"status": "error", "message": f"LLM 返回格式异常: {stripped[:200]}", "issues": []}
 
         # Save mapping results to data engine
@@ -115,10 +120,10 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
                 "status": "warning" if result.get("status", "ok") == "ok" else result.get("status"),
             }
         return result
-    except (HTTPException, DomainError):
+    except DomainError:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"智能映射失败: {str(e)}")
+        raise InternalError(f"智能映射失败: {str(e)}")
 
 
 # ─── Smart Align ────────────────────────────────────────────────────────────────
@@ -131,14 +136,14 @@ async def smart_align(ontology_id: int, engine_name: str):
 
     de = next((d for d in data.data_engines if d.name == engine_name), None)
     if de is None:
-        raise HTTPException(status_code=404, detail="数据引擎不存在")
+        raise NotFoundError("数据引擎不存在")
 
     beh = next((b for b in data.behaviors if b.name == de.behavior_name), None)
     if beh is None:
-        raise HTTPException(status_code=404, detail="关联的本体行为不存在")
+        raise NotFoundError("关联的本体行为不存在")
 
     if not de.target.params and not de.target.response:
-        raise HTTPException(status_code=400, detail="目标接口参数和返回结构均为空，无法对齐")
+        raise InvalidInputError("目标接口参数和返回结构均为空，无法对齐")
 
     from config import ALIGNMENT_SYSTEM_PROMPT, ALIGNMENT_PROMPT
 
@@ -153,8 +158,8 @@ async def smart_align(ontology_id: int, engine_name: str):
         result, stripped = await llm_json(ALIGNMENT_SYSTEM_PROMPT, prompt, 0.3)
         if result is None:
             if stripped is None:
-                raise HTTPException(status_code=400, detail="未配置 LLM API Key，无法进行智能对齐")
-            raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {stripped[:200]}")
+                raise InvalidInputError("未配置 LLM API Key，无法进行智能对齐")
+            raise InternalError(f"LLM 返回格式异常: {stripped[:200]}")
         aligned_params = result.get("params", beh.params)
         aligned_response = result.get("response", beh.response)
 
@@ -164,10 +169,10 @@ async def smart_align(ontology_id: int, engine_name: str):
         save_ontology_data(sc_name, on_name, data)
 
         return {"params": aligned_params, "response": aligned_response}
-    except (HTTPException, DomainError):
+    except DomainError:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"智能对齐失败: {str(e)}")
+        raise InternalError(f"智能对齐失败: {str(e)}")
 
 
 # ─── Data Engine Call ──────────────────────────────────────────────────────────
@@ -175,7 +180,7 @@ async def smart_align(ontology_id: int, engine_name: str):
 
 @router.post("/{engine_name}/call")
 async def call_engine(ontology_id: int, engine_name: str, body: dict):
-    """Call target API or execute SQL query via data engine — 降级转发 data-engine-mcp。
+    """调用目标 MCP 工具（经数据引擎映射）—— 降级转发 data-engine-executor。
 
     设计器连接测试与 Agent 行为调用走同一执行器（消灭双执行路径）；
     状态码与 detail 原样透传（下游 4xx/5xx 保持错误形态，isError 语义不破坏）。

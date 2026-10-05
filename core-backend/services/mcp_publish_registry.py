@@ -13,6 +13,7 @@
 """
 
 import json
+import os
 import re
 import secrets
 from datetime import datetime, timezone
@@ -220,8 +221,8 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
             context["scenario_id"] = meta["scenario_id"]
         input_schema = with_ontology_context(
             schema, {**context, "display_name": item.get("display_name", "")}, category)
-        # 发布来源标记（可回溯这份清单来自哪个自建发布；消费端按 x-category 判定归属，忽略本键）
-        input_schema["x-publish-service"] = True
+        # 注：2026-10-05 移除了旧的 `x-publish-service` 标记——它写进 inputSchema 但**无任何运行期消费者**
+        # （消费端按 x-category 判定归属），属"写而不读"的死数据，留在工具契约里只会让契约多一个无意义键。
         tools.append({
             "name": name,
             "description": _description(item, on_name, note),
@@ -274,7 +275,9 @@ def build_run_kwargs(entry: dict) -> dict:
             "PORT": str(CONTAINER_PORT),
             "MCP_TRANSPORT": entry["transport"],
             "AUTH_TOKEN": entry["token"],
-            spec["env"]: spec["default"],
+            # 上游地址以 core 的运行环境配置为准（compose 注入的 *_URL 即事实源），
+            # 缺省才回落到契约默认值——避免"compose 改了地址、发布容器仍打默认地址"的漂移。
+            spec["env"]: os.getenv(spec["env"], spec["default"]),
             "TZ": "Asia/Shanghai",
         },
         # 零挂载：配置与令牌全走环境变量，容器攻击面只有一个只读 HTTP 服务

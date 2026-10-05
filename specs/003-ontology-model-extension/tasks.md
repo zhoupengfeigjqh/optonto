@@ -939,7 +939,7 @@ MCP发布（`routers/mcp_publish` → `services/mcp_publish_*` → `mcp-publish/
 - 令牌头：`client_config` 产出 `X-MCP-Token`，与 `mcp-shared/mcp_app.DEFAULT_AUTH_HEADER` 一致。
 - 行为「已就绪」判据在发布面 / 调用端 / 规划闸 / 查询面四处同源，未发现新增分叉。
 
-**E. 记录未改（需单独裁决，附实施计划）**
+**E. 曾记录未改的架构级问题（2026-10-05 已**全部处置**，见下节 G）**
 
 1. **接口层直连数据访问层**（章程 II「接口层不得直连数据访问层」）：
    `routers/files.py:10`、`routers/threads.py:16`、`routers/common_functions.py`（历史）直接 `import repositories.fs_store`；`routers/ontologies.py:72`、`functions.py:20`、`skills.py:19`、`deploy.py:30` 还直接 import `services` 的**私有**函数（`_get_yaml_path` / `_get_functions_dir` / `_get_ontology_dir`）。
@@ -971,3 +971,352 @@ MCP发布（`routers/mcp_publish` → `services/mcp_publish_*` → `mcp-publish/
   自动插入空格（渲染为 `删 除`）。已按仓库既有约定改用 `getByRole('button', { name: '删 除' })`；同理
   「零工具」「本体查询 MCP 服务」等文案在页面中出现多次，断言改为按出现次数（`getAllByText`）而非唯一命中。
 - 说明：`frontend/coverage/coverage-summary.json` 随覆盖率复跑更新（新增模块后指标重算），属预期产物变化。
+
+### G. 架构级收口：分层 / 错误出口 / 契约清理（2026-10-05，承接上节 E）
+
+按用户裁决「A-B-C 三类全部要改，包括章程等一并对齐」，上一节 E 记录的 7 项**全部实施**。
+
+**G1：接口层不再直连数据访问层（章程 II 新增硬约束）**
+
+新增业务层存储模块（各领域**唯一**存储出口）：
+
+| 模块 | 承担 |
+|---|---|
+| `services/thread_store.py` | 需求线程目录、`.data.json`、需求 md / 本体分片 yaml（threads / chat / deploy 共用） |
+| `services/skill_store.py` | 技能目录、`SKILL.md` 与 frontmatter（列表/读写/描述改写/生成结果校验） |
+| `services/function_store.py` | 本体函数代码文件（`functions/{名}.py`）读写删 |
+| `services/ontology_registry.py` | 场景 / 本体注册表（花名册、身份、增删改、身份回刷、`registry_ids`） |
+| `services/ontology_summary.py` | 本体 → 文本摘要（纯函数，喂生成类 LLM） |
+
+`services/__init__.py` 补齐「接口层可用的本体文件原语」：`ontology_yaml_text` /
+`read_ontology_yaml_dict` / `write_ontology_yaml_dict` / `deployed_version_of` /
+`ontology_yaml_updated_at` / `files_fingerprint` / `parse_yaml_text`；
+私有路径函数公开化：`_get_ontology_dir`→`get_ontology_dir`、`_get_yaml_path`→`get_yaml_path`、
+`_get_functions_dir`→`get_functions_dir`。
+
+结果：**routers / dependencies 中 `from repositories` 命中 0、`from routers.`（router 互引私有函数）命中 0**
+（`dependencies.get_ontology_names` 亦改经 `ontology_registry`）。
+
+**G2：错误出口统一（章程 VI 新增硬约束）**
+
+- `errors.py` 补 `InternalError`(500) 与 `ServiceUnavailableError`(502)。
+- routers 中 **99 处 `raise HTTPException` 全部清零**（改抛 `InvalidInputError`/`NotFoundError`/
+  `ConflictError`/`InternalError`/`ServiceUnavailableError`），状态码逐条保持不变（400/404/500/502）。
+- 例外（有意保留）：`data_engines.analyze-mapping` 的「LLM 返回不可解析」仍是 200 + `status=error`
+  ——它是**分析结果的软失败**（前端按 `status`/`issues` 渲染），不是上游执行失败，故不纳入
+  「失败必须抛错」的射程（已加注释说明）。
+- 测试同步：`test_mcp_service_naming` 的「白名单外键被拒」改为断言 `NotFoundError.status_code == 404`
+  （语义不变）；`test_skills_contract` 改为直测 `services.skill_store`（实现所在层变了，契约不变）。
+
+**G3：固定服务启停失败语义与自建发布统一（原 E4）**
+
+`routers/mcp_ctl.py`：启动/停止**失败**改为抛领域异常（容器缺失 → 404、Docker 操作失败 → 502），
+不再返回 HTTP 200 + `{running:false}`；「已在运行 / 本就未运行」属**无操作**，仍返回 200。
+注册表「不反向回写」的策略保留（注册表 = 期望状态，容器 = 运行态，`list_publishes` 如实显示
+`not_found`），已在模块 docstring 写明。
+
+**G4：契约清理（原 E5 / E6）**
+
+- 删除 `inputSchema` 中的 `x-publish-service`（写而不读的死键，消费端只看 `x-category`）；
+  契约测试改为断言该键**不存在**。
+- `build_run_kwargs` 注入上游地址改为 **`os.getenv(spec["env"], spec["default"])`**：以 core 运行环境
+  （compose 注入）为事实源，缺省才回落契约默认值，消除「compose 改地址、发布容器仍打默认地址」。
+
+**G5：补齐强耦合校验（原 E7）**
+
+`services/validators.py` 新增并接线（关系 / 流程 / 函数三条此前无校验的链路）：
+- `validate_relation`：源/目标概念存在；端点属性属于对应概念（`routers/relations.py`）；
+- `validate_process`：步骤动作命中本体行为（`routers/processes.py`）；
+- `validate_function_concepts`：`related_concepts` 存在（`routers/functions.py`）。
+
+数据兼容性已实测：现有 4 个本体中唯一带流程的「原材料采购和库存」其 4 个流程步骤动作
+（`QueryInventory`/`CreatePurchaseRecord`/`QueryPurchaseRecords`/`ReceiveRawMaterial`）均为已存在行为，
+新增校验不会拒绝现有数据的保存。契约文档 `specs/contracts/ontology-yaml.md` §6「写时校验」已同步三条。
+
+**G6：章程升级**
+
+`.specify/memory/constitution.md` **1.0.1 → 1.1.0（MINOR）**，同步影响报告已登记：
+- 原则 II：接口层 MUST NOT 直连数据访问层 / MUST NOT 引用他模块下划线私有符号；
+- 原则 VI：业务失败 MUST 用领域异常 / 失败 MUST NOT 以 2xx+失败体掩盖 / 契约 MUST NOT 写死键；
+- 技术治理：跨服务共用契约 MUST 单点收口为一份实现。
+
+**G7：回归（实测）**
+
+| 范围 | 命令 | 结果 |
+|---|---|---|
+| core-backend | `python -m pytest tests -q` | **146 passed** |
+| 其余 Python 服务 | 各服务目录 `pytest tests -q` | business 4 / common-fn 12 / data-engine-exec 27 / mcp-publish 22 / mcp-shared 75 / ontology-fn-exec 11 / ontology-query 13 → **164 passed** |
+| 前端 | `npx vitest run` | **27 files / 321 tests passed** |
+| 覆盖率 | `npx vitest run --coverage` | lines 96.61 / statements 96.61 / functions 83.52 / branches 88.32（阈值 80） |
+| 类型/编译 | `npx tsc --noEmit` / `python -m compileall -q core-backend` | 通过 |
+| 结构约束 | 接口层 `from repositories` / `from routers.` / `raise HTTPException` 命中 | **0 / 0 / 0**；core-backend 无 >500 行源文件 |
+
+**G8：真实数据只读冒烟（2026-10-05，验证「不破坏」）**
+
+用 `.data` 真实数据直接跑（一次性只读脚本，跑完即删）：
+
+- 新增三类校验对现有 4 个本体全部通过，**无既有数据被拒**：
+  关系 5/0/11/8 条、流程 1/0/0/0 条、函数 6/0/0/0 条（依次为 原材料采购和库存 / 资源(人员和设备) / 货品BOM及工艺 / 订单排程）。
+- 部署链路（版本归集 + 分片合并）重构后仍跑通：原材料采购和库存 `v1.1` / `v1.0` 均合并成功（各 6 概念 / 9 行为）。
+- 错误体形状断言通过：`InvalidInputError`/`NotFoundError`/`InternalError` → 400/404/500，
+  `main.py` 的 `HTTPException` 与 `DomainError` 两个处理器逐行同构，`{code,message,detail}` 形状不变。
+
+**G9：新发现的既有隐患（**非本轮引入**，待裁决，显式记录）**
+
+冒烟过程中出现 6 条迁移告警：`行为 xxx 的 related_concepts 含 N 个元素，迁移取首个`
+（createPurchaseRecord 4、queryPurchaseRecord 4、queryRawMaterialInventory 3、querySupplyCapacity 3、
+querySupplier 2、confirmInbound 2）。
+
+- **来源**：`.data/threads/demand/*/...yaml` 的**需求分片**，不是 4 个本体（本体读取零告警）。
+- **影响**：`deploy._merge_yaml_files` 对分片做 `OntologyData(**raw)`，多元素数组被读时迁移为「取首个 + 告警」——
+  即**对该版本重跑「本体合并」会静默丢掉第 2..N 个关联概念**。
+- **与 spec 的关系**：spec 003「边界情况」写的「旧数组含多个元素（实测不存在）」是对**本体**实测的，
+  未覆盖**需求分片**——该假设不完整。
+- **性质**：本轮改动前后行为一致（迁移器与合并逻辑的语义未变），**非回归**；属既有数据债。
+- **处置（2026-10-05，用户拍板「行为只能关联一个概念，务必修改相关数据」）**：采纳 ②——**已迁移分片数据**。
+  对 `.data/threads/demand/` 下两个分片文件的 **18 处行为**把 `related_concepts` 数组改为单值
+  `concept`（**取首个** ＝ 读取路径当前实际采用的值，故语义零变化；**函数**的 `related_concepts`
+  是合法数组，保持不动）。多元素转单值的 6 处取值（如与预期不符请直接指出，可再改）：
+
+  | 行为 | 原数组 | 取 |
+  |---|---|---|
+  | createPurchaseRecord | PurchaseRecord + RawMaterial + Supplier + CustomerOrder | PurchaseRecord |
+  | confirmInbound | PurchaseRecord + RawMaterialInventory | PurchaseRecord |
+  | queryPurchaseRecord | PurchaseRecord + RawMaterial + Supplier + CustomerOrder | PurchaseRecord |
+  | queryRawMaterialInventory | RawMaterialInventory + RawMaterial + PurchaseRecord | RawMaterialInventory |
+  | querySupplier | Supplier + SupplyCapacity | Supplier |
+  | querySupplyCapacity | SupplyCapacity + Supplier + RawMaterial | SupplyCapacity |
+
+  文本级替换（保留原格式与其余字段），写盘后复读校验**残留 0**；再跑合并链路：6 条迁移告警
+  **全部消失**，v1.1 / v1.0 合并结果不变（各 6 概念 / 9 行为）。历史版本存档
+  `ontology_versions/v1.0|v1.1` 按仓库惯例保持只读不动。
+
+### H. MCP 配置：公共函数 MCP 升级为内置固定项（2026-10-05）
+
+用户要求：**本体查询 MCP 服务 / 公共函数 MCP 服务应固定在「MCP 配置」里，不能修改。**
+
+- `agent-backend/src/services/mcp-config-store.ts`：
+  - 新增 `BUILTIN_COMMON_FUNCTION_MCP`（`builtin: true`、恒启用、无 `allowed_tools` ⇒ 全选），
+    取代原 `PRESET_COMMON_FUNCTION_MCP`（预置语义作废）；
+  - `isBuiltinServer` 判定扩展为「当前 URL / 历史 URL / **内置显示名兜底**」——显示名兜底是必要的：
+    前端对内置行不提供编辑入口，唯一改动途径是手改 `mcp-config.json`，只认 URL 会导致
+    「内置项复位 + 残留一个指向错地址的同名条目」（重复且静默失效）；
+  - `normalize` 强制 `[BUILTIN_MCP, BUILTIN_COMMON_FUNCTION_MCP, ...others]`（顺序固定、形态固定）；
+    `DEFAULT_CONFIG` 同步（末尾仍是**预置**的数据引擎执行服务）。
+- 前端**零改动**：`MCPConfig.tsx` 按 `builtin` 标记渲染「全部工具 / 默认配置」，
+  自动获得「不可编辑 / 不可停用 / 不可删除」。
+- 语义边界：**内置固定** = 本体查询 MCP + 公共函数 MCP；**预置**（可停用/删除/改工具范围）= 数据引擎执行服务；
+  用户自建服务照旧。
+- 测试：`mcp-config-store.test.ts` **9 例**（默认种子顺序、公共函数发布不变量、删条目复活、
+  篡改（停用/限工具/改 URL）复位且不与其他服务混同、数据引擎仍可停用/删除、旧 URL 归位）。
+- 文档：`specs/contracts/mcp-tools.md`「必须预置挂载公共函数」升级为「内置固定项」。
+- 回归：agent-backend `vitest` **26 files / 334 passed** + `tsc --noEmit` 净；core `pytest` **146 passed**；
+  前端 `tsc --noEmit` 净。
+
+**H2. 复核与补强（2026-10-05，本次）**
+
+复核结论：口径本体（`mcp-config-store` 的 `BUILTIN_COMMON_FUNCTION_MCP` + `normalize`）已正确落地；
+但两个内置项的 URL 识别**容错口径不一致**，且「本体查询 MCP 是**唯一**内置对外工具面」这句旧表述
+在 10 处仍存——公共函数升级为内置对外工具面后，它已成**语义漂移**。
+
+| # | 问题 | 事实 | 修正 |
+|---|---|---|---|
+| H2-1 | 两个内置项识别口径不一致 | `isBuiltinServer` 对本体查询用**原始串精确比较**（URL 尾斜杠 / 两侧空白即认不出 → 被当普通条目原样留下，与复位后的常量条目并存），公共函数却走 `normalizeUrl` | 统一走 `normalizeUrl`（同容错口径），补测试 1 例 |
+| H2-2 | 「唯一内置对外工具面」漂移 | 公共函数 MCP（8007，对外发布 7 工具）已与本体查询并列，但 10 处仍称本体查询为「唯一」：`Design/MCPPublish.tsx`、`mcp-publish/config-snippets.ts`、`routers/mcp_ctl.py`、`specs/contracts/mcp-tools.md`、`ontology-query-mcp/server.py`、根 `Dockerfile`、`nginx/nginx.conf`、`docker-compose.yml`(×2)、`specs/2026-09-06-mcp-runtime-architecture.md` | 统一改为「内置对外工具面之一」；`mcp-tools.md` §语义铁律「发布 = 对外声明 MCP 工具」补上公共函数 MCP（原文漏列） |
+| H2-3 | 「MCP 配置」页未表达固定语义 | `MCPConfig.tsx` 仅在 builtin 行渲染「默认配置」标签，页面无任何说明；`agent-client.ts` 类型注释也只写本体 MCP | 页面补一句内置固定项说明（恒启用 / 注册全部工具 / 不可编辑停用删除）；注释与类型口径改为「本体查询 MCP / 公共函数 MCP」 |
+| H2-4 | E2E 断言空转 | `e2e-visibility-guard.py` 的 check C 用 `'本体MCP' in l` 匹配日志，而实际显示名是「本体查询MCP」（不构成子串）→ 断言恒真、等于没测 | 改为匹配「本体查询MCP / 本体MCP / 公共函数MCP」，内置口径同步为两项 |
+| H2-5 | `discoverTools` 注释口径 | 收编豁免注释只写「内置本体MCP 永不收编」（漏公共函数） | 改为「**内置固定项**（本体查询 MCP、公共函数 MCP）永不收编」（行为不变：`server.builtin` 本就同时覆盖两项） |
+
+**回归（本次实测）**：agent-backend `vitest` **26 files / 335 passed**（新增 1 例）；core `pytest` **146 passed**；
+前端 `tsc --noEmit` 净；`MCPPublish` + `mcp-publish/*` 组件单测 **4 files / 15 passed**。
+
+### I. MCP 发布页：两块视图切换 + 分页（2026-10-05）
+
+用户要求：**MCP 发布页分为「固定发布」与「自建发布」两块，右上角一个切换按钮来回切看；每页最多 6 个服务。**
+
+- 视图切换：右上角 antd `Segmented`（`固定发布（5）` / `自建发布（n）`），两块**互斥渲染**、各自独立分页；
+  `+ 新建发布` 只在「自建发布」块出现（创建属于动态容器块，固定发布不可新建/删除）。
+- 分页唯一实现：新增 `Design/mcp-publish/ServiceGrid.tsx`（`PAGE_SIZE = 6`）——两块共用同一栅格；
+  列表变短（删除发布）导致页码越界时**自动收敛到末页**，不出现空白页；固定发布当前 5 个，不触发分页器。
+- `MCPPublish.tsx` **442 行**（仍 ≤500）：只做状态编排与两块布局，分页/栅格下沉到 ServiceGrid。
+- 测试：新增 `ServiceGrid.test.tsx` **4 例**（未超出不渲染分页器 / 超出后翻页 / 越界收敛 / 空态）；
+  `MCPPublish.test.tsx` 改为 **5 例**（默认固定块 + 两块互斥、切换后空态与新建入口、自建卡片、
+  **7 个发布首页仅 6 张**、打开弹窗拉取本体清单）。`vitest.config.ts` 覆盖率清单纳入 `ServiceGrid.tsx`。
+- 回归：`MCPPublish` + `mcp-publish/*` 单测 **5 files / 21 passed**；前端 `tsc --noEmit` 净；语言服务 0 error / 0 warning。
+
+**部署同步（2026-10-05，实测）**
+
+`docker compose build` + `up -d --no-deps` 重建四个服务：**optonto-core-backend / optonto-agent-backend /
+optonto-frontend / optonto-nginx**。未重建：`ontology-query-mcp`（仅 docstring 文案）、
+`mcp-publish` 与各执行/业务服务（源码无改动）；两个本地自建发布容器（8021 / 8022）保持运行未受影响。
+
+实测结果：
+
+| 检查项 | 结果 |
+|---|---|
+| `GET :8003/agent-api/mcp-config` | 本体查询MCP（`builtin:true`）→ 公共函数MCP（`builtin:true`，**队首第二位**）→ antv → 业务系统采购与库存MCP |
+| `GET :8001/api/mcp/{common-function,ontology-query}/status` | 均 `200`、`running:true` |
+| nginx `:81/` 与 `/design/1` | 均 `200` |
+| 前端镜像内构建产物 | 含本次文案（`固定发布` / `一页最多`），改动确已进镜像 |
+| 自建发布（core 重启后） | 2 个容器 `running`、端口 8021 / 8022 登记正常 |
+
+**坑（记录）**：写 `config/mcp-config.json` 必须用 **UTF-8 请求体**——PowerShell 5.1 `Invoke-RestMethod`
+在 `ContentType='application/json'` 且无 charset 时按非 UTF-8 编码 body，曾把「业务系统采购与库存MCP」
+写成 `?????MCP`（两个内置项因 URL 命中被 `normalize` 复位才幸免）。已按原值修复并复读校验；
+后续回写该文件请用 UTF-8（或直接改文件），不要用 PS 5.1 的 `Invoke-RestMethod`。
+
+**I2. 刷新入口统一：固定发布与自建发布同构（2026-10-05）**
+
+用户要求：**固定发布的刷新应与自建发布一样，只有右上角一个按钮。**
+
+- 原状：`FixedServiceCard` 每张卡片各带一个「刷新」——5 张卡片 = 5 个入口，而自建发布区块只有
+  右上角 1 个，两块同权却不同构（同一动作两处入口）。
+- 改动：卡片去掉「刷新」（只留 查看配置 / 启动·停止 / 查看工具）；「固定发布」区块头改为与自建发布
+  完全同构的一行 `flex items-center justify-between gap-4 mb-2`（左侧说明 + 右侧「刷新」按钮），
+  按钮 `loading` 由 `fixedRefreshing`（任一卡片仍在 `checking`）驱动。
+- 测试：`cards.test.tsx` 补「卡片上不得再有刷新按钮」；`MCPPublish.test.tsx` 补固定块
+  **刷新按钮恰好 1 个**。断言用**非锚定正则** `/刷\s*新/`——antd 对「两个汉字」按钮会插空格，
+  而 `loading` 时按钮带图标名（`loading 刷新`），精确串匹配两种形态都会漏。
+- 回归：5 files / 21 passed；`tsc --noEmit` 净；语言服务 0 error / 0 warning。
+- 部署：重建 `optonto-frontend` 镜像并重建容器（页面 chunk 哈希 `page-c07ee793…` → `page-6cd504c6…`
+  即新产物已生效），nginx `:81/design/1` 返回 `200`。
+
+**I3. 刷新提示对齐（2026-10-05）**：用户反馈「自建发布点刷新没有任何提示，固定发布有」。
+- 原因：`refresh()`（固定发布）结尾有 `message.success('状态已刷新')`，而 `refreshPublished()`
+  **只有错误分支有提示**——成功时静默，两块的同一动作反馈不一致。
+- 改法：`refreshPublished(silent = false)` 与 `refresh(silent)` **同一套语义**——只有用户点按钮才提示；
+  首屏自动加载、以及增删启停后的自动回读一律传 `silent = true`（那些动作自己已有提示，再弹一次是重复）。
+- 测试：`MCPPublish.test.tsx` 新增 1 例（首屏静默 + 点刷新弹「状态已刷新」），**7 passed**；`tsc` 净。
+
+**I4. 自建发布刷新「看不出变化」（2026-10-05）**：用户反馈「固定发布点刷新状态会变（运行中→…），自建发布点了没反应」。
+- 事实：**数据每次都重新读了**——`list_publishes()` 对每条注册表条目现取 `container_state()`（实时容器状态），
+  刷新确实生效；但固定卡片有 `checking` 中间态（灰点 + 「检查中...」），**自建发布卡片没有**，
+  列表内容又恰好没变，于是「刷新成功」在视觉上与「没反应」无法区分。
+- 改法：`PublishedServiceCard` 增 `checking`（区块 `loadingPublished` 驱动），刷新期间状态位显示
+  **「检查中...」**、Tag 转灰；读取完成回到真实状态（运行中 / 已停止 / 容器缺失）——与固定卡片同一套反馈语言。
+- 测试：`cards.test.tsx` +1（checking 中间态与回真）、`MCPPublish.test.tsx` +1（挂起 Promise 观察中间态），
+  MCP 发布相关 **7 files / 36 passed**；`tsc` 净；已重建前端并重建容器。
+
+### L. 「MCP 配置」新增「业务数据」开关，收紧映射目标下拉（2026-10-05）
+
+用户要求：**「MCP 配置」加「是否业务数据（是/否）」，只有选「是」的服务才出现在「接口映射 → 目标 MCP 服务」下拉里。**
+
+- 字段：`MCPServerConfig.business_data?: boolean`（**缺省=否**，显式落盘 true/false）。agent 侧零改动——
+  `normalize` 只剥离 `builtin`，其余字段原样保留，故该标记随配置下发给所有读取方。
+- 「MCP 配置」页：新增**「业务数据」列**（列表显示 `是/否` Tag；内置固定项显示 `—` 不适用），
+  行编辑态用 `Switch`（是/否）；`handleSaveRow` 解析后统一写 `business_data`；页面说明补一句用途。
+- 「接口映射」页：`TargetConfigModal` 的服务下拉过滤由「非内置 + 已启用」收紧为
+  **「非内置 + 已启用 + `business_data === true`」**（原来的列表会被本体查询 / 公共函数 / 自建发布等淹掉）。
+- **存量迁移（避免把在用的映射目标挤掉）**：`.data` 里 8 处 `target.server_url` 全部指向
+  `http://optonto-business-mcp:8004/mcp`，故给运行期 `config/mcp-config.json` 的
+  「业务系统采购与库存MCP」补 `"business_data": true`（文件直改，UTF-8 无编码风险）。
+- **顺带拆分**：`MCPConfig.tsx` 加到 513 行（超章程 500 行硬约束），把工具清单弹窗抽为
+  `Design/mcp-config/ToolsPickerModal.tsx`（选择状态留在容器，展开态收进组件）→
+  `MCPConfig.tsx` **444 行**、新组件 **113 行**。
+- 测试：`ToolsPickerModal.test.tsx` **7 例**（列出/统计/勾选回传/全选/展开参数/确认与关闭/加载·错误·空态/关闭）；
+  `MCPConfig.test.tsx` **7 例**（+2：编辑切换业务数据并落盘、内置行显示 `—`）；
+  `TargetConfigModal.test.tsx` 服务下拉断言改为三条件（+「非业务数据服务」不进下拉）。
+  受影响的 3 个子集 + 全部 7 条 MCPConfig 用例**逐一复跑通过**；`tsc --noEmit` 净。
+
+### J. 自建发布令牌进「MCP 配置」：配置方式补全（2026-10-05）
+
+用户提问：**自建 MCP 服务有访问令牌，在「MCP 配置」里怎么加令牌？是不是要改配置方式？**
+
+答复：**是——原配置方式缺「请求头」这一环，令牌根本无处可填。** 改前实测（复用已有发布容器 8021）：
+
+| 探针 | 结果 |
+|---|---|
+| `POST /agent-api/mcp-config/test {url: 发布容器:8100/mcp}` | `success:false` ——「缺少或无效的访问令牌（**请在 MCP 配置中带上该发布服务的令牌请求头**）」 |
+| 同一请求 + `headers:{"X-MCP-Token":"…"}` | `success:true`，列出 **6 个工具** |
+
+即运行时链路（`agent-factory` → `MCPClient` 的 `requestInit`）本就支持 headers、契约 §9.3 也写着
+「连同 URL 一起粘进「MCP配置」即可用」，但**前端无处录入 headers**、新增行还会把 headers 丢掉、
+探针 `testMCPConnection(url)` 不传 headers——带令牌的服务永远测不通，承诺与实现脱节（前端口径）。
+
+**改动（令牌录入闭环）**
+
+| 层 | 改动 |
+|---|---|
+| 前端 API | `testMCPConnection(url, headers?)` 补 headers（不带令牌的探针必然 401） |
+| 新纯逻辑 `Design/mcp-config/server-config.ts` | `parseHeaders`（严格：非 JSON / 非对象 / 值非字符串一律报错，**绝不静默丢令牌**）、`formatHeaders`、`maskHeaderValue` / `headerSummary`（只露前 4 后 2，明文不进列表）、`hasTokenHeader`、`importServerSnippet`（接受 `{"mcpServers":{…}}` 片段或裸条目；stdio 形态明确报错）、`isLoopbackUrl` |
+| 新弹窗 `Design/mcp-config/PasteConfigModal.tsx` | 「粘贴配置」入口：把「MCP发布 → 查看配置」整段粘贴即导入 |
+| `Design/MCPConfig.tsx` | 新增/编辑行补**「请求头」**列（JSON 输入）；列表显示掩码 + 「已带令牌」标记；解析失败拦住保存；导入同名服务**不覆盖**（提示改走编辑）；探针改带 headers；`handleConfirmTools` 由「按 URL 匹配」改「按 name 匹配」（同 URL 多条目会一起被改的隐患） |
+| core `client_config` | 同时给出 `internal_mcpServers`（容器名 + 容器内端口 8100）：`localhost` 在 Agent 容器里指向它自己，平台内部挂载只能走容器名。前端配置弹窗并排展示两段（外部客户端 / 平台 Agent），`ConfigModalContent` 增 `extra[]` |
+| 契约 | `specs/contracts/mcp-tools.md` §9.3 补「令牌怎么进 MCP 配置」表（两段地址各自的用途与配法） |
+
+**测试**：新增 `mcp-config/server-config.test.ts`（12 例）、`mcp-config/PasteConfigModal.test.tsx`（4 例）、
+`MCPConfig.test.tsx`（5 例：粘贴导入落库带令牌 / 非法片段不保存 / 同名不覆盖 / 非法请求头拦住保存 /
+探针带 headers 且列表只显掩码）、`mcp-publish/PublishModals.test.tsx`（4 例），`MCPPublish.test.tsx` +1
+（两段地址）。MCP 相关合计 **9 files / 47 passed**；`tsc --noEmit` 净；core `pytest` **146 passed**。
+
+**部署与实测**：重建 `optonto-core-backend` + `optonto-frontend` 并重建容器 →
+`GET /api/mcp/published/<name>/client-config` 同时返回两段（宿主 / 容器内，均含 `X-MCP-Token`）；
+用返回的**容器内地址 + 令牌**跑探针 → `success=true`、**6 个工具**；nginx `:81/design/1` 200；
+前端产物已含「粘贴配置 / 已带令牌」文案。
+
+### K. 固定卡片补传输模式 + 配置片段 `type` 修正（2026-10-05）
+
+用户两点：① **固定服务卡片（本体查询 / 公共函数 / 业务系统）没显示传输模式**（自建发布卡片有）；
+② 追问「**查看配置里 `type: url` 是啥意思？不应该是传输模式嘛？**」。
+
+**① 传输模式上卡片**：`FixedServiceDef` 增 `transport: 'streamable' | 'sse' | 'none'`
+（事实源＝各服务 `server.py` 的 `build_mcp_app(transport=…)`，缺省即 `streamable`），卡片显示
+`streamable-http（/mcp 单端点）` / `无协议端点（零工具，仅 /execute-function）`：
+
+| 服务 | 传输模式 |
+|---|---|
+| 本体查询 MCP（8002） | `streamable` —— `/mcp` 单端点 |
+| 公共函数 MCP（8007） | `streamable` —— `/mcp` 单端点 |
+| 业务系统 MCP（8004） | `streamable` —— `/mcp` 单端点 |
+| 数据引擎执行服务（8005，内网） | `streamable` —— `/mcp`（仅内网挂载） |
+| 本体函数执行服务（8006，内网） | `none` —— 不挂协议端点（零工具） |
+
+> **卡片展示口径（用户追加要求）**：**传输模式只对「对外」工具面展示**——上面后两个内网执行底座
+> （8005 / 8006）是平台自己的运行时，卡片上**不显示**传输模式（`transport` 仍留在 `catalog.ts` 作事实源，
+> 护栏照旧用它比对服务端）。同时修正 8005 卡片文案：它**不是零工具**（有 `/mcp` 工具面、仅内网挂载），
+> 与 8006 的真零工具区分开。
+
+**② `type: "url"` 是自造值 → 改为 `http` / `sse`**：该字段是 **MCP 客户端**（Claude Code / VS Code 的
+`mcp.json` 等）用来区分连接方式的字段，合法取值 `http`（Streamable HTTP）/ `sse` / `stdio`——`url` 谁都不认
+（严格校验的客户端会拒收）。现由**平台传输模式唯一推导**：`catalog.ts::clientTypeOf()`
+（`streamable → http`、`sse → sse`、`none → null` 不给片段），core `client_config` 同口径
+（`client_type = "sse" if is_sse else "http"`）；粘贴导入侧本就忽略 `type`，故**存量片段（`type: url`）照旧可导入**。
+
+**顺带修**：`mcp-shared/mcp_app.py` 的 docstring 漂移——原文把**数据引擎执行服务**写进 `none` 组，
+而它实际走默认 `streamable`（有 `/mcp`，与同段上一行自相矛盾）。
+
+**③ 再追问「type 不应该为 http-streamable？」→ 查官方文档定稿命名**：
+
+- VS Code《MCP configuration reference》：`type` 枚举**只有** `stdio` / `http` / `sse`
+  （`http` 优先，服务器不支持时回退 SSE）；
+- Claude Code《Connect Claude Code to tools via MCP》：`http` 即规范传输 `streamable-http` 的取值，
+  并接受 `streamable-http` 作**别名**；`sse` 标注**已弃用**；**「带 `url` 却没有 `type`」的条目会被当成
+  stdio 而跳过并报错**（提示 `add "type": "http"`）。
+- 结论：配置片段的 `type` **取 `http`**（两家客户端的交集；`streamable-http` 只是 Claude Code 的别名，
+  VS Code 不认，故不采用）；**UI 展示名**从自造的 `http-streamable` 改为**规范名 `streamable-http`**
+  （`TRANSPORT_LABEL` / `FIXED_TRANSPORT_LABEL` / 新建发布传输单选项 / `api/mcp.ts` 注释同步）。
+
+**护栏（防再漂）**：新增 `core-backend/tests/test_service_topology_consistency.TransportClaimCase`（3 例）——
+① 卡片 `transport` 必须等于对应 `server.py` 实际挂载（含"未写实参=默认 streamable"的推导）；
+② `none` 只能是「内网 + 不提供对外工具」（反向不成立：数据引擎是 `streamable` 但 `publishTools: false`）；
+③ 配置片段 / `client_config` 的 `type` 必须由传输模式推导，不得再出现自造的 `'url'`。
+前端另加 `catalog.test.ts`（传输模式声明完整性 + 映射 5 例）。
+
+**测试与部署**：前端 MCP 相关 **7 files / 31 passed**；core 拓扑护栏 **14 passed**；`tsc --noEmit` 净。
+重建 `optonto-core-backend` + `optonto-frontend` 并重建容器；实测 `client-config` 返回
+`"type":"http"`、前端产物含两种传输模式文案、nginx `:81/design/1` 200。
+
+**部署同步收尾（用户确认后补跑）**：因本轮改过 `mcp-shared/mcp_app.py`（docstring），
+而 `mcp-shared` 被 **6 个镜像 `COPY`**（本体查询 / 公共函数 / 业务系统 / 数据引擎执行 /
+本体函数执行 / 自建发布门面），补跑了一次全量重建：
+
+```
+docker compose build <上述 5 个固定服务>
+docker compose --profile published-mcp build optonto-mcp-publish
+docker compose up -d --no-deps <上述 5 个固定服务>
+```
+
+实测（全部通过）：5 个固定服务重启后 `/api/mcp/{key}/status` 均 `running`；工具面
+本体查询 **8** / 公共函数 **7** / 业务系统 **8** 个工具、`/health` ok；镜像内 `mcp_app.py`
+已是修订版（`grep` 命中新文案）；两个自建发布动态容器**未被触碰**（Up 6h），
+且令牌探针仍通——行为类 **8** 个工具、函数类 **6** 个工具（顺带验证了转发到刚重启的执行底座无碍）。

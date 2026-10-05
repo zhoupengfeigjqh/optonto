@@ -545,8 +545,9 @@ export class AgentFactory {
             continue;
           }
           // 可见性收编（配映射即收编，架构文档 §六）：已映射接口的原始工具对 Agent 隐藏，
-          // 行为工具是唯一入口——绕过它会跳过映射翻译/RuleGate/安全管控。内置本体MCP 永不收编；
-          // 数据引擎MCP 2026-10-04 起为非内置预置服务，但行为工具发布方就是它，仍按 URL 豁免收编（行为工具永不收编是不变式）。
+          // 行为工具是唯一入口——绕过它会跳过映射翻译/RuleGate/安全管控。**内置固定项**（本体查询 MCP、
+          // 公共函数 MCP，server.builtin）永不收编；数据引擎MCP 2026-10-04 起为非内置预置服务，
+          // 但行为工具发布方就是它，仍按 URL 豁免收编（行为工具永不收编是不变式）。
           if (!server.builtin && !isDataEngineMcpUrl(server.url) && this.visibilityGuard?.isHidden(server.url, toolName)) {
             hiddenCount++;
             continue;

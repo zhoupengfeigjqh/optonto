@@ -1,4 +1,4 @@
-# optonto-ontology-query-mcp — 本体查询 MCP 服务（唯一平台内置对外工具面，只读无副作用）
+# optonto-ontology-query-mcp — 本体查询 MCP 服务（平台内置对外工具面之一，只读无副作用）
 # build context = 仓库根（要带 mcp-shared 与 .data 挂载点约定）
 FROM python:3.12-slim
 

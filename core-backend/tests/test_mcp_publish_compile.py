@@ -61,7 +61,8 @@ class FunctionCompileCase(unittest.TestCase):
         self.assertEqual(ctx["name"]["const"], fname)
         self.assertEqual(ctx["ontology_id"]["const"], oid)
         self.assertEqual(ctx["ontology_name"]["const"], on_name)
-        self.assertTrue(schema["x-publish-service"])
+        # 2026-10-05：旧的 x-publish-service 标记已删除（写而不读的死数据，消费端只看 x-category）
+        self.assertNotIn("x-publish-service", schema)
 
     def test_required_only_contains_business_params(self):
         oid, _, fname = self.picked

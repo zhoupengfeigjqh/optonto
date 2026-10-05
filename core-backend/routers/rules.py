@@ -2,9 +2,9 @@
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from errors import DomainError
+from errors import DomainError, InternalError, InvalidInputError
 
 from dependencies import get_ontology_names
 from schemas import RuleItem
@@ -134,13 +134,13 @@ async def generate_rule(ontology_id: int, body: dict):
         result, stripped = await llm_json(RULE_GENERATE_SYSTEM_PROMPT, prompt, 0.3)
         if result is None:
             if stripped is None:
-                raise HTTPException(status_code=400, detail="未配置 LLM API Key")
-            raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {stripped[:200]}")
+                raise InvalidInputError("未配置 LLM API Key")
+            raise InternalError(f"LLM 返回格式异常: {stripped[:200]}")
         # 兜底过滤：只保留真实存在的函数名（LLM 幻觉函数名不透传）
         available = available_function_names(data)
         picked = [f for f in (result.get("related_functions") or []) if isinstance(f, str) and f in available]
         return {"related_functions": picked, "reasoning": result.get("reasoning", "")}
-    except (HTTPException, DomainError):
+    except DomainError:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+        raise InternalError(f"生成失败: {str(e)}")

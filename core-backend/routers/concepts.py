@@ -1,6 +1,8 @@
 """CRUD API for concepts within an ontology."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+
+from errors import NotFoundError
 
 from dependencies import get_ontology_names
 from schemas import ConceptItem, AttributeItem
@@ -26,7 +28,7 @@ async def update_attributes(ontology_id: int, concept_name: str, attributes: lis
 
     concept = next((c for c in data.concepts if c.name == concept_name), None)
     if not concept:
-        raise HTTPException(status_code=404, detail="概念不存在")
+        raise NotFoundError("概念不存在")
 
     concept.attributes = [AttributeItem(**a) for a in attributes]
     # 强耦合校验：status（生命周期状态）属性至多一个、必须 string 且枚举非空（spec 003 FR-004）

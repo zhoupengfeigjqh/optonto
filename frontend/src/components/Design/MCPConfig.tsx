@@ -8,13 +8,17 @@ import {
 import {
   PlusOutlined, DeleteOutlined, ApiOutlined,
   CheckOutlined, CloseOutlined, EditOutlined,
-  ToolOutlined,
+  ImportOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import {
   getMCPConfig, saveMCPConfig, testMCPConnection,
   MCPConfig, MCPServerConfig, MCPToolInfo,
 } from '@/api/agent-client';
-import { clickableProps, checkboxProps } from '@/utils/a11y';
+import { PasteConfigModal } from './mcp-config/PasteConfigModal';
+import { ToolsPickerModal } from './mcp-config/ToolsPickerModal';
+import {
+  formatHeaders, headerSummary, hasTokenHeader, importServerSnippet, isLoopbackUrl, parseHeaders,
+} from './mcp-config/server-config';
 
 export default function MCPConfigPanel() {
   const [config, setConfig] = useState<MCPConfig>({ servers: [] });
@@ -22,12 +26,15 @@ export default function MCPConfigPanel() {
   const [editingKey, setEditingKey] = useState<string>('');
   const [editData, setEditData] = useState<Record<string, any>>({});
 
+  // 粘贴导入（自建发布的「查看配置」片段，含 X-MCP-Token）
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
+
   // 工具弹窗
   const [modalServer, setModalServer] = useState<MCPServerConfig | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [modalTools, setModalTools] = useState<MCPToolInfo[]>([]);
-  const [mcpSelectedTool, setMcpSelectedTool] = useState<string | null>(null);
   const [selectedToolNames, setSelectedToolNames] = useState<Set<string>>(new Set());
 
   const load = async () => {
@@ -58,12 +65,17 @@ export default function MCPConfigPanel() {
   };
 
   const handleAdd = () => {
-    setEditData({ name: '', url: '', enabled: true });
+    setEditData({ name: '', url: '', enabled: true, headersText: '', business_data: false });
     setEditingKey('__new__');
   };
 
   const handleEdit = (server: MCPServerConfig) => {
-    setEditData({ name: server.name, url: server.url, enabled: server.enabled, allowed_tools: server.allowed_tools });
+    setEditData({
+      name: server.name, url: server.url, enabled: server.enabled,
+      allowed_tools: server.allowed_tools,
+      headersText: formatHeaders(server.headers),
+      business_data: server.business_data === true,
+    });
     setEditingKey(server.name);
   };
 
@@ -75,6 +87,12 @@ export default function MCPConfigPanel() {
   const handleSaveRow = async () => {
     if (!editData.name?.trim()) { message.warning('请输入服务名称'); return; }
     if (!editData.url?.trim()) { message.warning('请输入 MCP URL'); return; }
+    // 请求头是令牌的唯一载体：解析失败必须拦住保存（否则「填了令牌却没生效」最难排查）
+    const parsed = parseHeaders(editData.headersText || '');
+    if (parsed.error) { message.error(parsed.error); return; }
+    const headers = parsed.headers;
+    // 显式落盘 true/false（缺省视为否）：只有「是」的服务才进「接口映射」的目标服务下拉
+    const businessData = editData.business_data === true;
     const isNew = editingKey === '__new__';
     let newConfig: MCPConfig;
     if (isNew) {
@@ -89,14 +107,21 @@ export default function MCPConfigPanel() {
             url: editData.url.trim(),
             enabled: editData.enabled !== false,
             allowed_tools: editData.allowed_tools,
-          },
+            headers,
+            business_data: businessData,
+          } as MCPServerConfig,
         ],
       };
     } else {
       newConfig = {
         servers: config.servers.map(s =>
           s.name === editingKey
-            ? { ...s, name: editData.name.trim(), url: editData.url.trim(), enabled: editData.enabled !== false, allowed_tools: editData.allowed_tools }
+            // headers 显式赋值：清空编辑框即删掉旧令牌（undefined 在序列化时被丢弃），不会留着旧凭据
+            ? {
+              ...s, name: editData.name.trim(), url: editData.url.trim(),
+              enabled: editData.enabled !== false, allowed_tools: editData.allowed_tools,
+              headers, business_data: businessData,
+            }
             : s
         ),
       };
@@ -105,6 +130,31 @@ export default function MCPConfigPanel() {
     setEditingKey('');
     setEditData({});
     await persistConfig(newConfig);
+  };
+
+  /**
+   * 导入自建发布「查看配置」片段（解析唯一实现在 server-config.importServerSnippet）。
+   * 已存在的同名服务**不覆盖**——那会静默改掉用户已配好的工具范围，改为提示去该行「编辑」。
+   */
+  const handleImportSnippet = async (text: string) => {
+    const { server, error } = importServerSnippet(text);
+    if (error || !server) { setPasteError(error || '导入失败'); return; }
+    if (config.servers.some(s => s.name === server.name)) {
+      setPasteError(`服务「${server.name}」已存在——导入不覆盖已有条目，请直接点该行「编辑」补请求头`);
+      return;
+    }
+    const newConfig: MCPConfig = {
+      servers: [...config.servers, { ...server, enabled: true } as MCPServerConfig],
+    };
+    setConfig(newConfig);
+    setPasteOpen(false);
+    setPasteError(null);
+    await persistConfig(newConfig);
+    message.success(`已导入 MCP 服务「${server.name}」${hasTokenHeader(server.headers) ? '（含令牌请求头）' : ''}`);
+    // 平台 Agent 在容器内，localhost 指向它自己——外部客户端的地址对 Agent 无效，必须提示
+    if (isLoopbackUrl(server.url)) {
+      message.warning('该地址是 localhost：外部 AI 客户端可用；本平台 Agent 在容器内连不到自己，请改用「查看配置」里的容器内地址');
+    }
   };
 
   const handleDelete = (server: MCPServerConfig) => {
@@ -129,7 +179,8 @@ export default function MCPConfigPanel() {
     setModalTools([]);
 
     try {
-      const result = await testMCPConnection(server.url);
+      // 必须带 headers：自建发布强制 X-MCP-Token，不带令牌的探针必然 401
+      const result = await testMCPConnection(server.url, server.headers);
       if (result.success) {
         const tools = result.tools || [];
         setModalTools(tools);
@@ -147,21 +198,13 @@ export default function MCPConfigPanel() {
     }
   };
 
-  const toggleTool = (name: string) => {
-    setSelectedToolNames(prev => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
   const handleConfirmTools = async () => {
     if (!modalServer) return;
     const allowed = Array.from(selectedToolNames);
     const newConfig = {
+      // 按 name 定位（与编辑/删除/启停同口径）：按 url 匹配会在「同 URL 多条目」时一起改掉
       servers: config.servers.map(s =>
-        s.url === modalServer.url
+        s.name === modalServer.name
           ? { ...s, allowed_tools: allowed.length > 0 ? allowed : undefined }
           : s
       ),
@@ -170,7 +213,6 @@ export default function MCPConfigPanel() {
     setModalServer(null);
     setModalError(null);
     setModalTools([]);
-    setMcpSelectedTool(null);
     await persistConfig(newConfig);
     message.success(allowed.length > 0 ? `已选择 ${allowed.length} 个工具` : '将注册全部工具');
   };
@@ -201,13 +243,35 @@ export default function MCPConfigPanel() {
         />
       );
     }
+    if (field === 'headers') {
+      return (
+        <Input
+          size="small"
+          value={editData.headersText || ''}
+          onChange={e => setEditData(p => ({...p, headersText: e.target.value}))}
+          className="bg-dark-bg border-dark-border text-text-primary font-mono"
+          placeholder='{"X-MCP-Token":"自建发布令牌"}'
+        />
+      );
+    }
+    if (field === 'business_data') {
+      return (
+        <Switch
+          size="small"
+          checked={editData.business_data === true}
+          checkedChildren="是"
+          unCheckedChildren="否"
+          onChange={v => setEditData(p => ({...p, business_data: v}))}
+        />
+      );
+    }
     return null;
   };
 
   // 数据源：加上新增空行
   const dataSource = config.servers.map(s => ({ ...s, _key: s.name }));
   if (editingKey === '__new__') {
-    dataSource.push({ name: '__new__', url: '', enabled: true } as any);
+    dataSource.push({ name: '__new__', url: '', enabled: true, headersText: '', business_data: false } as any);
   }
 
   const columns = [
@@ -226,11 +290,44 @@ export default function MCPConfigPanel() {
       title: 'URL',
       dataIndex: 'url',
       key: 'url',
-      width: 320,
+      width: 300,
       render: (v: string, r: MCPServerConfig) => {
         const cell = renderCell(v, r, 'url');
         if (cell) return cell;
         return <span className="text-text-secondary font-mono text-sm">{v}</span>;
+      },
+    },
+    {
+      // 请求头是自建发布令牌的唯一载体：非内置行可编辑；值一律掩码，明文令牌不进列表
+      title: '请求头',
+      key: 'headers',
+      width: 220,
+      render: (_: any, r: MCPServerConfig) => {
+        const cell = renderCell(null, r, 'headers');
+        if (cell) return cell;
+        if (!r.headers || Object.keys(r.headers).length === 0) {
+          return <span className="text-text-muted text-xs">—</span>;
+        }
+        return (
+          <span className="font-mono text-xs">
+            {hasTokenHeader(r.headers) && <Tag color="gold" className="m-0 mr-1">已带令牌</Tag>}
+            <span className="text-text-secondary">{headerSummary(r.headers)}</span>
+          </span>
+        );
+      },
+    },
+    {
+      // 是否业务数据：只有「是」的服务才进「接口映射 → 目标接口设置」的目标服务下拉
+      title: '业务数据',
+      key: 'business_data',
+      width: 100,
+      render: (_: any, r: MCPServerConfig) => {
+        const cell = renderCell(null, r, 'business_data');
+        if (cell) return cell;
+        if (r.builtin) return <span className="text-text-muted text-xs">—</span>;
+        return r.business_data === true
+          ? <Tag color="green" className="m-0">是</Tag>
+          : <Tag className="m-0">否</Tag>;
       },
     },
     {
@@ -246,7 +343,7 @@ export default function MCPConfigPanel() {
       key: 'actions',
       width: 240,
       render: (_: any, r: MCPServerConfig) => {
-        // 内置本体查询 MCP：默认配置，不可编辑/删除，始终启用
+        // 内置固定项（本体查询 MCP / 公共函数 MCP）：默认配置，不可编辑/停用/删除，始终启用并注册全部工具
         if (r.builtin) {
           return <Tag>默认配置</Tag>;
         }
@@ -287,10 +384,25 @@ export default function MCPConfigPanel() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold text-text-primary">MCP 配置</h3>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增 MCP 服务</Button>
+        <Space>
+          <Button
+            icon={<ImportOutlined />}
+            onClick={() => { setPasteError(null); setPasteOpen(true); }}
+          >
+            粘贴配置
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增 MCP 服务</Button>
+        </Space>
       </div>
       <p className="text-text-muted text-xs mb-3">
         配置 MCP 服务，Agent 将自动发现并注册其工具。
+        <span className="text-accent-blue">本体查询 MCP</span> 与 <span className="text-accent-blue">公共函数 MCP</span>
+        是内置固定项（默认配置：恒启用、注册全部工具，不可编辑 / 停用 / 删除）。
+        自建发布（动态容器）对外强制令牌：点「粘贴配置」导入「查看配置」片段，或在新增/编辑时于
+        <span className="text-accent-blue">请求头</span>填
+        <code className="text-yellow-400"> {'{"X-MCP-Token":"…"}'}</code>（令牌见 MCP发布 的「查看配置」）。
+        <span className="text-accent-blue">业务数据</span>列标记该服务是否提供业务数据——只有「是」的服务
+        才会出现在「接口映射 → 目标接口设置」的目标服务下拉里（本体查询 / 公共函数等非业务数据服务留「否」）。
       </p>
 
       <Table
@@ -308,77 +420,25 @@ export default function MCPConfigPanel() {
         )}}
       />
 
-      {/* 选择工具弹窗 */}
-      <Modal
-        title={`MCP 工具列表 - ${modalServer?.name || ''}`}
-        open={!!modalServer}
-        onCancel={() => { setModalServer(null); setModalError(null); setModalTools([]); setMcpSelectedTool(null); }}
-        footer={
-          !modalLoading && !modalError && modalTools.length > 0 ? (
-            <div className="flex items-center justify-between">
-              <span className="text-text-muted text-xs">
-                {selectedToolNames.size === 0
-                  ? '当前未选择任何工具，将注册全部工具'
-                  : `已选择 ${selectedToolNames.size}/${modalTools.length} 个工具，仅注册选中的工具`}
-              </span>
-              <Button type="primary" onClick={handleConfirmTools}>确认</Button>
-            </div>
-          ) : null
-        }
-        width={650}
-      >
-        {modalLoading ? (
-          <p className="text-text-muted text-sm py-8 text-center">正在连接 MCP 服务...</p>
-        ) : modalError ? (
-          <p className="text-red-400 text-sm py-4">连接失败: {modalError}</p>
-        ) : modalTools.length === 0 ? (
-          <p className="text-text-muted text-sm py-8 text-center">暂无工具信息</p>
-        ) : (
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Button size="small" onClick={() => setSelectedToolNames(new Set(modalTools.map(t => t.name)))}>全选</Button>
-              <Button size="small" onClick={() => setSelectedToolNames(new Set())}>取消全选</Button>
-              <span className="text-text-muted text-xs ml-2">勾选需要注册给 Agent 的工具，不勾选则注册全部</span>
-            </div>
-            <div className="max-h-96 overflow-y-auto -mx-6 -mb-4 px-6 pb-4">
-              {modalTools.map(t => {
-                const selected = mcpSelectedTool === t.name;
-                const props = t.inputSchema?.properties || {};
-                const required = t.inputSchema?.required || [];
-                const checked = selectedToolNames.has(t.name);
-                return (
-                <div key={t.name}>
-                  <div className="py-3 border-b border-dark-border last:border-b-0 cursor-pointer hover:bg-dark-hover -mx-6 px-6 flex items-start gap-3" {...clickableProps(() => setMcpSelectedTool(selected ? null : t.name), `${t.name} 工具详情`)}>
-                    <div className="pt-0.5" {...checkboxProps(checked, () => toggleTool(t.name), `注册工具 ${t.name}`)}>
-                      <div className={`w-4 h-4 rounded border ${checked ? 'bg-accent-blue border-accent-blue' : 'bg-white border-gray-300'} flex items-center justify-center transition-colors`}>
-                        {checked && <span className="text-white text-xs leading-none">✓</span>}
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-text-primary text-sm font-medium">{t.name}</div>
-                      <div className="text-text-muted text-xs mt-0.5">{t.description}</div>
-                      {Object.keys(props).length > 0 && <div className="text-accent-blue text-xs mt-1">{Object.keys(props).length} 个参数 {selected ? '▲' : '▼'}</div>}
-                    </div>
-                  </div>
-                  {selected && Object.keys(props).length > 0 && (
-                    <div className="px-6 py-2 bg-dark-bg border-b border-dark-border space-y-1.5">
-                      {Object.entries(props).map(([k, v]: any) => (
-                        <div key={k} className="flex items-start gap-2 text-xs">
-                          <span className="text-yellow-400 font-mono shrink-0 w-28">{k}</span>
-                          <span className="text-text-muted shrink-0">({v.type || 'any'})</span>
-                          {required.includes(k) && <span className="text-red-400 shrink-0">*必填</span>}
-                          {v.description && <span className="text-text-secondary">— {v.description}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* 粘贴配置弹窗（自建发布令牌的快捷导入入口） */}
+      <PasteConfigModal
+        open={pasteOpen}
+        error={pasteError}
+        onCancel={() => { setPasteOpen(false); setPasteError(null); }}
+        onImport={handleImportSnippet}
+      />
+
+      {/* 选择工具弹窗（选择状态在容器，展开态在组件内） */}
+      <ToolsPickerModal
+        server={modalServer}
+        loading={modalLoading}
+        error={modalError}
+        tools={modalTools}
+        selected={selectedToolNames}
+        onSelectionChange={setSelectedToolNames}
+        onConfirm={handleConfirmTools}
+        onClose={() => { setModalServer(null); setModalError(null); setModalTools([]); }}
+      />
     </div>
   );
 }

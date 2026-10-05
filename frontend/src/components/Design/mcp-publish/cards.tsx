@@ -3,14 +3,19 @@
 /**
  * MCP发布页的两类卡片（展示组件，状态与副作用全由容器 MCPPublish 持有）：
  * - FixedServiceCard：平台固定服务（compose 常驻），启停 + 查看配置 + 查看工具；
+ *   **传输模式只对「对外」工具面展示**——两个内网执行底座（本体函数执行 8006 / 数据引擎执行 8005）
+ *   是平台自己的运行时，不暴露传输细节；
  * - PublishedServiceCard：自建发布（动态容器），启停/删除/查看客户端配置。
+ *
+ * **刷新不在卡片上**：两块（固定发布 / 自建发布）的刷新一律由区块右上角的那一个按钮承担，
+ * 卡片只做「单张服务」的查看与启停——两块同构，避免同一动作两处入口。
  *
  * 全部文案与端点来自 `catalog.ts`（固定服务声明的唯一来源）。
  */
 import { Button, Tag } from 'antd';
 import type { PublishedService } from '@/api/client';
 import type { CardState, FixedServiceDef } from './catalog';
-import { KIND_LABEL, TRANSPORT_LABEL } from './catalog';
+import { FIXED_TRANSPORT_LABEL, KIND_LABEL, TRANSPORT_LABEL } from './catalog';
 
 interface FixedCardProps {
   def: FixedServiceDef;
@@ -18,11 +23,10 @@ interface FixedCardProps {
   host: string;
   onOpenConfig: (def: FixedServiceDef) => void;
   onToggle: (def: FixedServiceDef) => void;
-  onRefresh: () => void;
   onShowTools: (def: FixedServiceDef) => void;
 }
 
-export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onRefresh, onShowTools }: FixedCardProps) {
+export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onShowTools }: FixedCardProps) {
   return (
     <div className="bg-dark-card border border-dark-border rounded-lg p-5 w-96 flex flex-col">
       <div className="flex items-start justify-between mb-3 gap-2">
@@ -42,6 +46,11 @@ export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onRe
       </div>
       <div className="text-xs text-text-muted space-y-1 mb-4 flex-1">
         <div>端点：<code className="text-yellow-400 break-all">{def.endpoint.replace('{host}', host)}</code></div>
+        {/* 传输模式只对**对外工具面**展示：两个内网执行底座（本体函数执行 8006 / 数据引擎执行 8005）
+            是平台自己的运行时，摆出传输细节只会让人误以为可以直接连 */}
+        {def.exposure === '对外' && (
+          <div>传输模式：<span className="text-text-secondary">{FIXED_TRANSPORT_LABEL[def.transport]}</span></div>
+        )}
         {def.publishTools ? (
           <div className="flex items-center gap-2">
             <span>可用工具：</span>
@@ -52,8 +61,11 @@ export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onRe
               </Button>
             )}
           </div>
-        ) : (
+        ) : def.transport === 'none' ? (
           <div className="text-text-muted">零工具：不发布任何 MCP 工具，只提供内部执行端点</div>
+        ) : (
+          // 数据引擎执行服务不是"零工具"：它有 /mcp 工具面（已就绪行为），只是仅内网、不对外
+          <div className="text-text-muted">工具面仅内网（供平台 Agent 挂载），不对外提供</div>
         )}
         <div className="leading-relaxed">{def.role}</div>
       </div>
@@ -67,7 +79,6 @@ export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onRe
         >
           {card.running ? '停止' : '启动'}
         </Button>
-        <Button onClick={onRefresh}>刷新</Button>
       </div>
     </div>
   );
@@ -76,18 +87,20 @@ export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onRe
 interface PublishedCardProps {
   svc: PublishedService;
   host: string;
+  /** 列表读取中（区块「刷新」/ 首屏加载）：状态位显示「检查中...」——与固定卡片同一套反馈 */
+  checking?: boolean;
   onShowConfig: (svc: PublishedService) => void;
   onToggle: (svc: PublishedService) => void;
   onRemove: (svc: PublishedService) => void;
 }
 
-export function PublishedServiceCard({ svc, host, onShowConfig, onToggle, onRemove }: PublishedCardProps) {
+export function PublishedServiceCard({ svc, host, checking, onShowConfig, onToggle, onRemove }: PublishedCardProps) {
   return (
     <div className="bg-dark-card border border-dark-border rounded-lg p-5 w-96">
       <div className="flex items-center justify-between mb-3">
         <span className="text-text-primary text-sm font-semibold">{svc.name}</span>
-        <Tag color={svc.running ? 'success' : 'default'} className="m-0">
-          {svc.running ? '运行中' : svc.status === 'not_found' ? '容器缺失' : '已停止'}
+        <Tag color={!checking && svc.running ? 'success' : 'default'} className="m-0">
+          {checking ? '检查中...' : svc.running ? '运行中' : svc.status === 'not_found' ? '容器缺失' : '已停止'}
         </Tag>
       </div>
       <div className="text-xs text-text-muted space-y-1 mb-4">

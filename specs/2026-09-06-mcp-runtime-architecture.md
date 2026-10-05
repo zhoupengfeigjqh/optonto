@@ -48,7 +48,7 @@
 
 | 旧名 | 新名 | 职责 |
 |---|---|---|
-| optonto-mcp | **optonto-ontology-query-mcp** | 本体查询面：list 查询（只读，唯一内置对外工具面） |
+| optonto-mcp | **optonto-ontology-query-mcp** | 本体查询面：list 查询（只读，内置对外工具面之一） |
 | optonto-mcp | **optonto-ontology-function-executor** | 本体函数执行面：函数/公共函数本地执行（零工具，仅内网） |
 | —（新服务） | **optonto-data-engine-executor** | 映射执行面：行为工具发布、前后翻译、MCP 分发 |
 | —（新服务） | **optonto-business-mcp** | 业务集成面：业务 REST 包装为 MCP 工具 |
@@ -183,7 +183,7 @@ target:
 
 | # | 需求 | 实现 |
 |---|---|---|
-| 1 | 目标接口=下拉选已配置 MCP 服务 | 数据源 `GET /agent-api/mcp-config`（已有）；选中即解析 URL 落盘 |
+| 1 | 目标接口=下拉选已配置 MCP 服务 | 数据源 `GET /agent-api/mcp-config`（已有）；选中即解析 URL 落盘。**2026-10-05 收紧**：只列「非内置固定项 + 已启用 + `business_data: true`」的服务——`business_data`（是否业务数据，缺省=否）在「MCP 配置」页维护，避免本体查询 / 公共函数 / 图表类服务混进映射目标 |
 | 2 | 接口地址=选该服务下的函数 | 对该服务 `listTools` 拉清单做二级下拉（复用 `/mcp-config/test` 逻辑拆只读端点） |
 | 3 | 删除方法选择 | engine_type=MCP 后无意义，schema+前端同删 |
 | 4 | 删除复制本体参数 | schema 自动提取后无此需求 |

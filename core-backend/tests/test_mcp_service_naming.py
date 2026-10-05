@@ -83,12 +83,16 @@ class FixedServiceRegistryCase(unittest.TestCase):
         self.assertEqual(_container_name("business"), "optonto-business-mcp")
 
     def test_白名单外的键仍被拒(self):
-        """第一层防护不变：docker.sock 等价宿主机 root，收不到任意容器名。"""
-        from fastapi import HTTPException
+        """第一层防护不变：docker.sock 等价宿主机 root，收不到任意容器名。
+
+        2026-10-05：错误出口由 HTTPException 统一为领域异常（章程 II），
+        语义不变——仍是 404（NotFoundError.status_code == 404）。
+        """
+        from errors import NotFoundError
         from routers.mcp_ctl import _container_name
         for bad in ("published", "unknown", "ontology-mcp", "optonto-mysql", ""):
             with self.subTest(bad=bad):
-                with self.assertRaises(HTTPException) as err:
+                with self.assertRaises(NotFoundError) as err:
                     _container_name(bad)
                 self.assertEqual(err.exception.status_code, 404)
 

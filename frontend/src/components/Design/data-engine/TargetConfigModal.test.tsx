@@ -26,9 +26,11 @@ import { selectOption, openSelect, optionTexts, clickOption } from '@/test/antd'
 import { emptyTarget } from './data-engine-helpers';
 
 const servers = [
-  { name: '业务系统', url: 'http://biz:8004/mcp', enabled: true, builtin: false, headers: { Authorization: 'Bearer x' } },
-  { name: '内置服务', url: 'http://builtin:9000/mcp', enabled: true, builtin: true },
-  { name: '已停用服务', url: 'http://off:9000/mcp', enabled: false, builtin: false },
+  { name: '业务系统', url: 'http://biz:8004/mcp', enabled: true, builtin: false, business_data: true, headers: { Authorization: 'Bearer x' } },
+  { name: '内置服务', url: 'http://builtin:9000/mcp', enabled: true, builtin: true, business_data: true },
+  { name: '已停用服务', url: 'http://off:9000/mcp', enabled: false, builtin: false, business_data: true },
+  // 未标记为业务数据（如本体查询 / 公共函数 / 图表类）：不进映射目标下拉
+  { name: '非业务数据服务', url: 'http://chart:9000/mcp', enabled: true, builtin: false },
 ];
 
 const tools = [
@@ -105,14 +107,15 @@ describe('TargetConfigModal — 属性传递', () => {
     expect(screen.getByText(/目标接口设置 - 查询库存/)).toBeInTheDocument();
   });
 
-  it('服务下拉只列出手工（非内置）且启用的服务', async () => {
+  it('服务下拉只列出手工（非内置）+ 已启用 + 标记为「业务数据=是」的服务', async () => {
     setup();
     await waitFor(() => expect(vi.mocked(agentApi.getMCPConfig)).toHaveBeenCalled());
     openSelect(0);
     const texts = optionTexts().join(' | ');
     expect(texts).toContain('业务系统');
-    expect(texts).not.toContain('内置服务');
-    expect(texts).not.toContain('已停用服务');
+    expect(texts).not.toContain('内置服务');        // 内置固定项不作映射目标
+    expect(texts).not.toContain('已停用服务');      // 停用
+    expect(texts).not.toContain('非业务数据服务');  // 未标记业务数据（2026-10-05 新增条件）
   });
 
   it('回显初值：已配 server_url + tool_name 时拉取工具清单并选中', async () => {
@@ -244,7 +247,7 @@ describe('TargetConfigModal — 边界条件', () => {
 
   it('切换服务时清空已选工具并重新拉取该服务的工具清单', async () => {
     setup({
-      serversList: [...servers, { name: '服务B', url: 'http://b2:8004/mcp', enabled: true, builtin: false }],
+      serversList: [...servers, { name: '服务B', url: 'http://b2:8004/mcp', enabled: true, builtin: false, business_data: true }],
     });
     await pickServerAndTool();
     expect(vi.mocked(agentApi.listMCPTools)).toHaveBeenCalledTimes(1);

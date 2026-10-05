@@ -58,7 +58,7 @@ export const stopMcp = (service: McpServiceKey = 'ontology-query') =>
 
 /** 发布类型：本体函数（转发本体函数执行服务）/ 本体行为（转发数据引擎执行服务） */
 export type PublishKind = 'ontology_function' | 'behavior';
-/** 传输模式：http-streamable（单端点 /mcp）/ sse（双通道 /sse + /messages/） */
+/** 传输模式：streamable-http（单端点 /mcp）/ sse（双通道 /sse + /messages/） */
 export type PublishTransport = 'streamable' | 'sse';
 
 export interface PublishedService {
@@ -113,9 +113,17 @@ export const stopPublished = (name: string) =>
 export const deletePublished = (name: string) =>
   request<{ message: string; name: string }>(`/api/mcp/published/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
+/** 可粘贴连接片段：`{"mcpServers": {"<名字>": {"type":"url","url":"…","headers":{"X-MCP-Token":"…"}}}}` */
+export type McpClientSnippet = Record<string, { type: string; url: string; headers: Record<string, string> }>;
+
 /** 生成可直接粘进「MCP配置」的客户端配置片段（host 省略时用占位符） */
 export const getPublishedClientConfig = (name: string, host?: string) =>
-  request<{ mcpServers: Record<string, { type: string; url: string; headers: Record<string, string> }> }>(
+  request<{
+    /** 宿主地址：给平台外的 AI 客户端（Claude / Cursor 等） */
+    mcpServers: McpClientSnippet;
+    /** 容器内地址（容器名 + 容器内端口）：给本平台 Agent——它在容器里，localhost 指向自己 */
+    internal_mcpServers?: McpClientSnippet;
+  }>(
     `/api/mcp/published/${encodeURIComponent(name)}/client-config${host ? `?host=${encodeURIComponent(host)}` : ''}`,
   );
 

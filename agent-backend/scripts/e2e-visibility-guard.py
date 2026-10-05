@@ -5,7 +5,7 @@
 A. 把 business-mcp 手工配进 mcp-config + 在某本体 data_engines 配一条 engine_type=MCP 映射后，
    Agent 工具发现日志出现"收编隐藏 N 个已映射原始工具"（原始工具对 Agent 不可见，行为工具是唯一入口）
 B. 设计期探针 /mcp-config/test 不受收编影响（仍列出 business-mcp 全部 8 个工具——映射页要靠它取 schema）
-C. 收编不碰内置服务：本体MCP/数据引擎MCP 日志无"收编隐藏"
+C. 收编不碰内置固定项：本体查询MCP/公共函数MCP 日志无"收编隐藏"
 
 全程可逆：data_engines.yaml 先备份后恢复；mcp-config 还原为进入时状态。
 """
@@ -112,9 +112,11 @@ try:
     check('业务系统MCP 发现 8 工具且收编隐藏 ≥1 个已映射原始工具',
           any('发现 8 个工具' in l and (m := _re.search(r'收编隐藏 (\d+) 个', l)) and int(m.group(1)) >= 1
               for l in biz_lines))
-    # C: 内置服务永不收编
-    builtin_hidden = [l for l in logs.splitlines() if ('本体MCP' in l or '数据引擎MCP' in l) and '收编隐藏' in l]
-    check('内置服务（本体MCP/数据引擎MCP）无收编隐藏', not builtin_hidden)
+    # C: 内置固定项永不收编（本体查询MCP / 公共函数MCP，2026-10-05 起并列内置）
+    builtin_hidden = [l for l in logs.splitlines()
+                      if ('本体查询MCP' in l or '本体MCP' in l or '公共函数MCP' in l)
+                      and '收编隐藏' in l]
+    check('内置固定项（本体查询MCP/公共函数MCP）无收编隐藏', not builtin_hidden)
     check('对话有 done 收尾', any(e.get('type') == 'done' for e in evts))
 finally:
     BAK.replace(ENGINES_YAML)

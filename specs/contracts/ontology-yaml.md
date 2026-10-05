@@ -154,6 +154,15 @@
 - `status` 属性：至多一个；存在则必须 `type=string` 且枚举非空 → 否则 400。
 - `from_status`/`to_status`：两者均为空则跳过；非空时必须落在关联概念 status 属性的枚举内 → 否则 400。
 - 规则 `related_functions` 中的函数名必须存在于 本体函数 ∪ 公共函数 → 否则 400。
+- 关系（2026-10-05 补齐）：`source` / `target` 必须是本体内已存在的概念；非空的
+  `source_attr` / `target_attr` 必须是对应概念已定义的属性 → 否则 400。
+- 流程（2026-10-05 补齐）：步骤 `current_action` 非空且必须命中本体内已存在的行为；
+  `previous_action` 非空时同理 → 否则 400。
+- 函数（2026-10-05 补齐）：`related_concepts` 中的概念必须存在于本体 → 否则 400。
+
+> 校验归属铁律不变：**值域类**非法值由 Pydantic validator 静默归一（不报错）；
+> **跨字段强耦合**类由业务层 `services/validators.py` 抛 `errors.InvalidInputError` → 400
+> （不可放 Pydantic：请求体校验失败会被全局处理器映射为 422，造成 400/422 契约分裂）。
 
 | # | 场景 | 期望 |
 | :-: | :-- | :-- |

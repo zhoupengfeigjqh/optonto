@@ -61,6 +61,14 @@ export default defineConfig({
         'src/components/Design/behavior-op-type.ts',
         'src/components/Design/mcp-publish/readiness.ts',
         'src/components/Design/mcp-publish/config-snippets.ts',
+        // 2026-10-05 MCP 发布分页栅格（固定发布 / 自建发布两块共用，一页最多 6 个）
+        'src/components/Design/mcp-publish/ServiceGrid.tsx',
+        // 2026-10-05 MCP 配置页纯逻辑（请求头解析/掩码、自建发布配置片段导入）
+        'src/components/Design/mcp-config/server-config.ts',
+        // 2026-10-05 固定服务传输模式与客户端 type 映射（卡片展示 + 配置片段的唯一来源）
+        'src/components/Design/mcp-publish/catalog.ts',
+        // 2026-10-05 MCP 工具清单弹窗（自 MCPConfig.tsx 抽出以满足 500 行约束）
+        'src/components/Design/mcp-config/ToolsPickerModal.tsx',
       ],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**'],
       thresholds: {

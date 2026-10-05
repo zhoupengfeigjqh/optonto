@@ -4,11 +4,14 @@
 不直接 open / Path.write_text / shutil。
 """
 
+import hashlib
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from config import ONTO_MARKET_DIR
+from errors import InternalError
 from repositories import fs_store
 from schemas import DataEngineItem, OntologyData, SecurityItem
 
@@ -46,7 +49,7 @@ def slice_yaml_sections(text: str, keep: list[str]) -> str:
     return "\n".join(kept) if kept else text
 
 
-def _get_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
+def get_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
     """Get the directory path for an ontology's YAML files."""
     return ONTO_MARKET_DIR / scenario_name / ontology_name
 
@@ -58,7 +61,7 @@ def _get_data_engines_path(scenario_name: str, ontology_name: str) -> Path:
     职责不同、变更频率不同，单独存放；ontology.yaml 中的 data_engines 段仅作
     迁移前的读时兼容回退，保存后固定清空（单一权威来源，防双写漂移）。
     """
-    return _get_ontology_dir(scenario_name, ontology_name) / "data_engines.yaml"
+    return get_ontology_dir(scenario_name, ontology_name) / "data_engines.yaml"
 
 
 def _get_securities_path(scenario_name: str, ontology_name: str) -> Path:
@@ -69,27 +72,27 @@ def _get_securities_path(scenario_name: str, ontology_name: str) -> Path:
     自动同步行为增删并刷新 display_name/op_type 快照；ontology.yaml 中的
     securities 段仅作迁移前的读时兼容回退，保存后固定清空（单一权威来源）。
     """
-    return _get_ontology_dir(scenario_name, ontology_name) / "securities.yaml"
+    return get_ontology_dir(scenario_name, ontology_name) / "securities.yaml"
 
 
-def _get_yaml_path(scenario_name: str, ontology_name: str) -> Path:
+def get_yaml_path(scenario_name: str, ontology_name: str) -> Path:
     """Get the path to the ontology YAML file."""
-    return _get_ontology_dir(scenario_name, ontology_name) / "ontology.yaml"
+    return get_ontology_dir(scenario_name, ontology_name) / "ontology.yaml"
 
 
-def _get_functions_dir(scenario_name: str, ontology_name: str) -> Path:
+def get_functions_dir(scenario_name: str, ontology_name: str) -> Path:
     """Get the directory for function code files."""
-    return _get_ontology_dir(scenario_name, ontology_name) / "functions"
+    return get_ontology_dir(scenario_name, ontology_name) / "functions"
 
 
 def ensure_functions_dir(scenario_name: str, ontology_name: str) -> Path:
     """Ensure the functions directory exists and return its path."""
-    return fs_store.ensure_dir(_get_functions_dir(scenario_name, ontology_name))
+    return fs_store.ensure_dir(get_functions_dir(scenario_name, ontology_name))
 
 
 def ensure_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
     """Ensure the ontology directory exists and return its path."""
-    return fs_store.ensure_dir(_get_ontology_dir(scenario_name, ontology_name))
+    return fs_store.ensure_dir(get_ontology_dir(scenario_name, ontology_name))
 
 
 def _load_data_engines_file(scenario_name: str, ontology_name: str) -> Optional[list[DataEngineItem]]:
@@ -153,7 +156,7 @@ def _sync_securities_roster(data: OntologyData) -> list[SecurityItem]:
 
 def _load_ontology_data_uncached(scenario_name: str, ontology_name: str) -> OntologyData:
     """读盘 + 解析（load_ontology_data 的缓存未命中路径）。"""
-    yaml_path = _get_yaml_path(scenario_name, ontology_name)
+    yaml_path = get_yaml_path(scenario_name, ontology_name)
     if fs_store.exists(yaml_path):
         raw = fs_store.read_yaml_strict(yaml_path) or {}
         data = OntologyData(**raw)
@@ -192,7 +195,7 @@ def load_ontology_data(scenario_name: str, ontology_name: str) -> OntologyData:
     必须隔离缓存原件，否则未保存的修改会污染缓存。
     """
     key = (scenario_name, ontology_name)
-    yaml_mtime = _mtime_ns(_get_yaml_path(scenario_name, ontology_name))
+    yaml_mtime = _mtime_ns(get_yaml_path(scenario_name, ontology_name))
     engines_mtime = _mtime_ns(_get_data_engines_path(scenario_name, ontology_name))
     securities_mtime = _mtime_ns(_get_securities_path(scenario_name, ontology_name))
     hit = _ontology_cache.get(key)
@@ -228,7 +231,7 @@ def _stamp_identity_metadata(data: OntologyData, scenario_name: str, ontology_na
 
 def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyData) -> None:
     """Save ontology data to YAML file."""
-    yaml_path = _get_yaml_path(scenario_name, ontology_name)
+    yaml_path = get_yaml_path(scenario_name, ontology_name)
     ensure_ontology_dir(scenario_name, ontology_name)
 
     _stamp_identity_metadata(data, scenario_name, ontology_name)
@@ -259,13 +262,13 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
 
 def read_yaml_raw(scenario_name: str, ontology_name: str) -> Optional[str]:
     """Read YAML file content as raw string."""
-    return fs_store.read_text_if_exists(_get_yaml_path(scenario_name, ontology_name))
+    return fs_store.read_text_if_exists(get_yaml_path(scenario_name, ontology_name))
 
 
 def write_yaml_raw(scenario_name: str, ontology_name: str, content: str) -> None:
     """Write raw YAML string to file, then parse and return the structured data."""
     ensure_ontology_dir(scenario_name, ontology_name)
-    fs_store.write_text(_get_yaml_path(scenario_name, ontology_name), content)
+    fs_store.write_text(get_yaml_path(scenario_name, ontology_name), content)
     _invalidate_ontology_cache(scenario_name, ontology_name)
 
 
@@ -274,7 +277,7 @@ def write_yaml_raw(scenario_name: str, ontology_name: str, content: str) -> None
 
 def _get_ontology_versions_dir(scenario_name: str, ontology_name: str) -> Path:
     """获取本体版本存档目录路径（与 ontology.yaml 同级的 ontology_versions/）。"""
-    return _get_ontology_dir(scenario_name, ontology_name) / "ontology_versions"
+    return get_ontology_dir(scenario_name, ontology_name) / "ontology_versions"
 
 
 def _get_version_dir(scenario_name: str, ontology_name: str, version: str) -> Path:
@@ -351,7 +354,7 @@ def copy_ontology_to_deploy(scenario_name: str, ontology_name: str, version: str
     if not fs_store.exists(vdir):
         raise FileNotFoundError(f"版本目录不存在: {vdir}")
 
-    deploy_dir = fs_store.ensure_dir(_get_ontology_dir(scenario_name, ontology_name))
+    deploy_dir = fs_store.ensure_dir(get_ontology_dir(scenario_name, ontology_name))
 
     for fname in ("ontology.yaml", "securities.yaml", "data_engines.yaml"):
         fs_store.copy_file(vdir / fname, deploy_dir / fname)
@@ -366,14 +369,14 @@ def backup_deploy_to_version(scenario_name: str, ontology_name: str, version: st
         return
     vdir = fs_store.ensure_dir(_get_version_dir(scenario_name, ontology_name, version))
 
-    deploy_dir = _get_ontology_dir(scenario_name, ontology_name)
+    deploy_dir = get_ontology_dir(scenario_name, ontology_name)
     for fname in ("ontology.yaml", "securities.yaml", "data_engines.yaml"):
         fs_store.copy_file(deploy_dir / fname, vdir / fname)
 
 
 def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dict]:
     """List all YAML files in the ontology directory."""
-    dir_path = _get_ontology_dir(scenario_name, ontology_name)
+    dir_path = get_ontology_dir(scenario_name, ontology_name)
     files = []
     for f in sorted(fs_store.list_dir(dir_path)):
         if f.is_file() and f.suffix in (".yaml", ".yml"):
@@ -383,3 +386,49 @@ def list_ontology_yaml_files(scenario_name: str, ontology_name: str) -> list[dic
 
 # 函数执行器（build_restricted_globals / run 入口）已迁至 mcp-shared/function_runner.py，
 # 由 ontology-mcp 本地执行；core 仅保留保存期静态校验 _validate_function_code（routers/functions.py）。
+
+
+# ─── 接口层可用的本体文件原语（本模块 = 本体领域存储出口；router MUST NOT 直连 repositories）───
+
+
+def ontology_yaml_text(scenario_name: str, ontology_name: str) -> Optional[str]:
+    """部署 ontology.yaml 的原始文本；文件不存在返回 None。"""
+    return fs_store.read_text_if_exists(get_yaml_path(scenario_name, ontology_name))
+
+
+def read_ontology_yaml_dict(scenario_name: str, ontology_name: str) -> dict:
+    """部署 ontology.yaml 解析为 dict（不存在 / 非映射 → 空 dict）。"""
+    path = get_yaml_path(scenario_name, ontology_name)
+    if not fs_store.exists(path):
+        return {}
+    raw = fs_store.read_yaml(path)
+    return raw if isinstance(raw, dict) else {}
+
+
+def write_ontology_yaml_dict(scenario_name: str, ontology_name: str, raw: dict) -> None:
+    """写回部署 ontology.yaml（仅用于 metadata 级改动，如 deployed_version）。"""
+    fs_store.write_yaml(get_yaml_path(scenario_name, ontology_name), raw)
+
+
+def deployed_version_of(scenario_name: str, ontology_name: str) -> str:
+    """当前部署版本（``ontology.yaml.metadata.deployed_version``）；无则空串。"""
+    meta = read_ontology_yaml_dict(scenario_name, ontology_name).get("metadata")
+    return str(meta.get("deployed_version") or "") if isinstance(meta, dict) else ""
+
+
+def ontology_yaml_updated_at(scenario_name: str, ontology_name: str) -> str:
+    """部署 ontology.yaml 的最后修改时间（``%Y-%m-%d %H:%M:%S``）；文件缺失 → 500。"""
+    path = get_yaml_path(scenario_name, ontology_name)
+    if not fs_store.exists(path):
+        raise InternalError("本体文件不存在")
+    return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def files_fingerprint(paths) -> str:
+    """多文件内容指纹（sha256 前 16 位）——分片合并的幂等判据。"""
+    return hashlib.sha256(b"".join(fs_store.read_bytes(p) for p in paths)).hexdigest()[:16]
+
+
+def parse_yaml_text(text: str):
+    """解析 YAML 文本（YAML 格式口径唯一实现 = repositories.fs_store）。"""
+    return fs_store.parse_yaml(text)

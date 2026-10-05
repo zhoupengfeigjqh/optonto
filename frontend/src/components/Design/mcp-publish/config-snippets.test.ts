@@ -15,6 +15,13 @@ describe('staticServiceConfig', () => {
     expect(c!.json).toContain('http://example.com:8007/mcp');
   });
 
+  it('片段 type 取客户端认的取值 http（不是自造的 url）', () => {
+    const json = staticServiceConfig(byKey('ontologyQuery'), 'h')!.json;
+    expect(json).toContain('"type": "http"');
+    expect(json).not.toContain('"type": "url"');
+    expect(staticServiceConfig(byKey('commonFunction'), 'h')!.json).toContain('"type": "http"');
+  });
+
   it('执行底座只给内网端点；8006 端点清单不含已迁移的公共函数端点', () => {
     const fe = staticServiceConfig(byKey('functionExecutor'), 'h')!;
     expect(fe.json).toContain('/execute-function');

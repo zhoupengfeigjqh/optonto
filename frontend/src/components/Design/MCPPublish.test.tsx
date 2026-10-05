@@ -1,8 +1,9 @@
 /**
  * MCPPublish 容器单测（章程 III：属性传递 / 事件触发 / 边界条件）。
  *
- * 该组件拆分后只做「固定服务状态编排 + 自建发布 CRUD + 弹窗开关」，
- * 因此测试聚焦：五张固定卡片渲染、自建发布空态与卡片渲染、打开新建弹窗时拉取本体清单。
+ * 该组件拆分后只做「两块视图切换（固定发布 / 自建发布）+ 固定服务状态编排
+ * + 自建发布 CRUD + 弹窗开关 + 分页」，因此测试聚焦：
+ * 五张固定卡片、切换后自建发布空态/卡片、打开新建弹窗时拉取本体清单、超过 6 个时分页。
  * 依赖 API 一律打桩（章程：测试禁止真实网络）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -37,6 +38,10 @@ const publishedSvc = {
   token: 'tk', container_name: 'c', created_at: '', status: 'running', running: true,
 };
 
+/** 右上角切换按钮（antd Segmented 渲染为 radiogroup，项即 radio） */
+const switchTo = (view: '固定发布' | '自建发布') =>
+  fireEvent.click(screen.getByRole('radio', { name: new RegExp(`^${view}`) }));
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.getMcpStatus).mockResolvedValue({ status: 'running', running: true, container: 'c' } as any);
@@ -51,7 +56,7 @@ beforeEach(() => {
 });
 
 describe('MCPPublish', () => {
-  it('渲染五张固定服务卡片与自建发布空态', async () => {
+  it('默认展示「固定发布」块：五张固定服务卡片；两块互斥（未见自建发布内容）', async () => {
     render(<MCPPublish ontologyId={1} />);
     await waitFor(() => expect(api.listPublished).toHaveBeenCalled());
 
@@ -59,18 +64,94 @@ describe('MCPPublish', () => {
     for (const title of ['本体查询 MCP 服务', '公共函数 MCP 服务', '本体函数执行服务', '数据引擎执行服务', '业务系统 MCP']) {
       expect(screen.getAllByText(title).length).toBeGreaterThan(0);
     }
-    expect(screen.getByText(/还没有自建发布/)).toBeTruthy();
+    // 固定块不渲染自建发布：空态与新建入口都不在
+    expect(screen.queryByText(/还没有自建发布/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /新建发布/ })).toBeNull();
+    // 刷新只在区块右上角一个（5 张卡片不再各带一个刷新按钮），与自建发布同构。
+    // 名字用非锚定正则：antd 对「两个汉字」按钮会插空格，loading 时还会带上图标名，故只匹配关键字
+    expect(screen.getAllByRole('button', { name: /刷\s*新/ })).toHaveLength(1);
+  });
+
+  it('切换到「自建发布」显示空态与新建入口', async () => {
+    render(<MCPPublish ontologyId={1} />);
+    await waitFor(() => expect(api.listPublished).toHaveBeenCalled());
+
+    switchTo('自建发布');
+    expect(await screen.findByText(/还没有自建发布/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新建发布/ })).toBeTruthy();
+    // 固定卡片已随视图隐藏
+    expect(screen.queryByText('数据引擎执行服务')).toBeNull();
   });
 
   it('渲染自建发布卡片', async () => {
     vi.mocked(api.listPublished).mockResolvedValue({ services: [publishedSvc] } as any);
     render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
     await waitFor(() => expect(screen.getByText('order-query')).toBeTruthy());
     expect(screen.getByRole('button', { name: '删 除' })).toBeTruthy();
   });
 
+  it('自建发布「刷新」给出提示（与固定发布一致）；首屏自动加载保持静默', async () => {
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+    await waitFor(() => expect(screen.getByRole('button', { name: /刷\s*新/ })).toBeTruthy());
+    // 首屏自动加载不应弹「状态已刷新」（那是上一次刷新动作的扰动）
+    expect(document.body.textContent).not.toContain('状态已刷新');
+
+    vi.mocked(api.listPublished).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /刷\s*新/ }));
+    await waitFor(() => expect(api.listPublished).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(document.body.textContent).toContain('状态已刷新'));
+  });
+
+  it('自建发布「刷新」期间卡片状态位显示「检查中...」（与固定发布同一套反馈）', async () => {
+    vi.mocked(api.listPublished).mockResolvedValue({ services: [publishedSvc] } as any);
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+    await waitFor(() => expect(screen.getByText('order-query')).toBeTruthy());
+    expect(screen.getByText('运行中')).toBeTruthy();
+
+    // 把下一次读取挂起，观察刷新期间的中间态
+    let resolveList: (v: any) => void = () => {};
+    vi.mocked(api.listPublished).mockReturnValue(new Promise(res => { resolveList = res; }) as any);
+    fireEvent.click(screen.getByRole('button', { name: /刷\s*新/ }));
+
+    await waitFor(() => expect(screen.getByText('检查中...')).toBeTruthy());
+    resolveList({ services: [publishedSvc] });
+    await waitFor(() => expect(screen.getByText('运行中')).toBeTruthy());
+  });
+
+  it('自建发布超过 6 个时分页：首页仅 6 张卡片', async () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ ...publishedSvc, name: `svc-${i + 1}` }));
+    vi.mocked(api.listPublished).mockResolvedValue({ services: many } as any);
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+
+    await waitFor(() => expect(screen.getByText('svc-6')).toBeTruthy());
+    expect(screen.queryByText('svc-7')).toBeNull();   // 第 7 个在第 2 页
+  });
+
+  it('自建发布「查看配置」给出两段片段：宿主地址（外部客户端）+ 容器内地址（平台 Agent）', async () => {
+    vi.mocked(api.listPublished).mockResolvedValue({ services: [publishedSvc] } as any);
+    vi.mocked(api.getPublishedClientConfig).mockResolvedValue({
+      mcpServers: { 'order-query': { type: 'url', url: 'http://h:8030/mcp', headers: { 'X-MCP-Token': 'tk' } } },
+      internal_mcpServers: {
+        'order-query': { type: 'url', url: 'http://optonto-mcp-publish-x:8100/mcp', headers: { 'X-MCP-Token': 'tk' } },
+      },
+    } as any);
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+    await waitFor(() => expect(screen.getByText('order-query')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '查看配置' }));
+    await waitFor(() => expect(screen.getByText(/本平台 Agent（容器内地址/)).toBeTruthy());
+    expect(screen.getByText(/h:8030\/mcp/)).toBeTruthy();
+    expect(screen.getByText(/optonto-mcp-publish-x:8100\/mcp/)).toBeTruthy();
+  });
+
   it('打开新建弹窗时拉取本体函数/行为/数据引擎（就绪判据的唯一数据源）', async () => {
     render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
     fireEvent.click(screen.getByRole('button', { name: /新建发布/ }));
     await waitFor(() => expect(screen.getByText('新建 MCP 发布')).toBeTruthy());
 

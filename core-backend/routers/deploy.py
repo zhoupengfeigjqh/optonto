@@ -8,28 +8,34 @@
 - 本体合并：将 thread 分片合并后输出到 ontology_versions/{version}/ 三个 yaml 文件
 - 版本预览：从 ontology_versions 读取已存档版本，或从 thread 合并预览
 - 部署：先备份当前部署 → 再将版本目录文件复制到部署目录
+
+分层（章程 II）：本模块为接口层；线程分片读写经 ``services.thread_store``，
+本体文件读写经 ``services``（本体领域存储出口），注册表经 ``services.ontology_registry``。
 """
 
-import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from config import DEMAND_THREADS_DIR
+from errors import InvalidInputError, NotFoundError
+
 from dependencies import get_ontology_names
-from repositories import fs_store
-from repositories.metadata import refresh_identity_metadata
 from schemas import OntologyData
 from services import (
-    save_ontology_version,
-    load_ontology_version,
-    version_exists,
-    copy_ontology_to_deploy,
     backup_deploy_to_version,
-    _get_yaml_path,
+    copy_ontology_to_deploy,
+    deployed_version_of,
+    files_fingerprint,
+    load_ontology_version,
+    ontology_registry,
+    ontology_yaml_text,
+    read_ontology_yaml_dict,
+    save_ontology_version,
+    thread_store,
+    version_exists,
+    write_ontology_yaml_dict,
 )
-from routers.threads import _thread_dir, _yaml_source_map, _match_ontology_yaml
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/deploy", tags=["本体部署"])
 
@@ -46,13 +52,9 @@ def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:
     list_requirements 一致（同名优先 + source_file 回退）。
     """
     by_version: dict[str, list[dict]] = {}
-    if not fs_store.exists(DEMAND_THREADS_DIR):
-        return by_version
-    for tdir in fs_store.list_dir(DEMAND_THREADS_DIR):
-        if not tdir.is_dir():
-            continue
-        data = fs_store.read_json(tdir / ".data.json")
-        if not isinstance(data, dict):
+    for tdir in thread_store.iter_thread_dirs():
+        data = thread_store.read_thread_json(tdir)
+        if data is None:
             continue
         if data.get("ontology_name") != ontology_name:
             continue
@@ -61,10 +63,10 @@ def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:
         if not version:
             continue
 
-        source_map = _yaml_source_map(tdir)
-        for md in fs_store.list_files(tdir, "*.md"):
+        source_map = thread_store.yaml_source_map(tdir)
+        for md in thread_store.list_md_files(tdir):
             req_name = md.name[:-3]
-            matched = _match_ontology_yaml(tdir, req_name, md.name, source_map)
+            matched = thread_store.match_ontology_yaml(tdir, req_name, md.name, source_map)
             if not matched:
                 continue
             by_version.setdefault(version, []).append({
@@ -91,8 +93,8 @@ def _merge_yaml_files(yaml_paths: list[Path], version: str) -> OntologyData:
     created_ats: list[str] = []
 
     for path in yaml_paths:
-        raw = fs_store.read_yaml(path) or {}
-        if not isinstance(raw, dict):
+        raw = thread_store.read_yaml_dict(path)
+        if not raw:
             continue
         doc = OntologyData(**raw)
         meta = doc.metadata if isinstance(doc.metadata, dict) else {}
@@ -121,7 +123,7 @@ def _merge_yaml_files(yaml_paths: list[Path], version: str) -> OntologyData:
         "source_thread": ", ".join(source_threads) if source_threads else "部署合并",
         "created_at": max(created_ats) if created_ats else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "deployed_version": version,
-        "shard_hash": hashlib.sha256(b"".join(fs_store.read_bytes(p) for p in yaml_paths)).hexdigest()[:16],
+        "shard_hash": files_fingerprint(yaml_paths),
     }
     if any(skipped.values()):
         merged.metadata["merge_skipped"] = skipped
@@ -132,12 +134,10 @@ def _finalize_metadata(merged: OntologyData, ontology_id: int, ontology_name: st
     """给合并结果补上身份四元组（preview 与 deploy 共用，保证展示与落盘一致）。
 
     shard_hash 已在 _merge_yaml_files 中计算，此处不再处理。
-    名字取当前（目录）名；id 由注册表分配——统一走 `registry_ids`（与 save_ontology_data 同一口径），
+    名字取当前（目录）名；id 由注册表分配——统一走 ``registry_ids``（与 save_ontology_data 同一口径），
     避免多处各自查 id。注册表查不到时回退调用方传入的 ontology_id（仅 preview 的极端场景）。
     """
-    from repositories.metadata import registry_ids
-
-    scenario_id, oid = registry_ids(sc_name, ontology_name)
+    scenario_id, oid = ontology_registry.registry_ids(sc_name, ontology_name)
     merged.metadata["scenario_name"] = sc_name
     merged.metadata["scenario_id"] = scenario_id
     merged.metadata["ontology_name"] = ontology_name
@@ -148,8 +148,8 @@ def _resolve_version_docs(ontology_name: str, version: str) -> tuple[list[dict],
     """按版本取文档列表与 yaml 路径；一个都没有则 404。"""
     docs = _collect_version_docs(ontology_name).get(version, [])
     if not docs:
-        raise HTTPException(status_code=404, detail=f"版本「{version}」下没有已生成的本体文件")
-    paths = [_thread_dir(d["thread_id"]) / d["yaml"] for d in docs]
+        raise NotFoundError(f"版本「{version}」下没有已生成的本体文件")
+    paths = [thread_store.thread_dir(d["thread_id"]) / d["yaml"] for d in docs]
     return docs, paths
 
 
@@ -182,24 +182,17 @@ async def preview_deploy(ontology_id: int, version: str):
 
 @router.get("/deployed")
 async def get_deployed_ontology(ontology_id: int):
-    """获取当前已部署的 ontology.yaml 内容（用于左上角「已部署版本」查看）。"""
+    """获取当前已部署的 ontology.yaml 原文（用于「已部署版本」查看）。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
-    path = _get_yaml_path(sc_name, ontology_name)
-    if not fs_store.exists(path):
-        raise HTTPException(status_code=404, detail="当前本体尚未部署")
-    return {"content": fs_store.read_text(path)}
+    content = ontology_yaml_text(sc_name, ontology_name)
+    if content is None:
+        raise NotFoundError("当前本体尚未部署")
+    return {"content": content}
 
 
 def _get_deployed_version(scenario_name: str, ontology_name: str) -> str:
-    """读取当前部署的 ontology.yaml 中的 deployed_version，不存在则返回空字符串。"""
-    current_path = _get_yaml_path(scenario_name, ontology_name)
-    if not fs_store.exists(current_path):
-        return ""
-    raw = fs_store.read_yaml(current_path) or {}
-    meta = raw.get("metadata") if isinstance(raw, dict) else None
-    if isinstance(meta, dict):
-        return str(meta.get("deployed_version") or "")
-    return ""
+    """当前部署的 ontology.yaml 中的 deployed_version（不存在则空串）。"""
+    return deployed_version_of(scenario_name, ontology_name)
 
 
 @router.get("/version-exists")
@@ -215,10 +208,9 @@ async def preview_version(ontology_id: int, version: str):
     """从 ontology_versions/{version}/ 读取已存档的三个 yaml 文件，返回合并内容。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     if not version_exists(sc_name, ontology_name, version):
-        raise HTTPException(status_code=404, detail=f"版本「{version}」尚未存档，请先执行本体合并")
+        raise NotFoundError(f"版本「{version}」尚未存档，请先执行本体合并")
 
     merged = load_ontology_version(sc_name, ontology_name, version)
-    # 构造 stats 统计
     stats = {s: len(getattr(merged, s)) for s in _MERGE_SECTIONS}
     return {
         "version": version,
@@ -231,14 +223,11 @@ async def preview_version(ontology_id: int, version: str):
 
 @router.post("/save-version")
 async def save_version(ontology_id: int, body: dict):
-    """将 thread 分片合并后输出到 ontology_versions/{version}/ 三个 yaml 文件。
-
-    这是「本体合并」按钮的 API：从 thread 合并 → 写入 version 目录。
-    """
+    """将 thread 分片合并后输出到 ontology_versions/{version}/ 三个 yaml 文件（「本体合并」按钮）。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     version = (body.get("version") or "").strip()
     if not version:
-        raise HTTPException(status_code=400, detail="请提供版本号")
+        raise InvalidInputError("请提供版本号")
 
     # 从 thread 合并
     _, paths = _resolve_version_docs(ontology_name, version)
@@ -260,15 +249,13 @@ async def save_version(ontology_id: int, body: dict):
 async def get_deployed_version_info(ontology_id: int):
     """获取当前部署的版本号。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
-    deployed_version = _get_deployed_version(sc_name, ontology_name)
-    return {"deployed_version": deployed_version}
+    return {"deployed_version": _get_deployed_version(sc_name, ontology_name)}
 
 
 @router.post("/deploy")
 async def deploy_ontology(ontology_id: int, body: dict):
     """部署指定版本到 onto_market/{scenario}/{ontology}/。
 
-    新流程：
     1. 先备份当前部署的三个文件到 ontology_versions/{当前部署版本}/
     2. 再将 ontology_versions/{目标版本}/ 的三个文件复制到部署目录
     3. 更新 metadata 中的 deployed_version
@@ -276,11 +263,11 @@ async def deploy_ontology(ontology_id: int, body: dict):
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     version = (body.get("version") or "").strip()
     if not version:
-        raise HTTPException(status_code=400, detail="请提供要部署的版本号")
+        raise InvalidInputError("请提供要部署的版本号")
 
     # 检查目标版本是否已存档
     if not version_exists(sc_name, ontology_name, version):
-        raise HTTPException(status_code=400, detail=f"版本「{version}」尚未存档，请先执行本体合并")
+        raise InvalidInputError(f"版本「{version}」尚未存档，请先执行本体合并")
 
     # 获取当前部署版本
     current_deployed_version = _get_deployed_version(sc_name, ontology_name)
@@ -294,17 +281,14 @@ async def deploy_ontology(ontology_id: int, body: dict):
 
     # 2.5 身份回刷：部署文件来自版本存档，其 metadata 可能是"存档之后改过名"的旧值
     #（身份唯一读取来源 = ontology.yaml.metadata，落后会让清单/路由跳过本本体）
-    refresh_identity_metadata(sc_name, ontology_name)
+    ontology_registry.refresh_identity_metadata(sc_name, ontology_name)
 
     # 3. 更新 ontology.yaml 中的 deployed_version
-    onto_path = _get_yaml_path(sc_name, ontology_name)
-    raw = fs_store.read_yaml(onto_path) or {}
-    if not isinstance(raw, dict):
-        raw = {}
+    raw = read_ontology_yaml_dict(sc_name, ontology_name)
     if not isinstance(raw.get("metadata"), dict):
         raw["metadata"] = {}
     raw["metadata"]["deployed_version"] = version
-    fs_store.write_yaml(onto_path, raw)
+    write_ontology_yaml_dict(sc_name, ontology_name, raw)
 
     # 统计数据
     merged = load_ontology_version(sc_name, ontology_name, version)

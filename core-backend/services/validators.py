@@ -9,7 +9,7 @@
 """
 
 from errors import InvalidInputError
-from schemas import STATUS_ATTR_NAME, BehaviorItem, OntologyData, RuleItem
+from schemas import STATUS_ATTR_NAME, BehaviorItem, FunctionItem, OntologyData, ProcessItem, RelationItem, RuleItem
 
 
 def status_enum_of(data: OntologyData, concept_name: str) -> list:
@@ -82,3 +82,71 @@ def validate_related_functions(rule: RuleItem, data: OntologyData, extra_availab
     for fn in rule.related_functions or []:
         if fn and fn not in names:
             raise InvalidInputError(f"规则关联函数不存在: {fn}")
+
+
+def validate_function_code(code: str) -> str | None:
+    """函数代码入口静态校验（保存/生成写盘前调用）。返回 None = 通过，否则返回错误描述。
+
+    统一入口约定（2026-09-05）：本体函数与公共函数同为 ``def run(params: dict) -> dict``，
+    exec 后按 "run" 取符号、整包传参。注册名（YAML name / 文件名）只作标识，
+    不再要求代码内函数同名——改名/迁移不影响代码。
+    """
+    import ast
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return f"语法错误: {e}"
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            if not node.args.args:
+                return "run 必须接收 params 参数（def run(params: dict) -> dict）"
+            return None
+    return "未找到 def run(params) 定义——函数代码须以 run 为统一入口（与公共函数同约定）"
+
+
+def validate_relation(relation: RelationItem, data: OntologyData) -> None:
+    """关系级校验：源/目标概念必须存在；声明了端点属性时该属性必须属于对应概念。
+
+    与行为/规则同一强度（跨字段强耦合 → 400）：关系是本体里唯一的「跨概念连线」，
+    端点或端点属性悬空时，实例图/查询面会静默拿不到数据，必须在保存期拦截。
+    """
+    concept_names = {c.name for c in data.concepts if c.name}
+    if relation.source and relation.source not in concept_names:
+        raise InvalidInputError(f"关系的源概念不存在: {relation.source}")
+    if relation.target and relation.target not in concept_names:
+        raise InvalidInputError(f"关系的目标概念不存在: {relation.target}")
+
+    for label, concept_name, attr_name in (
+        ("源端", relation.source, relation.source_attr),
+        ("目标端", relation.target, relation.target_attr),
+    ):
+        if not attr_name:
+            continue
+        concept = next((c for c in data.concepts if c.name == concept_name), None)
+        attrs = {a.name for a in (concept.attributes or [])} if concept else set()
+        if attr_name not in attrs:
+            raise InvalidInputError(f"关系{label}关联属性不存在: {concept_name}.{attr_name}")
+
+
+def validate_process(process: ProcessItem, data: OntologyData) -> None:
+    """流程级校验：步骤的「当前动作」必须非空且命中本体行为；上一动作（可空 = 流程起点）同理。
+
+    动作即行为名——流程是行为的编排，引用不存在的动作会让流程图/技能摘要出现幽灵节点。
+    """
+    behavior_names = {b.name for b in data.behaviors if b.name}
+    for step in process.steps or []:
+        if not step.current_action:
+            raise InvalidInputError("流程步骤缺少 current_action（当前动作）")
+        if step.current_action not in behavior_names:
+            raise InvalidInputError(f"流程步骤引用的行为不存在: {step.current_action}")
+        if step.previous_action and step.previous_action not in behavior_names:
+            raise InvalidInputError(f"流程步骤引用的上一动作不存在: {step.previous_action}")
+
+
+def validate_function_concepts(function: FunctionItem, data: OntologyData) -> None:
+    """函数级校验：``related_concepts`` 声明的概念必须存在于本体（约束回溯的数据源）。"""
+    concept_names = {c.name for c in data.concepts if c.name}
+    for name in function.related_concepts or []:
+        if name and name not in concept_names:
+            raise InvalidInputError(f"函数关联概念不存在: {name}")

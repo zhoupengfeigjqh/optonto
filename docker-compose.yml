@@ -28,10 +28,11 @@ services:
       - MEMORY_DIR=/app/.data/memory
       - PORT=8003
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
-      # 内置本体查询 MCP 地址（平台唯一内置对外工具面，只读查询）
+      # 内置本体查询 MCP 地址（内置对外工具面之一，只读查询）
       - MCP_BUILTIN_URL=http://optonto-ontology-query-mcp:8002/mcp
       # 内置数据引擎执行服务地址（行为工具内网挂载入口，不对外发布）
       - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-executor:8005/mcp
+      # 内置公共函数 MCP 地址（内置固定项，与本体查询 MCP 同权：恒存在/恒启用/恒全选）
       - MCP_BUILTIN_COMMON_FUNCTION_URL=http://optonto-common-function-mcp:8007/mcp
     networks:
       - optonto-net
@@ -129,7 +130,7 @@ services:
     networks:
       - optonto-net
 
-  # ─── 本体查询 MCP 服务（平台唯一内置对外工具面：只发布 list* 只读查询，无执行职责）──
+  # ─── 本体查询 MCP 服务（内置对外工具面之一：只发布 list* 只读查询，无执行职责）──
   optonto-ontology-query-mcp:
     build:
       context: .

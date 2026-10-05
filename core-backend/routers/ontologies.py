@@ -1,14 +1,23 @@
-"""CRUD API for ontologies — file-based metadata."""
+"""本体 CRUD API —— 注册表（meta.json + 身份）+ YAML 数据。
 
-from fastapi import APIRouter, HTTPException
+分层（章程 II）：本模块为接口层，只做参数接收与响应组装；
+注册表经 ``services.ontology_registry``，本体数据经 ``services`` 本体领域函数，
+**不直连 repositories**。
+"""
+
+from fastapi import APIRouter
+
+from errors import ConflictError, InvalidInputError, NotFoundError
 
 from dependencies import get_ontology_names
-from repositories.metadata import (
-    list_ontologies_by_scenario, list_all_ontologies, get_ontology_by_id, get_scenario_by_id,
-    create_ontology, update_ontology, delete_ontology, refresh_identity_metadata,
+from schemas import OntologyData
+from services import (
+    deployed_version_of,
+    ensure_ontology_dir,
+    load_ontology_data,
+    ontology_registry,
+    save_ontology_data,
 )
-from repositories import fs_store
-from services import ensure_ontology_dir, save_ontology_data, load_ontology_data, OntologyData
 
 router = APIRouter(prefix="/api/ontologies", tags=["本体"])
 
@@ -16,43 +25,39 @@ router = APIRouter(prefix="/api/ontologies", tags=["本体"])
 @router.get("")
 async def list_all_ontologies_api():
     """列出所有本体（跨场景全量列表）。"""
-    return list_all_ontologies()
+    return ontology_registry.list_all_ontologies()
 
 
 @router.get("/by-scenario/{scenario_id}")
 async def list_ontologies_api(scenario_id: int):
-    scenario = get_scenario_by_id(scenario_id)
-    if not scenario:
-        raise HTTPException(status_code=404, detail="场景不存在")
-    return list_ontologies_by_scenario(scenario["name"])
+    scenario = ontology_registry.require_scenario(scenario_id)
+    return ontology_registry.list_ontologies_by_scenario(scenario["name"])
 
 
 @router.post("", status_code=201)
 async def create_ontology_api(data: dict):
-    scenario_id = data.get("scenario_id")
-    name = data.get("name", "").strip()
+    name = (data.get("name") or "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="本体名称不能为空")
+        raise InvalidInputError("本体名称不能为空")
+    scenario_id = data.get("scenario_id")
     if not scenario_id:
-        raise HTTPException(status_code=400, detail="场景ID不能为空")
+        raise InvalidInputError("场景ID不能为空")
 
-    scenario = get_scenario_by_id(scenario_id)
-    if not scenario:
-        raise HTTPException(status_code=404, detail="场景不存在")
+    scenario = ontology_registry.require_scenario(scenario_id)
 
     # Check uniqueness within scenario
-    for o in list_ontologies_by_scenario(scenario["name"]):
+    for o in ontology_registry.list_ontologies_by_scenario(scenario["name"]):
         if o["name"] == name:
-            raise HTTPException(status_code=400, detail="该场景下本体名称已存在")
+            raise ConflictError("该场景下本体名称已存在")
 
-    result = create_ontology(
+    result = ontology_registry.create_ontology(
         scenario_name=scenario["name"],
         name=name,
         description=data.get("description", ""),
         creator=data.get("creator", ""),
     )
     if not result:
-        raise HTTPException(status_code=404, detail="场景不存在")
+        raise NotFoundError("场景不存在")
 
     # Create YAML directory and initialize data
     ensure_ontology_dir(scenario["name"], name)
@@ -63,57 +68,42 @@ async def create_ontology_api(data: dict):
 
 @router.get("/{ontology_id}")
 async def get_ontology_api(ontology_id: int):
-    result = get_ontology_by_id(ontology_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="本体不存在")
-    ontology, scenario_name, ontology_name = result
+    ontology, scenario_name, ontology_name = ontology_registry.require_ontology(ontology_id)
     ontology["scenario_name"] = scenario_name
-    # 从已部署的 ontology.yaml 解析 deployed_version（与 list_all_ontologies 一致）
-    from services import _get_yaml_path
-    ontology_yaml = _get_yaml_path(scenario_name, ontology_name)
-    deployed_version = ""
-    if fs_store.exists(ontology_yaml):
-        raw = fs_store.read_yaml(ontology_yaml) or {}
-        meta = raw.get("metadata") if isinstance(raw, dict) else None
-        if isinstance(meta, dict):
-            deployed_version = str(meta.get("deployed_version") or "")
-    ontology["deployed_version"] = deployed_version
+    # deployed_version 与清单口径同源（services.deployed_version_of 读 ontology.yaml.metadata）
+    ontology["deployed_version"] = deployed_version_of(scenario_name, ontology_name)
     return ontology
 
 
 @router.put("/{ontology_id}")
 async def update_ontology_api(ontology_id: int, data: dict):
-    result = get_ontology_by_id(ontology_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="本体不存在")
+    _, scenario_name, ontology_name = ontology_registry.require_ontology(ontology_id)
 
     name = data.get("name")
     if name:
-        # Check for duplicate name in same scenario (result[1] = scenario_name)
-        for o in list_ontologies_by_scenario(result[1]):
-                if o["name"] == name and o["id"] != ontology_id:
-                    raise HTTPException(status_code=400, detail="该场景下本体名称已存在")
+        # Check for duplicate name in same scenario
+        for o in ontology_registry.list_ontologies_by_scenario(scenario_name):
+            if o["name"] == name and o["id"] != ontology_id:
+                raise ConflictError("该场景下本体名称已存在")
 
-    updated = update_ontology(
+    updated = ontology_registry.update_ontology(
         ontology_id,
         name=name,
         description=data.get("description"),
         creator=data.get("creator"),
     )
     if not updated:
-        raise HTTPException(status_code=404, detail="本体不存在")
+        raise NotFoundError("本体不存在")
     # 改名（目录已移动）→ 回刷 ontology.yaml.metadata：身份唯一读取来源，落后会让清单/路由跳过该本体
-    if name and name != result[2]:
-        refresh_identity_metadata(result[1], name)
+    if name and name != ontology_name:
+        ontology_registry.refresh_identity_metadata(scenario_name, name)
     return updated
 
 
 @router.delete("/{ontology_id}")
 async def delete_ontology_api(ontology_id: int):
-    result = get_ontology_by_id(ontology_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="本体不存在")
-    delete_ontology(ontology_id)
+    ontology_registry.require_ontology(ontology_id)
+    ontology_registry.delete_ontology(ontology_id)
     return {"message": "本体已删除"}
 
 

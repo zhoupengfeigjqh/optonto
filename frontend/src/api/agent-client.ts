@@ -135,10 +135,20 @@ export interface MCPServerConfig {
   enabled: boolean;
   /** 为空/不设置时注册全部工具；设置后只注册指定名称的工具 */
   allowed_tools?: string[];
-  /** 内置本体MCP：不可删除/编辑，始终注册全部工具 */
+  /** 内置固定项（本体查询 MCP / 公共函数 MCP）：不可删除/编辑/停用，始终注册全部工具 */
   builtin?: boolean;
-  /** 连接携带的 HTTP 头（远程 MCP 鉴权，架构文档 §九.3） */
+  /**
+   * 连接携带的 HTTP 头（远程 MCP 鉴权，架构文档 §九.3）。
+   * 自建发布（动态容器）**必须**带 `{"X-MCP-Token": "<访问令牌>"}`，否则 401；
+   * 固定服务与内网挂载不需要。平台会把它下发给 MCPClient 的 requestInit。
+   */
   headers?: Record<string, string>;
+  /**
+   * **是否业务数据**（缺省视为「否」）：标记该服务提供可被本体的行为映射引用的业务数据。
+   * 只有 `true` 的服务才会出现在「接口映射 → 目标接口设置」的**目标 MCP 服务**下拉里——
+   * 否则列表会被本体查询 / 公共函数 / 图表类等非业务数据服务淹掉（2026-10-05 用户要求）。
+   */
+  business_data?: boolean;
 }
 
 export interface MCPConfig {
@@ -170,13 +180,14 @@ export const saveMCPConfig = (config: MCPConfig) =>
     { method: 'PUT', body: JSON.stringify(config) }
   );
 
-/** 测试 MCP 连接并列出工具 */
+/** 测试 MCP 连接并列出工具（headers 必传才能连上带令牌的自建发布：X-MCP-Token） */
 export const testMCPConnection = (
-  url: string
+  url: string,
+  headers?: Record<string, string>,
 ): Promise<MCPTestResult> =>
   request<MCPTestResult>(
     `/mcp-config/test`,
-    { method: 'POST', body: JSON.stringify({ url }) }
+    { method: 'POST', body: JSON.stringify({ url, headers }) }
   );
 
 /** 只读列出 MCP 工具（映射页二级下拉数据源，文档 §八.2） */

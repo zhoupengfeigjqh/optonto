@@ -8,10 +8,9 @@ import type { PublishedService } from '@/api/client';
 const ontologyQuery = FIXED_SERVICES.find(d => d.key === 'ontologyQuery')!;
 
 describe('FixedServiceCard', () => {
-  it('渲染标题/运行态/端点，并按点击回调对应动作', () => {
+  it('渲染标题/运行态/端点，并按点击回调对应动作；刷新不在卡片上', () => {
     const onOpenConfig = vi.fn();
     const onToggle = vi.fn();
-    const onRefresh = vi.fn();
     const onShowTools = vi.fn();
     render(
       <FixedServiceCard
@@ -20,25 +19,26 @@ describe('FixedServiceCard', () => {
         host="example.com"
         onOpenConfig={onOpenConfig}
         onToggle={onToggle}
-        onRefresh={onRefresh}
         onShowTools={onShowTools}
       />,
     );
     expect(screen.getByText('本体查询 MCP 服务')).toBeTruthy();
     expect(screen.getByText('运行中')).toBeTruthy();
     expect(screen.getByText('http://example.com:8002/mcp')).toBeTruthy();
+    // 传输模式必须上卡片（与自建发布卡片同一套叫法；展示名用 MCP 规范名 streamable-http）
+    expect(screen.getByText('streamable-http（/mcp 单端点）')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '查看配置' }));
     expect(onOpenConfig).toHaveBeenCalledWith(ontologyQuery);
     fireEvent.click(screen.getByRole('button', { name: '停 止' }));
     expect(onToggle).toHaveBeenCalledWith(ontologyQuery);
-    fireEvent.click(screen.getByRole('button', { name: '刷 新' }));
-    expect(onRefresh).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '查看工具' }));
     expect(onShowTools).toHaveBeenCalledWith(ontologyQuery);
+    // 刷新统一在区块右上角（与自建发布同构）：卡片上不得再有刷新按钮
+    expect(screen.queryByRole('button', { name: /刷\s*新/ })).toBeNull();
   });
 
-  it('检查中且未运行时显示检查中，零工具卡片不显示工具入口', () => {
+  it('内网执行底座：显示检查中、零工具说明，但**不暴露传输模式**', () => {
     const fn = vi.fn();
     const executor = FIXED_SERVICES.find(d => d.key === 'functionExecutor')!;
     render(
@@ -46,13 +46,32 @@ describe('FixedServiceCard', () => {
         def={executor}
         card={{ ...INIT }}
         host="h"
-        onOpenConfig={fn} onToggle={fn} onRefresh={fn} onShowTools={fn}
+        onOpenConfig={fn} onToggle={fn} onShowTools={fn}
       />,
     );
     expect(screen.getByText('检查中...')).toBeTruthy();
     // 「零工具」在卡片正文与角色说明各出现一次，故按出现次数断言
     expect(screen.getAllByText(/零工具/).length).toBeGreaterThan(0);
+    // 内网执行底座不对外，传输模式不上卡片（只对对外工具面展示）
+    expect(screen.queryByText(/传输模式/)).toBeNull();
     expect(screen.queryByRole('button', { name: '查看工具' })).toBeNull();
+  });
+
+  it('数据引擎执行服务：传输模式不上卡片，且不得谎称「零工具」', () => {
+    const fn = vi.fn();
+    const engine = FIXED_SERVICES.find(d => d.key === 'dataEngine')!;
+    render(
+      <FixedServiceCard
+        def={engine}
+        card={{ ...INIT }}
+        host="h"
+        onOpenConfig={fn} onToggle={fn} onShowTools={fn}
+      />,
+    );
+    // 它有 /mcp 工具面（已就绪行为，仅内网挂载），不是零工具
+    expect(screen.getByText('工具面仅内网（供平台 Agent 挂载），不对外提供')).toBeTruthy();
+    expect(screen.queryByText(/零工具/)).toBeNull();
+    expect(screen.queryByText(/传输模式/)).toBeNull();
   });
 });
 
@@ -78,6 +97,18 @@ describe('PublishedServiceCard', () => {
     expect(onToggle).toHaveBeenCalledWith(svc);
     fireEvent.click(screen.getByRole('button', { name: '删 除' }));
     expect(onRemove).toHaveBeenCalledWith(svc);
+  });
+
+  it('列表读取中（刷新）状态位显示「检查中...」，完成后回到真实状态', () => {
+    const fn = vi.fn();
+    const { rerender } = render(
+      <PublishedServiceCard svc={svc} host="h" checking onShowConfig={fn} onToggle={fn} onRemove={fn} />,
+    );
+    expect(screen.getByText('检查中...')).toBeTruthy();
+    expect(screen.queryByText('运行中')).toBeNull();
+
+    rerender(<PublishedServiceCard svc={svc} host="h" onShowConfig={fn} onToggle={fn} onRemove={fn} />);
+    expect(screen.getByText('运行中')).toBeTruthy();
   });
 
   it('停止且容器缺失时显示「容器缺失」', () => {

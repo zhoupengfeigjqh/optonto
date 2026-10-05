@@ -6,6 +6,7 @@ from dependencies import get_ontology_names
 from schemas import RelationItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
+from services.validators import validate_relation
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/relations", tags=["关系"])
 
@@ -23,6 +24,8 @@ async def create_relation(ontology_id: int, item: RelationItem):
     data = load_ontology_data(sc_name, on_name)
 
     ensure_unique(data.relations, item.name, "关系")
+    # 强耦合校验：源/目标概念与端点属性必须存在
+    validate_relation(item, data)
 
     data.relations.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -37,6 +40,7 @@ async def update_relation(ontology_id: int, relation_name: str, item: RelationIt
 
     idx = find_index(data.relations, relation_name, "关系")
     ensure_unique(data.relations, item.name, "关系", exclude_name=relation_name)
+    validate_relation(item, data)
 
     data.relations[idx] = item
     save_ontology_data(sc_name, on_name, data)

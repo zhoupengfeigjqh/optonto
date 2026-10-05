@@ -154,12 +154,27 @@ def get_publish(name: str) -> dict:
 
 
 def client_config(name: str, host: str | None = None) -> dict:
-    """生成可直接粘进「MCP配置」的客户端配置片段（含令牌请求头）。"""
+    """生成可直接粘进「MCP配置」的客户端配置片段（含令牌请求头）。
+
+    同一容器有两套地址，用途不同，**都给出来**（前端并排展示，用户按用途取用）：
+    - ``mcpServers``：宿主地址（``host:host_port``），给**平台外**的 AI 客户端（Claude/Cursor 等）；
+    - ``internal_mcpServers``：Docker 网络内的地址（容器名 + ``CONTAINER_PORT``），给**本平台 Agent**
+      （agent-backend 自身在容器里，localhost 指向它自己、宿主端口也不从容器内走，必须走服务名）。
+
+    ``type`` 取**客户端认的取值**（``http`` = Streamable HTTP / ``sse``），与平台的传输模式一一对应；
+    此前写死的 ``"url"`` 是自造值（客户端 schema 里只有 http/sse/stdio，2026-10-05 修正）。
+    """
     entry = store.get_entry(name)
-    path = "/sse" if entry["transport"] == store.TRANSPORT_SSE else "/mcp"
+    is_sse = entry["transport"] == store.TRANSPORT_SSE
+    path = "/sse" if is_sse else "/mcp"
     url = f"http://{host or '<你的域名或IP>'}:{entry['host_port']}{path}"
-    return {"mcpServers": {entry["name"]: {
-        "type": "url", "url": url, "headers": {"X-MCP-Token": entry["token"]}}}}
+    internal_url = f"http://{entry['container_name']}:{store.CONTAINER_PORT}{path}"
+    headers = {"X-MCP-Token": entry["token"]}
+    client_type = "sse" if is_sse else "http"
+    return {
+        "mcpServers": {entry["name"]: {"type": client_type, "url": url, "headers": headers}},
+        "internal_mcpServers": {entry["name"]: {"type": client_type, "url": internal_url, "headers": headers}},
+    }
 
 
 # ─── 写 ───────────────────────────────────────────────────────────────────────

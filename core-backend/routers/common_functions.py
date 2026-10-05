@@ -1,12 +1,12 @@
-"""API for common functions (list / code / execute).执行已迁至 ontology-mcp 沙箱，本路由仅设计期读写 + 转发。
+"""公共函数 API（列表 / 源码 / 执行）。执行已迁至 common-function-mcp，本路由仅设计期读写 + 转发。
 
-分层（章程 II）：本模块为接口层；文件读写一律经数据访问层 ``repositories.fs_store``。
+分层（章程 II）：本模块为接口层；名册读取与源码读取一律经业务层
+``services.function_catalog``，**不直连 repositories**。
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
-from repositories import fs_store
-from services.function_catalog import COMMON_FUNCTIONS_DIR as COMMON_DIR, read_common_functions
+from services.function_catalog import read_common_function_code, read_common_functions
 
 router = APIRouter(prefix="/api/common-functions", tags=["公共函数"])
 
@@ -21,10 +21,7 @@ async def list_common_functions() -> list[dict]:
 @router.get("/{func_name}/code")
 async def get_common_function_code(func_name: str) -> dict:
     """Read a common function's Python source code."""
-    code_path = COMMON_DIR / f"{func_name}.py"
-    if not fs_store.exists(code_path):
-        raise HTTPException(status_code=404, detail="函数代码文件不存在")
-    return {"content": fs_store.read_text(code_path), "func_name": func_name}
+    return {"content": read_common_function_code(func_name), "func_name": func_name}
 
 
 @router.post("/{func_name}/execute")
