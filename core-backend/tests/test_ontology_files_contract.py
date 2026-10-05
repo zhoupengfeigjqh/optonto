@@ -58,7 +58,8 @@ class ContractCase(unittest.TestCase):
         return services._load_ontology_data_uncached(SC, ON)
 
     def resolve(self, behavior: BehaviorItem, engines: list[DataEngineItem]) -> str:
-        return services._resolve_op_type(behavior, engines)
+        # engines 不再参与推导（签名即证明）：保留形参仅为不改动 T1-T4 的调用形态
+        return services._resolve_op_type(behavior)
 
 
 class TestOverlay(ContractCase):

@@ -20,9 +20,13 @@ from datetime import datetime, timezone
 from config import DATA_DIR
 from errors import ConflictError, InvalidInputError, NotFoundError
 from repositories import fs_store
+# 发布类型常量唯一权威在 mcp-shared/publish_upstream（core 侧经 bridge 转出）：
+# 本地再写一份字符串常量，一旦门面侧改名就会静默漂移（与 2026-10-04 环境变量漂移同源）。
+from services.mcp_contract_bridge import (
+    PUBLISH_KIND_BEHAVIOR as KIND_BEHAVIOR,
+    PUBLISH_KIND_ONTOLOGY_FUNCTION as KIND_ONTOLOGY_FUNCTION,
+)
 
-KIND_ONTOLOGY_FUNCTION = "ontology_function"
-KIND_BEHAVIOR = "behavior"
 KINDS = (KIND_ONTOLOGY_FUNCTION, KIND_BEHAVIOR)
 
 TRANSPORT_SSE = "sse"
@@ -290,7 +294,8 @@ def build_run_kwargs(entry: dict) -> dict:
 def build_entry(*, ontology_id: int, name, kind, items, host_port, transport) -> dict:
     """校验 + 编译 → 生成注册表条目（**不落盘、不起容器**，便于路由分步处理失败）。
 
-    失败语义：名称/端口冲突 409、类型与勾选项非法 400、勾选项不存在或未就绪 404/400。
+    失败语义：名称/端口冲突 400（ConflictError 口径）、类型与勾选项非法 400、
+    勾选项不存在或未就绪 404/400。
     """
     entries = _read_registry()
     kind = validate_kind(kind)

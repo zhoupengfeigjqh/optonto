@@ -120,8 +120,8 @@ def _load_securities_file(scenario_name: str, ontology_name: str) -> Optional[li
     return [SecurityItem(**e) for e in (items or [])]
 
 
-# 与前端 resolveOpType / agent ontology-gateway isWrite 同一推导规则
-def _resolve_op_type(behavior, engines: list[DataEngineItem]) -> str:
+# 与前端 behavior-op-type.resolveOpType / agent ontology-gateway isWrite 同一推导规则
+def _resolve_op_type(behavior) -> str:
     """推导行为操作类型：op_type 显式值为准；空 → query。
 
     数据引擎唯一形态为 MCP（SQL/HTTP 已删除），无 method 语义可推导——
@@ -141,7 +141,7 @@ def _sync_securities_roster(data: OntologyData) -> list[SecurityItem]:
     existing = {s.action_name: s for s in data.securities}
     roster = []
     for b in data.behaviors:
-        op = _resolve_op_type(b, data.data_engines)
+        op = _resolve_op_type(b)
         sec = existing.get(b.name)
         if sec is None:
             sec = SecurityItem(action_name=b.name, scope=["everyone"], confirm=(op == "command"), confirm_content="")

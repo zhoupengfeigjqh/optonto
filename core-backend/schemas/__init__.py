@@ -154,6 +154,17 @@ class BehaviorItem(BaseModel):
     from_status: str = Field("", description="源状态：command 状态机跃迁起点（取自关联概念 status 枚举）")
     to_status: str = Field("", description="目标状态：command 状态机跃迁终点（取自关联概念 status 枚举）")
 
+    @field_validator('op_type', mode='before')
+    @classmethod
+    def coerce_op_type(cls, v: any) -> str:
+        """操作类型规范化：仅 command/query 为合法值，值域外（含空）归一为空串。
+
+        与 relation_type / type / cardinality 同为「值域类静默归一」；
+        空串的语义由 ``services._resolve_op_type`` 统一推导为 query（前端 resolveOpType 同口径）。
+        """
+        s = str(v).strip() if v is not None else ""
+        return s if s in ("command", "query") else ""
+
     @model_validator(mode='before')
     @classmethod
     def migrate_related_concepts(cls, v: any) -> any:

@@ -11,7 +11,6 @@ from fastapi import APIRouter, HTTPException
 
 from errors import DomainError
 
-from config import DATA_DIR
 from dependencies import get_ontology_names
 from repositories.metadata import list_all_ontologies
 from repositories import fs_store
@@ -20,6 +19,7 @@ from services import (
     load_ontology_data, save_ontology_data, ensure_functions_dir, _get_functions_dir,
 )
 from services.entity_crud import ensure_unique, find_index
+from services.function_catalog import common_function_names
 from llm_utils import load_env, llm_text
 
 router = APIRouter(prefix="/api/ontologies/{ontology_id}/functions", tags=["函数"])
@@ -55,20 +55,12 @@ def _validate_function_code(code: str) -> str | None:
 # ─── 函数名全局唯一 ─────────────────────────────────────────────────────────────
 # 本体函数注册为一等 MCP 工具后，工具名 = 函数名（与公共函数并列暴露给 LLM）。
 # 因此函数名必须跨本体唯一，且不得与公共函数重名，否则 MCP 工具名冲突。
-
-_COMMON_FUNCTIONS_PATH = DATA_DIR / "common_functions" / "functions.json"
-
-
-def _common_function_names() -> set[str]:
-    entries = fs_store.read_json(_COMMON_FUNCTIONS_PATH, default=[])
-    if not isinstance(entries, list):
-        return set()
-    return {e["name"] for e in entries if isinstance(e, dict) and e.get("name")}
+# 公共函数名清单口径唯一实现在 services/function_catalog（本处不再各自读一遍 json）。
 
 
 def _ensure_global_unique(name: str, sc_name: str, on_name: str) -> None:
     """函数名跨本体 + 对公共函数 全局唯一校验（当前本体内的查重由 ensure_unique 负责）。"""
-    common = _common_function_names()
+    common = common_function_names()
     if name in common:
         raise HTTPException(status_code=400, detail=f"函数名「{name}」与公共函数重名，请更换函数名")
     for onto in list_all_ontologies():

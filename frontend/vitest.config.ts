@@ -57,6 +57,10 @@ export default defineConfig({
         'src/components/Design/agent/AgentConversation.tsx',
         'src/components/Design/DataEngineTable.tsx',
         'src/components/Design/AgentApp.tsx',
+        // 2026-10-05 收口：行为操作类型推导 / 发布就绪判据 / 固定服务配置片段（均配齐单测）
+        'src/components/Design/behavior-op-type.ts',
+        'src/components/Design/mcp-publish/readiness.ts',
+        'src/components/Design/mcp-publish/config-snippets.ts',
       ],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**'],
       thresholds: {

@@ -88,7 +88,7 @@ async def mcp_start(service: str):
     except Exception as e:
         errors = _docker_errors()
         if errors and isinstance(e, errors.NotFound):
-            return {"message": f"容器 %s 不存在" % container, "running": False}
+            return {"message": "容器 %s 不存在" % container, "running": False}
         return {"message": "启动失败: %s" % str(e), "running": False}
 
 
@@ -105,5 +105,5 @@ async def mcp_stop(service: str):
     except Exception as e:
         errors = _docker_errors()
         if errors and isinstance(e, errors.NotFound):
-            return {"message": f"容器 %s 不存在" % container, "running": False}
+            return {"message": "容器 %s 不存在" % container, "running": False}
         return {"message": "停止失败: %s" % str(e), "running": True}

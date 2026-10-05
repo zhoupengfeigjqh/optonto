@@ -5,10 +5,14 @@
  * type=VALIDATION 者为判断函数（返回统一信封 data.pass/reason，运行期由规则闸真阻断）。
  * 因此本模块只保留「数据补充自动推导」。
  */
+import { resolveOpType } from '../behavior-op-type';
 
 /**
  * 数据补充自动推导：关联函数声明的关联概念 → 覆盖这些概念的 query 行为
  * （排除规则自身绑定的行为），作为规则判断所需的额外数据来源。
+ *
+ * query 判定走 `resolveOpType`：`op_type` 空值按读（query）处理，与后端推导同口径
+ * （此前直接比较 `op_type === 'query'` 会漏掉未显式标注的读行为）。
  */
 export function deriveDataSupplements(opts: {
   behavior: string;
@@ -24,6 +28,6 @@ export function deriveDataSupplements(opts: {
   }
   if (usedConcepts.size === 0) return [];
   return behaviors
-    .filter(b => b.op_type === 'query' && b.name !== behavior && !!b.concept && usedConcepts.has(b.concept))
+    .filter(b => resolveOpType(b).type === 'query' && b.name !== behavior && !!b.concept && usedConcepts.has(b.concept))
     .map(b => b.name);
 }

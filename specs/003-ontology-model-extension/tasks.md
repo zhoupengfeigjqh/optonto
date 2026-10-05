@@ -900,3 +900,74 @@ saveConfig 同口径）；新增 `agent-factory-dataengine-scope.test.ts`（4 �
 - 权限按角色 / `SecurityItem.scope` 相关改造（用户 D2 决定不做）
 - 关系类型与 `cardinality` 的一致性校验、关系类型的推理语义
 - 存量 `type: enum` 属性的规范化（`CustomerOrder.status` / `orderType`）
+
+### 本体需求 / 本体明细 / MCP发布 全链路审查与修正（2026-10-05）
+
+**范围**：本体需求（`threads`/`chat`/需求生成链路）、本体明细（`schemas` + `concepts/relations/functions/behaviors/rules/securities/processes` + `Design/*` 前端）、
+MCP发布（`routers/mcp_publish` → `services/mcp_publish_*` → `mcp-publish/server` → `mcp-shared/publish_upstream` → 执行底座 → agent 挂载），
+覆盖前后端；分析维度：架构、功能、耦合、语义、冗余、漂移。
+
+**A. 已修正——语义漂移（同一语义多处实现，且口径已不一致）**
+
+| # | 问题 | 事实 | 修正 |
+|---|---|---|---|
+| A1 | **行为就绪判据前端/后端不一致** | 后端 `mcp-shared/tool_contract.is_engine_ready` = `engine_type` 缺省/`MCP` + `server_url`/`tool_name` **trim 后**非空；前端 `MCPPublish.tsx` 内联为 `e?.target?.server_url && e?.target?.tool_name`（仅真值、不 trim）→ 纯空白串会被前端判「就绪」、后端判「未就绪」，出现「能勾选、创建时 400」 | 新增前端唯一实现 `Design/mcp-publish/readiness.ts`（逐条对齐后端）+ 单测；`MCPPublish` 改用之 |
+| A2 | **`op_type` 推导三处口径不齐** | 后端 `services._resolve_op_type` 与前端 `SecurityTable` 本地 `resolveOpType` 均为「空/非法 → query」；而 `RuleTable.tsx:143`、`rule/rule-logic.ts:27` 直接比 `op_type === 'query'` → **空值的读行为被漏掉**（数据补充推导结果与设计器/后端不一致） | 新增前端唯一实现 `Design/behavior-op-type.ts`（`resolveOpType` / `isWriteBehavior`）+ 单测；`SecurityTable`/`RuleTable`/`rule-logic` 统一改用；后端 `_resolve_op_type` 去掉从未参与推导的 `engines` 死参（契约测试同口径更新） |
+| A3 | **`op_type` 无值域归一** | `relation_type`/`type`/`cardinality`/`connection_type` 均有 validator 静默归一，唯 `op_type` 无 → 非法值原样落盘 | `BehaviorItem` 补 `coerce_op_type`（仅 `command`/`query` 合法，其余含空归一为 `""`；空串语义由 `_resolve_op_type` 统一推导为 query） |
+| A4 | **前端类型缺字段导致 `any` 逃逸** | 后端 `RuleItem.data_supplements` 与 `RuleTable` 都在用，前端 `api/design.ts` 的 `Rule` 却未声明 → `(r as any).data_supplements`（违反章程 I「MUST NOT 使用 any 逃逸」） | `Rule` 补 `data_supplements?: string[]`；去掉 `as any` |
+
+**B. 已修正——冗余（同一事实多处实现）**
+
+| # | 问题 | 修正 |
+|---|---|---|
+| B1 | 公共函数名册三处各读一遍 `common_functions/functions.json`：`routers/functions.py:62`、`routers/rules.py:26`、`routers/common_functions.py:14/21` | 新增业务层 `services/function_catalog.py`（`read_common_functions` / `common_function_names` / `available_function_names`），三处收口为调用 |
+| B2 | 发布类型常量 core 侧自持一份（`services/mcp_publish_registry.py` 的 `KIND_*`），与 `mcp-shared/publish_upstream.py` 同名常量各写一份（值相同但无常量级守护，与 2026-10-04 环境变量漂移同源） | 改为经 `services/mcp_contract_bridge` 从 `publish_upstream` 转出 |
+| B3 | 前端 `MCPPublish.tsx` **632 行**（章程 I/II 硬约束 ≤500），且卡片端点/角色、配置片段文案、就绪判据混在组件内 | 拆为 `Design/mcp-publish/{catalog,config-snippets,readiness}.ts` + `{cards,PublishModals}.tsx`；`MCPPublish.tsx` **433 行**；拓扑护栏测试的受检路径同步指向新文件（4 处） |
+
+**C. 已修正——死代码 / 陈旧副本 / 错误注释**
+
+- 仓库根 `server.py`（185 行）是 `mcp-publish/server.py` 的**陈旧副本**：`kind="function"`、`FUNCTION_EXECUTOR_URL` 均为旧口径，与现行契约不符；全仓核对**无任何 Dockerfile / compose / 测试 / 源码引用**（根 `Dockerfile` 构建的是 `ontology-query-mcp/server.py`）。
+  → 本次以**废弃占位文件**替换（会话内无文件删除权限），文件头写明唯一实现位置与 `git rm` 处置建议。
+- `mcp-publish/server.py`：docstring 的 `kind=function` → `ontology_function`；删除未使用的 `KIND_BEHAVIOR` / `KIND_ONTOLOGY_FUNCTION` 导入。
+- `routers/skills.py:266`：不可达的重复 `raise`（前一行同条件已抛）→ 删除。
+- `routers/mcp_ctl.py:91/108`：`f"容器 %s 不存在" % container` 的冗余 f 前缀（f-string 无占位）→ 去掉。
+- `routers/mcp_publish.py`、`services/mcp_publish_registry.py`：注释/文档串写「冲突 409」，实际 `ConflictError → 400`（`errors.py:36`）→ 更正。
+
+**D. 复核为「无漂移」（留证）**
+
+- 转发契约：注入方 `build_run_kwargs` 与读取方 `mcp-publish/server.py` 的 env 名 / path / target_key 逐项一致（`publish_upstream` 单点收口，`test_service_topology_consistency` 守护）。
+- 令牌头：`client_config` 产出 `X-MCP-Token`，与 `mcp-shared/mcp_app.DEFAULT_AUTH_HEADER` 一致。
+- 行为「已就绪」判据在发布面 / 调用端 / 规划闸 / 查询面四处同源，未发现新增分叉。
+
+**E. 记录未改（需单独裁决，附实施计划）**
+
+1. **接口层直连数据访问层**（章程 II「接口层不得直连数据访问层」）：
+   `routers/files.py:10`、`routers/threads.py:16`、`routers/common_functions.py`（历史）直接 `import repositories.fs_store`；`routers/ontologies.py:72`、`functions.py:20`、`skills.py:19`、`deploy.py:30` 还直接 import `services` 的**私有**函数（`_get_yaml_path` / `_get_functions_dir` / `_get_ontology_dir`）。
+   计划：把私有路径函数提升为公开 API（或下沉到 service），router 只调 service。
+2. **router ↔ router 私有依赖**：`routers/deploy.py:32` 从 `routers.threads` 取 `_thread_dir/_yaml_source_map/_match_ontology_yaml`；`routers/chat.py:25` 从 `routers.threads` 取 `_load_thread/_save_thread/_thread_dir/_resolve_ids`。
+   计划：抽 `services/thread_store.py`（线程目录与 .data.json 读写），三个 router 共用；属跨文件重构，需配套测试。
+3. **错误契约半迁移**：`services` 层已全面改领域异常，`routers`/`dependencies.py` 仍大量 `raise HTTPException`（`main.py` 对两者同构处理，运行期不故障，但违反分层口径）。计划：逐路由改抛领域异常。
+4. **固定服务启停失败语义**（`routers/mcp_ctl.py`）仍以 HTTP 200 + `{running:false}` 表达失败，与自建发布（抛领域异常 → 404/502）不一致；且 `mcp_publish_containers.start_publish` 在容器缺失时不回写注册表（产生 stopped/not_found 悬挂记录）。
+5. `x-publish-service` 为**写而不读**标记（仅测试消费）；保留（回溯用途）或删除需裁决。
+6. `build_run_kwargs` 注入上游地址时使用**契约默认值**而非 core 运行环境变量；当前与 compose 一致且被拓扑测试守护，若希望「compose 改地址即发布容器跟随」可改为 `os.getenv(spec["env"], spec["default"])`。
+7. `routers/ontologies.py:84`（PUT）无 `PUT /{ontology_id}/data` 之外的校验缺口、`relations`/`processes`/`functions` 无强耦合校验（与行为/规则已强校不一致）——属能力缺口而非错误。
+
+**F. 验证状态（实测）**
+
+| 范围 | 命令 | 结果 |
+|---|---|---|
+| core-backend | `python -m pytest tests -q` | **146 passed**（含拓扑护栏 `test_service_topology_consistency`，其受检路径已随拆分更新） |
+| 其余 Python 服务 | 各服务目录内 `python -m pytest tests -q` | business-mcp **4** / common-function-mcp **12** / data-engine-executor **27** / mcp-publish **22** / mcp-shared **75** / ontology-function-executor **11** / ontology-query-mcp **13** —— 合计 **164 passed** |
+| 前端单测 | `npx vitest run`（frontend） | **27 files / 321 tests passed**（75.98s） |
+| 前端覆盖率 | `npx vitest run --coverage` | lines **96.61%** / statements **96.61%** / functions **83.52%** / branches **88.32%**（阈值 80%，**全部达标、无门槛报错**） |
+| 类型检查 | `npx tsc --noEmit`（frontend） | 净（无输出） |
+| 字节码编译 | `python -m compileall -q core-backend` | exit 0 |
+| 语言服务 | `read_lints` | 全部改动文件 0 error / 0 warning |
+
+- 新增前端单测：`Design/behavior-op-type.test.ts`(3)、`Design/mcp-publish/readiness.test.ts`(5)、
+  `Design/mcp-publish/config-snippets.test.ts`(3)、`Design/mcp-publish/cards.test.tsx`(4)、`Design/MCPPublish.test.tsx`(3)，合计 **18 例**；
+  `vitest.config.ts` 覆盖率清单纳入 3 个新纯逻辑模块（`behavior-op-type` / `readiness` / `config-snippets`），实测均 100% 行覆盖。
+- **实施中的偏差（如实记录）**：组件测试初稿用 `getByText('删除')` 等查 antd 按钮失败——antd 对**恰好两个汉字**的按钮会
+  自动插入空格（渲染为 `删 除`）。已按仓库既有约定改用 `getByRole('button', { name: '删 除' })`；同理
+  「零工具」「本体查询 MCP 服务」等文案在页面中出现多次，断言改为按出现次数（`getAllByText`）而非唯一命中。
+- 说明：`frontend/coverage/coverage-summary.json` 随覆盖率复跑更新（新增模块后指标重算），属预期产物变化。

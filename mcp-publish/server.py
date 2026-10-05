@@ -13,7 +13,7 @@
 由发布配置决定——发布即授权：自带端口、传输模式（sse / streamable）与访问令牌。
 
 配置形态（由 core 的动态发布面生成，本服务只读不改）：
-``{"name": 服务名, "kind": "function"|"behavior", "ontology_id": 1, "tools": [{name, description, inputSchema}]}``
+``{"name": 服务名, "kind": "ontology_function"|"behavior", "ontology_id": 1, "tools": [{name, description, inputSchema}]}``
 
 ``tools[].name`` 即转发目标（函数名/行为名裸名，与平台发布面同一命名口径）。工具 schema 由
 core 用 mcp-shared/tool_contract 编译（``ontology_id_mode="const"``：绑定单一本体，调用方
@@ -42,8 +42,6 @@ from mcp.types import TextContent, Tool
 
 from mcp_app import build_mcp_app
 from publish_upstream import (  # 转发契约的**唯一权威实现**（core 注入侧读的是同一份）
-    KIND_BEHAVIOR,
-    KIND_ONTOLOGY_FUNCTION,
     KINDS as PUBLISH_KINDS,
     upstream_of,
 )

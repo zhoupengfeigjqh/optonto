@@ -5,20 +5,17 @@
 
 from fastapi import APIRouter, HTTPException
 
-from config import DATA_DIR
 from repositories import fs_store
+from services.function_catalog import COMMON_FUNCTIONS_DIR as COMMON_DIR, read_common_functions
 
 router = APIRouter(prefix="/api/common-functions", tags=["公共函数"])
-
-COMMON_DIR = DATA_DIR / "common_functions"
-FUNCTIONS_PATH = COMMON_DIR / "functions.json"
 
 
 @router.get("")
 async def list_common_functions() -> list[dict]:
     """Return all common functions with full metadata."""
-    # 缺失/损坏统一按「空清单」降级（口径见 fs_store.read_json）
-    return fs_store.read_json(FUNCTIONS_PATH, default=[])
+    # 缺失/损坏统一按「空清单」降级（口径见 services.function_catalog）
+    return read_common_functions()
 
 
 @router.get("/{func_name}/code")

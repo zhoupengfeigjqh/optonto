@@ -55,6 +55,11 @@ _URL_RE = re.compile(r"(?:http://)?([a-z0-9-]+):(\d+)(/[^\s\"'`,]*)?")
 _URL_STRICT_RE = re.compile(r"^http://([a-z0-9-]+):(\d+)")
 _PORT_IN_DOCKERFILE_RE = re.compile(r"--port[\"', ]+(\d+)")
 
+# 前端「固定服务声明」与「配置片段」的事实源（2026-10-05 自 MCPPublish.tsx 抽出为独立模块；
+# 组件现已超 500 行约束拆分，声明与文案随之迁移，护栏路径同步指向新文件）。
+_UI_SERVICE_CATALOG = "frontend/src/components/Design/mcp-publish/catalog.ts"
+_UI_CONFIG_SNIPPETS = "frontend/src/components/Design/mcp-publish/config-snippets.ts"
+
 
 def _load_compose() -> dict:
     if yaml is None or not COMPOSE_FILE.exists():
@@ -169,9 +174,9 @@ class WhitelistCase(TopologyCase):
 
     def test_白名单键与前端卡片键一一对应(self):
         """前端每张卡片打来的 service 键必须在白名单里，否则卡片状态永远拿不到（404）。"""
-        text = self.read("frontend/src/components/Design/MCPPublish.tsx")
+        text = self.read(_UI_SERVICE_CATALOG)
         keys = set(re.findall(r"service:\s*'([a-z-]+)'", text))
-        self.assertTrue(keys, "未从 MCPPublish.tsx 解析出任何 service 键（正则需同步）")
+        self.assertTrue(keys, "未从固定服务目录（catalog.ts）解析出任何 service 键（正则需同步）")
         self.assertEqual(keys - set(self.whitelist), set(),
                          "前端卡片使用了白名单外的 service 键")
 
@@ -228,12 +233,10 @@ class UpstreamAddressCase(TopologyCase):
 
         只校验 endpoints 数组本身（说明文案里提到"已迁至 8007"是正确的引导，不算漂移）。
         """
-        text = self.read("frontend/src/components/Design/MCPPublish.tsx")
-        block = re.search(r"def\.key === 'functionExecutor'\)\s*\{(.*?)\n    \}", text, re.DOTALL)
-        self.assertIsNotNone(block, "未找到本体函数执行服务的配置分支")
-        listed = re.search(r"endpoints:\s*\[([^\]]*)\]", block.group(1))
-        self.assertIsNotNone(listed, "本体函数执行服务的配置缺少 endpoints 清单")
-        endpoints = re.findall(r"/([a-z-]+)", listed.group(1))
+        text = self.read(_UI_CONFIG_SNIPPETS)
+        block = re.search(r"key === 'functionExecutor'.*?endpoints:\s*\[([^\]]*)\]", text, re.DOTALL)
+        self.assertIsNotNone(block, "未找到本体函数执行服务的端点清单（配置片段）")
+        endpoints = re.findall(r"/([a-z-]+)", block.group(1))
         self.assertEqual(endpoints, ["execute-function"],
                          f"本体函数执行服务的端点清单应只含 execute-function，实际 {endpoints}")
 
@@ -242,7 +245,7 @@ class SurfaceClaimCase(TopologyCase):
     """卡片与文档对"暴露面/端口"的声明 ⇄ compose 实际暴露面。"""
 
     def test_前端对外端点必须有对应宿主端口(self):
-        text = self.read("frontend/src/components/Design/MCPPublish.tsx")
+        text = self.read(_UI_SERVICE_CATALOG)
         published = {h for cfg in self.services.values() if isinstance(cfg, dict)
                      for h, _ in _container_ports(cfg)}
         endpoints = re.findall(r"endpoint:\s*'([^']+)'", text)
@@ -259,7 +262,7 @@ class SurfaceClaimCase(TopologyCase):
         self.assertGreater(checked, 0, "未解析到任何对外端点声明（正则需同步）")
 
     def test_前端内网端点不得对外发布端口(self):
-        text = self.read("frontend/src/components/Design/MCPPublish.tsx")
+        text = self.read(_UI_SERVICE_CATALOG)
         checked = 0
         for raw in re.findall(r"endpoint:\s*'([^']+)'", text):
             if "{host}" in raw or "内网" not in raw:

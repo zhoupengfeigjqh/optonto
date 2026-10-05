@@ -155,6 +155,8 @@ export interface Rule {
   behavior: string;
   /** 关联函数（本体∪公共）；其中本体且 type=VALIDATION 者为判断函数——返回 data.pass/reason，前置判断不通过时系统拒绝主行为 */
   related_functions: string[];
+  /** 数据补充（可多选 query 行为；按关联函数声明的关联概念自动推导，可手工增减） */
+  data_supplements?: string[];
   display_name?: string;
   position?: string;
 }

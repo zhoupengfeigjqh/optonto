@@ -5,6 +5,7 @@ import { Button, Input, Select, Modal, message, Space, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, RobotOutlined, WarningOutlined } from '@ant-design/icons';
 import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, generateRule, Rule, Behavior, Function } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import { resolveOpType } from './behavior-op-type';
 import { deriveDataSupplements } from './rule/rule-logic';
 import { functionLabel, functionLabelParts } from './rule/function-label';
 
@@ -59,7 +60,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const emptyEdit = { name: '', display_name: '', description: '', position: '', behavior: '', related_functions: [], data_supplements: [] };
   const handleAdd = () => { setEditData({ ...emptyEdit }); setEditingKey('__new__'); };
   const handleEdit = (r: Rule) => {
-    setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: (r as any).data_supplements || [] });
+    setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: r.data_supplements || [] });
     setEditingKey(r.name);
   };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
@@ -140,7 +141,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'data_supplements') {
       // 数据补充：编辑态自动推导（见上方 useEffect），用户可在此手工增减
       const queryBehaviorOptions = behaviors
-        .filter(b => b.op_type === 'query')
+        .filter(b => resolveOpType(b).type === 'query')
         .map(b => ({ label: b.display_name || b.name, value: b.name }));
       return (
         <div className="flex items-center gap-1">

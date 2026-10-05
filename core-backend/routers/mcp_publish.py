@@ -47,7 +47,8 @@ async def published_client_config(name: str, host: str | None = None):
 async def create_published(body: dict):
     """创建发布：``{ontology_id, name, kind, items[], host_port, transport}``。
 
-    校验失败 400/409、勾选项不存在 404、行为未就绪 400、镜像缺失或容器未就绪 502。
+    校验失败与名称/端口冲突 400（ConflictError 口径）、勾选项不存在 404、
+    行为未就绪 400、镜像缺失或容器未就绪 502。
     """
     return await runtime.create_publish(
         ontology_id=body.get("ontology_id"),

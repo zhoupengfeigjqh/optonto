@@ -5,10 +5,11 @@ import { Button, Input, Select, message, Space, Tag } from 'antd';
 import { EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import {
   getSecurities, createSecurity, updateSecurity,
-  getBehaviors, getDataEngines,
-  Security, Behavior, DataEngine,
+  getBehaviors,
+  Security, Behavior,
 } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import { resolveOpType } from './behavior-op-type';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -24,19 +25,12 @@ const CONFIRM_OPTIONS = [
   { label: '否', value: '否' },
 ];
 
-/** 与 agent 端 ontology-gateway 的 isWrite 推导保持一致：op_type 是唯一权威来源（引擎唯一形态=MCP，无 method 语义），空按读处理。 */
-const resolveOpType = (b: Behavior, engines: DataEngine[]): { type: 'command' | 'query'; derived: boolean } => {
-  if (b.op_type === 'command' || b.op_type === 'query') return { type: b.op_type, derived: false };
-  return { type: 'query', derived: true };
-};
-
 const scopeOf = (sec?: Security): string[] =>
   sec?.scope ? (Array.isArray(sec.scope) ? sec.scope : [sec.scope]) : ['everyone'];
 
 export default function SecurityTable({ ontologyId, activeTab }: Props) {
   const [securities, setSecurities] = useState<Security[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
-  const [dataEngines, setDataEngines] = useState<DataEngine[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
@@ -44,10 +38,10 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const [secList, behList, engList] = await Promise.all([
-        getSecurities(ontologyId), getBehaviors(ontologyId), getDataEngines(ontologyId),
+      const [secList, behList] = await Promise.all([
+        getSecurities(ontologyId), getBehaviors(ontologyId),
       ]);
-      setSecurities(secList); setBehaviors(behList); setDataEngines(engList);
+      setSecurities(secList); setBehaviors(behList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
@@ -57,7 +51,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
 
   const handleEdit = (b: Behavior) => {
     const sec = securities.find(s => s.action_name === b.name);
-    const { type } = resolveOpType(b, dataEngines);
+    const { type } = resolveOpType(b);
     setEditData({
       scope: scopeOf(sec),
       // command 默认是；sec.confirm === false 为显式关闭。query 行锁定否（不可编辑）。
@@ -70,7 +64,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
 
   const handleSave = async (b: Behavior) => {
     const sec = securities.find(s => s.action_name === b.name);
-    const { type } = resolveOpType(b, dataEngines);
+    const { type } = resolveOpType(b);
     try {
       // 全字段恒落盘：界面填什么 yaml 存什么（scope 恒数组；query 行确认锁定否）
       const vals: string[] = editData.scope?.length ? editData.scope : ['everyone'];
@@ -116,7 +110,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 180, render: (v: any) => v || '-' },
     { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 150, render: (v: any) => v || '-' },
     { title: '操作类型', key: 'op_type', width: 110, render: (_: any, r: Behavior) => {
-      const { type, derived } = resolveOpType(r, dataEngines);
+      const { type, derived } = resolveOpType(r);
       return (
         <span>
           <Tag color={type === 'command' ? 'orange' : 'cyan'}>{type}</Tag>
@@ -132,7 +126,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
       return renderScope(scopeOf(securities.find(s => s.action_name === r.name)));
     }},
     { title: '人工确认', key: 'confirm', width: 90, render: (_: any, r: Behavior) => {
-      const { type } = resolveOpType(r, dataEngines);
+      const { type } = resolveOpType(r);
       if (type !== 'command') return <span className="text-text-muted">否</span>;
       const sec = securities.find(s => s.action_name === r.name);
       if (isEditing(r.name)) {
@@ -142,7 +136,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
       return sec?.confirm === false ? <Tag color="default">否</Tag> : <Tag color="orange">是</Tag>;
     }},
     { title: '确认内容', dataIndex: 'confirm_content', key: 'confirm_content', width: 240, ellipsis: true, render: (_: any, r: Behavior) => {
-      const { type } = resolveOpType(r, dataEngines);
+      const { type } = resolveOpType(r);
       if (type !== 'command') return <span className="text-text-muted">-</span>;
       const sec = securities.find(s => s.action_name === r.name);
       if (isEditing(r.name)) {

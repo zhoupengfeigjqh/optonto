@@ -6,12 +6,11 @@ from fastapi import APIRouter, HTTPException
 
 from errors import DomainError
 
-from config import DATA_DIR
 from dependencies import get_ontology_names
-from repositories import fs_store
 from schemas import RuleItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
+from services.function_catalog import available_function_names, read_common_functions
 from services.validators import validate_related_functions
 from llm_utils import load_env, llm_json
 
@@ -19,17 +18,6 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/rules", tags=["规则"]
 
 
 load_env()
-
-COMMON_FUNCTIONS_DIR = DATA_DIR / "common_functions"
-
-
-def _available_function_names(data) -> set[str]:
-    """可用函数全集：本体函数 ∪ 公共函数（related_functions 的合法取值域）。"""
-    names = {f.name for f in data.functions if f.name}
-    manifest = fs_store.read_json(COMMON_FUNCTIONS_DIR / "functions.json", default=[])
-    if isinstance(manifest, list):
-        names |= {c.get("name") for c in manifest if isinstance(c, dict) and c.get("name")}
-    return names
 
 
 @router.get("")
@@ -46,7 +34,7 @@ async def create_rule(ontology_id: int, item: RuleItem):
 
     ensure_unique(data.rules, item.name, "规则")
     # 强耦合校验：关联函数必须存在（2026-09-30 口径 B）
-    validate_related_functions(item, data, _available_function_names(data))
+    validate_related_functions(item, data, available_function_names(data))
 
     data.rules.append(item)
     save_ontology_data(sc_name, on_name, data)
@@ -61,7 +49,7 @@ async def update_rule(ontology_id: int, rule_name: str, item: RuleItem):
 
     idx = find_index(data.rules, rule_name, "规则")
     ensure_unique(data.rules, item.name, "规则", exclude_name=rule_name)
-    validate_related_functions(item, data, _available_function_names(data))
+    validate_related_functions(item, data, available_function_names(data))
 
     data.rules[idx] = item
     save_ontology_data(sc_name, on_name, data)
@@ -124,14 +112,12 @@ async def generate_rule(ontology_id: int, body: dict):
         function_info += f"描述：{fn.description}\n"
         function_info += f"输入参数：{json.dumps(fn.params, ensure_ascii=False, default=str)}\n"
         function_info += f"返回结构：{json.dumps(fn.response, ensure_ascii=False, default=str)}\n\n"
-    common_fns = fs_store.read_json(COMMON_FUNCTIONS_DIR / "functions.json", default=[])
-    if isinstance(common_fns, list):
-        for cf in common_fns:
-            if not isinstance(cf, dict) or not cf.get("name"):
-                continue
-            function_info += f"函数：{cf['name']} ({cf.get('display_name', '')}) [公共函数]\n"
-            function_info += f"描述：{cf.get('description', '')}\n"
-            function_info += f"返回结构：{json.dumps(cf.get('response', {}), ensure_ascii=False, default=str)}\n\n"
+    for cf in read_common_functions():
+        if not isinstance(cf, dict) or not cf.get("name"):
+            continue
+        function_info += f"函数：{cf['name']} ({cf.get('display_name', '')}) [公共函数]\n"
+        function_info += f"描述：{cf.get('description', '')}\n"
+        function_info += f"返回结构：{json.dumps(cf.get('response', {}), ensure_ascii=False, default=str)}\n\n"
 
     # 3. Call LLM（从清单中选择关联函数）
     from config import RULE_GENERATE_SYSTEM_PROMPT, RULE_GENERATE_PROMPT
@@ -151,7 +137,7 @@ async def generate_rule(ontology_id: int, body: dict):
                 raise HTTPException(status_code=400, detail="未配置 LLM API Key")
             raise HTTPException(status_code=500, detail=f"LLM 返回格式异常: {stripped[:200]}")
         # 兜底过滤：只保留真实存在的函数名（LLM 幻觉函数名不透传）
-        available = _available_function_names(data)
+        available = available_function_names(data)
         picked = [f for f in (result.get("related_functions") or []) if isinstance(f, str) and f in available]
         return {"related_functions": picked, "reasoning": result.get("reasoning", "")}
     except (HTTPException, DomainError):

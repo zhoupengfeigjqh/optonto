@@ -263,7 +263,6 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
         raise HTTPException(status_code=400, detail="技能名称必须为小写字母/数字/连字符，1-64字符")
     if "claude" in skill_name.lower() or "anthropic" in skill_name.lower():
         raise HTTPException(status_code=400, detail="技能名称包含保留字")
-        raise HTTPException(status_code=400, detail="技能名称必须为英文")
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     description = str(body.get("description", "") or "")
