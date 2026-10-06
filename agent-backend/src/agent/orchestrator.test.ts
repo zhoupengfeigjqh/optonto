@@ -108,6 +108,54 @@ describe('Orchestrator.execute — 单 run 互斥', () => {
   });
 });
 
+/**
+ * 中断的归属校验（2026-10-05，agent 环节审查 M8）。
+ *
+ * 此前 `/abort` 无任何寻址，直接中断"当前活动 run"——多标签页/多用户场景下，
+ * A 会话的中断请求会打断 B 会话正在跑的任务（全局可变状态暴露为 HTTP 语义）。
+ * 现要求带 threadId，与当前 run 不一致即拒绝；无活动 run 时如实报告而非撒谎"已中断"。
+ */
+describe('Orchestrator.abortRun — 归属校验（M8）', () => {
+  /** 起一个挂起的 run（createParentAgent 未 resolve = activeSession 已就位）；返回收尾函数 */
+  async function startRun(threadId: string): Promise<{ orch: Orchestrator; finish: () => Promise<void> }> {
+    let release!: (a: AgentPort) => void;
+    // 关键：factory 必须与 orch 同源——否则 orch 内部挂起的不是这个 createParentAgent
+    const factory = mkFactory(vi.fn().mockImplementation(() => new Promise<AgentPort>(res => { release = res; })));
+    const orch = new Orchestrator(factory, noopGateway);
+    const done = orch.execute('m', SCOPE, [], () => {}, threadId);
+    await vi.waitFor(() => expect(orch.hasActiveRun()).toBe(true));
+    return { orch, finish: async () => { release(fakeParentAgent()); await done; } };
+  }
+
+  it('threadId 匹配 → 中断成功', async () => {
+    const { orch, finish } = await startRun('thread-A');
+    expect(orch.activeThreadId()).toBe('thread-A');
+    expect(orch.abortRun('thread-A')).toEqual({ aborted: true });
+    await finish();
+  });
+
+  it('threadId 不匹配 → 拒绝中断且不动在途 run（防跨会话误伤）', async () => {
+    const { orch, finish } = await startRun('thread-A');
+    const r = orch.abortRun('thread-B');
+    expect(r).toEqual({ aborted: false, reason: 'thread_mismatch' });
+    // 关键：被拒绝后 run 仍在跑（没被误杀）
+    expect(orch.hasActiveRun()).toBe(true);
+    expect(orch.activeThreadId()).toBe('thread-A');
+    await finish();
+  });
+
+  it('不带 threadId → 保持原行为（中断当前 run，兼容旧调用方）', async () => {
+    const { orch, finish } = await startRun('thread-A');
+    expect(orch.abortRun()).toEqual({ aborted: true });
+    await finish();
+  });
+
+  it('无活动 run → 如实报告 no_active_run（不撒谎"已中断"）', () => {
+    const orch = new Orchestrator(mkFactory(vi.fn()), noopGateway);
+    expect(orch.abortRun('thread-A')).toEqual({ aborted: false, reason: 'no_active_run' });
+  });
+});
+
 // ─── securityBlocked：工具层 disable 闸全场中断 ─────────────────────
 
 describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中断整个 run）', () => {
@@ -152,7 +200,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
     expect(factory.createChildAgent).toHaveBeenCalledTimes(1);
     // 总结阶段父 Agent 收到的终止原因 = 工具层闸的 disable 文案
     const prompts = (parent.prompt as any).mock.calls.map((c: any[]) => String(c[0]));
-    expect(prompts.some(p => p.includes('权限范围为 disable'))).toBe(true);
+    expect(prompts.some((p: string) => p.includes('权限范围为 disable'))).toBe(true);
   });
 });
 
@@ -413,7 +461,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     expect(reply).toBe('已按您的意愿取消，未执行任何操作。');
     expect(factory.createChildAgent).not.toHaveBeenCalled();
     expect(entryDetails(events).some(d => d.startsWith('规划审核|用户拒绝执行规划'))).toBe(true);
-    expect(promptsOf(parent).some(p => p.includes('用户取消了本次执行计划'))).toBe(true);
+    expect(promptsOf(parent).some((p: string) => p.includes('用户取消了本次执行计划'))).toBe(true);
     expect(events.at(-1)?.type).toBe('done');
   });
 
@@ -537,7 +585,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
     const reply = await orch.execute('查库存再建采购单', SCOPE, [], e => events.push(e));
 
     // 反馈 prompt 确已发出，且含本波执行结果
-    expect(promptsOf(parent).some(p => p.includes('本波次已执行完毕') && p.includes('子任务 1'))).toBe(true);
+    expect(promptsOf(parent).some((p: string) => p.includes('本波次已执行完毕') && p.includes('子任务 1'))).toBe(true);
     // 无调整 → 反馈轮的 prompt+回复整体剔除（不撑爆父Agent 上下文）
     expect(parent.state.messages.some((m: any) => String(m.content).includes('继续执行原计划'))).toBe(false);
     // 两个子任务分波执行完毕

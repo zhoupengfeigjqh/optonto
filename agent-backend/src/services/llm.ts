@@ -30,7 +30,7 @@ export async function askLLM(systemPrompt: string, userText: string, timeoutMs =
       agent.prompt(userText),
       new Promise<never>((_, reject) => {
         setTimeout(() => {
-          try { agent.abort(); } catch {}
+          try { agent.abort(); } catch (e) { console.warn('[llm] 直调超时后中断失败（请求可能仍在进行）:', e); }
           reject(new Error('LLM 直调超时'));
         }, timeoutMs);
       }),

@@ -12,8 +12,20 @@
 | **公共函数 MCP 服务**（固定） | `optonto-common-function-mcp` / 8007 | ✅ 7 个公共函数工具 | 平台级通用算力（日期/过滤/聚合/分组）：**无本体归属、跨场景共享、纯计算**；**发布 + 执行一体**（本服务内直接 exec，不转发） |
 | **本体函数执行服务**（固定） | `optonto-ontology-function-executor` / 8006（仅内网） | ❌ 零工具（`transport=none`） | **仅本体函数**执行的唯一实现（`/execute-function`：ontology_id 必填 + 归属一致性校验） |
 | **数据引擎执行服务**（固定） | `optonto-data-engine-executor` / 8005（仅内网） | ⚠️ 工具面仅内网（Agent 挂载），不经 nginx、不发布宿主端口 | **本体行为**执行的唯一实现（`/call-behavior`）+ 引擎直调（`/call-engine`）；映射翻译 → 下游 MCP |
-| **业务系统 MCP**（固定） | `optonto-business-mcp` / 8004 | ✅ 外部形态（无平台标记） | 业务侧集成边缘：直连业务系统；**与其他固定服务同权，可启停**（2026-10-04 用户决策） |
+| **业务系统 MCP**（固定） | `optonto-business-mcp` / 8004 | ✅ 外部形态（无平台标记） | 业务侧集成边缘：直连业务系统；**与其他固定服务同权，可启停**（2026-10-04 用户决策）。⚠️ **须在「MCP 配置」标记 `business_data: true`**——否则其原始写接口会以「其他MCP工具」身份进 Agent 目录，可被规划成零确认的函数子任务（见下） |
 | **自建发布**（动态实例） | `optonto-mcp-publish-*` / 宿主 8020-8099（容器内 8100） | ✅ 只发布勾选项（带令牌） | **对外提供执行能力的唯一出口**：按本体切片发布函数或行为，只转发不执行 |
+
+**⚠️ 「无平台标记」工具的 Agent 准入（2026-10-05，agent 环节合规审查 C1）**：
+分类标记 `x-category` 是消费端归类的**唯一依据**，无标记者按排除法兜底归为「其他MCP工具」。
+该类工具**不享受** `scope` 本体锁定、`isWrite`/`securities` 安全管控与 `disable` 权限闸——
+故其可被父 Agent 规划为**函数子任务**，而函数子任务走 `callFunctionTool` 直连路径，
+**不经过子 Agent 的 `scopeToOntology` 包装**（安全确认 / disable 闸 / 规则闸 / 报错预算四道闸全缺席）。
+
+因此：**承载真实业务接口的服务必须声明 `business_data: true`**，其无标记原始工具一律不进 Agent 目录
+（闸位 `agent-factory.discoverTools`，判定 `mcp-config-store.isBusinessDataServer`），
+业务接口须经 `data_engines` 映射发布为**本体行为**才是唯一合法入口。
+带 `x-category` 的平台自身工具（本体行为 / 本体函数 / 公共函数）不受此闸影响——
+否则会误伤 `optonto-data-engine-executor`（本体行为工具 = 行为子任务唯一执行入口）与自建发布。
 
 **语义铁律**（2026-10-04 统一）：
 

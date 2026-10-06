@@ -139,12 +139,25 @@ target:
 
 **问题**：同一业务接口可能双边暴露（business-mcp 原始工具 + data-engine-executor 行为工具）。Agent 直连原始工具将绕过映射、RuleGate 规则闸、安全管控（均按行为名匹配），且双工具并存令 LLM 规划不可预测。
 
-**策略：配映射即收编**
+**策略：配映射即收编 + 业务数据服务整站准入闸**
 
 | 接口状态 | 下游 MCP 原始工具 | data-engine-executor 行为工具 |
 |---|---|---|
 | 已配映射（绑定行为） | **对 Agent 隐藏** | ✅ 唯一入口 |
-| 未配映射（通用查询） | ✅ 直通暴露 | — |
+| 未配映射，服务**非**业务数据（图表/工具类辅助服务） | ✅ 直通暴露 | — |
+| 未配映射，服务**已声明业务数据**（`business_data: true`） | **对 Agent 隐藏** | — （须先配映射才有行为） |
+
+**⚠️ 2026-10-05 修正（agent 环节合规审查 C1）**：原表第二行「未配映射 → ✅ 直通暴露」**只对非业务数据服务成立**。
+business-mcp 承载 `POST/PUT/DELETE` 写接口，其未映射的原始工具一旦直通，父 Agent 可将其规划为
+**函数子任务**（`subtask-runner.runFunctionEntry`），而该路径**不经过**子 Agent 的
+`scopeToOntology` 包装——安全确认 / disable 权限闸 / 规则闸 / 报错预算**四道闸全部缺席**
+（`agent-factory.callFunctionTool` 直连）。叠加 `planNeedsConfirm` 只在子任务数 > 1 时才弹规划确认，
+**单个写接口子任务可零人工确认直连落库**。故补上准入闸：服务一旦声明 `business_data: true`，
+其原始未映射工具一律不进 Agent 目录，业务接口必须经映射发布为行为。
+
+**闸只挡无 `x-category` 标记者**：带标记的平台自身工具（本体行为 / 本体函数 / 公共函数）照常进目录——
+否则会误伤 `data-engine-executor`（发布本体行为工具，行为子任务的唯一执行入口）与自建发布。
+判定单点 `mcp-config-store.isBusinessDataServer`，闸位单点 `agent-factory.discoverTools`。
 
 **实现**：agent-backend 挂载下游 MCP 时按 `allowed_tools` 白名单过滤（机制已有）；隐藏清单由 data-engine-executor 同步映射配置时自动生成（凡 `engine_type: MCP` 的 target 工具名即入对应服务的隐藏名单），零人工维护。E2E 增加"已映射接口的原始工具不可见"断言。
 

@@ -1201,8 +1201,10 @@ optonto-frontend / optonto-nginx**。未重建：`ontology-query-mcp`（仅 docs
 
 用户要求：**「MCP 配置」加「是否业务数据（是/否）」，只有选「是」的服务才出现在「接口映射 → 目标 MCP 服务」下拉里。**
 
-- 字段：`MCPServerConfig.business_data?: boolean`（**缺省=否**，显式落盘 true/false）。agent 侧零改动——
+- 字段：`MCPServerConfig.business_data?: boolean`（**缺省=否**，显式落盘 true/false）。
   `normalize` 只剥离 `builtin`，其余字段原样保留，故该标记随配置下发给所有读取方。
+  - **2026-10-05 补（C1 收口）：agent 侧不再是零改动**——见下方 M 节。该字段新增第 ② 条消费语义
+    （Agent 工具目录准入），原「零改动」的判断已随 C1 审查结论修正。
 - 「MCP 配置」页：新增**「业务数据」列**（列表显示 `是/否` Tag；内置固定项显示 `—` 不适用），
   行编辑态用 `Switch`（是/否）；`handleSaveRow` 解析后统一写 `business_data`；页面说明补一句用途。
 - 「接口映射」页：`TargetConfigModal` 的服务下拉过滤由「非内置 + 已启用」收紧为
@@ -1217,6 +1219,286 @@ optonto-frontend / optonto-nginx**。未重建：`ontology-query-mcp`（仅 docs
   `MCPConfig.test.tsx` **7 例**（+2：编辑切换业务数据并落盘、内置行显示 `—`）；
   `TargetConfigModal.test.tsx` 服务下拉断言改为三条件（+「非业务数据服务」不进下拉）。
   受影响的 3 个子集 + 全部 7 条 MCPConfig 用例**逐一复跑通过**；`tsc --noEmit` 净。
+
+### M. C1 收口：`business_data` 接入 Agent 工具目录准入，函数子任务不再能直连业务写接口（2026-10-05）
+
+**问题**（agent 环节严格合规审查 C1，CRITICAL）：架构声明「函数子任务 = 纯计算，直连 MCP 无 LLM 无确认」
+（`specs/Optonto项目框架评估.md:121`），但**「纯计算」在代码里没有任何强制点**。链路：
+
+1. `agent-factory.listPlannableFunctions`（`:499-509`）把 `其他MCP工具`（= 无 `x-category` 标记者，
+   排除法兜底类）全量暴露为可规划 `function`；business-mcp 恰是无平台标记的服务，
+   且 `business-mcp/decls.py:11` 支持 `POST/PUT/DELETE`（**写接口**）。
+2. `subtask-runner.runFunctionEntry`（`:80-104`）**不调 `requestConfirm`**（对比行为子任务 `:119-134`）。
+3. `agent-factory.callFunctionTool`（`:233-249`）直连执行，**不经过** `createChildAgent` 的
+   `scopeToOntology` 包装（`:263-356`）——安全确认 / disable 权限闸 / 前置·后置规则闸 / 报错预算
+   **四道闸一道都没有**。
+4. `orchestrator.planNeedsConfirm`（`:48-50`）仅按子任务数 > 1 判确认 → **单子任务规划连规划确认都跳过**。
+5. 补上 L 节的 `business_data` 后仍不可用——该字段当时只做 UI 下拉过滤，**agent 侧零消费**。
+
+**后果**：父 Agent 可把未映射的业务写接口规划成单个 function 子任务，用户全程零弹窗直接落库。
+
+**处置（用户 2026-10-05 拍板方案 A：严格挡）**：复用 L 节的 `business_data` 标记作为准入闸——
+声明为业务数据的服务，其**原始未映射工具**（无 `x-category`）**一律不进 Agent 目录**；
+业务接口必须经 `data_engines` 映射发布为「本体行为」才是唯一合法入口（架构文档 §六的必然推论）。
+
+- **闸位单点收口**：`agent-factory.discoverTools`（`:561-563`）。一处生效即全链路阻断——
+  父 Agent 可规划清单（`getMountableToolCatalog`）、子 Agent 挂载（`createChildAgent`）、
+  函数子任务直连（`callFunctionTool`）、规划期函数名校验（`FunctionCatalog`）全部同源于 `discoverTools`。
+- **只挡无标记者（防误伤）**：`data-engine-executor` 发布的是**本体行为**工具（行为子任务的唯一执行入口）、
+  自建发布按 kind 发布本体函数/行为，二者即便被误标 `business_data=true` 也**照常放行**。
+  若写成「true 就跳过整个 server」会把行为执行入口一起挡掉——已在测试中固化为防回归用例。
+- **判定口径单点**：`mcp-config-store.isBusinessDataServer`（`=== true` 严格判定，缺省=否；
+  字符串 `"true"` / 数值 `1` 不算，防手改配置绕过）与 `isBuiltinServer` / `isDataEngineMcpUrl` 同族。
+- **可观测**：拦截计数进启动日志（区分「收编隐藏」与「业务数据闸拦截」两类治理动作）——
+  工具"凭空消失"对用户不可见，运维须能一眼区分成因。
+- **两侧契约同步**：`MCPServerConfig.business_data` 补进后端 TS 类型（此前仅前端有、
+  后端接口未声明，运行时靠 `...rest` 碰巧透传）；前端类型注释、`MCPConfig.tsx` 页面说明同步补第 ② 条语义。
+- **测试**：`agent-factory-business-data.test.ts` 新建 **6 例**（拦截 / 端到端直连失败 / 本体行为工具放行防误伤 /
+  缺省与 false 不误伤 / 与收编闸边界）；`mcp-config-store.test.ts` **+4 例**（normalize 透传、缺省=否、
+  严格取 true、内置不带标记），**14 例全绿**。
+
+### N. agent 环节合规审查修复：M2 测试门禁 / M7 安全 fail-closed / C5 执行记录配对（2026-10-05）
+
+承接 M 节（C1 收口），本轮处理审查中**成本低、收益高、失效方向危险**的三项。
+
+**M2：测试代码纳入类型检查（补宪法 III 门禁缺口）**
+
+- 背景：`tsconfig.json` 的 `exclude` 排除了 `**/*.test.ts`，`npm run build`（tsc）**从不检查测试代码**
+  ——测试里写错类型、引用不存在的导出、mock 工厂与被测模块签名漂移，全部要到运行时才暴露。
+  且 `package.json` 原本只有 `dev/build/start/test` 四个 script，**无 lint / typecheck / coverage**。
+- 处置：新增 `tsconfig.test.json`（`extends` 主配置，仅关闭 emit 相关项，不排除测试）+
+  三个 script：`typecheck`（生产）/ `typecheck:test`（测试）/ `typecheck:all`；`test:coverage` 脚本就位待依赖。
+- **存量类型错误 43 → 0**（本轮全部清零，未记录豁免）：
+  | 文件 | 错误数 | 成因与修法 |
+  |---|---|---|
+  | `mcp-config-store.test.ts` | 16 | import 缺 `.js` 扩展名（ESM+NodeNext 下 tsc 不接受，vitest 能跑）→ 类型推断失效连锁产生 implicit any。**4 处 import 补 `.js` 后 16 个错误全消** |
+  | `agent-factory.test.ts` | 23 | `pi-agent-core` 的 `AgentMessage` 联合类型 + 可选 `config`。**在测试边界加三个收敛辅助（`capturedConfig`/`capturedState`/`capturedTools`）+ `CapturedMsg` 类型，一处收敛 23 处噪声归零** |
+  | `orchestrator.test.ts` | 3 | `prompts.some(p => ...)` 回调参数隐式 any → 标注 `(p: string)` |
+  | `plan-gate.test.ts` | 1 | mock 的 `functionInfo` 返回 snake_case `display_name`，与 `FunctionInfo` 的 camelCase 不符（**顺带发现 mock 与接口漂移**）→ 修正为 `displayName` |
+- ⚠️ **`test:coverage` 依赖未装**：`@vitest/coverage-v8` 安装失败（网络受限，`npm ls` 返回 empty）。
+  故宪法 III「核心单元覆盖率 MUST 不低于 80%」**目前仍无度量手段**，待网络可用后补装并定阈值。
+
+**M7：安全判定 fail-closed（读不到本体配置时不再静默放行）**
+
+- 问题：`loadOntologyData` 返回 null（`ontology.yaml` 缺失 / YAML 解析失败）时，`getBehaviorMeta`
+  曾静默返回 `isWrite: false` —— 等于**按读操作处理**。于是配置读取失败的瞬间，
+  **写操作零人工确认直接落库**；同一路径下 `security` 也是 `undefined`，
+  经 `orchestrator.behaviorScope` 的 `?? ['everyone']` → **disable 权限闸同时失效**（双重 fail-open）。
+  与系统其余 fail-closed 姿态（判断函数缺 `pass`、按名查不到工具等）不一致。
+- 处置（区分「系统故障」与「数据缺失」两种语义，不搞一刀切 fail-closed）：
+  - `BehaviorMeta` 新增 `unavailable?: boolean` 标记（types.ts），语义与 `isWrite: true` 绑定落盘。
+  - `getBehaviorMeta`：`data` 为 null **或行为名在 `behaviors[]` 查不到** → 置 `unavailable: true`
+    且 `isWrite: true`（兜底双重保险：即便调用方漏判 `unavailable`，仍按写操作对待）。
+  - `needsSecurityConfirm`：`unavailable` → **返回 false**。反直觉但正确：确认了也不会执行
+    （`SubtaskRunner` 直接拒绝），弹窗只会白白中断在安全管控上并掩盖真正的失败原因。
+  - `SubtaskRunner.run`（**行为子任务路径上唯一能兜住的地方**）：`unavailable` → 就地拒绝执行——
+    **不创建子 Agent**（工具零挂载、业务写入零发生）、不弹确认、失败原因写进执行记录。
+  - 另一侧（**数据缺失**，`orchestrator.behaviorScope`）：`securities` 未登记仍按 `everyone` 放行
+    （securities 是全花名册，core 保存时保证每个行为恒定一条，未登记属正常业务状态），
+    但**每次 run 提示一次**（run 内去重防刷屏）——原先「以为已禁用实则失效」是静默的。
+- 测试 **+11 例**：`ontology-gateway.test.ts` 6 例（文件缺失/语法错误/行为名查不到 → unavailable；
+  元数据可用与「未登记 ≠ 不可用」两条防误伤）、`execution-policy.test.ts` 2 例、
+  `subtask-runner.test.ts` 3 例（**核心断言：`createChildAgent` 与 `requestConfirm` 均零调用**）。
+
+**C5：执行记录 running→done 精确配对（消除同名工具结果覆盖）**
+
+- 问题：前端去重键是 `type+name+status+seq`，而**父 Agent 的工具调用条目不带 seq**，
+  两侧 `undefined === undefined` 恒成立 —— 同名工具连续/并发调用两次时第 2 次 `running` 被丢弃、
+  第 2 次 `done` 覆盖第 1 次的 `result`。`event-channel.ts` 的 `ToolCallBridge` 注释曾声称
+  「前端 running→done 去重匹配不破」，该保证在前端并不成立。
+- 处置：**契约两侧同改**，用后端已有的 SDK `toolCallId` 做唯一配对键。
+  - 后端：`ExecutionEntry` 新增 `toolCallId?: string`；`subtask-runner`（子 Agent 侧）与
+    `orchestrator`（父 Agent 侧，含 `load_skill` 汇总条）4 个 emit 点全部下发。
+  - 前端：`LogEntry` 加同名字段；去重逻辑从组件内 state updater **抽为纯函数
+    `execution-log.mergeExecEntry`**（符合宪法 I 展示/逻辑分离，且可独立单测）；
+    配对优先用 `toolCallId`，无该键才回退 `type+name+seq+source`。
+  - 顺带修正 **m4 死键**：`displayLabel` / `description` 原先在执行记录面板被丢弃
+    （后端每次必发、前端类型声明了却从不写入），现随合并一并带出。
+- 测试：新建 `execution-log.test.ts` **15 例**（含 C5 防回归：同名工具连续两次 / 并发两次 /
+  重复 start 幂等 / 回退路径 / 父子同名不误配），并把此前**错放在 `plan-editing.test.ts`**
+  里的分组用例迁正（修正 m8：注释指向的 `execution-log.test.ts` 此前并不存在）；
+  `plan-editing.test.ts` 回归「规划编辑」单一职责。
+
+**回归**：agent-backend `27 files / 356 passed`（+11）；`tsc` 与 `tsc -p tsconfig.test.json` 双双 0 错误；
+frontend `tsc --noEmit` 0 错误、agent 目录 `7 files / 118 passed`。
+
+### O. agent 环节合规审查修复（批次 2）：C2 中断失效 / C2b 转圈残留 / C3 回执静默失败 / F1 加载失败伪装空态（2026-10-06）
+
+承接 N 节。四项都落在用户可感知的前端交互上，其中 C3 需要后端契约配合，故**两侧同改**。
+
+**C3：确认回执静默失败（写操作上最危险的一项）**
+
+- 问题：前端五处 `fetch(...).catch(() => {})`（安全确认倒计时自动拒绝 / 拒绝规划 / 确认执行 /
+  安全确认拒绝 / 安全确认批准）全部静默失败——弹窗照样关闭、UI 呈现已确认态，
+  而后端要等 `CONFIRM_TIMEOUT`(60s) 才按超时判失败。**用户与系统之间存在「状态真空」**：
+  用户以为已批准，系统实际已放弃，界面毫无提示。后端侧同源问题：
+  `ConfirmManager.handleConfirm/handlePlanConfirm` 在 confirmId 未命中时**静默 return**，
+  路由仍回 200 `{message:'ok'}`——「没生效」被伪装成「已确认」。
+- 处置（**契约两侧同改**）：
+  - 后端：`handleConfirm` / `handlePlanConfirm` 改返回 `boolean`（是否命中待确认项），
+    `ConfirmPort` 接口同步；`Orchestrator` 转发该值（无活动 run → false）。
+    路由据此回 **404 + 可操作文案**（「已失效，可改为拒绝结束等待」），不再回 200。
+    另补请求体校验：`approved` 必须是显式布尔（原缺省会被当拒绝，语义不显式）、
+    `rejectAction` 只能是 `exit`/`replan`。
+  - 前端：抽出统一 `postReply(path, body)` 入口（单一错误解析 + 404 识别），
+    替换五处裸 fetch。**回执失败时保持弹窗打开**并就地展示原因，用户可重试或改为拒绝；
+    新增 `replyBusy` 防连点（重复批准 = 重复写入）。
+  - 弹窗组件：`PlanConfirmModal` 新增 `replyError`（与既有 `error`「规划不合法」语义区分）
+    / `busy`；`SecurityConfirmModal` 新增 `error` / `busy`，回执进行中禁用关闭/遮罩/按钮。
+- 测试 **+11 例**：新建 `confirm-manager.test.ts` **8 例**（本文件此前**零测试**，而它正是 C3 核心部件：
+  命中/未命中/二次答复/超时后不命中/中断后不命中/两张表清理，**全部用 fake timers** 打桩时间）；
+  `SecurityConfirmModal.test.tsx` 新建 **6 例**（error 展示 + 弹窗不关 + busy 防连点）；
+  `AgentConversation.test.tsx` +3 例（500 保留弹窗 / 404 引导拒绝 / 失败后可重试）。
+
+**C2：中断失效（`AbortController` 死代码）**
+
+- 问题：`abortRef` 创建后**从不 `.abort()`**（全仓 0 命中），`agentChatStream` 也没有 signal 参数——
+  点「中断」只通知后端，本地 reader 继续读、token 继续追加、`sending` 不复位、输入框持续 disabled，
+  用户看着「已中断」按钮而内容还在动。`catch` 里的 `e.name !== 'AbortError'` 是不可达死分支。
+- 处置：`agentChatStream` 加 `signal` 参数；`handleAbort` 改为**先断本地流、再关弹窗、最后通知后端**
+  （顺序重要：只通知后端的话本地仍在收数据）；`catch` 正确识别 `AbortError`（用户主动中断，
+  不往正文写错误文案）；后端 `/abort` 非 2xx 时给出 warning。
+- 测试 +2 例（signal 透传且 abort 生效 / 中断后发送框恢复可用且无错误文案）。
+  ⚠️ 关键：mock 掉 `agentChatStream` 后 `signal.abort()` **不会**自动让 `reader.read()` 抛
+  `AbortError`，故 `sseStream` 测试辅助新增 `signal` 参数显式建模真实 fetch 的 abort 行为——
+  否则测不出「sending 复位」。
+
+**C2b：`analyzing` 转圈永久残留**
+
+`analyzing`（"父Agent 正在处理"）只由 `feedback` 事件置位，而 `error` / `done` / `abort` 三条收尾
+路径都不重置它——分析期间异常收尾后转圈永久停留。处置：`finally` 中统一 `setAnalyzing(false)`
+（`handleAbort` 内也同步收）。测试 +2 例（正常 running→done 显隐 / 异常收尾不残留）。
+
+**F1：加载失败伪装成「空对话」**
+
+原逻辑只 `message.error` 后照常渲染「开始一段新的智能体对话」空态——用户无法区分"加载失败"与
+"新对话"，看着空白页无从下手。处置：抽出可重试的 `loadThread()`，失败时渲染**显式错误态**
+（原因 + 重试 + 返回会话列表），且**不同时渲染空态引导**。测试 +2 例。
+
+**回归**：agent-backend `28 files / 364 passed`（+8）、双 tsc 0 错误；
+frontend `tsc --noEmit` 0 错误、agent 目录 `8 files / 132 passed`（+14）。
+
+> 附：修正 3 处因本轮行为变化而失效的既有测试断言（`agentChatStream` 新增第 5 参、
+> 加载失败从 toast 改为页面内错误态、feedback 用例需符合"流结束即收尾"的正确语义）——
+> 均为**测试跟随正确行为变化**，未回退实现。
+
+### P. SSE 事件契约镜像 + 消灭类型逃逸：补 C4 死契约 / M4 断言泛滥 / H3 联合类型降级（2026-10-06）
+
+承接 O 节。**C4 与 M4 实为同一件事的两面**：前端没有 SSE 事件类型，才导致后端发的
+`plan_received` 无人处理、且新增事件类型时编译期无感知。做一次收益三倍——补契约缺口 +
+消类型逃逸 + 建立前端契约门禁。
+
+**根因与处置**
+
+1. **`sse-events.ts`（新增）：SSE 事件的类型镜像**
+   - `SSEEvent` 判别联合（镜像后端 `agent-backend/src/types.ts`）+
+     `SubTask` / `SubTaskPlan` / `PlanParam` / `NarrativeOutcome` / `FeedbackStatus`；
+   - `SSE_EVENT_TYPES` 全集常量 + `isSSEEvent()` 守卫（替代此前的隐式 `any`）。
+
+2. **C4：`plan_received` 死契约** —— 后端每轮确认规划后都发这个事件（含用户编辑的结构化计划），
+   前端此前**零处理、零引用**。现在消费并存入 `confirmedPlan` state；**不重复渲染**——
+   正文由紧随其后的 `token` 事件呈现，否则同一计划在界面上会出现两遍。
+
+3. **未知事件显式告警** —— 此前未知 `data.type` 静默跳过（无 else 分支）、`JSON.parse`
+   失败也静默吞掉。现改为：`isSSEEvent` 守卫 + `console.warn` 提示事件名，
+   后端新增事件类型时不再是"悄悄不处理"。
+
+4. **M4：18 处 `as any` 归零**
+   - `chat-types.ts` 补 `AssistantChatMessage` 具名类型 + `isAssistantMessage` / `isSubtaskItem` 守卫。
+     **此前 `Extract<ChatMessage, { role: 'assistant' }>` 收窄得到 `never`**
+     （因为 `AgentMessage.role` 本身是四态联合，内联交叉后 role 仍可能是 'user'），故每处只能 `as any`。
+   - 分发改用 `isSSEEvent` 收窄，各分支 `data` 自动带类型。
+
+5. **H3（顺带修正）**：`LogEntry.type` / `status` / `source` 原为 `string`——
+   后端三处联合类型被降级，丢掉了穷尽性检查。收紧为与后端一致的五态/三态/二态。
+   **收紧后立刻暴露 H5**：`ExecutionLogDrawer.test.tsx:19` 的夹具用了 `'security'`
+   （后端从不发该值），因类型是 `string` 一直无人发现 → 已改为真实的 `'security_confirm'`。
+
+6. **m3（顺带）**：删除 `confirmModal.editedParams` 死字段（写时深拷贝、弹窗从不消费）。
+
+**测试 +9 例**：`sse-events.test.ts`（新建 6 例，核心是**契约防漂移**——
+读取后端 `types.ts` 源码提取事件集合，断言与前端镜像完全一致；后端加事件而前端没同步即测试失败）、
+`AgentConversation.test.tsx` +2 例（`plan_received` 被消费且不重复渲染 / 未知事件被忽略且不中断流）。
+`agent/` 目录 `8 files / 132 passed` → `9 files / 141 passed`，frontend 全量 `36 → 37 files`。
+
+### Q. agent 环节合规审查收尾批次（3/4）：M10 无障碍与三态 / E6 并发守卫 / M5 性能 / M8 端点资源化 / M6 可观测 / M9 分层（2026-10-06）
+
+承接 P 节。C1–C5、M2、M7 已闭环；本批处理余下的**用户可感知**与**宪法硬约束**项。
+
+**M10 · 无障碍与三态（宪法 IV）**
+
+- 键盘可达：`ExecutionLogDrawer` 子任务折叠头、`AgentApp` 会话标题此前是**纯 div/span + onClick**，
+  完全不可键盘操作——**违反项目自家 `utils/a11y.ts` 的 MUST 约定**（该文件明写「确需用 div/span
+  承载点击时 MUST 使用本助手」）。现统一走 `clickableProps` 并补 `aria-expanded`；
+  `NarrativeBlock` / `SubtaskBlock` / `MessageList` 折叠控件同样补齐。
+- 命令式 DOM 改 state：`EntryCard` 详情、`MessageList` 工具返回详情此前用
+  `classList.toggle('hidden')` + `getElementById`（状态不同步、屏幕阅读器无法感知、
+  id 用数组下标会在多实例间撞 id）。现改为组件内 state。
+- live region：消息容器补 `role="log" aria-live="polite"`；转圈补 `role="status"`；
+  label 补 `htmlFor`/`id` 关联。
+- 三态：新建对话弹窗补 `confirmLoading` + 禁用关闭（连点会创建多个线程）+ 成功提示；
+  **本体清单加载失败不再静默降级**——此前 `Promise.all` 一失败全丢，Select 会把默认勾选
+  渲染成「不在 options 里的裸值 tag」；现两个请求独立成败 + 显式告警条。
+
+**E6 · 并发 run 重入**
+
+`handleSend` 守卫读的是 `sending` state，而 `setSending(true)` 到下次渲染之间存在窗口：
+同一 tick 内的连按/连点都会读到 `false` 而双双通过 → 发出两个流（后端互斥只让第二个被拒，
+但两个流的事件都写进同一条消息）。现守卫走 `sendingRef`（同步）；且**事件路由改用
+`handleSend` 发起时捕获的 runId 闭包常量**，不再在处理事件时读 `runIdRef.current`——
+后者会让两次并发 run 的事件互相串轮。
+
+**M5 · 渲染路径昂贵计算（宪法 I）**
+
+| 项 | 修复 |
+|---|---|
+| markdown 每 token 重算 | `MessageList` 加**按内容缓存**（`useRef` 持 Map，上限 300）：内容未变的历史消息直接命中，只有末尾那条重算。原 `useMemo([messages])` 在流式下必然失效 → 每 token 触发全部历史重跑 |
+| `flushSync` 每 token 同步提交 | 移除。绕过 React 18 自动批处理，把「一帧合并几十 token」变成「每 token 一次全量渲染」，反而更慢且阻塞事件循环 |
+| 每 token 强制布局 | 自动滚动改 `requestAnimationFrame` 按帧合并；并新增「用户已上滑则不强制拉回」 |
+| 规划弹窗每次按键深拷贝 | `plan-editing` 改**结构共享**（`patchPlan`/`patchSubtask`）：只拷贝 plan → 命中的 subtask → 命中的 param 三层。原 `JSON.parse(JSON.stringify(plan))` 全量深拷贝，用户每敲一字符执行一次 |
+| `SubtaskBlock` 折叠态仍全量扫描 | `details` 聚合改 `useMemo` 且**仅在展开时计算**（`details` 由 SSE 无界追加） |
+| `ExecutionLogDrawer` 分组未记忆化 | `groupExecutionLog` 按 `entries` 记忆化 |
+
+**M5 附带 · 拆分超限文件**：`AgentConversation.tsx` 一度涨到 **561 行**（宪法 II 上限 500）。
+把确认回执逻辑（`postReply` + 三个答复动作 + 相关状态，约 90 行）抽为
+`use-confirm-replies.ts` → 回到 **499 行**。该 hook 只依赖弹窗状态与 setState、不碰流式循环。
+
+**M8 · 三端点资源化**
+
+`/abort` 此前**无任何寻址**，直接中断「当前活动 run」——多标签页/多用户场景下
+A 会话的中断请求会打断 B 会话正在跑的任务。现 `RunSession.threadId` 记录归属，
+`Orchestrator.abortRun(threadId?)` 做校验，不匹配回 409；**无活动 run 时也回 409**
+（原先回 200「已中断」——撒谎说成功，违反宪法 VI「失败 MUST 以错误表达」）。
+`confirm` / `plan-confirm` 同样不再回 200 掩盖未命中（C3 已做）。
+
+**M6 · 可观测性（宪法 IX）**
+
+- 统一错误体三字段（`message`/`detail`/`error`）曾**同值固定文案**，`code` 恒 500、
+  `message` 恒「服务器内部错误」——等于没有可读错误。现 `code` 稳定、`message` 对外可读、
+  `detail` 带原始消息；原始错误对象始终落服务端日志（含 stack）。
+- **7 处 `catch {}` 空块全部消除**（`orchestrator` / `run-session` / `llm` / `mcp-client` ×2 /
+  `mcp-config` ×2）：中断失败、连接关闭失败此前完全不可见——而「用户以为已中断、请求其实
+  还在跑」恰是最难排查的一类故障。
+- `agent-factory` MCP 连接失败补 stack 与 URL；`thread-store` 损坏线程文件补日志，
+  `exists()` 区分「文件不存在」与「JSON 解析失败」；`common-functions` 解析失败日志
+  明确「正在沿用陈旧快照」。
+
+**M9 · 分层（宪法 II v1.1.0 新增硬约束）**
+
+- **本体范围校验从路由下沉到 `ChatSession.createThread`**：路由层此前直接调
+  `skillLoader.resolveOntologyContext`（本体语义解析属业务层）并自行拼装中文错误文案。
+  现抛出领域异常 `OntologyScopeError`，路由只做 HTTP 适配；`createThreadsRouter`
+  不再依赖 `skillLoader`（参数已移除）。
+- `DEFAULT_THREAD_TITLE` 收口到 `thread-store`（此前散落三处：路由 / thread-store ×2）。
+- `mcp-config` 的 `/test` 此前与 `/tools` 是同一逻辑的两份实现（各自的 connect + 15s 超时 +
+  工具整形），现复用 `withTempClient` + `shapeTools`；两个 health 端点合并为同一处理函数。
+
+**MINOR 清理**：`agent-client` / `http.ts` 的 `headers` 合并顺序（原先写在 `...options` **之前**，
+调用方传 `options.headers` 会**整块覆盖** `Content-Type`）；移除死代码
+`SkillInfo` / `listSkills` / `listAllSkills`（全仓无调用方，宪法 VI）。
+
+**回归**：agent-backend `28 files / 368 passed`、双 tsc 0 错误；
+frontend `tsc --noEmit` 0 错误、agent 目录 `10 files / 157 passed`。
 
 ### J. 自建发布令牌进「MCP 配置」：配置方式补全（2026-10-05）
 

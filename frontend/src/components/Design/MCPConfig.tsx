@@ -401,8 +401,12 @@ export default function MCPConfigPanel() {
         自建发布（动态容器）对外强制令牌：点「粘贴配置」导入「查看配置」片段，或在新增/编辑时于
         <span className="text-accent-blue">请求头</span>填
         <code className="text-yellow-400"> {'{"X-MCP-Token":"…"}'}</code>（令牌见 MCP发布 的「查看配置」）。
-        <span className="text-accent-blue">业务数据</span>列标记该服务是否提供业务数据——只有「是」的服务
-        才会出现在「接口映射 → 目标接口设置」的目标服务下拉里（本体查询 / 公共函数等非业务数据服务留「否」）。
+        <span className="text-accent-blue">业务数据</span>列标记该服务是否提供业务数据，有两处影响：
+        <br />① 只有「是」的服务才会出现在「接口映射 → 目标接口设置」的目标服务下拉里
+        （本体查询 / 公共函数等非业务数据服务留「否」）；
+        <br />② 标「是」的服务，其<span className="text-accent-blue">原始业务接口不会直接给智能体调用</span>——
+        必须先在「接口映射」里把它映射成行为并发布，智能体才会执行。这是安全管控：
+        原始业务接口多为写操作（新增 / 修改 / 删除），直接放行会绕过执行前的安全确认。
       </p>
 
       <Table

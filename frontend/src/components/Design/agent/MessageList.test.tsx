@@ -110,14 +110,26 @@ describe('MessageList — 边界条件', () => {
     expect(screen.queryByText('正在输出...')).not.toBeInTheDocument();
   });
 
-  it('点击工具返回块可切换详情展开（此处曾因取错兄弟节点而失效）', () => {
+  it('点击工具返回块可切换详情展开（React state 驱动 + aria-expanded 同步）', () => {
     setup([{ role: 'toolResult', content: '{"a":1}', timestamp: '' } as ChatMessage]);
-    const toggle = screen.getByText(/工具返回数据/).closest('div') as HTMLElement;
-    const detail = document.getElementById('tool-result-0') as HTMLElement;
-    expect(detail.className).toContain('hidden');
+    const toggle = screen.getByText(/工具返回数据/).closest('[role="button"]') as HTMLElement;
+    // 折叠态：详情不渲染，且 aria-expanded 同步为 false（屏幕阅读器可感知）
+    expect(screen.queryByText('{"a":1}')).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
     fireEvent.click(toggle);
-    expect(detail.classList.contains('hidden')).toBe(false);
+    expect(screen.getByText('{"a":1}')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
     fireEvent.click(toggle);
-    expect(detail.classList.contains('hidden')).toBe(true);
+    expect(screen.queryByText('{"a":1}')).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('工具返回块可键盘展开（Enter）', () => {
+    setup([{ role: 'toolResult', content: '{"a":1}', timestamp: '' } as ChatMessage]);
+    const toggle = screen.getByText(/工具返回数据/).closest('[role="button"]') as HTMLElement;
+    fireEvent.keyDown(toggle, { key: 'Enter' });
+    expect(screen.getByText('{"a":1}')).toBeInTheDocument();
   });
 });

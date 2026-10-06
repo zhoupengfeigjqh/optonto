@@ -5,8 +5,14 @@
  *
  * 只负责渲染：分组规则与状态/步数推导在 `execution-log.ts`（纯函数，已单测），
  * 折叠状态由父组件持有（跨渲染保留用户的展开选择）。
+ *
+ * 2026-10-05（章程 IV）：子任务折叠头此前是**纯 div + onClick**——完全不可键盘操作，
+ * 违反项目自家 `utils/a11y.ts` 的 MUST 约定。现统一走 `clickableProps` 并补
+ * `aria-expanded`；`groupExecutionLog` 结果按 `entries` 记忆化（此前每次渲染全量重算）。
  */
+import { useMemo } from 'react';
 import { Drawer } from 'antd';
+import { clickableProps } from '@/utils/a11y';
 import EntryCard from './EntryCard';
 import {
   groupExecutionLog, subtaskTitle, subtaskStatus, subtaskStepEntries, countSubtaskSteps,
@@ -23,7 +29,8 @@ interface Props {
 }
 
 export default function ExecutionLogDrawer({ open, entries, collapsed, onToggleSubtask, onClose }: Props) {
-  const nodes = groupExecutionLog(entries);
+  // 分组是 O(n) 全量计算，Drawer 常驻（只增不减的 entries）——按 entries 记忆化
+  const nodes = useMemo(() => groupExecutionLog(entries), [entries]);
 
   return (
     <Drawer title="执行记录" placement="right" width={420} open={open} onClose={onClose}>
@@ -40,17 +47,20 @@ export default function ExecutionLogDrawer({ open, entries, collapsed, onToggleS
                 {(() => {
                   const isCollapsed = collapsed.has(node.seq);
                   const st = subtaskStatus(node.entries);
+                  const title = subtaskTitle(node.entries, node.seq);
+                  const steps = countSubtaskSteps(node.entries);
                   return (
                     <>
                       <div
                         className={`flex items-center gap-2 px-3 py-2 cursor-pointer ${st === 'failed' ? 'bg-red-500/10' : 'bg-dark-card'}`}
-                        onClick={() => onToggleSubtask(node.seq)}
+                        {...clickableProps(() => onToggleSubtask(node.seq), `${title}（已折叠，点击展开）`)}
+                        aria-expanded={!isCollapsed}
                       >
-                        <span className="text-text-muted text-xs">{isCollapsed ? '▶' : '▼'}</span>
-                        <span className="text-accent-blue text-xs font-semibold">{subtaskTitle(node.entries, node.seq)}</span>
-                        {st === 'done' && <span className="text-green-500 text-xs">✓</span>}
-                        {st === 'failed' && <span className="text-red-500 text-xs">✗</span>}
-                        <span className="text-text-muted text-xs ml-auto">{countSubtaskSteps(node.entries)} 步</span>
+                        <span className="text-text-muted text-xs" aria-hidden>{isCollapsed ? '▶' : '▼'}</span>
+                        <span className="text-accent-blue text-xs font-semibold">{title}</span>
+                        {st === 'done' && <span className="text-green-500 text-xs" aria-label="已完成">✓</span>}
+                        {st === 'failed' && <span className="text-red-500 text-xs" aria-label="已失败">✗</span>}
+                        <span className="text-text-muted text-xs ml-auto">{steps} 步</span>
                       </div>
                       {!isCollapsed && (
                         <div className="pl-4 pr-2 py-2 space-y-2 bg-dark-bg/40">

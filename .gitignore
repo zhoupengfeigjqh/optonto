@@ -40,6 +40,9 @@ build/
 node_modules/
 .next/
 
+# TypeScript 增量构建产物（tsconfig.tsbuildinfo：每次 tsc 都会变，属构建缓存不入库）
+*.tsbuildinfo
+
 # Java / Maven（business-backend 构建产物：jar、surefire 报告、jacoco 覆盖率）
 target/
 *.class

@@ -244,3 +244,57 @@ describe('契约 §6 就绪发布：getReadyBehaviorNames（与 data-engine-mcp 
     expect(gateway.getReadyBehaviorNames(SC, ON)).toEqual([]);
   });
 });
+
+/**
+ * fail-closed：元数据不可用时按最坏假设处置（2026-10-05 安全收口，agent 环节审查 M7）。
+ *
+ * 背景：`loadOntologyData` 读不到配置时返回 null，而 `getBehaviorMeta` 曾静默返回
+ * `isWrite: false`（= 按读操作处理）——于是**配置读取失败的瞬间，写操作零人工确认直接落库**，
+ * 失效方向最危险，且与系统其余 fail-closed 姿态（判断函数缺 pass、按名查不到工具等）不一致。
+ *
+ * 本组固化修复后的语义：`unavailable` 置位 + `isWrite: true`（兜底双重保险），
+ * 由 SubtaskRunner 就地拒绝执行、真实工具零调用。
+ */
+describe('fail-closed：元数据不可用（unavailable）', () => {
+  it('F1：ontology.yaml 缺失 → unavailable + isWrite=true（不再静默按读操作放行）', () => {
+    // beforeEach 只建目录、不写 yaml —— 默认即"文件不存在"形态
+    const meta = gateway.getBehaviorMeta(SC, ON, 'B1');
+    expect(meta.unavailable).toBe(true);
+    expect(meta.isWrite).toBe(true);
+  });
+
+  it('F2：ontology.yaml 语法错误 → 同为 unavailable（解析失败与文件缺失不可区分，一律最坏假设）', () => {
+    writeFileSync(join(ontoDir, 'ontology.yaml'), 'behaviors: [ 坏语法: :', 'utf-8');
+    const meta = gateway.getBehaviorMeta(SC, ON, 'B1');
+    expect(meta.unavailable).toBe(true);
+    expect(meta.isWrite).toBe(true);
+  });
+
+  it('F3：行为名不在本体 behaviors[] 内 → unavailable（拿不到 op_type，无法判定写入性质）', () => {
+    // 纵深防御：正常路径 PlanGate 行为名校验先拦；这里覆盖"规划确认停留期间本体被改"的时间窗
+    writeOntology({ behaviors: [{ name: 'B1', op_type: 'command' }] });
+    const meta = gateway.getBehaviorMeta(SC, ON, 'NotExist');
+    expect(meta.unavailable).toBe(true);
+    expect(meta.isWrite).toBe(true);
+  });
+
+  it('F4：unavailable 时 display_name 兜底为行为名（执行记录不显示成空）', () => {
+    expect(gateway.getBehaviorMeta(SC, ON, 'CreatePurchaseRecord').display_name).toBe('CreatePurchaseRecord');
+  });
+
+  it('F5：元数据可用 → 不置 unavailable（防误伤：正常本体行为完全不受影响）', () => {
+    writeOntology({ behaviors: [{ name: 'B1', op_type: 'command' }] });
+    expect(gateway.getBehaviorMeta(SC, ON, 'B1').unavailable).toBeUndefined();
+  });
+
+  it('F6：securities 未登记 ≠ 元数据不可用 —— 不置 unavailable，写操作仍强制确认', () => {
+    // 两种语义必须分开：「元数据可用但未登记」是正常业务状态（securities 是全花名册，
+    // core 保存时保证每个行为恒定一条），走 isWrite 兜底 + everyone 放行；
+    // 「元数据读不到」是系统故障，unavailable + 就地拒绝执行。
+    writeOntology({ behaviors: [{ name: 'B1', op_type: 'command' }] });
+    const meta = gateway.getBehaviorMeta(SC, ON, 'B1');
+    expect(meta.unavailable).toBeUndefined();
+    expect(meta.security).toBeUndefined();
+    expect(meta.isWrite).toBe(true); // 写操作仍强制人工确认，未被"未登记"绕过
+  });
+});

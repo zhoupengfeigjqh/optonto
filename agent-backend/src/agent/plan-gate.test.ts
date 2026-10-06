@@ -189,8 +189,10 @@ describe('PlanGate · 参数校验（validateInitial · 编译 schema 统一 nud
     const catalog: Partial<FunctionCatalogView> = {
       behaviorSchema: () => null,
       functionNames: () => ['sumQty'],
+      // mock 字段名与 FunctionInfo 接口一致（camelCase displayName——snake_case 的 display_name
+      // 是 gateway 侧 FunctionMeta 的形状，编排层读到的是 FunctionInfo，用错则中文名恒为空串）
       functionInfo: (_s: string, _o: string, fn: string) =>
-        fn === 'sumQty' ? { display_name: '', description: '', params: {}, schema: FN_SCHEMA } : null,
+        fn === 'sumQty' ? { displayName: '', description: '', params: {}, schema: FN_SCHEMA } : null,
     };
     const fixed: SubTaskPlan = {
       subtasks: [{ ...mkSub(1), behavior: '', function: 'sumQty', params: { recordSet: { value: [] } } }],

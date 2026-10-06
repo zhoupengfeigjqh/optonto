@@ -29,8 +29,8 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     try {
       const [ruleList, behList, fnList, commonFnList] = await Promise.all([getRules(ontologyId), getBehaviors(ontologyId), getFunctions(ontologyId), getCommonFunctions()]);
       const allFuncs = [
-        ...fnList.map((f: any) => ({ ...f, _source: 'ontology' })),
-        ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[], type: '', _source: 'common' })),
+        ...fnList.map((f: any) => ({ ...f, origin: 'ontology' as const })),
+        ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[], type: '', origin: 'common' as const })),
       ];
       setRules(ruleList); setBehaviors(behList); setFuncs(allFuncs);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }

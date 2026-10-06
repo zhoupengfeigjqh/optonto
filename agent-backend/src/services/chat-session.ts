@@ -12,7 +12,16 @@ import type { ThreadStore } from './thread-store.js';
 import type { MemoryService } from './memory-service.js';
 import type { SkillLoader } from './skill-loader.js';
 import type { Orchestrator } from '../agent/orchestrator.js';
-import type { ThreadMessage, SSEEvent } from '../types.js';
+import type { ThreadMessage, SSEEvent, OntologySelection } from '../types.js';
+import { DEFAULT_THREAD_TITLE } from './thread-store.js';
+
+/** 本体范围校验失败（选中的本体不存在或元数据缺失） */
+export class OntologyScopeError extends Error {
+  constructor(public readonly invalid: string[]) {
+    super(`以下本体不存在或元数据缺失：${invalid.join('、')}`);
+    this.name = 'OntologyScopeError';
+  }
+}
 
 export class ChatSession {
   constructor(
@@ -21,6 +30,24 @@ export class ChatSession {
     private orchestrator: Orchestrator,
     private skillLoader: SkillLoader,
   ) {}
+
+  /**
+   * 校验本体范围并创建线程（2026-10-05，agent 环节审查 M9 / 宪法 II 分层）。
+   *
+   * 此前这段业务规则内联在 `routes/threads.ts` 的 POST handler 里：路由层直接调
+   * `skillLoader.resolveOntologyContext`（本体语义解析属业务层）并自行拼装中文错误文案
+   * ——违反宪法 II「接口层 MUST NOT 直接 import 数据访问层 / MUST 经业务层完成读写」。
+   * 现下沉到本类：路由只做 HTTP 适配（取参、映射状态码），业务规则与错误文案在此单点收口。
+   *
+   * @throws OntologyScopeError 选中本体不存在或元数据缺失（空数组合法 = 通用问答模式）
+   */
+  createThread(scenario: string, ontology: string, title: string | undefined, scope: OntologySelection[]) {
+    const bad = scope.filter(sel => !sel?.scenario || !sel?.ontology || !this.skillLoader.resolveOntologyContext(sel.scenario, sel.ontology));
+    if (bad.length > 0) {
+      throw new OntologyScopeError(bad.map(b => `${b?.scenario ?? '?'}/${b?.ontology ?? '?'}`));
+    }
+    return this.threadStore.create(scenario, ontology, title || DEFAULT_THREAD_TITLE, scope);
+  }
 
   /**
    * 执行一轮对话，返回 assistant 回复文本（编排结果）。
@@ -51,7 +78,8 @@ export class ChatSession {
     // 本体作用域一次性解析：所选本体 → 权威四元组（取自 ontology.yaml.metadata）+ 目录下全部技能（自动关联）。
     // 空范围 = 通用问答模式（父 Agent 不挂业务工具）。
     const scope = this.skillLoader.resolveScope(thread.ontology_scope || []);
-    const result = await this.orchestrator.execute(message, scope, history, sendEvent);
+    // 传 tid 供 /abort 做归属校验（多标签页/多会话下防跨会话误中断，2026-10-05 审查 M8）
+    const result = await this.orchestrator.execute(message, scope, history, sendEvent, tid);
 
     const userMsg: ThreadMessage = { role: 'user', content: message, timestamp: new Date().toISOString() };
     const asstMsg: ThreadMessage = { role: 'assistant', content: result, timestamp: new Date().toISOString() };

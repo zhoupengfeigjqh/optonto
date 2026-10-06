@@ -8,9 +8,12 @@ import { extractErrorMessage } from './http-error';
 const AGENT_API = '/agent-api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  // 2026-10-05（审查 m7）修正合并顺序：原先 `headers` 写在 `...options` **之前**，
+  // 调用方一旦传 `options.headers` 就会**整块覆盖** Content-Type（JSON 体将不带正确头）。
+  // 现让 options 整体先落地、headers 再在其上叠加——既不丢调用方的头，也保住默认 Content-Type。
   const res = await fetch(`${AGENT_API}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
@@ -55,25 +58,9 @@ export interface OntologyScopeSelection {
   ontology: string;
 }
 
-export interface SkillInfo {
-  name: string;
-  description: string;
-  summary?: string;
-  scenario?: string;
-  ontology?: string;
-}
-
-// ─── Skills ─────────────────────────────────────────────────────────
-
-/** 获取某本体下所有可用技能 */
-export const listSkills = (scenario: string, ontology: string) =>
-  request<SkillInfo[]>(
-    `/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/skills`
-  );
-
-/** 扫描全部本体，获取所有技能及所在位置（技能选择下拉用） */
-export const listAllSkills = () =>
-  request<SkillInfo[]>(`/onto_market/skills/all`);
+// 2026-10-05（审查 m1/m2 死代码）：原 SkillInfo / listSkills / listAllSkills 已移除——
+// 三者全仓无调用方（技能能力改由 `api/skills.ts` + SkillManagement 走另一套）。
+// 宪法 VI：契约不得承载无消费者的内容；无消费者的导出同样是负债。
 
 // ─── Threads ────────────────────────────────────────────────────────
 
@@ -111,12 +98,20 @@ export const deleteAgentThread = (scenario: string, ontology: string, threadId: 
     { method: 'DELETE' }
   );
 
-/** Agent Chat SSE 流式对话 */
+/**
+ * Agent Chat SSE 流式对话。
+ *
+ * `signal`：中断时取消**本地读取**。缺了它，点击「中断」只会让后端停止推理，
+ * 而前端 reader 仍在收 token——UI 继续增长、输入框持续禁用，用户看到「已中断」
+ * 却内容还在动（2026-10-05 C2）。配合 `AgentConversation.handleAbort`：
+ * 先 abort 本地流（立即反馈），再 POST /abort 通知后端。
+ */
 export const agentChatStream = (
   scenario: string,
   ontology: string,
   threadId: string,
   message: string,
+  signal?: AbortSignal,
 ): Promise<Response> =>
   fetch(
     `${AGENT_API}/onto_market/${encodeURIComponent(scenario)}/${encodeURIComponent(ontology)}/threads/${threadId}/chat`,
@@ -124,6 +119,7 @@ export const agentChatStream = (
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
+      signal,
     }
   );
 
@@ -145,8 +141,18 @@ export interface MCPServerConfig {
   headers?: Record<string, string>;
   /**
    * **是否业务数据**（缺省视为「否」）：标记该服务提供可被本体的行为映射引用的业务数据。
-   * 只有 `true` 的服务才会出现在「接口映射 → 目标接口设置」的**目标 MCP 服务**下拉里——
-   * 否则列表会被本体查询 / 公共函数 / 图表类等非业务数据服务淹掉（2026-10-05 用户要求）。
+   *
+   * 两条消费语义（**两侧同源，改动须同步** `agent-backend/src/services/mcp-config-store.ts`）：
+   *  1. **接口映射下拉**：只有 `true` 的服务才会出现在「接口映射 → 目标接口设置」的**目标 MCP 服务**
+   *     下拉里——否则列表会被本体查询 / 公共函数 / 图表类等非业务数据服务淹掉（2026-10-05 用户要求）。
+   *  2. **Agent 工具目录准入**（2026-10-05 C1 收口，见下方说明）：声明为业务数据的服务，其
+   *     **原始未映射工具**（无 `x-category` 标记者）**不进 Agent 目录**——业务接口必须经
+   *     「接口映射」发布为**本体行为**后才是 Agent 的唯一合法入口。
+   *
+   * 为何第 2 条要紧：被放行的原始业务接口是**写操作**（business-mcp 支持 POST/PUT/DELETE），
+   * 一旦被父 Agent 规划成「函数子任务」，走的是 `callFunctionTool` 直连路径，而该路径不经过
+   * 子 Agent 的安全确认 / disable 权限闸 / 规则闸 / 报错预算——等于业务写入零人工闸门。
+   * 行为工具是唯一入口（架构文档 §六）是既有治理不变式，本字段是它在配置层的落点。
    */
   business_data?: boolean;
 }

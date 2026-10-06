@@ -65,6 +65,66 @@ function throwingTool(errorBudget: ToolErrorBudget) {
 
 afterEach(() => { vi.clearAllMocks(); });
 
+/**
+ * fail-closed 闸：本体元数据不可用 → 拒绝执行（2026-10-05 安全收口，agent 环节审查 M7）。
+ *
+ * `getBehaviorMeta` 在 ontology.yaml 缺失 / 解析失败 / 行为名查不到时返回
+ * `unavailable: true, isWrite: true`（拿不到 op_type ⇒ 无法判定行为是否安全）。
+ * 此时**行为子任务路径上唯一能兜住的地方就是本文件的统一入口 run()**：
+ * 必须做到「不建子 Agent（工具零挂载、业务写入零发生）+ 不弹确认（确认了也不会执行）」。
+ *
+ * 历史行为是静默按 isWrite=false 放行 ⇒ 配置读取失败的瞬间，写操作零人工确认直接落库。
+ */
+describe('SubtaskRunner · 元数据不可用（fail-closed）', () => {
+  const unavailableMeta: BehaviorMeta = {
+    display_name: 'CreatePurchaseRecord',
+    params: {}, preRules: [], postRules: [], concepts: [],
+    isWrite: true,      // 兜底双重保险：即便调用方漏判 unavailable，也仍按写操作对待
+    unavailable: true,
+  };
+
+  it('拒绝执行：子 Agent 与安全确认均零调用（真实业务写入零发生）', async () => {
+    const createChildAgent = vi.fn();
+    const confirm = vi.fn(async () => ({ approved: true }));
+    const deps: SubtaskRunnerDeps = {
+      ...makeDeps(createChildAgent),
+      confirmManager: { requestConfirm: confirm } as unknown as ConfirmPort,
+    };
+    const runner = new SubtaskRunner(deps);
+
+    const result = await runner.run(subTask, unavailableMeta, noopChannel);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('本体元数据不可用');
+    // 核心断言：不创建子 Agent ⇒ 任何行为工具都不会被挂载，业务接口零调用
+    expect(createChildAgent).not.toHaveBeenCalled();
+    // 不弹安全确认：确认了也不会执行，弹窗只会白白中断在安全管控上
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('执行记录留下 start + failed done 两条，失败原因可诊断（非静默吞掉）', async () => {
+    const deps = makeDeps(vi.fn());
+    const runner = new SubtaskRunner(deps);
+    const events: any[] = [];
+    await runner.run(subTask, unavailableMeta, createEventChannel(e => events.push(e)));
+
+    const entries = events.filter(e => e.type === 'exec_entry').map((e: any) => e.entry);
+    expect(entries.map((e: any) => `${e.type}/${e.status}`)).toEqual(['subtask_start/running', 'subtask_done/failed']);
+    expect(entries[1].result).toContain('本体元数据不可用');
+  });
+
+  it('防回归：元数据可用时完全不受影响（正常路径仍建子 Agent 并按协议判定成功）', async () => {
+    const createChildAgent = vi.fn(async () => ({
+      prompt: async () => {},
+      abort: () => {}, subscribe: () => {},
+      state: { messages: [{ role: 'assistant', content: '【状态】成功\n已创建采购记录' }] },
+    } satisfies AgentPort));
+    const result = await new SubtaskRunner(makeDeps(createChildAgent)).run(subTask, meta, noopChannel);
+    expect(createChildAgent).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+  });
+});
+
 describe('SubtaskRunner · 工具报错预算', () => {
   it('连续报错达上限 → 返回失败+明确原因，prompt 只调 1 次（不再外层重试）', async () => {
     let promptCalls = 0;

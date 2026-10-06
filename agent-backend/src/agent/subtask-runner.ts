@@ -61,6 +61,26 @@ export class SubtaskRunner {
    */
   async run(subTask: SubTask, meta: BehaviorMeta | null, emit: EventChannel): Promise<SubTaskResult> {
     if (subTask.function) return this.runFunctionEntry(subTask, emit);
+    // 展示三元组（中文（英文）/纯中文/描述）与执行记录同源于 entryDisplay
+    const display = entryDisplay(meta?.display_name, subTask.behavior, subTask.description);
+    const baseEntry = { name: subTask.behavior, detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child' as const, seq: subTask.seq, ...display };
+
+    // ── 【fail-closed 闸】本体元数据不可用 → 拒绝执行（2026-10-05，见 BehaviorMeta.unavailable）──
+    // ontology.yaml 缺失 / YAML 解析失败 / 行为名在本体内查不到 ⇒ 拿不到 op_type、
+    // 拿不到 rules 与 securities，无法判断这个行为是否安全。此时一律拒绝：
+    //   · 不创建子 Agent、不挂载任何工具 → 真实业务调用零发生；
+    //   · 不弹安全确认（needsSecurityConfirm 对 unavailable 返回 false——确认了也不会执行，
+    //     弹窗只会让用户点完仍拿不到结果，白白中断在安全管控上）；
+    //   · 失败原因直接写进执行记录，不静默、不伪装成成功。
+    // 历史行为是静默按 isWrite=false 放行（"读不到就当读操作"），导致**配置读取失败时
+    // 写操作零人工确认直接落库**——失效方向最危险，与系统其余 fail-closed 姿态不一致。
+    if (meta?.unavailable) {
+      const error = `本体元数据不可用（${subTask.scenario_name}/${subTask.ontology_name}：ontology.yaml 缺失或解析失败，或行为 ${subTask.behavior} 不在该本体中），无法判定其写入性质与安全管控，已拒绝执行`;
+      emit.entry({ type: 'subtask_start', status: 'running', ...baseEntry });
+      emit.entry({ type: 'subtask_done', status: 'failed', result: error, ...baseEntry });
+      return { seq: subTask.seq, task: subTask.behavior, success: false, error, summary: '' };
+    }
+
     // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体
     const context: SkillContext = {
       scenario_name: subTask.scenario_name,
@@ -68,11 +88,9 @@ export class SubtaskRunner {
       ontology_name: subTask.ontology_name,
       ontology_id: subTask.ontology_id,
     };
-    // 展示三元组（中文（英文）/纯中文/描述）与执行记录同源于 entryDisplay
-    const display = entryDisplay(meta!.display_name, subTask.behavior, subTask.description);
-    emit.entry({ type: 'subtask_start', name: subTask.behavior, status: 'running', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child', seq: subTask.seq, ...display });
+    emit.entry({ type: 'subtask_start', status: 'running', ...baseEntry });
     const result = await this.runBehavior(subTask, meta!, context, emit, display);
-    emit.entry({ type: 'subtask_done', name: subTask.behavior, status: result.success ? 'done' : 'failed', detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, result: result.summary, source: 'child', seq: subTask.seq, ...display });
+    emit.entry({ type: 'subtask_done', status: result.success ? 'done' : 'failed', result: result.summary, ...baseEntry });
     return result;
   }
 
@@ -157,12 +175,12 @@ export class SubtaskRunner {
           // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名（无中文映射 → undefined，前端用工具原名兜底）
           const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child', seq: subTask.seq, toolCallId: event.toolCallId, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         } else if (event.type === 'tool_execution_end') {
           const text = toolResultToText(event.result?.content);
           const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
           const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.take(event.toolCallId), result: text, source: 'child', seq: subTask.seq, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.take(event.toolCallId), result: text, source: 'child', seq: subTask.seq, toolCallId: event.toolCallId, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
         }
       });
 

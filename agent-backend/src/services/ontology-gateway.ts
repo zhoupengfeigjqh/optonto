@@ -106,12 +106,31 @@ export class OntologyGateway {
   getBehaviorMeta(scenario: string, ontology: string, behaviorName: string): BehaviorMeta {
     const data = this.loadOntologyData(scenario, ontology);
     if (!data) {
-      return { params: {}, preRules: [], postRules: [], concepts: [], isWrite: false };
+      // fail-closed（2026-10-05，见 BehaviorMeta.unavailable）：本体配置读不到 = 无法判断行为是否安全
+      // （拿不到 op_type、拿不到 rules/securities）。按最坏假设处置——isWrite=true 保证即便调用方
+      // 漏判也不会跳过安全确认；SubtaskRunner 见 unavailable 会直接拒绝执行，真实工具零调用。
+      // 历史行为是静默返回 isWrite=false，导致**写操作在配置读取失败时零确认直接落库**。
+      return {
+        display_name: behaviorName, // 兜底用行为名，避免展示成空
+        params: {}, preRules: [], postRules: [], concepts: [],
+        isWrite: true,
+        unavailable: true,
+      };
     }
-
 
     // 行为定义 → 取 params 参数结构
     const behavior = data?.behaviors?.find((b: any) => b.name === behaviorName);
+    if (!behavior) {
+      // 同上：行为名在本体里查不到 → 拿不到 op_type → 按写操作 + unavailable 处置。
+      // 正常路径下 PlanGate 的行为名校验（getReadyBehaviorNames）会先拦下，这里是纵深防御：
+      // 覆盖「规划确认弹窗停留期间本体被改」的时间窗。
+      return {
+        display_name: behaviorName,
+        params: {}, preRules: [], postRules: [], concepts: [],
+        isWrite: true,
+        unavailable: true,
+      };
+    }
 
     // 判断函数判定依据（口径 B：类型即角色）：本体函数且 type=VALIDATION 者即判断函数
     // （公共函数无本体类型 → 恒不参与判断；本体 CALCULATION 等为计算函数，仅提供数据不拦执行）

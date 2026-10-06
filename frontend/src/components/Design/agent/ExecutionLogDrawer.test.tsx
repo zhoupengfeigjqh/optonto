@@ -10,13 +10,15 @@ import ExecutionLogDrawer from './ExecutionLogDrawer';
 import type { LogEntry } from './execution-log';
 
 const top = (name: string): LogEntry => ({ time: '10:00:00', type: 'tool_call', name, status: 'done' });
-const child = (seq: number, type: string, name = 'QueryInventory'): LogEntry =>
+const child = (seq: number, type: LogEntry['type'], name = 'QueryInventory'): LogEntry =>
   ({ time: '10:00:01', type, name, status: type === 'subtask_done' ? 'done' : 'running', source: 'child', seq });
 
 const subtaskGroup = [
   { ...child(1, 'subtask_start'), displayName: '查库存' },
   child(1, 'tool_call'),
-  child(1, 'security'),
+  // 'security_confirm' 是后端真实类型名；此前误写 'security'（后端从不发该值），
+  // 因 LogEntry.type 曾是 string 而无法暴露（2026-10-05 收紧类型后修正，审查 H5）
+  child(1, 'security_confirm'),
   child(1, 'subtask_done'),
 ];
 
@@ -55,6 +57,24 @@ describe('ExecutionLogDrawer — 事件触发', () => {
     const props = setup(subtaskGroup);
     fireEvent.click(screen.getByText('子任务 1: 查库存'));
     expect(props.onToggleSubtask).toHaveBeenCalledWith(1);
+  });
+
+  it('无障碍：折叠头可键盘操作且 aria-expanded 同步（章程 IV）', () => {
+    // 修复前是纯 div + onClick：不可聚焦、无按钮语义、屏幕阅读器无法感知展开态
+    const props = setup(subtaskGroup);
+    const group = screen.getByText('子任务 1: 查库存').closest('[role="button"]') as HTMLElement;
+    expect(group).toHaveAttribute('tabindex', '0');
+    expect(group).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.keyDown(group, { key: 'Enter' });
+    expect(props.onToggleSubtask).toHaveBeenCalledWith(1);
+  });
+
+  it('无障碍：折叠态 aria-expanded=false 且明细不渲染', () => {
+    setup(subtaskGroup, new Set([1]));
+    const group = screen.getByText('子任务 1: 查库存').closest('[role="button"]') as HTMLElement;
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('▼ 查看详情')).not.toBeInTheDocument();
   });
 
   it('关闭抽屉触发 onClose', () => {

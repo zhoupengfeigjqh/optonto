@@ -25,17 +25,52 @@ export interface Plan {
   [key: string]: any;
 }
 
-/** 深拷贝规划（编辑前先复制，避免直接改动弹窗里的原始值） */
+/**
+ * 深拷贝规划（编辑前先复制，避免直接改动弹窗里的原始值）。
+ *
+ * 2026-10-05（宪法 I：昂贵计算 MUST 移出渲染路径）：改用**结构共享**——
+ * 编辑动作只改动「一个子任务的一个参数值」，此前的 `JSON.parse(JSON.stringify(plan))`
+ * 会把整份规划（长任务可达数十个子任务、每个子任务数十个参数）全量深拷贝，
+ * 而调用点是 `onChange` → **用户每敲一个字符就深拷贝一次**。
+ *
+ * 现在只拷贝受影响的那条路径（plan → 命中的 subtask → 命中的 param），
+ * 其余节点共享引用。所有函数仍保持「不修改入参」的不可变语义。
+ */
 export function clonePlan<T>(plan: T): T {
+  // 仍保留深拷贝语义给「需要完全隔离的副本」场景（如提交前快照）
   return JSON.parse(JSON.stringify(plan));
 }
 
-/** 修改某子任务的参数值（参数项不存在时不动——与抽取前行为一致） */
-export function updateSubtaskParam(plan: Plan, seq: number, key: string, value: string): Plan {
-  const next = clonePlan(plan);
-  const target = next.subtasks?.find(s => s.seq === seq);
-  if (target?.params?.[key]) target.params[key].value = value;
+/** 结构共享式浅层更新：只替换顶层字段，未命中的节点保持引用不变 */
+function patchPlan(plan: Plan, patch: (draft: Plan) => void): Plan {
+  const next: Plan = { ...plan, subtasks: plan.subtasks };
+  patch(next);
   return next;
+}
+
+/** 结构共享式替换某个子任务（其余子任务共享引用） */
+function patchSubtask(plan: Plan, seq: number, patch: (st: PlanSubtask) => PlanSubtask): Plan {
+  return patchPlan(plan, next => {
+    const idx = next.subtasks?.findIndex(s => s.seq === seq) ?? -1;
+    if (idx < 0 || !next.subtasks) return;
+    const updated = [...next.subtasks];
+    updated[idx] = patch(updated[idx]);
+    next.subtasks = updated;
+  });
+}
+
+/**
+ * 修改某子任务的参数值（参数项不存在时不动——与抽取前行为一致）。
+ * 只拷贝 plan → subtask → params[key] 三层，其余结构共享引用。
+ */
+export function updateSubtaskParam(plan: Plan, seq: number, key: string, value: string): Plan {
+  let changed = false;
+  const next = patchSubtask(plan, seq, st => {
+    if (!st.params?.[key]) return st;
+    changed = true;
+    return { ...st, params: { ...st.params, [key]: { ...st.params[key], value } } };
+  });
+  return changed ? next : plan;
 }
 
 /**
@@ -43,20 +78,17 @@ export function updateSubtaskParam(plan: Plan, seq: number, key: string, value: 
  * 不清理会留下悬空依赖，提交时被后端/前端校验拦下，用户需手工再删一遍。
  */
 export function deleteSubtask(plan: Plan, seq: number): Plan {
-  const next = clonePlan(plan);
-  next.subtasks = (next.subtasks || []).filter(s => s.seq !== seq);
-  next.subtasks.forEach(s => {
-    if (s.depends_on) s.depends_on = s.depends_on.filter(d => d !== seq);
-  });
+  const subs = (plan.subtasks || []).filter(s => s.seq !== seq);
+  // 级联清理依赖：只重建 depends_on 实际变化的子任务，其余共享引用
+  const next: Plan = { ...plan, subtasks: subs.map(s =>
+    s.depends_on?.includes(seq) ? { ...s, depends_on: s.depends_on.filter(d => d !== seq) } : s
+  ) };
   return next;
 }
 
-/** 设置某子任务的前置依赖 */
+/** 设置某子任务的前置依赖（结构共享：只拷贝命中的那一条） */
 export function setSubtaskDeps(plan: Plan, seq: number, deps: number[]): Plan {
-  const next = clonePlan(plan);
-  const target = next.subtasks?.find(s => s.seq === seq);
-  if (target) target.depends_on = deps;
-  return next;
+  return patchSubtask(plan, seq, st => (st.depends_on === deps ? st : { ...st, depends_on: deps }));
 }
 
 /**

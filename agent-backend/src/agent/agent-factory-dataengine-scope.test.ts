@@ -68,7 +68,7 @@ function writeSelfMapping() {
 async function discover(store: MCPConfigStore) {
   const guard = new VisibilityGuard(new PathAccessController(dir, join(dir, 'threads')));
   const factory = new AgentFactory(store, new SkillLoader(null as any), guard);
-  return (factory as any).discoverTools() as Promise<{ name: string; description: string }[]>;
+  return factory.observeDiscoveredTools() as Promise<{ name: string; description: string }[]>;
 }
 
 describe('数据引擎MCP 工具范围选择（预置服务口径）', () => {

@@ -11,6 +11,36 @@ export interface MCPServerConfig {
   builtin?: boolean;
   /** 连接携带的 HTTP 头（远程 MCP 鉴权：如 {Authorization: "Bearer xxx"}，架构文档 §九.3） */
   headers?: Record<string, string>;
+  /**
+   * **是否业务数据**（缺省视为「否」，2026-10-05 用户要求）：
+   *  声明该服务提供可被本体行为映射引用的真实业务接口（business-mcp / 第三方业务系统 MCP）。
+   *
+   * 两条语义，缺一不可：
+   *  ① **UI 侧**（2026-10-05 原始诉求）：「接口映射 → 目标 MCP 服务」下拉只列
+   *     「非内置 + 已启用 + `business_data === true`」的服务——否则本体查询 / 公共函数 / 图表类
+   *     等非业务数据服务会淹掉列表。见 frontend/src/components/Design/MCPConfig.tsx。
+   *  ② **Agent 工具目录准入**（2026-10-05 C1 收口）：声明为业务数据的服务，其**原始未映射工具**
+   *     （无 `x-category` 标记者，即消费端兜底归类的「其他MCP工具」）**一律不进 Agent 目录**——
+   *     业务接口必须经 `data_engines` 映射发布为「本体行为」后才是唯一合法入口。
+   *     理由：原始业务接口是写操作（business-mcp 支持 POST/PUT/DELETE），一旦被父 Agent 规划成
+   *     函数子任务，将走「函数子任务直连」路径——该路径无安全确认、无 disable 权限闸、无规则闸、
+   *     无报错预算，等于业务写入零人工闸门（架构文档 §六「行为工具是唯一入口」的必然推论）。
+   *
+   * ② 只挡**无标记**工具：带 `x-category` 的平台自身工具（本体行为 / 本体函数 / 公共函数）
+   * 照常进目录，故 data-engine-executor / 自建发布 即使被标业务数据也不受影响。
+   * 判定单点见 `isBusinessDataServer`，消费端 `agent-factory.discoverTools` 一处收口。
+   */
+  business_data?: boolean;
+}
+
+/**
+ * 是否业务数据服务（缺省 = 否）——`business_data` 的唯一判定口径。
+ *
+ * 与 `isBuiltinServer` / `isDataEngineMcpUrl` / `isCommonFunctionMcpUrl` 同族：配置层的身份判定
+ * 全部收在本文件，消费端（agent 目录装配、UI 下拉过滤）不得各写一份 `=== true` 判断。
+ */
+export function isBusinessDataServer(s: MCPServerConfig | undefined | null): boolean {
+  return s?.business_data === true;
 }
 
 export interface MCPConfig {

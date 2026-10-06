@@ -19,17 +19,28 @@ export interface FunctionLabelParts {
   isJudge: boolean;
 }
 
+/** 函数来源（本体内 / 公共）——跨模块共享的公开契约字段。 */
+export type FunctionOrigin = 'ontology' | 'common';
+
 interface LabelableFunction {
   name: string;
   display_name?: string;
   type?: string;
-  /** 来源标记：`common` = 公共函数（其余视为本体函数） */
-  _source?: string;
+  /**
+   * 来源标记：`common` = 公共函数（其余视为本体函数）。
+   *
+   * 2026-10-06 治理（宪法 II：模块间 MUST NOT 引用下划线私有符号）：
+   * 原字段名 `_source` 带下划线前缀（约定为私有），却被 FunctionTable / RuleTable
+   * 构造、被本模块读取，是**事实上的公开契约**却顶着私有命名——两处读取方还得用
+   * `(r as any)._source` 逃逸类型。现提升为正式公开字段 `origin`，
+   * 由编译器保证所有使用点同步改名，不会漏。
+   */
+  origin?: FunctionOrigin;
 }
 
 /** 拆解展示口径（下拉 label 与已选展示共用） */
 export function functionLabelParts(fn: LabelableFunction | undefined, name: string): FunctionLabelParts {
-  const isCommon = fn?._source === 'common';
+  const isCommon = fn?.origin === 'common';
   return {
     base: fn?.display_name || name,
     typeLabel: isCommon ? '公共' : (fn?.type ? functionTypeLabel(fn.type) : '未分类'),

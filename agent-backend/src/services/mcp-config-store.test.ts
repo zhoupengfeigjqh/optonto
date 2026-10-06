@@ -18,7 +18,8 @@ import { tmpdir } from 'os';
 
 import {
   MCPConfigStore, BUILTIN_MCP_URL, BUILTIN_DATA_ENGINE_MCP_URL, BUILTIN_COMMON_FUNCTION_MCP_URL,
-} from './mcp-config-store';
+  isBusinessDataServer,
+} from './mcp-config-store.js';
 
 let dir: string;
 let cfgPath: string;
@@ -88,6 +89,53 @@ describe('MCPConfigStore 规整', () => {
   });
 });
 
+/**
+ * `business_data`（是否业务数据，2026-10-05）—— **C1 收口的配置层底座**。
+ *
+ * 该字段有两条消费语义（见 MCPServerConfig.business_data 注释）：
+ *  ① UI：「接口映射 → 目标 MCP 服务」下拉只列 `business_data === true` 的服务；
+ *  ② Agent 目录准入：声明为业务数据的服务，其无 `x-category` 的原始工具不进 Agent 目录
+ *     （`agent-factory.discoverTools` 消费，单点收口）。
+ *
+ * 本组固化配置层自身的三条契约：**normalize 原样透传**（不被 builtin 归位逻辑吞掉）、
+ * **判定口径单一**（缺省=否）、**内置固定项不带该标记**。
+ */
+describe('business_data 标记（2026-10-05）', () => {
+  it('normalize 原样透传 business_data（true / false 均不被 builtin 归位逻辑吞掉）', () => {
+    write([
+      { name: '业务系统采购与库存MCP', url: 'http://biz:8004/mcp', enabled: true, business_data: true },
+      { name: '图表服务', url: 'http://chart:9000/mcp', enabled: true, business_data: false },
+    ]);
+    const config = new MCPConfigStore(cfgPath).getConfig();
+    const biz = config.servers.find(s => s.name === '业务系统采购与库存MCP')!;
+    const chart = config.servers.find(s => s.name === '图表服务')!;
+    expect(biz.business_data).toBe(true);
+    expect(chart.business_data).toBe(false);
+  });
+
+  it('缺省视为「否」——未声明该字段的历史配置不会被误判为业务数据服务', () => {
+    // 存量配置迁移场景：字段是后加的，老配置一律没有它。若缺省被判 true，
+    // 升级后所有第三方服务的历史工具会集体从 Agent 目录消失
+    expect(isBusinessDataServer({ name: 'x', url: 'u', enabled: true })).toBe(false);
+    expect(isBusinessDataServer({ name: 'x', url: 'u', enabled: true, business_data: undefined })).toBe(false);
+    expect(isBusinessDataServer(null)).toBe(false);
+    expect(isBusinessDataServer(undefined)).toBe(false);
+  });
+
+  it('严格取 true：字符串 "true" / 数值 1 都不算业务数据（避免手改配置绕过闸门）', () => {
+    expect(isBusinessDataServer({ name: 'x', url: 'u', enabled: true, business_data: true })).toBe(true);
+    expect(isBusinessDataServer({ name: 'x', url: 'u', enabled: true, business_data: 'true' } as any)).toBe(false);
+    expect(isBusinessDataServer({ name: 'x', url: 'u', enabled: true, business_data: 1 } as any)).toBe(false);
+  });
+
+  it('内置固定项不带 business_data（本体查询 / 公共函数恒为非业务数据服务）', () => {
+    const config = new MCPConfigStore(cfgPath).getConfig();
+    for (const s of config.servers.filter(x => x.builtin)) {
+      expect(isBusinessDataServer(s), `内置服务 ${s.name} 不应被标为业务数据`).toBe(false);
+    }
+  });
+});
+
 describe('存量配置归位（2026-10-04 服务更名）', () => {
   it('旧本体查询 / 数据引擎 URL 均归位为新地址，不与新条目并存', () => {
     write([
@@ -124,7 +172,7 @@ describe('存量配置归位（2026-10-04 服务更名）', () => {
 describe('公共函数发布不变量（防回归）', () => {
   it('默认配置里必须有公共函数 MCP 条目（否则规则闸对公共函数永远判缺口）', async () => {
     const { MCPConfigStore, BUILTIN_COMMON_FUNCTION_MCP, BUILTIN_COMMON_FUNCTION_MCP_URL } =
-      await import('./mcp-config-store');
+      await import('./mcp-config-store.js');
     const dir = mkdtempSync(join(tmpdir(), 'mcp-cfg-commonfn-'));
     try {
       const store = new MCPConfigStore(join(dir, 'mcp-config.json'));
@@ -140,7 +188,7 @@ describe('公共函数发布不变量（防回归）', () => {
   });
 
   it('公共函数 MCP 是内置固定项：删掉条目会被复活', async () => {
-    const { MCPConfigStore, BUILTIN_COMMON_FUNCTION_MCP_URL } = await import('./mcp-config-store');
+    const { MCPConfigStore, BUILTIN_COMMON_FUNCTION_MCP_URL } = await import('./mcp-config-store.js');
     const dir = mkdtempSync(join(tmpdir(), 'mcp-cfg-commonfn2-'));
     try {
       const path = join(dir, 'mcp-config.json');
@@ -155,7 +203,7 @@ describe('公共函数发布不变量（防回归）', () => {
   });
 
   it('公共函数 MCP 不可修改：停用 / 限工具范围 / 篡改 URL 都会被复位，其他服务不受影响', async () => {
-    const { MCPConfigStore, BUILTIN_COMMON_FUNCTION_MCP_URL } = await import('./mcp-config-store');
+    const { MCPConfigStore, BUILTIN_COMMON_FUNCTION_MCP_URL } = await import('./mcp-config-store.js');
     const dir = mkdtempSync(join(tmpdir(), 'mcp-cfg-commonfn3-'));
     try {
       const path = join(dir, 'mcp-config.json');

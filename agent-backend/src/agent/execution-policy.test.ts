@@ -151,4 +151,25 @@ describe('needsSecurityConfirm — 人工确认判定单一事实源', () => {
     expect(needsSecurityConfirm({ ...base, isWrite: true, security: { confirm: false } } as BehaviorMeta)).toBe(false);
     expect(needsSecurityConfirm({ ...base, isWrite: false, security: { confirm: true } } as BehaviorMeta)).toBe(true);
   });
+
+  /**
+   * fail-closed：元数据不可用 → **不弹确认**（2026-10-05 安全收口）。
+   *
+   * 反直觉但正确：unavailable 时 SubtaskRunner 会直接拒绝执行、真实工具零调用，
+   * 弹窗让用户点完仍拿不到结果——白白把流程中断在安全管控上，且掩盖了真正的失败原因
+   * （本体元数据缺失）。失败原因直接写进执行记录更可诊断。
+   * 即便调用方漏判 isWrite，unavailable 这条短路也保证不会弹窗。
+   */
+  it('元数据不可用（unavailable）→ 不弹确认（确认了也不会执行，失败原因直接暴露）', () => {
+    expect(needsSecurityConfirm({ ...base, isWrite: true, unavailable: true })).toBe(false);
+    //即便显式登记了 confirm=true 也一样不弹——unavailable 优先级最高
+    expect(needsSecurityConfirm({
+      ...base, isWrite: true, unavailable: true,
+      security: { confirm: true, confirm_content: '', scope: ['everyone'] },
+    })).toBe(false);
+  });
+
+  it('unavailable 未置位时行为不变（防误伤：正常判定口径不受影响）', () => {
+    expect(needsSecurityConfirm({ ...base, isWrite: true, unavailable: false })).toBe(true);
+  });
 });

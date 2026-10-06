@@ -9,10 +9,14 @@ import { buildConfirmRows, parseConfirmContent } from './security-confirm-conten
 
 /** 安全管控确认弹窗：结构化展示行为 + 说明/审核要求 + 参数表，纯知情确认（不可改参） */
 export default function SecurityConfirmModal({
-  confirmModal, countdown, onReject, onApprove,
+  confirmModal, countdown, busy = false, error = '', onReject, onApprove,
 }: {
   confirmModal: { confirmId: string; behavior: string; content: string; params: Record<string, any> };
   countdown: number | null;
+  /** 回执进行中：禁用按钮防连点（2026-10-05 C3） */
+  busy?: boolean;
+  /** 回执失败原因：就地展示且**弹窗不关闭**，用户可重试或改为拒绝（C3） */
+  error?: string;
   onReject: () => void;
   onApprove: () => void;
 }) {
@@ -33,15 +37,25 @@ export default function SecurityConfirmModal({
       open
       width={620}
       destroyOnClose
-      onCancel={onReject}
+      onCancel={busy ? undefined : onReject}
+      maskClosable={!busy}
+      closable={!busy}
       footer={
         <div className="flex justify-end gap-2">
-          <Button danger onClick={onReject}>拒绝</Button>
-          <Button type="primary" onClick={onApprove}>批准执行</Button>
+          <Button danger onClick={onReject} loading={busy}>拒绝</Button>
+          <Button type="primary" onClick={onApprove} loading={busy}>批准执行</Button>
         </div>
       }
     >
       <div className="space-y-3">
+        {/* 回执失败：就地展示，弹窗保持打开（C3） */}
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2">
+            <span className="text-red-400 text-sm leading-6">✕</span>
+            <span className="text-red-200 text-sm leading-6">{error}</span>
+          </div>
+        )}
+
         {/* 警示条 */}
         <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2">
           <span className="text-amber-400 text-sm leading-6">⚠️</span>

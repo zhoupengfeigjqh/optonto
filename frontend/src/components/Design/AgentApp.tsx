@@ -14,6 +14,7 @@ import {
   AgentThreadSummary, OntologyScopeSelection,
 } from '@/api/agent-client';
 import { listAllOntologies, OntologyScopeOption } from '@/api/client';
+import { clickableProps } from '@/utils/a11y';
 import AgentConversation from './agent/AgentConversation';
 
 export default function AgentApp({
@@ -30,20 +31,28 @@ export default function AgentApp({
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [selectedScope, setSelectedScope] = useState<OntologyScopeSelection[]>([]);
+  /** 新建进行中：禁用确认按钮防连点（连点会创建出多个线程，2026-10-05 章程 IV 三态） */
+  const [creating, setCreating] = useState(false);
+  /** 本体列表加载失败：显式提示而非静默降级成「不在 options 里的裸值 tag」 */
+  const [ontologyLoadFailed, setOntologyLoadFailed] = useState(false);
 
   // 加载线程列表和全量本体列表（本体范围选择器数据源）
+  // 两者独立成败：本体列表失败不应连带丢掉已取到的线程列表（原先 Promise.all 一失败全丢）
   const load = async () => {
     if (!scenarioName || !ontologyName) return;
     setLoading(true);
     try {
-      const [threadList, ontologyList] = await Promise.all([
-        listAgentThreads(scenarioName, ontologyName),
-        listAllOntologies(),
-      ]);
-      setThreads(threadList);
-      setOntologies(ontologyList);
+      setThreads(await listAgentThreads(scenarioName, ontologyName));
     } catch (e: any) {
-      message.error('加载失败: ' + e.message);
+      message.error('加载会话列表失败: ' + e.message);
+    }
+    try {
+      setOntologies(await listAllOntologies());
+      setOntologyLoadFailed(false);
+    } catch (e: any) {
+      // 保留已有 options，只标记失败：下拉仍可用（可能已有缓存数据），但明确告知用户
+      setOntologyLoadFailed(true);
+      message.warning('本体清单加载失败，本体范围选择可能不完整: ' + e.message);
     } finally {
       setLoading(false);
     }
@@ -55,7 +64,8 @@ export default function AgentApp({
 
   // 新建线程（本体范围默认勾选当前本体，用户可加选/清空；清空 = 通用问答模式）
   const handleNew = async () => {
-    if (!scenarioName || !ontologyName) return;
+    if (!scenarioName || !ontologyName || creating) return;
+    setCreating(true);
     try {
       const thread = await createAgentThread(
         scenarioName,
@@ -67,8 +77,11 @@ export default function AgentApp({
       setNewTitle('');
       setSelectedScope([]);
       setActiveThreadId(thread.id);
+      message.success('对话已创建');
     } catch (e: any) {
       message.error('创建失败: ' + e.message);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -113,7 +126,7 @@ export default function AgentApp({
       render: (v: string, r: AgentThreadSummary) => (
         <span
           className="text-text-primary cursor-pointer hover:text-accent-blue"
-          onClick={() => setActiveThreadId(r.id)}
+          {...clickableProps(() => setActiveThreadId(r.id), `进入对话：${v || '未命名对话'}`)}
         >
           {v || '未命名对话'}
         </span>
@@ -187,17 +200,22 @@ export default function AgentApp({
         open={showNewDialog}
         onOk={handleNew}
         onCancel={() => {
+          if (creating) return;
           setShowNewDialog(false);
           setNewTitle('');
           setSelectedScope([]);
         }}
+        confirmLoading={creating}
+        maskClosable={!creating}
+        closable={!creating}
         okText="创建"
         cancelText="取消"
       >
         <div className="py-3 space-y-4">
           <div>
-            <label className="text-text-secondary text-sm block mb-1">对话标题</label>
+            <label htmlFor="new-thread-title" className="text-text-secondary text-sm block mb-1">对话标题</label>
             <Input
+              id="new-thread-title"
               placeholder="输入对话标题（可选）"
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
@@ -205,8 +223,9 @@ export default function AgentApp({
             />
           </div>
           <div>
-            <label className="text-text-secondary text-sm block mb-1">本体范围</label>
+            <label htmlFor="new-thread-scope" className="text-text-secondary text-sm block mb-1">本体范围</label>
             <Select
+              id="new-thread-scope"
               mode="multiple"
               placeholder="选择本次对话限定的本体（不选 = 通用问答模式）"
               value={selectedScope.map(s => `${s.scenario}/${s.ontology}`)}
@@ -228,6 +247,13 @@ export default function AgentApp({
             <p className="text-text-muted text-xs mt-1">
               本次对话的查询与执行将限定在所选本体内（可跨本体多选）；不选则为通用问答模式，不使用任何业务工具
             </p>
+            {/* 本体清单加载失败时显式提示：否则 Select 会把默认勾选渲染成「不在 options 里的裸值 tag」，
+                用户无从判断是加载失败还是配置异常 */}
+            {ontologyLoadFailed && (
+              <p role="alert" className="text-amber-400 text-xs mt-1">
+                ⚠ 本体清单加载失败，下方可选范围可能不完整；如需限定本体请稍后重试
+              </p>
+            )}
           </div>
         </div>
       </Modal>

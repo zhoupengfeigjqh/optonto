@@ -112,6 +112,9 @@ export interface LegalCalls {
  * 无登记 → 写操作（isWrite）默认强制确认，读操作不确认。
  */
 export function needsSecurityConfirm(meta: BehaviorMeta): boolean {
+  // 元数据不可用（fail-closed）：SubtaskRunner 会直接拒绝执行、真实工具零调用，
+  // 弹确认只会让用户点完仍拿不到结果——不弹，把失败原因直接暴露在执行记录里。
+  if (meta.unavailable) return false;
   return meta.security ? meta.security.confirm : meta.isWrite;
 }
 

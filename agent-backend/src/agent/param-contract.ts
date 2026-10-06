@@ -14,6 +14,22 @@
 import { Type, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
+/**
+ * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
+ * 避免 NaN 作为参数静默传给后端 / 在拓扑排序里被跳过。
+ *
+ * 归属说明（2026-10-05，宪法 II）：原为 `agent-factory.ts` 私有函数，但规划工具
+ * （`submit_plan` / `listPlannableFunctions`，已抽至 `parent-tools.ts`）与 MCP schema
+ * 适配（仍在 agent-factory）都要用同一份规整口径——两处各写一份必然漂移，
+ * 故收在本 module（参数契约的单一权威）。
+ */
+export function toFiniteNum(value: any, label: string): number {
+  if (value === '' || value === null || value === undefined) throw new Error(`${label} 为空`);
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error(`${label} 不是有效数字: ${value}`);
+  return n;
+}
+
 /** 行为/函数声明中的单个参数（items/properties 承载 array/object 的内部结构声明） */
 export interface ParamSpec {
   type?: string;

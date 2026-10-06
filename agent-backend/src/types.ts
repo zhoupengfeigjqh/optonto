@@ -154,6 +154,22 @@ export interface BehaviorMeta {
   concepts: ConceptInfo[];
   /** 是否写操作（API + POST/PATCH/DELETE）。写操作无论有无 security 登记都强制人工确认。 */
   isWrite: boolean;
+  /**
+   * **本体元数据不可用**（fail-closed 标记，2026-10-05）：`ontology.yaml` 缺失 / YAML 解析失败，
+   * 或该行为名在 `behaviors[]` 中查不到 —— 即**拿不到 `op_type`，无法判断这个行为是否安全**。
+   *
+   * 置位时的语义（与「元数据可用但 securities 未登记」是两件不同的事，后者是正常业务状态——
+   * securities 是全花名册，core 保存时保证每个行为恒定一条记录）：
+   *  - `isWrite` 一律为 `true`（拿不到就按最坏假设当写操作）→ 即便调用方漏判也不会跳过安全确认；
+   *  - `needsSecurityConfirm` 返回 `false`（**不弹确认**）→ 确认也无意义，SubtaskRunner 会直接判失败；
+   *  - `SubtaskRunner.run` 见到即拒绝执行并给出明确原因 → 行为工具零调用，不会绕过任何闸门落库。
+   *
+   * 为什么要显式标记而不是直接抛错：`getBehaviorMeta` 的调用点分布在规划展示（enrichPlanDisplay）、
+   * 波次分类、执行策略派生等处，抛错会把「一次配置读取失败」放大成整个 run 崩溃；
+   * 而静默按读操作放行（历史行为）会让**写操作零确认直接执行**——失效方向最危险。
+   * 标记 + 就地拒绝是「故障暴露但可控」的最小代价。
+   */
+  unavailable?: boolean;
 }
 
 /** 函数元信息（文件声明侧合一查询结果：本体函数 functions[] → 公共函数 functions.json，都不在 → null）。
@@ -191,6 +207,19 @@ export interface ExecutionEntry {
   params?: any;
   result?: string;
   source?: 'parent' | 'child';
+  /**
+   * SDK 工具调用 id（pi-agent-core 的 `toolCallId`）——**running → done 的唯一配对键**。
+   *
+   * 为什么必需（2026-10-05，agent 环节审查 C5）：前端靠「type+name+status+seq」匹配
+   * start 与 end，而**父 Agent 的工具调用不带 seq**（seq 仅子任务相关），两侧 `undefined === undefined`
+   * 恒成立——父 Agent 连续两次调用同名工具（如 listOntoBehaviors）时，第 2 次 running 会被丢弃、
+   * 第 2 次 done 覆盖第 1 次的 result，执行记录出现错乱。
+   * 带 toolCallId 后配对唯一，与「同名工具并发/连续调用」天然区分。
+   *
+   * 不带该键的条目（subtask_start/done、security_confirm、subtask_input、父侧 load_skill 汇总条）
+   * 本就只有单条或成对形态，前端按缺省键处理即可。
+   */
+  toolCallId?: string;
   /** 所属子任务编号（仅子任务相关条目），前端据此分组展示 */
   seq?: number;
   /** 子任务展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord）。执行记录侧面板用 */

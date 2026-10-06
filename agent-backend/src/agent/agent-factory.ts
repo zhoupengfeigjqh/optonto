@@ -2,13 +2,15 @@ import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@sinclair/typebox';
 import { MCPClient } from '../services/mcp-client.js';
-import { MCPConfigStore, isDataEngineMcpUrl } from '../services/mcp-config-store.js';
+import { MCPConfigStore, isBusinessDataServer, isDataEngineMcpUrl } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { VisibilityGuard } from '../services/visibility-guard.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
 import { buildParentPrompt, buildGeneralPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from '../utils/text-utils.js';
 import { subtaskFieldsSchema } from './subtask-contract.js';
+import { toFiniteNum } from './param-contract.js';
+import { createLoadSkillTool, createSubmitPlanTool, createListPlannableFunctionsTool } from './parent-tools.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
 import {
@@ -26,15 +28,6 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection, Conversa
 // 父 Agent 挂载的本体查询工具由发布方分类标记决定（x-category=本体查询），不再硬编码名单
 
 /**
- * LLM 数值字段强转。非法值（空/NaN/非数字）直接抛错，
- * 避免 NaN 作为参数静默传给后端 / 在拓扑排序里被跳过。
- */
-function toFiniteNum(value: any, label: string): number {
-  if (value === '' || value === null || value === undefined) throw new Error(`${label} 为空`);
-  const n = Number(value);
-  if (!Number.isFinite(n)) throw new Error(`${label} 不是有效数字: ${value}`);
-  return n;
-}
 
 /**
  * AgentFactory — 使用 pi-agent-core SDK 创建 Agent 实例。
@@ -81,6 +74,20 @@ export class AgentFactory {
   }
 
   /**
+   * 工具发现结果的公开观察口（2026-10-06，宪法 II：跨模块能力 MUST 提升为公开 API）。
+   *
+   * `discoverTools` 是私有方法，但三个测试文件（visibility / dataengine-scope /
+   * business-data）都需要读它的产出，且此前是`(factory as any).discoverTools()`
+   * —— 用类型断言强穿封装，等价于「私有成员被外部依赖」，一旦内部改名测试就静默失效。
+   *
+   * 范式同 `Orchestrator.hasActiveRun()`：显式开洞，洞的用途与稳定性写进注释。
+   * 仅供测试与诊断观察，**MUST NOT** 用于业务判断。
+   */
+  observeDiscoveredTools(): Promise<AgentTool[]> {
+    return this.discoverTools();
+  }
+
+  /**
    * 创建父 Agent（规划专家）。
    * 本体模式（scope.contexts 非空）：注册 load_skill + submit_plan + listPlannableFunctions（本地内部工具，只读）
    * + 本体查询工具（list*，按本体范围硬过滤）；技能为所选本体目录自动反查（用户无感）。
@@ -115,9 +122,13 @@ export class AgentFactory {
     const descriptions = this.skillLoader.getSkillDescriptions(scope.skills);
     const systemPrompt = buildParentPrompt(descriptions, scope.contexts);
 
-    const loadSkillTool = this.createLoadSkillTool(scope.skills, onSkillLoaded);
-    const submitPlanTool = this.createSubmitPlanTool(onPlanSubmitted);
-    const listPlannableFunctionsTool = this.createListPlannableFunctionsTool(allowedOntologyIds);
+    const loadSkillTool = createLoadSkillTool(
+      (s, o, n) => this.skillLoader.loadSkill(s, o, n), scope.skills, onSkillLoaded,
+    );
+    const submitPlanTool = createSubmitPlanTool(onPlanSubmitted);
+    const listPlannableFunctionsTool = createListPlannableFunctionsTool(
+      () => this.getMountableToolCatalog(), allowedOntologyIds,
+    );
     // MCP 配置全局唯一，不区分场景/本体。父 Agent 只挂本体查询 list*（规划时了解行为/参数/概念/规则/函数元数据），
     // 并按本体范围包一层硬过滤（越界本体直接报错，不靠提示词自觉）；
     // 函数与外部工具一律不挂——由 listPlannableFunctions 实时发现，父 Agent 选定后经 related_functions 下放子 Agent。
@@ -356,87 +367,6 @@ export class AgentFactory {
   }
 
   /**
-   * 创建 load_skill 工具。
-   * Agent 在需要某个技能的完整知识时调用。
-   * 从本对话选中的技能列表解析该技能的 (scenario, ontology) 再加载全文，支持跨本体。
-   * 加载后通过 onSkillLoaded 回调通知 orchestrator 记录。
-   */
-  private createLoadSkillTool(skills: SkillSelection[], onSkillLoaded?: (skillName: string) => void): AgentTool {
-    return {
-      name: 'load_skill',
-      label: '加载技能知识',
-      description: '加载指定技能的完整知识文件。当用户问题涉及某个技能领域时，先调用此工具获取完整知识再回答。',
-      parameters: Type.Object({
-        skill_name: Type.String({ description: '技能名称，如 raw-material-inventory' }),
-      }),
-      execute: async (toolCallId, params) => {
-        const p = params as any;
-        const skillName = p.skill_name as string;
-        const sel = skills.find(s => s.name === skillName);
-        if (!sel) throw new Error(`技能 "${skillName}" 不在本对话选中的技能中`);
-        const content = this.skillLoader.loadSkill(sel.scenario, sel.ontology, skillName);
-        if (onSkillLoaded) onSkillLoaded(skillName);
-        return {
-          content: [{ type: 'text', text: content }],
-          details: { skill_name: skillName, scenario: sel.scenario, ontology: sel.ontology },
-        };
-      },
-    };
-  }
-
-  /**
-   * 创建 submit_plan 工具。
-   * 父 Agent 通过工具调用提交结构化规划，参数经 SDK 的 validateToolArguments 按
-   * TypeBox schema 校验（缺字段/类型错误会自动强转并让 LLM 自纠），
-   * 规划通过 onPlanSubmitted 回调交给 orchestrator，不再依赖正则抓取文本 JSON。
-   */
-  private createSubmitPlanTool(onPlanSubmitted?: (plan: SubTaskPlan) => void): AgentTool {
-    return {
-      name: 'submit_plan',
-      label: '提交子任务规划',
-      description: '当用户需求属于业务操作、需要拆分为多个子任务执行时，调用本工具提交完整的子任务执行规划。',
-      parameters: Type.Object({
-        // 子任务字段单一事实源：subtask-contract 声明表（提示词字段表与本 schema 同源，必填性不再漂移）
-        subtasks: Type.Array(Type.Object(subtaskFieldsSchema())),
-        reasoning: Type.Optional(Type.String()),
-      }),
-      execute: async (toolCallId, params) => {
-        const plan = params as { subtasks: Array<Record<string, any>> };
-        // 规整数值字段：LLM 可能输出字符串数字，统一转 number 供拓扑排序/seq 匹配使用。
-        // 非法值直接抛错 → submit_plan 工具报错，父 Agent 看到后可自纠，避免 NaN 静默跳过。
-        for (const st of plan.subtasks) {
-          st.seq = toFiniteNum(st.seq, '子任务 seq');
-          st.scenario_id = st.scenario_id != null && st.scenario_id !== '' ? toFiniteNum(st.scenario_id, `子任务 ${st.seq} 的 scenario_id`) : undefined;
-          st.ontology_id = toFiniteNum(st.ontology_id, `子任务 ${st.seq} 的 ontology_id`);
-          if (Array.isArray(st.depends_on)) st.depends_on = st.depends_on.map(d => toFiniteNum(d, `子任务 ${st.seq} 的 depends_on`));
-          // 行为/函数互斥：有且只有一个非空。缺键/空白统一规整为空串并回写——
-          // 下游校验器与执行分支用 `if (st.function)` 裸真值判别，" " 这类空白串不规约会走错分支。
-          st.behavior = typeof st.behavior === 'string' ? st.behavior.trim() : '';
-          st.function = typeof st.function === 'string' ? st.function.trim() : '';
-          const hasBehavior = st.behavior !== '';
-          const hasFunction = st.function !== '';
-          if (hasBehavior === hasFunction) {
-            throw new Error(`子任务 ${st.seq} 必须且只能填写 behavior 或 function 之一（当前 behavior="${st.behavior}"，function="${st.function}"）`);
-          }
-          // related_functions 只服务于行为子任务（子 Agent 执行取数/计算的函数挂载面）：
-          // 行为子任务可填可不填；函数子任务自身即函数直连调用（无子 Agent），必须为空。
-          if (Array.isArray(st.related_functions)) {
-            st.related_functions = st.related_functions.filter((f: any) => typeof f === 'string' && f.trim() !== ''); // 规整回写：剔除空白项
-          }
-          if (hasFunction && Array.isArray(st.related_functions) && st.related_functions.length > 0) {
-            throw new Error(`子任务 ${st.seq} 是函数子任务（function="${st.function}"），related_functions 必须为空（该字段仅用于行为子任务，当前 ${JSON.stringify(st.related_functions)}）`);
-          }
-        }
-        if (onPlanSubmitted) onPlanSubmitted(plan as unknown as SubTaskPlan);
-        return {
-          content: [{ type: 'text', text: '已接收执行规划，将按序执行。' }],
-          details: { submitted: true },
-        };
-      },
-    };
-  }
-
-  /**
    * 可挂载工具目录（单一事实源）：本体行为 / 本体函数 / 公共函数 / 其他 MCP 工具
    *（本体查询类在此不出现——父 Agent 专用，不进子任务可规划清单）。
    * 供父 Agent 的 listPlannableFunctions 工具（规划发现，本体行为条目会被剔除——行为规划走 listOntoBehaviors）
@@ -458,61 +388,6 @@ export class AgentFactory {
     return all
       .filter(t => !isQueryTool(t.parameters))
       .map(t => toMountableToolInfo(t));
-  }
-
-  /**
-   * 创建 listPlannableFunctions 工具（父 Agent 内部工具，本地实现，只读）。
-   * 列出可规划/可下放的函数与工具清单（本体函数 / 公共函数 / 其他 MCP 工具三类合一），
-   * 供父 Agent 规划函数子任务（function 字段）、行为子任务的 related_functions、以及填子任务 params。
-   * 与 MCP 版 listOntoFunctions（本体函数元数据查询）分工：那个只查指定本体的函数元数据，这个管"能规划什么"。
-   * 本体范围硬过滤：本体函数恒限定在本次对话所选本体集合内（无论是否传 ontology_id），
-   * 传了范围外的 ontology_id 直接报错；公共函数/其他MCP工具是全局工具，始终保留。
-   * 参数 ontology_id 与 keyword 均可选，与关系：
-   *   - ontology_id：仅过滤本体函数（按 scope.ontology_id 精确匹配，且必须在允许集内）
-   *   - keyword：对 name/description 大小写不敏感模糊匹配
-   *   - 都不传 → 返回允许集内全部
-   * 本地实现且不进 MCP server 的原因：①其他 MCP 工具只存在于 agent-backend 的 discoverTools() 清单中，
-   * core-backend 无法感知；②与 submit_plan/load_skill 同为父 Agent 内部工具，不暴露给外部消费方与子 Agent。
-   * 只读：仅返回工具元数据，不调用任何工具、无副作用——
-   * 与父 Agent「只规划、不执行」的职责边界一致，避免父 Agent 借此执行外部副作用工具。
-   */
-  private createListPlannableFunctionsTool(allowedOntologyIds: ReadonlySet<number>): AgentTool {
-    return {
-      name: 'listPlannableFunctions',
-      label: '列出可规划函数/工具',
-      description: '列出当前可规划为子任务的函数/工具清单（本体函数 / 公共函数 / 其他 MCP 工具，含名称、分类、描述、完整参数结构、本体函数所属场景/本体）。用于规划函数子任务（function 字段）、行为子任务的 related_functions、以及填子任务 params。参数 ontology_id（按本体过滤，仅滤本体函数，且必须在本次对话本体范围内）与 keyword（按名称/描述搜索）均可选，与关系；都不传返回范围内全部。只读，不会调用这些工具。',
-      parameters: Type.Object({
-        ontology_id: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: '本体 ID（可选）。填了则本体函数只返回该本体下的（必须在本次对话本体范围内）；公共函数/其他MCP工具为全局工具，不受此过滤' })),
-        keyword: Type.Optional(Type.String({ description: '搜索关键词（可选），模糊匹配函数/工具名称或描述' })),
-      }),
-      execute: async (_toolCallId, params) => {
-        const p = params as any;
-        // LLM 可能传字符串数字，统一规整；非法值抛错让父 Agent 自纠
-        const oid = p?.ontology_id !== undefined && p?.ontology_id !== null && p?.ontology_id !== ''
-          ? toFiniteNum(p.ontology_id, 'ontology_id')
-          : undefined;
-        // 本体范围硬闸：显式指定了范围外的本体 → 报错（不静默返空，避免 LLM 误判"该本体无函数"）
-        if (oid !== undefined && !allowedOntologyIds.has(oid)) {
-          throw new Error(`ontology_id=${oid} 不在本次对话的本体范围内（允许：${[...allowedOntologyIds].join('、')}）`);
-        }
-        const kw = typeof p?.keyword === 'string' && p.keyword.trim() !== '' ? p.keyword.trim().toLowerCase() : undefined;
-        let catalog = (await this.getMountableToolCatalog())
-          // 本体行为不进本清单：行为子任务规划走 listOntoBehaviors（**就绪**行为花名册+规则关联），这里只列函数/工具
-          .filter(t => t.category !== CATEGORY.BEHAVIOR)
-          // 本体范围硬过滤：本体函数恒限定在允许集内；全局工具（公共函数/其他MCP工具）无本体归属，始终保留
-          .filter(t => t.category !== CATEGORY.FUNCTION || allowedOntologyIds.has(Number(t.scope?.ontology_id)));
-        if (oid !== undefined) {
-          catalog = catalog.filter(t => t.category !== CATEGORY.FUNCTION || Number(t.scope?.ontology_id) === oid);
-        }
-        if (kw !== undefined) {
-          catalog = catalog.filter(t => t.name.toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw));
-        }
-        return {
-          content: [{ type: 'text', text: JSON.stringify(catalog, null, 2) }],
-          details: { count: catalog.length },
-        };
-      },
-    };
   }
 
   /**
@@ -538,6 +413,9 @@ export class AgentFactory {
         const result = await client.listTools();
         const mcpTools = result.tools || [];
         let hiddenCount = 0;
+        // 业务数据闸（C1 收口，2026-10-05）：本服务是否声明为业务数据——决定其原始未映射工具能否进目录
+        const businessDataGate = isBusinessDataServer(server);
+        let businessBlockedCount = 0;
 
         for (const t of mcpTools) {
           const toolName = t.name as string;
@@ -555,6 +433,23 @@ export class AgentFactory {
           // 优先用 MCP 提供的原生 JSON Schema 做参数校验与类型强转，
           // 无 schema 时退回宽松校验（validateToolArguments 原生支持 JSON Schema）
           const inputSchema = (t as any).inputSchema;
+          // 业务数据闸（C1 收口，2026-10-05）：声明为业务数据的服务，其【原始未映射工具】
+          // （无 x-category 标记者 = 消费端兜底归类的「其他MCP工具」）一律不进 Agent 目录——
+          // 业务接口必须经 data_engines 映射发布为「本体行为」才是唯一合法入口（架构文档 §六）。
+          //
+          // 为什么必须挡：原始业务接口是写操作（business-mcp 支持 POST/PUT/DELETE）。一旦被父 Agent
+          // 规划成「函数子任务」，就走 callFunctionTool 直连路径（agent-factory.ts:233），而该路径
+          // 【不经过】createChildAgent 的 scopeToOntology 包装（:263）——安全确认、disable 权限闸、
+          // 前置/后置规则闸、报错预算四道闸一道都没有，等于业务写入零人工闸门直接落库。
+          //
+          // 为什么只挡无标记者：带 x-category 的平台自身工具照常进目录，否则会误伤——
+          //   · data-engine-executor 发布的是【本体行为】工具（行为子任务的唯一执行入口）
+          //   · 自建发布按 kind 发布本体函数 / 本体行为
+          // 这两类即便被标 business_data=true 也必须放行。
+          if (businessDataGate && !publishedCategory(inputSchema)) {
+            businessBlockedCount++;
+            continue;
+          }
           // 消费边界协议校验：分类标记与 scope 上下文块必须自洽（版本错配即快速失败，不静默降级）
           assertToolProtocol(toolName, inputSchema);
           tools.push({
@@ -581,9 +476,17 @@ export class AgentFactory {
           });
         }
 
-        console.log(`[MCP] ${server.name}: 发现 ${mcpTools.length} 个工具${hiddenCount > 0 ? `，收编隐藏 ${hiddenCount} 个已映射原始工具` : ''}`);
+        // 两类拦截都进日志：治理动作对用户不可见（工具"凭空消失"会表现为 LLM 说没这工具），
+        // 运维必须能从启动日志一眼看出是收编隐藏还是业务数据闸拦的
+        const notes = [
+          hiddenCount > 0 ? `收编隐藏 ${hiddenCount} 个已映射原始工具` : '',
+          businessBlockedCount > 0 ? `业务数据闸拦截 ${businessBlockedCount} 个原始未映射工具（该服务已标记 business_data=true，业务接口须经映射发布为本体行为）` : '',
+        ].filter(Boolean);
+        console.log(`[MCP] ${server.name}: 发现 ${mcpTools.length} 个工具${notes.length > 0 ? `，${notes.join('；')}` : ''}`);
       } catch (e: any) {
-        console.error(`[MCP] ${server.name} 连接失败: ${e.message}`);
+        // 保留 stack：MCP 连接失败是运维高频问题，只留 message 会让「为什么连不上」无从查证
+        // （宪法 IX 故障可观测：原始错误必须落日志）
+        console.error(`[MCP] ${server.name} 连接失败（${server.url}）:`, e);
       }
     }
 

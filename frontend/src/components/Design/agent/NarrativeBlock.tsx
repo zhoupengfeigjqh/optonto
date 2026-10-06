@@ -10,10 +10,14 @@ export default function NarrativeBlock({ item }: { item: { content: string; stre
   const [open, setOpen] = useState(false);
   return (
     <div className="bg-dark-card border border-dark-border rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-dark-hover" {...clickableProps(() => setOpen(!open), open ? '收起' : '展开')}>
-        <span className="text-text-muted text-xs">{open ? '▼' : '▶'}</span>
+      <div
+        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-dark-hover"
+        {...clickableProps(() => setOpen(!open), open ? '收起思考内容' : '展开思考内容')}
+        aria-expanded={open}
+      >
+        <span className="text-text-muted text-xs" aria-hidden>{open ? '▼' : '▶'}</span>
         <span className="text-accent-blue text-xs font-semibold">思考内容...</span>
-        {item.streaming && <Spin size="small" />}
+        {item.streaming && <span role="status" aria-label="思考中"><Spin size="small" /></span>}
         <span className="text-text-muted text-xs ml-auto">{open ? '收起' : '展开'}</span>
       </div>
       {open && (

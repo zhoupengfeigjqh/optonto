@@ -70,8 +70,10 @@ function loadCommonFunctions(): CommonFunction[] {
     const data = raw.filter((f): f is CommonFunction => !!f && typeof f === 'object');
     cache = { data, mtimeMs };
     return data;
-  } catch (e: any) {
-    console.warn(`[CommonFunctions] 读取 ${file} 失败: ${e.message}`);
+  } catch (e) {
+    // 保留原始错误（stack 在此）：解析失败是配置事故，只留 message 会让根因无从查证；
+    // 同时明确"正在沿用陈旧快照"——调用方拿到的是上一份成功数据而非当前文件内容。
+    console.warn(`[CommonFunctions] 读取 ${file} 失败，将沿用上一份成功快照:`, e);
     return cache?.data ?? []; // 解析失败时沿用上一份成功快照，避免一次写坏文件清空全部白名单
   }
 }

@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { ThreadStore } from '../services/thread-store.js';
-import { SkillLoader } from '../services/skill-loader.js';
 import { ChatSession } from '../services/chat-session.js';
 import { Orchestrator } from '../agent/orchestrator.js';
 import type { SSEEvent } from '../types.js';
@@ -9,7 +8,6 @@ import { sendError } from '../utils/http-error.js';
 
 export function createThreadsRouter(
   threadStore: ThreadStore,
-  skillLoader: SkillLoader,
   orchestrator: Orchestrator,
   chatSession: ChatSession,
 ): Router {
@@ -32,20 +30,12 @@ export function createThreadsRouter(
     try {
       const scenario = req.params.scenario as string;
       const ontology = req.params.ontology as string;
-      const { title, ontology_scope } = req.body as { title: string; ontology_scope?: { scenario: string; ontology: string }[] };
-      const scope = ontology_scope || [];
-
-      // 本体范围逐条校验：必须能在 ontology.yaml.metadata 解析到身份四元组（选了不存在的本体 → 400 指出具体条目）。
-      // 空数组合法——通用问答模式（父 Agent 不挂业务工具）。
-      const bad = scope.filter(sel => !sel?.scenario || !sel?.ontology || !skillLoader.resolveOntologyContext(sel.scenario, sel.ontology));
-      if (bad.length > 0) {
-        sendError(res, 400, `以下本体不存在或元数据缺失：${bad.map(b => `${b?.scenario ?? '?'}/${b?.ontology ?? '?'}`).join('、')}`);
-        return;
-      }
-
-      const thread = threadStore.create(scenario, ontology, title || '新对话', scope);
+      const { title, ontology_scope } = req.body as { title?: string; ontology_scope?: { scenario: string; ontology: string }[] };
+      // 本体范围校验与创建的业务规则已下沉到 ChatSession（宪法 II：路由只做 HTTP 适配）
+      const thread = chatSession.createThread(scenario, ontology, title, ontology_scope || []);
       res.status(201).json(thread);
     } catch (e: any) {
+      // 领域异常（本体范围非法）与其他客户端错误同属 400：请求本身不合法，不是服务端故障
       sendError(res, 400, e.message);
     }
   });
@@ -71,7 +61,10 @@ export function createThreadsRouter(
       threadStore.delete(scenario, ontology, tid);
       res.json({ message: '已删除' });
     } catch (e: any) {
-      sendError(res, 400, e.message);
+      // 归属不符（ForbiddenError）→ 404，与 GET 详情同口径：不泄露"线程存在但不属于当前本体"。
+      // 该映射此前只存在于 GET，DELETE 一律 400 —— 前端因此无法区分两种失败（补端点测试时发现）。
+      if (e instanceof ForbiddenError) { sendError(res, 404, e.message); }
+      else { sendError(res, 400, e.message); }
     }
   });
 
@@ -104,20 +97,59 @@ export function createThreadsRouter(
     }
   });
 
-  router.post('/abort', (_req: Request, res: Response) => {
-    orchestrator.abort();
-    res.json({ message: '已中断' });
+  /**
+   * 中断当前 run（2026-10-05 C3/M8：不再让「没中断」伪装成「已中断」）。
+   *
+   * - 归属校验：body 带 `thread_id` 时必须与当前活动 run 所属线程一致，否则 409
+   *   （多标签页/多用户场景下，A 会话的中断请求不得打断 B 会话正在跑的任务）。
+   * - 无活动 run 时回 409 而非 200「已中断」——原实现会撒谎说中断成功，
+   *   而实际什么都没发生，违反宪法 VI「失败 MUST 以错误表达」。
+   */
+  router.post('/abort', (req: Request, res: Response) => {
+    const { thread_id } = (req.body ?? {}) as { thread_id?: string };
+    if (thread_id !== undefined && typeof thread_id !== 'string') {
+      sendError(res, 400, 'thread_id 必须是字符串'); return;
+    }
+    const r = orchestrator.abortRun(thread_id);
+    if (r.aborted) { res.json({ message: '已中断' }); return; }
+    if (r.reason === 'thread_mismatch') {
+      sendError(res, 409, '中断请求与当前执行的任务不匹配（该任务属于其他会话）'); return;
+    }
+    sendError(res, 409, '当前没有正在执行的任务');
   });
 
+  // ─── 确认回执（2026-10-05 C3：不再让「没生效」伪装成「已确认」）──
+  // 确认请求是一次性的：答复后即从待确认表移除，超时/中断亦然。故 confirmId 未命中
+  // 意味着「这次答复不会产生任何效果」——必须如实回 404，让调用方能提示用户重试或改用拒绝，
+  // 而不是回 200 让前端以为已批准、实际后端仍在等 CONFIRM_TIMEOUT（60s）才按超时判失败。
+  // 那种「状态真空」在写操作上尤其危险：用户以为已批准，系统实际已放弃。
+
+  /** 回执公共部分：approved 必须是显式布尔（缺省/非布尔一律 400，不当拒绝处理） */
+  function readApproved(res: Response, raw: unknown): boolean | null {
+    if (typeof raw !== 'boolean') {
+      sendError(res, 400, 'approved 必须是布尔值（true=批准 / false=拒绝）');
+      return null;
+    }
+    return raw;
+  }
+
   router.post('/confirm/:confirmId', (req: Request, res: Response) => {
-    const { approved } = req.body as { approved: boolean };
-    orchestrator.handleConfirm(req.params.confirmId as string, approved);
+    const approved = readApproved(res, (req.body as { approved?: unknown })?.approved);
+    if (approved === null) return;
+    const hit = orchestrator.handleConfirm(req.params.confirmId as string, approved);
+    if (!hit) { sendError(res, 404, '该确认请求已失效（可能已超时、已中断或已被答复），本次答复未生效'); return; }
     res.json({ message: 'ok' });
   });
 
   router.post('/plan-confirm/:confirmId', (req: Request, res: Response) => {
-    const { approved, plan, rejectAction, suggestion } = req.body as { approved: boolean; plan?: any; rejectAction?: 'exit' | 'replan'; suggestion?: string };
-    orchestrator.handlePlanConfirm(req.params.confirmId as string, approved, plan, { rejectAction, suggestion });
+    const body = (req.body ?? {}) as { approved?: unknown; plan?: any; rejectAction?: 'exit' | 'replan'; suggestion?: string };
+    const approved = readApproved(res, body.approved);
+    if (approved === null) return;
+    if (body.rejectAction !== undefined && body.rejectAction !== 'exit' && body.rejectAction !== 'replan') {
+      sendError(res, 400, 'rejectAction 只能是 exit 或 replan'); return;
+    }
+    const hit = orchestrator.handlePlanConfirm(req.params.confirmId as string, approved, body.plan, { rejectAction: body.rejectAction, suggestion: body.suggestion });
+    if (!hit) { sendError(res, 404, '该规划确认请求已失效（可能已超时、已中断或已被答复），本次答复未生效'); return; }
     res.json({ message: 'ok' });
   });
 

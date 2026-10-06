@@ -1,0 +1,22 @@
+{
+  // 测试代码的类型检查配置（2026-10-05，宪法 III 门禁补齐）。
+  //
+  // 为什么需要独立一份：tsconfig.json 的 `exclude` 排除了 `**/*.test.ts`，
+  // 于是 `npm run build`（tsc）**从不检查测试代码**——测试里写错类型、引用不存在的导出、
+  // mock 工厂与被测模块签名漂移，全部要到运行时才暴露。
+  //
+  // 已知历史包袱：`vi.mock(path)` 的自动 mock 与部分 `as any` 断言在本配置下会报错。
+  // 这些是**存量**问题（治理规定不追溯存量代码），本配置先把它们【暴露出来】而不是继续藏，
+  // 后续按模块逐个清理；清理进度见 specs/003-ontology-model-extension/tasks.md。
+  //
+  // 用法：npm run typecheck:test
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

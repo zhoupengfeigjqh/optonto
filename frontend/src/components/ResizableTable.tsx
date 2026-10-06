@@ -21,8 +21,13 @@ const RESIZE_HANDLE_STYLE: React.CSSProperties = {
 function ResizeHandle({ onMouseDown, active }: { onMouseDown: (e: React.MouseEvent) => void; active: boolean }) {
   return (
     <div
-      onMouseDown={onMouseDown}
-      onClick={e => e.stopPropagation()}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="拖动调整列宽"
+      // mousedown 阶段即阻止冒泡：原先挂在 onClick 上是为了挡行点击，但那样既晚了一步
+      // （行onMouseDown 已先触发），又让 div 变成"可点击但不可键盘操作"的元素（违反宪法 IV）。
+      // 合并到 mousedown 后语义更准，也不再需要为键盘补一套等价操作。
+      onMouseDown={e => { e.stopPropagation(); onMouseDown(e); }}
       style={{
         ...RESIZE_HANDLE_STYLE,
         background: active ? '#3b82f6' : 'transparent',

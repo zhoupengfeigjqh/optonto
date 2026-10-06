@@ -33,10 +33,14 @@ export interface ConfirmPort {
   requestConfirm(behavior: string, content: string, params: Record<string, any> | undefined, emit: EventChannel): Promise<ConfirmResult>;
   /** 规划确认弹窗（多步规划执行前） */
   requestPlanConfirm(plan: SubTaskPlan, emit: EventChannel): Promise<PlanConfirmResult>;
-  /** 路由回调：用户答复安全管控弹窗 */
-  handleConfirm(confirmId: string, approved: boolean): void;
-  /** 路由回调：用户答复规划确认弹窗 */
-  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): void;
+  /**
+   * 路由回调：用户答复安全管控弹窗。**返回是否命中待确认项**——
+   * false = 该 confirmId 不存在（已超时 / 已中断 / 已答复过），调用方须如实告知调用侧，
+   * 不能静默丢弃（否则前端以为已确认，实际后端仍在等超时，2026-10-05 C3）。
+   */
+  handleConfirm(confirmId: string, approved: boolean): boolean;
+  /** 路由回调：用户答复规划确认弹窗。返回是否命中（同上语义） */
+  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): boolean;
   /** 中断：立即拒绝所有待确认弹窗（reason='abort'） */
   abortAll(): void;
 }
@@ -60,12 +64,13 @@ export class ConfirmManager implements ConfirmPort {
     });
   }
 
-  handleConfirm(confirmId: string, approved: boolean): void {
+  handleConfirm(confirmId: string, approved: boolean): boolean {
     const entry = this.pending.get(confirmId);
-    if (!entry) return;
+    if (!entry) return false;
     clearTimeout(entry.timer);
     this.pending.delete(confirmId);
     entry.resolve({ approved, reason: 'user' });
+    return true;
   }
 
   async requestPlanConfirm(plan: SubTaskPlan, emit: EventChannel): Promise<PlanConfirmResult> {
@@ -77,12 +82,13 @@ export class ConfirmManager implements ConfirmPort {
     });
   }
 
-  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): void {
+  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): boolean {
     const entry = this.planPending.get(confirmId);
-    if (!entry) return;
+    if (!entry) return false;
     clearTimeout(entry.timer);
     this.planPending.delete(confirmId);
     entry.resolve({ approved, plan, ...opts, reason: 'user' });
+    return true;
   }
 
   /**

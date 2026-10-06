@@ -55,6 +55,19 @@ export default defineConfig({
         'src/components/Design/agent/PlanConfirmModal.tsx',
         'src/components/Design/agent/ExecutionLogDrawer.tsx',
         'src/components/Design/agent/AgentConversation.tsx',
+        // 2026-10-05 会话层拆分产出。三者均已配齐单测后进门禁（宪法 1.2.0：
+        // 抽出的核心模块 MUST 同时补测并纳入 include，否则「拆出是为了可测、
+        // 却因漏配门禁而从未被测」的空转）。
+        'src/components/Design/agent/use-agent-stream.ts',
+        'src/components/Design/agent/use-confirm-replies.ts',
+        'src/components/Design/agent/sse-events.ts',
+        // 2026-10-06 补齐三个此前无测试、无门禁的模块：
+        //   chat-types是联合类型收窄的唯一依据（守卫失准 → 运行时走错分支且编译器不报错）
+        //   use-confirm-countdown 是 60s 超时边界（超时唯一权威在后端，此处是体验层）
+        //   markdown 的输出直接进 dangerouslySetInnerHTML，escapeHtml 是唯一注入防线
+        'src/components/Design/agent/chat-types.ts',
+        'src/components/Design/agent/use-confirm-countdown.ts',
+        'src/lib/markdown.ts',
         'src/components/Design/DataEngineTable.tsx',
         'src/components/Design/AgentApp.tsx',
         // 2026-10-05 收口：行为操作类型推导 / 发布就绪判据 / 固定服务配置片段（均配齐单测）

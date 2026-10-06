@@ -4,6 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { PathAccessController, ForbiddenError } from '../security/path-access-controller.js';
 import type { Thread, ThreadSummary, ThreadMessage, OntologySelection } from '../types.js';
 
+/** 默认对话标题（2026-10-05 审查 M9：此前散落三处——路由 / thread-store ×2，收口到单点） */
+export const DEFAULT_THREAD_TITLE = '新对话';
+
 /**
  * ThreadStore — 对话线程数据的读写。
  * 线程目录全局平铺（{threadsDir}/agent/{threadId}），路径安全经 PathAccessController 校验；
@@ -31,13 +34,15 @@ export class ThreadStore {
         if (thread.scenario_name !== scenario || thread.ontology_name !== ontology) continue;
         threads.push({
           id: thread.id,
-          title: thread.title || '新对话',
+          title: thread.title || DEFAULT_THREAD_TITLE,
           created_at: thread.created_at,
           updated_at: thread.updated_at,
           message_count: thread.messages?.length || 0,
         });
-      } catch {
-        // 跳过损坏的线程文件
+      } catch (e) {
+        // 损坏的线程文件此前**静默跳过**——用户看到"对话不见了"却无任何线索（宪法 IX 故障可观测）。
+        // 至少记一条：哪个文件、什么原因。
+        console.warn(`[thread-store] 跳过损坏的线程文件 ${entry.name}: ${e instanceof Error ? e.message : String(e)}`);
         continue;
       }
     }
@@ -54,7 +59,7 @@ export class ThreadStore {
 
     const thread: Thread = {
       id: threadId,
-      title: title || '新对话',
+      title: title || DEFAULT_THREAD_TITLE,
       status: 'active',
       messages: [],
       created_at: now,
@@ -111,12 +116,17 @@ export class ThreadStore {
     writeFileSync(dataPath, JSON.stringify(thread, null, 2), 'utf-8');
   }
 
-  /** 检查线程是否存在且属于指定场景/本体 */
+  /** 检查线程是否存在且属于指定场景/本体（读失败一律视为"不存在"，调用方据此回 404） */
   exists(scenario: string, ontology: string, threadId: string): boolean {
     try {
       this.readThread(scenario, ontology, threadId);
       return true;
-    } catch {
+    } catch (e) {
+      // 区分两种失败：文件不存在（正常，静默）vs 解析失败/归属不符（异常，值得记一笔）。
+      // 此前两者都被 `catch { return false }` 混同，解析失败完全无痕。
+      if (e instanceof SyntaxError) {
+        console.warn(`[thread-store] 线程文件存在但 JSON 解析失败 ${threadId}: ${e.message}`);
+      }
       return false;
     }
   }

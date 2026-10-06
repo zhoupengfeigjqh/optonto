@@ -16,10 +16,9 @@
  */
 
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
-import { getLastAssistantMessage, toolResultToText } from '../utils/text-utils.js';
-import { PARENT_TOOL_LABELS } from './tool-catalog.js';
-import { validatePlanStructure, validateSeqConflicts, validateOntologyScope, topologicalSort, looksLikePlanClaim } from './plan-validation.js';
-import { isParamValueEmpty, renderParamStructure, type ParamSpec } from './param-contract.js';
+import { getLastAssistantMessage } from '../utils/text-utils.js';
+import { validatePlanStructure, validateSeqConflicts, topologicalSort } from './plan-validation.js';
+import { buildRelayStructureHint, emitWaveFailures, enrichPlanDisplay } from './plan-presentation.js';
 import { ConfirmManager } from './confirm-manager.js';
 import type { ConfirmPort } from './confirm-manager.js';
 import { SubtaskRunner, isChildAborted } from './subtask-runner.js';
@@ -29,28 +28,21 @@ import { WaveExecutor } from './wave-executor.js';
 import { RunSession } from './run-session.js';
 import { FunctionCatalog } from './function-catalog.js';
 import type { FunctionCatalogView } from './function-catalog.js';
-import { createEventChannel, ToolCallBridge } from './event-channel.js';
+import { createEventChannel } from './event-channel.js';
 import type { EventChannel } from './event-channel.js';
 import type { AgentPort } from './agent-ports.js';
+import { runPlanningPhase } from './planning-phase.js';
 import type {
   ThreadMessage, SubTaskPlan, SubTaskResult, SubTask, SSEEvent, ConversationScope,
 } from '../types.js';
 
-const MAX_ROUNDS = 50;
-const MAX_PLAN_ROUNDS = 3; // 规划确认"拒绝并重规划"的最大轮数，防止无限循环
+// 规划阶段已抽至 planning-phase.ts（宪法 II 单文件 ≤500 行）；此处 re-export 保持既有
+// import 路径（orchestrator.test.ts 等）不破——规划确认策略与阶段产物同属该阶段的概念。
+export { planNeedsConfirm, MAX_PLAN_ROUNDS } from './planning-phase.js';
+export type { PlanningOutcome } from './planning-phase.js';
+
+const MAX_ROUNDS = 50; // 波次执行的最大轮数（依赖成环等异常结构下的兜底，防无限循环）
 const PARENT_PROMPT_TIMEOUT = 180_000; // 父Agent 单次 LLM 调用超时（规划/反馈/总结），防 API 挂起拖死整个 run
-
-/**
- * 规划是否需要确认弹窗：仅多步任务需要。
- * 单步任务跳过规划确认——只读无副作用直接执行；写操作由子任务的安全管控弹窗兜底
- * （避免"规划确认 + 安全确认"双弹窗，单步没有"整体执行路径"可供用户审阅）。
- */
-export function planNeedsConfirm(plan: SubTaskPlan): boolean {
-  return plan.subtasks.length > 1;
-}
-
-/** 规划阶段产物：拿到确认后的最终规划，或直接终结本轮的回复文案 */
-type PlanningOutcome = { plan: SubTaskPlan } | { reply: string };
 
 // ─── Orchestrator ────────────────────────────
 
@@ -78,20 +70,51 @@ export class Orchestrator {
     this.waveExecutor = new WaveExecutor({ gateway: ontologyGateway });
   }
 
-  /** 路由回调：用户答复安全管控弹窗 → 转发当前活动 run 的确认器（无活动 run 时 id 必然对不上，静默丢弃） */
-  handleConfirm(confirmId: string, approved: boolean): void {
-    this.activeSession?.confirmManager.handleConfirm(confirmId, approved);
+  /**
+   * 路由回调：用户答复安全管控弹窗 → 转发当前活动 run 的确认器。
+   * 返回是否命中：无活动 run 或 confirmId 已失效（超时/中断/已答复）时为 false，
+   * 路由层据此回 404 —— 不能让"没生效"伪装成"已确认"（2026-10-05 C3）。
+   */
+  handleConfirm(confirmId: string, approved: boolean): boolean {
+    return this.activeSession?.confirmManager.handleConfirm(confirmId, approved) ?? false;
   }
-  /** 路由回调：用户答复规划确认弹窗（同上） */
-  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): void {
-    this.activeSession?.confirmManager.handlePlanConfirm(confirmId, approved, plan, opts);
+  /** 路由回调：用户答复规划确认弹窗（同上语义） */
+  handlePlanConfirm(confirmId: string, approved: boolean, plan?: SubTaskPlan, opts?: { rejectAction?: 'exit' | 'replan'; suggestion?: string }): boolean {
+    return this.activeSession?.confirmManager.handlePlanConfirm(confirmId, approved, plan, opts) ?? false;
   }
 
   /** 测试/内部观测用：当前是否有 run 在执行 */
   hasActiveRun(): boolean { return this.activeSession !== null; }
 
+  /**
+   * 中断当前 run，**带归属校验**（2026-10-05，agent 环节审查 M8）。
+   *
+   * 此前 `/abort` 无任何寻址，直接 `abort()` 当前活动 run——多标签页/多用户场景下
+   * A 会话的中断请求会打断 B 会话正在跑的任务（全局可变状态暴露为 HTTP 语义）。
+   * 现要求调用方带上自己的 threadId，与当前 run 不一致即拒绝。
+   *
+   * 返回是否真的中断 + 未中断的原因，由路由映射为合适的 HTTP 码：
+   * - `no_active_run`：当前没有执行中的任务（如已完成或已中断）
+   * - `thread_mismatch`：该任务属于其他会话，不允许跨会话中断
+   */
+  abortRun(threadId?: string): { aborted: boolean; reason?: 'no_active_run' | 'thread_mismatch' } {
+    const s = this.activeSession;
+    if (!s) return { aborted: false, reason: 'no_active_run' };
+    // 双方都带了 threadId 才比对（未提供时保持原行为，兼容旧调用方）
+    if (threadId !== undefined && s.threadId !== undefined && s.threadId !== threadId) {
+      return { aborted: false, reason: 'thread_mismatch' };
+    }
+    s.abort();
+    return { aborted: true };
+  }
+
+  /** 当前活动 run 所属的线程 id（无活动 run 时为 undefined；供诊断/测试用） */
+  activeThreadId(): string | undefined { return this.activeSession?.threadId; }
+
   /** 每个 run 独立的子任务执行器（childAgents 集合随 session 走，abort 寻址不串 run） */
   private createSubtaskRunner(session: RunSession): SubtaskRunner {
+    // 未登记告警的去重集合（run 级）：同一行为在一次 run 内只提示一次，避免并行子任务刷屏
+    const warnedUnregistered = new Set<string>();
     return new SubtaskRunner({
       confirmManager: session.confirmManager,
       createChildAgent: (ctx, policy) => this.agentFactory.createChildAgent(ctx, policy),
@@ -102,9 +125,23 @@ export class Orchestrator {
           this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
         functionDisplayName: (scenario, ontology, functionName) =>
           session.catalogView?.functionInfo(scenario, ontology, functionName)?.displayName ?? '',
-        // 工具层 disable 闸数据源：securities 登记的 scope（恒数组）；无登记（旧本体回退）视为 everyone 放行
-        behaviorScope: (scenario, ontology, behaviorName) =>
-          this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).security?.scope ?? ['everyone'],
+        // 工具层 disable 闸数据源：securities 登记的 scope（恒数组）；无登记（旧本体回退）视为 everyone 放行。
+        // 【可观测化 2026-10-05】无登记即"该行为的 disable 权限设置不生效"——属兜底放行而非显式配置，
+        // 一旦有人误以为已禁用（登记 action_name 拼错 / 漏登记）会静默失效，故每次 run 提示一次。
+        // 注意与 BehaviorMeta.unavailable 区分：这里是**元数据可用但未登记**（数据缺失，走默认放行）；
+        // unavailable 是**元数据读不到**（系统故障，已在 SubtaskRunner 就地拒绝执行）。
+        behaviorScope: (scenario, ontology, behaviorName) => {
+          const meta = this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName);
+          if (!meta.unavailable && !meta.security) {
+            const key = `${scenario}/${ontology}/${behaviorName}`;
+            if (!warnedUnregistered.has(key)) {
+              warnedUnregistered.add(key);
+              console.warn(`[security] 行为 ${behaviorName}（${key}）在 securities 中无登记，其「权限范围」设置不生效（按 everyone 放行）。若本意是禁用该行为，请在「安全」页签登记并将权限范围设为 disable`);
+            }
+            return ['everyone'];
+          }
+          return meta.security?.scope ?? ['everyone'];
+        },
       },
       // run 级共享安全闸：工具层 disable 命中置位 → 本 run 所有子任务停摆（securityBlocked）
       securityGate: session.securityGate,
@@ -125,7 +162,9 @@ export class Orchestrator {
         agent.prompt(text),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
-            try { agent.abort(); } catch {}
+            // 中断失败必须留痕：父 Agent 挂起时 abort 失败意味着请求可能仍在占用 LLM 配额，
+            // 空 catch 会让"超时了但请求没停"这件事完全不可见（宪法 IX 故障可观测）
+            try { agent.abort(); } catch (e) { console.warn('[orchestrator] 父Agent 超时后 interrupt 失败（请求可能仍在进行）:', e); }
             reject(new Error('父Agent 响应超时'));
           }, this.parentPromptTimeoutMs);
         }),
@@ -148,6 +187,8 @@ export class Orchestrator {
     scope: ConversationScope,
     history: ThreadMessage[],
     sendEvent: (e: SSEEvent) => void,
+    /** 本 run 所属线程 id（供 /abort 归属校验，见 RunSession.threadId） */
+    threadId?: string,
   ): Promise<string> {
     // 单 run 互斥：此前并发 execute 会互相覆盖单例字段（abort 误杀两个 run），入口直接拒绝
     if (this.activeSession) {
@@ -157,6 +198,7 @@ export class Orchestrator {
       return msg;
     }
     const session = new RunSession(this.createConfirmManager());
+    session.threadId = threadId;
     this.activeSession = session;
     try {
       return await this.runExecute(session, message, scope, history, sendEvent);
@@ -186,7 +228,16 @@ export class Orchestrator {
     // 本体范围允许集（硬闸锚点）：通用模式为空集——父 Agent 未挂 submit_plan，永远不会有规划进入校验链
     const allowedOntologyIds = new Set(scope.contexts.map(c => c.ontology_id));
     try {
-      const planned = await this.planningPhase(session, message, scope, allowedOntologyIds, history, emit);
+      // 阶段1 已抽至 planning-phase.ts（该阶段 6 条终结路径的判定与事件序列都在那里）
+      const planned = await runPlanningPhase(
+        {
+          agentFactory: this.agentFactory,
+          planGate: this.planGate,
+          parentPrompt: (agent, text) => this.parentPrompt(agent, text),
+          enrichPlanDisplay: (plan, catalog) => this.enrichPlanDisplay(plan, catalog),
+        },
+        { session, message, scope, allowedOntologyIds, history, emit },
+      );
       if ('reply' in planned) return planned.reply;
       const pending = await this.wavePhase(session, planned.plan, allowedOntologyIds, emit);
       return await this.summaryPhase(session, pending, emit);
@@ -208,245 +259,6 @@ export class Orchestrator {
       sendEvent({ type: 'done' });
       return msg;
     }
-  }
-
-  // ─── 阶段1：规划（PlanningPhase） ─────────────
-
-  /**
-   * planningPhase 所有 {reply} 终结路径的统一出口：error / token 尾巴 / done 在此一处在场，
-   * 任何早退都不可能漏发 done（历史漂移：校验链首失败漏发 done，链中失败却发，前端事件序列不一致）。
-   * narrative_end 定格与留痕 entry 因各路径语义不同（aborted/answer/plan），留在调用点。
-   */
-  private endPlanning(
-    emit: EventChannel,
-    end: { reply: string; error?: string; tokens?: string[] },
-  ): PlanningOutcome {
-    if (end.error) emit.raw({ type: 'error', message: end.error });
-    for (const token of end.tokens ?? []) emit.raw({ type: 'token', token });
-    emit.raw({ type: 'done' });
-    return { reply: end.reply };
-  }
-
-  /**
-   * 父Agent 规划 → 校验（行为名/参数结构，各带 1 次静默修正）→ 规划确认弹窗（支持拒绝并重规划）
-   * → 依赖结构校验 → 输出最终规划。返回 { plan } 进入执行阶段，或 { reply } 直接终结本轮。
-   */
-  private async planningPhase(
-    session: RunSession,
-    message: string,
-    scope: ConversationScope,
-    allowedOntologyIds: ReadonlySet<number>,
-    history: ThreadMessage[],
-    emit: EventChannel,
-  ): Promise<PlanningOutcome> {
-    const loadedSkillNames: string[] = [];
-    const parentAgent = await this.agentFactory.createParentAgent(
-      scope, history,
-      (name: string) => {
-        if (!loadedSkillNames.includes(name)) loadedSkillNames.push(name);
-        emit.raw({ type: 'token', token: `\n📖 已加载技能：${name}\n` });
-      },
-      (plan) => session.submittedPlan.submit(plan),
-    );
-    session.parentAgent = parentAgent;
-    // 父Agent 工具调用留痕（执行记录）：load_skill 仅完成时推一条（不带 SKILL 全文，只记技能名）；
-    // list* 本体查询 running→done 成对推（结果不截断）。submit_plan / listPlannableFunctions 不推——
-    // 规划有 plan_confirm/plan_received 专属通道，目录查询按约定不展示。
-    // start/end 参数配对走 ToolCallBridge（与子 Agent 侧同一模式）。
-    const parentToolCalls = new ToolCallBridge();
-    parentAgent.subscribe((event: any) => {
-      if (event.type === 'tool_execution_start') {
-        if (event.toolName === 'load_skill') {
-          parentToolCalls.hold(event.toolCallId, event.args); // 暂存技能名，end 时推
-          return;
-        }
-        const label = PARENT_TOOL_LABELS[event.toolName];
-        if (!label) return;
-        parentToolCalls.hold(event.toolCallId, event.args);
-        emit.entry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'parent', displayName: `${label}（${event.toolName}）`, displayLabel: label });
-        return;
-      }
-      if (event.type === 'tool_execution_end') {
-        const held = parentToolCalls.take(event.toolCallId);
-        if (event.toolName === 'load_skill') {
-          const skillName = held?.skill_name ?? '';
-          emit.entry({ type: 'tool_call', name: 'load_skill', status: 'done', source: 'parent', displayName: '加载技能知识（load_skill）', displayLabel: '加载技能知识', detail: `已加载技能：${skillName}` });
-          return;
-        }
-        const label = PARENT_TOOL_LABELS[event.toolName];
-        if (!label) return;
-        emit.entry({ type: 'tool_call', name: event.toolName, status: 'done', params: held, result: toolResultToText(event.result?.content), source: 'parent', displayName: `${label}（${event.toolName}）`, displayLabel: label });
-        return;
-      }
-      if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') {
-        // 此 subscribe 贯穿整个 run（规划/反馈/总结共用同一父Agent），文本增量按 session 路由判定分流：
-        // 规划阶段 → narrative 折叠块（submit_plan 提交后即断流，防编造执行叙事/假总结进正文）；
-        // 总结阶段 → token 正文；反馈/执行阶段 → 丢弃（tokens 关闭）。
-        const route = session.routeParentText();
-        if (route === 'drop') return;
-        emit.raw({ type: route, token: event.assistantMessageEvent.delta });
-      }
-    });
-    // 规划修复上下文：nudge 父Agent/波次反馈共用的三件套 + 本体范围允许集（PlanGate 硬闸锚点）
-    const planCtx: PlanRepairCtx = { parentAgent, submittedPlan: session.submittedPlan, emit, catalog: session.catalogView!, allowedOntologyIds };
-
-    // 单轮 prompt：判断是否需要加载技能，然后直接回答或通过 submit_plan 提交规划
-    await this.parentPrompt(parentAgent,`${message}`);
-    // 规划阶段被中断 → 干净退出（父Agent 已中断，无规划可言）
-    if (session.isAborted() || isChildAborted(parentAgent)) {
-      emit.raw({ type: 'narrative_end', outcome: 'aborted' });
-      return this.endPlanning(emit, { reply: '已中断', tokens: ['\n⏹ 已中断\n'] });
-    }
-    // 规划只来自 submit_plan 工具（schema 校验），不再用正则从文本抓取，避免误判
-    let plan = session.submittedPlan.peek();
-    if (plan && (!plan.subtasks || plan.subtasks.length === 0)) {
-      plan = null;
-    }
-
-    if (!plan) {
-      const lastMsg = getLastAssistantMessage(parentAgent.state.messages);
-      // 言行不一闸：文本声称"已提交规划/即将开始执行"但工具回调为空（submit_plan 调用未生效）。
-      // 命中 → 直接报错，不重试，不把虚假声明原文转发给用户。
-      if (lastMsg && looksLikePlanClaim(lastMsg)) {
-        emit.entry({ type: 'subtask_done', name: '规划提交校验', status: 'failed', source: 'parent', detail: '模型声称已提交规划，但系统未收到 submit_plan 工具调用，已拦截虚假声明' });
-        console.warn('[orchestrator] 父Agent 声称已提交规划但未调用 submit_plan，已拦截');
-        const msg = '⚠️ 规划提交失败：模型未能正确调用规划工具，请重新描述需求或换个说法。';
-        emit.raw({ type: 'narrative_end', outcome: 'answer' });
-        return this.endPlanning(emit, { reply: msg, error: msg });
-      }
-      // 无规划、无虚假声明 → 直答路径
-      if (lastMsg) {
-        emit.raw({ type: 'narrative_end', outcome: 'answer' });
-        return this.endPlanning(emit, { reply: lastMsg, tokens: [lastMsg, '\n\n---\n本次回答已结束，您可以根据上述内容开展进一步对话。'] });
-      }
-      const msg = '⚠️ 无法生成执行计划，请重新描述需求。';
-      emit.raw({ type: 'narrative_end', outcome: 'answer' });
-      return this.endPlanning(emit, { reply: msg, error: msg });
-    }
-
-    // 规划路径：叙事块定格为"规划思考过程"（默认折叠留存），正文只放结构化规划与结论
-    emit.raw({ type: 'narrative_end', outcome: 'plan' });
-
-    // ── 规划确认循环（支持"拒绝并重规划"） ──
-    // 每轮：行为名校验（静默修正一次）→ 弹窗确认；用户可确认 / 拒绝并重规划 / 拒绝并退出。
-    // 重规划产生的新规划同样要过行为名校验与用户确认，避免"二次规划绕过确认"。
-    // 确认落点 = session.confirmPlan（holder 过程量与 confirmed 终态分离，确认后只读 session.confirmedPlan()）
-    let exitReason = '用户拒绝执行规划';
-
-    for (let round = 0; round < MAX_PLAN_ROUNDS; round++) {
-      // 初始校验链（seq 冲突 → 本体范围 → 行为名 → 函数名 → 参数，各带一次静默修正；链序与判废编排唯一在 PlanGate 内）
-      const validated = await this.planGate.validateInitial(plan, planCtx);
-      if (!validated) {
-        const msg = '⚠️ 规划校验失败：无法生成有效的执行计划';
-        return this.endPlanning(emit, { reply: `${msg}，请重新描述需求。`, error: msg });
-      }
-      plan = validated;
-
-      if (round === 0) {
-        emit.entry({ type: 'subtask_start', name: '父Agent规划完成', status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
-        emit.raw({ type: 'token', token: `✅ 校验通过：${plan.subtasks.length} 个行为名称合法\n` });
-      } else {
-        emit.entry({ type: 'subtask_start', name: `已按建议重新规划（第 ${round + 1} 轮）`, status: 'done', detail: `共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
-      }
-
-      // 单步任务：跳过规划确认，直接执行。
-      // 只读无副作用；写操作由子任务的安全管控弹窗兜底（避免"规划确认+安全确认"双弹窗）。
-      if (!planNeedsConfirm(plan)) {
-        session.confirmPlan(plan, false);
-        break;
-      }
-
-      // 校验修复轮可能让叙事块重新流入（repairPlan 清零 submittedPlan 后断流解除），
-      // 确认弹窗前幂等定格一次，前端转圈不残留
-      emit.raw({ type: 'narrative_end', outcome: 'plan' });
-      const planConfirm = await session.confirmManager.requestPlanConfirm(this.enrichPlanDisplay(plan, session.catalogView!), emit);
-
-      if (planConfirm.approved) {
-        // 用户在弹窗内编辑过规划（planConfirm.plan 存在）→ 以编辑版为准并标记 modified
-        session.confirmPlan(planConfirm.plan ?? plan, !!planConfirm.plan);
-        break;
-      }
-
-      // 拒绝并重规划：把用户建议带给父Agent，重新生成规划后回到下一轮确认
-      if (planConfirm.rejectAction === 'replan') {
-        emit.entry({ type: 'subtask_done', name: '规划审核', status: 'failed', detail: '用户拒绝并要求重新规划', source: 'parent' });
-        if (round >= MAX_PLAN_ROUNDS - 1) {
-          exitReason = '重规划次数已达上限';
-          break;
-        }
-        session.submittedPlan.reset(); // 只认本次重规划的新提交
-        await this.parentPrompt(parentAgent,`用户拒绝了本次执行计划，并给出调整建议：\n${planConfirm.suggestion || '（用户未提供具体建议，请结合用户意图自行判断需要调整的地方）'}\n请重新调用 submit_plan 工具提交调整后的规划。`);
-        const replanned = session.submittedPlan.peek();
-        if (replanned && replanned.subtasks && replanned.subtasks.length > 0) {
-          plan = replanned;
-          continue;
-        }
-        exitReason = '重规划未生成有效规划';
-        break;
-      }
-
-      // 拒绝并退出 / 超时 / 中断
-      exitReason = planConfirm.reason === 'timeout' ? '规划确认超时'
-        : planConfirm.reason === 'abort' ? '用户中断'
-        : '用户拒绝执行规划';
-      break;
-    }
-
-    const confirmed = session.confirmedPlan();
-    if (!confirmed) {
-      // 用户拒绝/超时/重规划失败 → 父Agent 一两句极简收尾（token 流式仍开启，回复会流式显示）
-      emit.entry({ type: 'subtask_done', name: '规划审核', status: 'failed', detail: exitReason, source: 'parent' });
-      const parentAborted = isChildAborted(parentAgent);
-      if (!parentAborted) {
-        await this.parentPrompt(parentAgent,`用户取消了本次执行计划（${exitReason}），尚未执行任何子任务。请用一两句话简短确认已取消，并提示用户可如何调整后重新发起。`);
-      }
-      const reply = getLastAssistantMessage(parentAgent.state.messages)
-        || (exitReason === '规划确认超时' ? '规划确认超时，已取消执行'
-          : exitReason === '用户中断' ? '已中断'
-          : '用户已拒绝执行规划');
-      return this.endPlanning(emit, { reply });
-    }
-
-    plan = confirmed;
-    // L1: 用户把规划删空后确认 → 视同取消，避免"执行完成"但零执行
-    if (!plan.subtasks || plan.subtasks.length === 0) {
-      emit.entry({ type: 'subtask_done', name: '规划为空', status: 'failed', detail: '用户确认的规划中没有任何子任务，已取消执行', source: 'parent' });
-      if (!isChildAborted(parentAgent)) {
-        await this.parentPrompt(parentAgent,`用户确认的规划中没有任何子任务（可能已在确认时全部删除），尚未执行任何子任务。请用一两句话简短确认已取消。`);
-      }
-      const reply = getLastAssistantMessage(parentAgent.state.messages) || '规划为空，已取消执行';
-      return this.endPlanning(emit, { reply });
-    }
-
-    // 结构校验：依赖存在性 / 无自引用 / 无环 / seq 唯一 / 本体范围（纯代码，不弹窗，兜底前端已做的校验——用户编辑可绕过上方各闸。
-    // 本体范围必须在此兜底：确认弹窗里用户可手改 ontology_id 到范围外本体，PlanGate 的 nudge 链已在确认前跑完，这里只做判定不做修复）
-    const scopeViolations = validateOntologyScope(plan, allowedOntologyIds);
-    const structureErrors = [
-      ...validatePlanStructure(plan),
-      ...validateSeqConflicts(plan),
-      ...scopeViolations.map(st => `子任务 ${st.seq}（${st.function || st.behavior}）的 ontology_id=${st.ontology_id} 不在本次对话本体范围内`),
-    ];
-    if (structureErrors.length > 0) {
-      emit.entry({ type: 'subtask_done', name: '规划结构校验', status: 'failed', detail: structureErrors.join('；'), source: 'parent' });
-      const msg = '规划结构不合法，请重新发起。';
-      return this.endPlanning(emit, { reply: msg, error: `⚠️ 规划校验失败：规划结构不合法（${structureErrors.join('；')}）` });
-    }
-    emit.entry({ type: 'subtask_done', name: '规划结构校验', status: 'done', detail: '依赖关系合法', source: 'parent' });
-
-    // 确认通过且结构合法后，用【最终规划】输出执行记录与聊天区摘要（用户编辑过则展示编辑后的版本；
-    // 编辑版已随 confirmPlan 注入父Agent 上下文，此处只留痕）
-    if (session.wasPlanModified()) {
-      emit.entry({ type: 'subtask_done', name: '规划已修改', status: 'done', detail: `用户修改了规划，共 ${plan.subtasks.length} 个子任务`, source: 'parent' });
-    }
-    emit.entry({ type: 'subtask_start', name: '规划已确认', status: 'done', source: 'parent' });
-    emit.raw({ type: 'narrative_end', outcome: 'plan' }); // 单步任务无弹窗路径也在此定格叙事块（幂等）
-    emit.raw({ type: 'plan_received', plan: this.enrichPlanDisplay(plan, session.catalogView!) });
-    const planSummary = plan.subtasks
-      .sort((a, b) => a.seq - b.seq)
-      .map(st => `${st.seq}. ${st.function || st.behavior} — ${st.description}（${st.scenario_name} / ${st.ontology_name}）`)
-      .join('\n');
-    emit.raw({ type: 'token', token: `\n📋 执行计划\n${planSummary}\n` });
-    return { plan };
   }
 
   // ─── 阶段2：分波执行（WavePhase） ─────────────
@@ -491,7 +303,7 @@ export class Orchestrator {
       // 工具层 disable 闸命中（run 级共享 gate 置位）→ 安全管控中断：
       // 不开新波、不反馈重规划，整个 run 以 securityBlocked 收尾（先于普通失败分支判定）。
       if (session.securityGate.violation) {
-        this.emitWaveFailures(waveResults, emit);
+        emitWaveFailures(waveResults, emit);
         session.terminate('securityBlocked');
         break;
       }
@@ -500,7 +312,7 @@ export class Orchestrator {
       if (session.isAborted()) break;
       const waveFailed = waveResults.find(r => !r.success);
       if (waveFailed) {
-        this.emitWaveFailures(waveResults, emit);
+        emitWaveFailures(waveResults, emit);
         // 波内任一中止（拒确/中断）→ 用户中止；否则为普通执行失败。二者必须分开记，
         // 否则普通失败会被下方 waveCapped 判定误报成"波数触顶"。
         session.terminate(waveResults.some(r => !r.success && r.aborted) ? 'aborted' : 'failed');
@@ -659,57 +471,18 @@ ${waveList}
     return nextPending;
   }
 
-  /** 波收尾的失败 token 渲染（securityBlocked / 普通失败两分支共用） */
-  private emitWaveFailures(waveResults: SubTaskResult[], emit: EventChannel): void {
-    for (const r of waveResults) {
-      if (!r.success) emit.raw({ type: 'token', token: `\r📋 **子任务 ${r.seq} ${r.task}** ❌ ${r.error}\n` });
-    }
-  }
-
   /**
-   * 中继结构参考（硬编码取数，无 LLM 选择空间）：找出直接依赖本波结果的后续子任务，
-   * 从权威声明现取其 array/object 参数结构，渲染成 sketch 附进中继 prompt。
-   * 单一事实源：函数走 FunctionCatalog 三源、行为走 gateway 行为声明——与中继后的
-   * 参数校验器消费同一份声明，填值依据和判错依据严格一致；不靠父 Agent 记忆/抄写。
-   * 无声明源（functionParams 返回 null）或全部参数都是标量 → 返回空串（prompt 不加段）。
+   * 中继结构参考（委托 plan-presentation：纯渲染，取权威参数声明）
    */
   private buildRelayStructureHint(waveResults: SubTaskResult[], pending: SubTask[], catalog: FunctionCatalogView): string {
-    const waveSeqs = new Set(waveResults.map(r => r.seq));
-    // 只取直接依赖本波的子任务：跨代依赖到后续波次中继时再填，不超前
-    const dependents = pending.filter(st => (st.depends_on || []).some(d => waveSeqs.has(d)));
-    if (dependents.length === 0) return '';
-    const blocks: string[] = [];
-    for (const st of dependents) {
-      const declared = st.function
-        ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.params ?? null)
-        : this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior)?.params;
-      if (!declared) continue; // 无声明源 → 跳过（与校验器"无声明跳过、MCP schema 兜底"口径一致）
-      const lines: string[] = [];
-      for (const [key, spec] of Object.entries(declared)) {
-        const s = spec as ParamSpec;
-        if (s?.type !== 'array' && s?.type !== 'object') continue; // 标量无内部结构，不需要提示
-        lines.push(...renderParamStructure(key, s, { filled: !isParamValueEmpty(st.params?.[key]) }));
-      }
-      if (lines.length > 0) blocks.push(`子任务${st.seq}（${st.function || st.behavior}）：\n${lines.join('\n')}`);
-    }
-    if (blocks.length === 0) return '';
-    return `\n\n【待填参数结构参考】（以下子任务依赖本波结果，其 array/object 参数严格按此结构填纯值，数组项/对象字段直接填值即可，不要再包 {type/value} 等包装）\n${blocks.join('\n')}`;
+    return buildRelayStructureHint(this.ontologyGateway, catalog, waveResults, pending);
   }
 
   /**
-   * 给规划补展示字段：每个子任务附加行为中文名 display_name，供前端弹窗可读展示。
-   * 纯展示用途，不参与结构校验；行为/函数名已在确认前经 validateTaskBehaviorNames / validateTaskFunctionNames 校验存在，getBehaviorMeta 不会抛错。
+   * 给规划补展示字段（委托 plan-presentation）
    */
   private enrichPlanDisplay(plan: SubTaskPlan, catalog: FunctionCatalogView): SubTaskPlan {
-    return {
-      ...plan,
-      subtasks: plan.subtasks.map(st => ({
-        ...st,
-        display_name: st.function
-          ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.displayName ?? '')
-          : (this.ontologyGateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).display_name || ''),
-      })),
-    };
+    return enrichPlanDisplay(this.ontologyGateway, catalog, plan);
   }
 
 }

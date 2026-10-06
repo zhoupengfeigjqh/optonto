@@ -13,12 +13,12 @@ describe('functionLabel — 关联函数展示口径', () => {
   });
 
   it('公共函数类型恒为「公共」', () => {
-    expect(functionLabel({ name: 'getCurrentDate', display_name: '当前日期', _source: 'common' }, 'getCurrentDate'))
+    expect(functionLabel({ name: 'getCurrentDate', display_name: '当前日期', origin: 'common' }, 'getCurrentDate'))
       .toBe('当前日期-公共');
   });
 
   it('公共函数即便带 type 也不按本体类型展示', () => {
-    expect(functionLabelParts({ name: 'f', display_name: '示例', type: 'VALIDATION', _source: 'common' }, 'f').typeLabel).toBe('公共');
+    expect(functionLabelParts({ name: 'f', display_name: '示例', type: 'VALIDATION', origin: 'common' }, 'f').typeLabel).toBe('公共');
   });
 
   it('display_name 缺失时回退函数名', () => {
@@ -34,6 +34,6 @@ describe('functionLabel — 关联函数展示口径', () => {
   it('判断函数标记：仅本体且 type=VALIDATION', () => {
     expect(functionLabelParts({ name: 'a', type: 'VALIDATION' }, 'a').isJudge).toBe(true);
     expect(functionLabelParts({ name: 'b', type: 'CALCULATION' }, 'b').isJudge).toBe(false);
-    expect(functionLabelParts({ name: 'c', type: 'VALIDATION', _source: 'common' }, 'c').isJudge).toBe(false);
+    expect(functionLabelParts({ name: 'c', type: 'VALIDATION', origin: 'common' }, 'c').isJudge).toBe(false);
   });
 });

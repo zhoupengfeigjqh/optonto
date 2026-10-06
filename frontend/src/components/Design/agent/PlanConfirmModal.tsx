@@ -21,6 +21,13 @@ interface Props {
   countdown: number | null;
   /** 结构校验错误（非空时在弹窗内提示且不提交） */
   error: string;
+  /**
+   * 回执失败原因（非空时在弹窗内提示且**不关闭弹窗**，用户可重试或改拒绝；2026-10-05 C3）。
+   * 与上面的 `error` 分开：那是「规划本身不合法」，这是「答复没送达到后端」，语义不同。
+   */
+  replyError?: string;
+  /** 回执进行中：禁用关闭/遮罩/按钮，防连点与中途改主意（C3） */
+  busy?: boolean;
   /** 是否展开高级编辑 */
   showAdvanced: boolean;
   /** 调整建议（拒绝并重规划时提交给后端） */
@@ -40,7 +47,8 @@ interface Props {
 }
 
 export default function PlanConfirmModal({
-  open, plan, countdown, error, showAdvanced, suggestion, expandedParams,
+  open, plan, countdown, error, replyError = '', busy = false,
+  showAdvanced, suggestion, expandedParams,
   onToggleAdvanced, onSuggestionChange, onCancel, onReject, onConfirm,
   onUpdateParam, onDeleteSubtask, onUpdateDeps, onToggleParamExpand,
 }: Props) {
@@ -56,10 +64,13 @@ export default function PlanConfirmModal({
       }
       open={open}
       width={560}
-      onCancel={onCancel}
+      onCancel={busy ? undefined : onCancel}
+      maskClosable={!busy}
+      closable={!busy}
       footer={
         <div className="flex items-center justify-between gap-2">
           <Dropdown
+            disabled={busy}
             menu={{
               items: [
                 { key: 'exit', label: '拒绝并退出' },
@@ -68,9 +79,9 @@ export default function PlanConfirmModal({
               onClick: ({ key }) => onReject(key === 'replan' ? 'replan' : 'exit'),
             }}
           >
-            <Button danger>拒绝</Button>
+            <Button danger loading={busy}>拒绝</Button>
           </Dropdown>
-          <Button type="primary" onClick={onConfirm}>确认执行</Button>
+          <Button type="primary" onClick={onConfirm} loading={busy}>确认执行</Button>
         </div>
       }
     >
@@ -93,6 +104,13 @@ export default function PlanConfirmModal({
         </div>
         {error && (
           <div className="text-red-400 text-xs border border-red-500/30 rounded px-3 py-2">{error}</div>
+        )}
+        {/* 回执失败（区别于上面的规划校验错误）：答复未送达后端，弹窗保持打开可重试（C3） */}
+        {replyError && (
+          <div className="flex items-start gap-2 text-red-300 text-xs border border-red-500/40 bg-red-500/10 rounded px-3 py-2">
+            <span aria-hidden>✕</span>
+            <span>{replyError}</span>
+          </div>
         )}
         {!showAdvanced && (
           <div className="text-text-muted text-xs">ℹ️ 默认只读预览；展开「高级选项」可编辑参数、删除子任务或调整依赖（参数留空由 AI 自动补充）。拒绝后可选择「退出」或填写下方建议重新规划。</div>

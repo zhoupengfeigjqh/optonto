@@ -1,18 +1,30 @@
 /**
  * AgentFactory 单元测试。
- * - createParentAgent 历史映射（summary → assistant +【历史摘要】前缀）
- * - submit_plan 互斥门与键省略容忍
- * - 父/子 Agent 工具职责边界（2026-09 行为工具化后：本体行为是一等 MCP 工具，
- *   子 Agent 按 legalCalls.behaviors 的 scope.name 裸名挂载，挂载期过滤即白名单；
- *   参数合法性由工具 inputSchema 在 harness 层校验，运行期参数闸已退役）
- * - 子 Agent 安全闸：闸0 run 级 violation 短路（所有工具）+ 闸1 disable（行为工具，按裸名）
- * - toMountableToolInfo 发布方标记分类（纯函数直测）
+ *
+ * 覆盖：createParentAgent 历史映射（summary → assistant +【历史摘要】前缀）、
+ * submit_plan 互斥门与键省略容忍、父/子 Agent 工具职责边界（2026-09 行为工具化后：
+ * 本体行为是一等 MCP 工具，子 Agent 按 legalCalls.behaviors 的 scope.name 裸名挂载，
+ * 挂载期过滤即白名单）、子 Agent 三道安全闸（闸1 disable / 闸2 前置规则留痕 /
+ * 闸2.5 判断函数）、toMountableToolInfo 发布方标记分类。
+ *
+ * 2026-10-06 说明：本文件超宪法 II 的 500 行上限，曾尝试按关注点拆分，
+ * 但**拆分在技术上不干净**——`mcpCalls` 等 vi.hoisted 变量无法跨模块导出
+ * （"Cannot export hoisted variable"），而 vi.mock 工厂必须与它在同一文件。
+ * 强行拆分的唯一办法是把 180 行 mock 装配复制 2-3 份，而 mock 漏改会**静默失效**
+ * （测试照跑、断言作用在错误替身上），代价高于收益。故保留单文件并在此记录原因。
+ * 若将来要拆，前置条件是先把这套 vi.mock 替身改造成依赖注入。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Agent } from '@earendil-works/pi-agent-core';
 import { assertToolProtocol, toMountableToolInfo } from './tool-catalog.js';
-
-// 整体替换 pi-agent-core：捕获 new Agent(config) 的 config（含 transformContext）
+import { AgentFactory } from './agent-factory.js';
+import { MCPConfigStore } from '../services/mcp-config-store.js';
+import { SkillLoader } from '../services/skill-loader.js';
+import { createSecurityGate } from './security-policy.js';
+import type { ChildSecurityCtx } from './security-policy.js';
+import { createToolErrorBudget } from './error-budget.js';
+import type { SubtaskPolicy, RuleGate, LegalCalls } from './execution-policy.js';
+import type { ThreadMessage, ConversationScope } from '../types.js';
 vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
 
 /** MCP callTool 调用记录（验证 scopeToOntology 的 ontology_id 强制注入与剥 scope）；
@@ -22,10 +34,12 @@ const mcpCalls = vi.hoisted(() => ({
   responses: {} as Record<string, (name: string, args: any) => any>,
 }));
 
-// MCP 配置：一个启用的内置本体MCP server（供 discoverTools 发现工具）
+// MCP 配置：一个启用的内置本体 MCP server（供 discoverTools 发现工具）
 vi.mock('../services/mcp-config-store.js', () => ({
   MCPConfigStore: class { getConfig() { return { servers: [{ name: '本体MCP', url: 'http://mcp-test/sse', enabled: true, builtin: true }] }; } },
   isDataEngineMcpUrl: () => false,
+  // 业务数据闸判定（真实实现的同口径：严格 === true，缺省=否）。本装配的服务均未声明该字段 → 闸不生效
+  isBusinessDataServer: (s: any) => s?.business_data === true,
 }));
 
 /**
@@ -33,7 +47,7 @@ vi.mock('../services/mcp-config-store.js', () => ({
  * 分类标记 = 顶层 x-category / x-display_name；scope 上下文块只含本体上下文（无标记）。
  */
 function ontoTool(category: string, bareName: string, displayName: string, ontologyId: number,
-                  ontologyName: string, props: Record<string, any>, required: string[]) {
+                ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,
     'x-display_name': displayName,
@@ -59,7 +73,6 @@ function queryTool(displayName: string, props: Record<string, any> = {}) {
     properties: { ontology_id: { type: 'integer' }, ...props },
     required: ['ontology_id'] };
 }
-
 // MCPClient 假实现：listTools 返回混合工具集（本体行为工具 + 本体函数 + 本体查询 + 公共函数 + 外部工具）。
 // 不连真实网络——discoverTools 会 new MCPClient(url) 并 connect/listTools。
 vi.mock('../services/mcp-client.js', () => ({
@@ -105,34 +118,49 @@ vi.mock('../services/mcp-client.js', () => ({
     }
   },
 }));
+
 // SkillLoader 只用到 getSkillDescriptions（tools 的 execute 不在此路径触发）
 vi.mock('../services/skill-loader.js', () => ({
   SkillLoader: class {
     getSkillDescriptions() { return []; }
   },
 }));
+
 // 模型解析：返回假模型，避免真实解析
 vi.mock('../services/llm.js', () => ({
   resolveDeepSeekModel: () => ({ id: 'deepseek-v4-flash', provider: 'deepseek' }),
 }));
 
-import { AgentFactory } from './agent-factory.js';
-import { MCPConfigStore } from '../services/mcp-config-store.js';
-import { SkillLoader } from '../services/skill-loader.js';
-import { createSecurityGate } from './security-policy.js';
-import type { ChildSecurityCtx } from './security-policy.js';
-import { createToolErrorBudget } from './error-budget.js';
-import type { SubtaskPolicy, RuleGate } from './execution-policy.js';
-import type { LegalCalls } from './execution-policy.js';
-import type { ThreadMessage, ConversationScope } from '../types.js';
-
 const mockedAgent = vi.mocked(Agent);
 
-/** 测试对话作用域：本体 1（允许集 = {1}）；GENERAL = 通用问答模式（零本体） */
+/**
+ * 捕获到的 Agent 构造配置（**测试边界的一次性类型收敛**，2026-10-05）。
+ *
+ * pi-agent-core 的 `Agent` 构造参数里 `initialState` / `transformContext` 等在 SDK 类型上
+ * 大量是可选的，而 AgentFactory 必定传全；直接 `mockedAgent.mock.calls[0][0].initialState.x`
+ * 会在每个调用处重复触发 "possibly undefined"。这里统一收敛为 `any`，
+ * 调用处不再散落非空断言——**一处收敛，噪声归零**。
+ */
+function capturedConfig(): any {
+  return mockedAgent.mock.calls[0][0];
+}
+/** 捕获的 Agent 初始状态（tools / systemPrompt 等） */
+function capturedState(): any {
+  return capturedConfig().initialState;
+}
+/** 捕获的工具清单（测试按工具名检索，统一 any[] 免去逐处断言） */
+function capturedTools(): any[] {
+  return capturedState().tools as any[];
+}
+/** transformContext 的产物：测试按「有 role/content 字段」的消息形态访问 */
+type CapturedMsg = { role: string; content: any };
+
+/** 测试对话作用域：本体 1（允许集 = {1}） */
 const SCOPE: ConversationScope = {
   contexts: [{ scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 }],
   skills: [],
 };
+/** 通用问答模式（零本体） */
 const GENERAL: ConversationScope = { contexts: [], skills: [] };
 
 function mkHistory(): ThreadMessage[] {
@@ -144,50 +172,19 @@ function mkHistory(): ThreadMessage[] {
     { role: 'toolResult', content: '{inventory: 5}', timestamp: t(4) },
   ];
 }
-
-async function captureTransformContext() {
-  const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-  await factory.createParentAgent(SCOPE, mkHistory(), () => {});
-  expect(mockedAgent).toHaveBeenCalledTimes(1);
-  const config = mockedAgent.mock.calls[0][0];
-  const transformed = await config.transformContext([]);
-  return { config, transformed };
+/** 造一个工厂实例（依赖均为上述 mock 替身，不触真实磁盘/网络/LLM） */
+function mkFactory(): AgentFactory {
+  return new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
 }
 
-describe('AgentFactory.createParentAgent 历史映射', () => {
-  beforeEach(() => mockedAgent.mockClear());
-
-  it('summary 消息映射为 assistant 且加【历史摘要】前缀', async () => {
-    const { transformed } = await captureTransformContext();
-    const summaryMsg = transformed[0];
-    expect(summaryMsg.role).toBe('assistant');
-    expect(summaryMsg.content).toEqual([{ type: 'text', text: '【历史摘要】用户确认采购高强度钢板 0.1 吨，供应商宝钢，尚未下单。' }]);
-  });
-
-  it('user 消息保持 user 角色、内容原样', async () => {
-    const { transformed } = await captureTransformContext();
-    expect(transformed[1].role).toBe('user');
-    expect(transformed[1].content).toBe('请帮我查一下库存');
-  });
-
-  it('assistant / toolResult 映射为 assistant、内容原样、不加前缀', async () => {
-    const { transformed } = await captureTransformContext();
-    expect(transformed[2].role).toBe('assistant');
-    expect(transformed[2].content).toEqual([{ type: 'text', text: '好的，我来查询。' }]);
-    expect(transformed[3].role).toBe('assistant');
-    expect(transformed[3].content).toEqual([{ type: 'text', text: '{inventory: 5}' }]);
-  });
-
-  it('历史消息按原顺序置于实时消息之前', async () => {
-    const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
-    await factory.createParentAgent(SCOPE, mkHistory(), () => {});
-    const config = mockedAgent.mock.calls[0][0];
-    const transformed = await config.transformContext([{ role: 'user', content: '当前问题' }]);
-    expect(transformed.length).toBe(5); // 4 条历史 + 1 条实时
-    expect(transformed[4].content).toBe('当前问题');
-    expect(transformed[0].role).toBe('assistant'); // 首条仍是历史（summary）
-  });
-});
+export async function captureTransformContext(): Promise<{ config: any; transformed: CapturedMsg[] }> {
+  const factory = mkFactory();
+  await factory.createParentAgent(SCOPE, mkHistory(), () => {});
+  expect(mockedAgent).toHaveBeenCalledTimes(1);
+  const config = capturedConfig();
+  const transformed = (await config.transformContext([])) as CapturedMsg[];
+  return { config, transformed };
+}
 
 /**
  * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → scopeToOntology）。
@@ -211,7 +208,7 @@ async function captureChildTools(legalCalls?: LegalCalls, security?: ChildSecuri
     mkPolicy({ legalCalls, security, ruleGate }),
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);
-  return mockedAgent.mock.calls[0][0].initialState.tools as any[];
+  return capturedTools();
 }
 
 /**
@@ -222,10 +219,76 @@ async function captureParentTools() {
   const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
   await factory.createParentAgent(SCOPE, [], () => {});
   expect(mockedAgent).toHaveBeenCalledTimes(1);
-  return mockedAgent.mock.calls[0][0].initialState.tools as any[];
+  return capturedTools();
 }
 
-describe('AgentFactory submit_plan 互斥门与键省略容忍', () => {
+/**
+ * 取消息纯文本：assistant 形态的 content 是块数组 `[{ type:'text', text }]`，
+ * user 形态是裸字符串——两种都要能读（这是本组用例最容易写错的地方）。
+ */
+function textOf(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map((c: any) => c?.text ?? '').join('');
+  return '';
+}
+
+describe('AgentFactory.createParentAgent 历史映射', () => {
+  beforeEach(() => mockedAgent.mockClear());
+
+  it('summary → assistant 角色并加【历史摘要】前缀（避免模型当成自己上一轮真实发言）', async () => {
+    const { transformed } = await captureTransformContext();
+    //summary 已被改写为 assistant，故只能在 assistant 里找带前缀的那条
+    const prefixed = transformed
+      .filter(m => m.role === 'assistant')
+      .map(m => textOf(m.content))
+      .filter(t => t.startsWith('【历史摘要】'));
+    expect(prefixed).toHaveLength(1);
+    expect(prefixed[0]).toContain('高强度钢板');
+  });
+
+  it('不残留 summary 角色（下游只按 assistant/user 消费）', async () => {
+    const { transformed } = await captureTransformContext();
+    expect(transformed.some(m => m.role === 'summary')).toBe(false);
+  });
+
+  it('user 消息保持 user 角色且 content 为裸字符串（只有 assistant 走块数组）', async () => {
+    const { transformed } = await captureTransformContext();
+    const users = transformed.filter(m => m.role === 'user');
+    expect(users).toHaveLength(1);
+    expect(users[0].content).toBe('请帮我查一下库存');
+    expect(typeof users[0].content).toBe('string');
+  });
+
+  it('toolResult 也映射为 assistant（toHistoryMessages 只对 user 特判，其余一律 assistant）', async () => {
+    // 这条固化的是**真实行为**而非期望：工具返回与历史摘要同归assistant，
+    // 上下文里不再有 toolResult 角色。若将来要保留该角色，此用例会提醒同步更新实现。
+    const { transformed } = await captureTransformContext();
+    expect(transformed.some(m => m.role === 'toolResult')).toBe(false);
+    expect(transformed.map(m => textOf(m.content)).join('')).toContain('{inventory: 5}');
+  });
+
+  it('transformContext = 历史 + 本轮消息拼接（历史在前）', async () => {
+    const { config, transformed } = await captureTransformContext();
+    // 本轮传入空消息数组 → 结果应恰好等于历史条数（拼接而非替换）
+    expect(transformed).toHaveLength(mkHistory().length);
+    // 拼接而非替换：历史里user 与 assistant 都还在
+    expect(transformed.some(m => m.role === 'user')).toBe(true);
+    expect(transformed.some(m => m.role === 'assistant')).toBe(true);
+  });
+
+  it('本轮消息追加在历史之后（顺序即上下文顺序，不可倒置）', async () => {
+    const { config } = await captureTransformContext();
+    const real = config.transformContext as (m: unknown[]) => Promise<CapturedMsg[]>;
+    const current = { role: 'user', content: '本轮提问', timestamp: Date.now() };
+    const merged = await real([current] as any);
+    // 末位是本轮消息；前面紧邻的是历史最后一条（toolResult→assistant）
+    expect(merged).toHaveLength(mkHistory().length + 1);
+    expect(textOf(merged[merged.length - 1].content)).toBe('本轮提问');
+    expect(textOf(merged[merged.length - 2].content)).toContain('{inventory: 5}');
+  });
+});
+
+describe('AgentFactory.submit_plan 互斥门与键省略容忍', () => {
   beforeEach(() => mockedAgent.mockClear());
 
   const baseSub = () => ({
@@ -244,7 +307,7 @@ describe('AgentFactory submit_plan 互斥门与键省略容忍', () => {
     let received: any = null;
     const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
     await factory.createParentAgent(SCOPE, [], () => {}, (plan) => { received = plan; });
-    const sp = (mockedAgent.mock.calls[0][0].initialState.tools as any[]).find(t => t.name === 'submit_plan');
+    const sp = capturedTools().find(t => t.name === 'submit_plan');
     const sub = { ...baseSub(), function: 'sumRawNotArrivalQty' }; // 无 behavior 键
     const res = await sp.execute('c1', { subtasks: [sub] });
     expect(res.details.submitted).toBe(true);
@@ -305,7 +368,7 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
   it('父 Agent system prompt 含本次对话本体范围列表（scenario/ontology 四元组 + 硬约束标注）', async () => {
     const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
     await factory.createParentAgent(SCOPE, mkHistory(), () => {});
-    const prompt = mockedAgent.mock.calls[0][0].initialState.systemPrompt as string;
+    const prompt = capturedConfig().initialState.systemPrompt as string;
     expect(prompt).toContain('## 本次对话本体范围');
     expect(prompt).toContain('场景：生产调度（scenario_id=1）｜本体：原材料采购和库存（ontology_id=1）');
   });
@@ -313,7 +376,7 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
   it('通用问答模式（未选本体）→ 零业务工具，prompt 声明无业务能力', async () => {
     const factory = new AgentFactory(new MCPConfigStore('' as any) as any, new SkillLoader({} as any) as any);
     await factory.createParentAgent(GENERAL, mkHistory(), () => {});
-    const state = mockedAgent.mock.calls[0][0].initialState;
+    const state = capturedState();
     expect(state.tools).toEqual([]); // load_skill / submit_plan / list* 一律不挂
     expect(state.systemPrompt).toContain('未关联任何业务本体');
   });

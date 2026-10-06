@@ -27,6 +27,9 @@ vi.mock('../services/mcp-config-store.js', () => ({
     }
   },
   isDataEngineMcpUrl: () => false,
+  // 业务数据闸判定（真实实现同口径：严格 === true，缺省=否）。此处「业务系统MCP」未声明该字段
+  // → 闸不生效，本文件专注验证「配映射即收编」这一条治理动作不被新闸干扰
+  isBusinessDataServer: (s: any) => s?.business_data === true,
 }));
 
 // MCPClient 假实现：按 url 区分服务；两边各有一个同名 query_inventories（内置侧是本体行为工具）
@@ -75,7 +78,7 @@ function writeMapping() {
 
 async function discover(guard?: VisibilityGuard) {
   const factory = new AgentFactory(new MCPConfigStore('' as any), new SkillLoader(null as any), guard);
-  return (factory as any).discoverTools() as Promise<{ name: string; description: string }[]>;
+  return factory.observeDiscoveredTools() as Promise<{ name: string; description: string }[]>;
 }
 
 describe('discoverTools 可见性收编', () => {

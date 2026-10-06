@@ -54,6 +54,16 @@ export class RunSession {
    */
   constructor(readonly confirmManager: ConfirmPort = new ConfirmManager()) {}
 
+  /**
+   * 本 run 所属的对话线程 id（2026-10-05，agent 环节审查 M8）。
+   *
+   * 用于 `/abort` 的**归属校验**：该端点此前无任何寻址，直接中断"当前活动 run"，
+   * 于是多标签页/多用户场景下 A 会话的中断请求会打断 B 会话正在跑的任务。
+   * 前端带上自己的 threadId，后端比对不一致即拒绝——把全局可变状态收敛为可定位的语义。
+   * 未提供时保持原行为（中断当前 run），以兼容旧调用方。
+   */
+  threadId?: string;
+
   /** 在途子 Agent 集合：并行子任务各自创建子 Agent，abort 时逐个中断 */
   readonly childAgents = new Set<AgentPort>();
   /** 已执行子任务结果（含失败），按执行顺序累积 */
@@ -148,11 +158,12 @@ export class RunSession {
   abort(): void {
     this.abortedFlag = true;
     for (const agent of this.childAgents) {
-      try { agent.abort(); } catch {}
+      // 中断失败留痕：abort 抛错意味着该 Agent 的 LLM 请求可能仍在进行（用户以为已停，实际还在跑）
+      try { agent.abort(); } catch (e) { console.warn('[run-session] 中断子 Agent 失败（其请求可能仍在进行）:', e); }
     }
     this.childAgents.clear();
     if (this.parentAgent) {
-      try { this.parentAgent.abort(); } catch {}
+      try { this.parentAgent.abort(); } catch (e) { console.warn('[run-session] 中断父 Agent 失败（其请求可能仍在进行）:', e); }
     }
     this.confirmManager.abortAll();
   }

@@ -82,7 +82,8 @@ export class MCPClient {
   /** 连接已死则作废并关闭旧客户端，下次调用重建 */
   private async invalidate(client: Client): Promise<void> {
     if (this.client === client) this.client = null;
-    try { await client.close(); } catch {}
+    // 关闭失败留痕（连接即将被丢弃，不影响本次调用，但静默吞掉会让连接泄漏无从发现）
+    try { await client.close(); } catch (e) { console.warn('[mcp] 关闭连接失败:', e); }
   }
 
   /**
@@ -117,7 +118,7 @@ export class MCPClient {
     const client = this.client;
     this.client = null;
     if (client) {
-      try { await client.close(); } catch {}
+      try { await client.close(); } catch (e) { console.warn('[mcp] 关闭旧连接失败:', e); }
     }
   }
 }

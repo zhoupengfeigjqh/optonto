@@ -38,8 +38,8 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     try {
       const [fnList, conList, commonFnList] = await Promise.all([getFunctions(ontologyId), getConcepts(ontologyId), getCommonFunctions()]);
       const merged = [
-        ...fnList.map((f: any) => ({ ...f, _source: 'ontology' })),
-        ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[], params: f.inputSchema?.properties || {}, _source: 'common' })),
+        ...fnList.map((f: any) => ({ ...f, origin: 'ontology' as const })),
+        ...commonFnList.map((f: any) => ({ ...f, related_concepts: [] as string[], params: f.inputSchema?.properties || {}, origin: 'common' as const })),
       ];
       setFuncs(merged); setConcepts(conList);
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
@@ -216,7 +216,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Function) => renderCell(v, r, 'name') },
     { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
     { title: '计算逻辑', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'description') },
-    { title: '函数类型', dataIndex: 'type', key: 'type', width: 110, render: (v: any, r: Function) => renderCell(v, r, 'type', (v2: string) => ((r as any)._source === 'common' ? '-' : functionTypeLabel(v2))) },
+    { title: '函数类型', dataIndex: 'type', key: 'type', width: 110, render: (v: any, r: any) => renderCell(v, r, 'type', (v2: string) => (r.origin === 'common' ? '-' : functionTypeLabel(v2))) },
     { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
@@ -254,16 +254,16 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     }},
     { title: '函数代码', dataIndex: 'code_file', key: 'code_file', width: 85, render: (v: any, r: any) => {
       if (isEditing(r) || isNewRow(r)) return renderCell(v, r, 'code');
-      const hasCode = r._source === 'common' ? true : (r.code_file && r.code_file.length > 0);
+      const hasCode = r.origin === 'common' ? true : (r.code_file && r.code_file.length > 0);
       return <span className={`text-xs ${hasCode ? 'text-green-500' : 'text-text-muted'}`}>{hasCode ? '已编写' : '未编写'}</span>;
     }},
-    { title: '来源', dataIndex: '_source', key: '_source', width: 55, render: (v: string) => (
+    { title: '来源', dataIndex: 'origin', key: 'origin', width: 55, render: (v: string) => (
       <span className={`text-xs ${v === 'common' ? 'text-accent-blue' : 'text-text-muted'}`}>{v === 'common' ? '公共' : '本体'}</span>
     )},
     {
       title: '操作', key: 'actions', width: 100,
       render: (_: any, record: any) => {
-        const isCommon = record._source === 'common';
+        const isCommon = record.origin === 'common';
         if (editingKey === record.name || isNewRow(record)) {
           return <Space><Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleSave(record)} /><Button type="link" size="small" icon={<CloseOutlined />} onClick={handleCancel} /></Space>;
         }

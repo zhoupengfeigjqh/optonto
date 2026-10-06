@@ -176,7 +176,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
                 <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteStep(idx)} />
               </div>
             ))}
-            {steps.length === 0 && <p className="text-text-muted text-xs py-2">暂无步骤，点击"添加步骤"添加</p>}
+            {steps.length === 0 && <p className="text-text-muted text-xs py-2">暂无步骤，点击「添加步骤」添加</p>}
           </div>
         </div>
       </Modal>

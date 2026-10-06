@@ -32,47 +32,22 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
   /**
    * POST — 测试 MCP 连接并列出工具
    * body: { url: "http://optonto-ontology-mcp:8002/mcp" }
-   * 返回: { success: true, tools: [{name, description, inputSchema}] }
+   * 返回: { success: true, tools: [{name, description, inputSchema, outputSchema}] }
+   *
+   * 2026-10-05（审查 M9）：与 /tools 曾是同一逻辑的两份实现（各自的 connect + 15s 超时 +
+   * 工具整形），两份必然漂移。现复用 `withTempClient` + `shapeTools`，超时/整形单点收口。
    */
   router.post('/mcp-config/test', async (req: Request, res: Response) => {
     const { url, headers } = req.body as { url: string; headers?: Record<string, string> };
-
     if (!url || typeof url !== 'string') {
       sendError(res, 400, '缺少 MCP 服务 URL');
       return;
     }
-
-    // 真实超时：MCPClient 不接收 AbortSignal（此前 abortController 从未接线，超时是假的），
-    // 用 Promise.race 限时 15s；超时/失败后 close 兜底释放底层连接
-    const client = new MCPClient(url, headers);
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('连接超时（15 秒）')), 15000));
-
     try {
-      const result = await Promise.race([
-        (async () => { await client.connect(); return client.listTools(); })(),
-        timeout,
-      ]);
-
-      // 整理工具信息（outputSchema 一并透出：映射页"自动提取 schema"的权威来源，阶段四用）
-      const tools = (result.tools || []).map((tool: any) => ({
-        name: tool.name,
-        description: tool.description || '',
-        inputSchema: tool.inputSchema || { type: 'object', properties: {} },
-        outputSchema: tool.outputSchema || null,
-      }));
-
-      // 断开连接
-      await client.close();
-
-      res.json({ success: true, tools });
+      const result = await withTempClient(url, headers, c => c.listTools());
+      res.json({ success: true, tools: shapeTools(result) });
     } catch (e: any) {
-      try { await client.close(); } catch {}
-      res.json({
-        success: false,
-        error: e.message || '连接失败',
-        tools: [],
-      });
+      res.json({ success: false, error: e.message || '连接失败', tools: [] });
     }
   });
 
@@ -146,6 +121,6 @@ async function withTempClient<T>(url: string, headers: Record<string, string> | 
   try {
     return await Promise.race([(async () => { await client.connect(); return fn(client); })(), timeout]);
   } finally {
-    try { await client.close(); } catch {}
+    try { await client.close(); } catch (e) { console.warn('[mcp-config] 关闭临时连接失败:', e); }
   }
 }

@@ -8,14 +8,27 @@
 /** 一条执行记录（来自 SSE 的 exec_entry 事件） */
 export interface LogEntry {
   time: string;
-  type: string;
+  /**
+   * 条目类型（镜像后端 `ExecutionEntry.type`）。
+   * 此前是 `string` —— 后端的五态联合被降级，丢掉了穷尽性检查：
+   * 测试里能造出后端永不发的类型（如 'security'）而不被发现（2026-10-05 修正，审查 H3/H5）。
+   */
+  type: 'subtask_start' | 'subtask_done' | 'tool_call' | 'security_confirm' | 'subtask_input';
   name: string;
   description?: string;
   params?: any;
   result?: string;
-  status: string;
+  /** 状态（镜像后端 `ExecutionEntry.status`；此前同样是 `string`） */
+  status: 'running' | 'done' | 'failed';
   detail?: string;
-  source?: string;
+  source?: 'parent' | 'child';
+  /**
+   * SDK 工具调用 id —— running → done 的唯一配对键（后端 ExecutionEntry.toolCallId）。
+   *
+   * 缺省时前端回退到「type+name+seq+source」匹配：父 Agent 的条目不带 seq，
+   * 同名工具连续调用两次会互相覆盖（agent 环节审查 C5）。
+   */
+  toolCallId?: string;
   seq?: number;
   displayName?: string;
   displayLabel?: string;
@@ -80,4 +93,48 @@ export function subtaskStatus(entries: LogEntry[]): string {
 export function subtaskTitle(entries: LogEntry[], seq: number): string {
   const start = entries.find(e => e.type === 'subtask_start');
   return start ? `子任务 ${seq}: ${start.displayName || start.name}` : `子任务 ${seq}`;
+}
+
+/**
+ * 执行记录去重合并（**running → done 的配对**，纯函数；2026-10-05 C5 修复）。
+ *
+ * 从 `AgentConversation` 的 SSE 分发里抽出——它是纯状态变换，与渲染无关，
+ * 且是「执行记录是否错乱」的唯一判定点，值得独立单测（原先埋在组件内无从断言）。
+ *
+ * 配对键：
+ *  ① **优先 `toolCallId`**（后端下发的 SDK 调用 id）：父 Agent 的工具调用条目不带 seq，
+ *     靠 type+name+seq 匹配会让「同名工具连续/并发调用两次」互相覆盖——
+ *     第 2 次 running 被丢弃、第 2 次 done 覆盖第 1 次的 result（agent 环节审查 C5）。
+ *  ② 无 `toolCallId` 的条目（subtask_start/done、security_confirm、subtask_input）
+ *     本就只有单条或成对形态，回退到 type+name+seq+source。
+ *
+ * 语义：
+ *  - 命中 running 且新条目非 running → 就地更新为终态（保留 time 等首次写入的字段）；
+ *  - 命中 running 且新条目仍是 running → 幂等丢弃（重复 start）；
+ *  - 未命中 → 追加。
+ */
+export function mergeExecEntry(prev: LogEntry[], entry: LogEntry): LogEntry[] {
+  const idx = prev.findIndex(e =>
+    e.status === 'running'
+    && (entry.toolCallId
+      ? e.toolCallId === entry.toolCallId
+      : e.type === entry.type && e.name === entry.name && e.seq === entry.seq && e.source === entry.source));
+  if (idx < 0) return [...prev, entry];
+  // 重复 start：同键的 running 已在位，忽略（避免同一次调用被记成两条）
+  if (entry.status === 'running') return prev;
+  const next = [...prev];
+  next[idx] = {
+    ...next[idx],
+    status: entry.status,
+    detail: entry.detail,
+    params: entry.params,
+    result: entry.result,
+    source: entry.source ?? next[idx].source,
+    toolCallId: entry.toolCallId ?? next[idx].toolCallId,
+    seq: entry.seq ?? next[idx].seq,
+    displayName: entry.displayName ?? next[idx].displayName,
+    displayLabel: entry.displayLabel ?? next[idx].displayLabel,
+    description: entry.description ?? next[idx].description,
+  };
+  return next;
 }

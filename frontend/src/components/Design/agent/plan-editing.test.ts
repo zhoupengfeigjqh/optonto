@@ -1,19 +1,18 @@
 /**
- * 规划编辑与执行记录分组的纯逻辑单测（章程 III：属性传递 / 事件触发 / 边界条件）。
+ * 规划编辑纯逻辑单测（章程 III：属性传递 / 事件触发 / 边界条件）。
  *
- * 这两块原来是 AgentConversation 里的内联逻辑，没有测试；抽成纯函数后按
+ * 原为 AgentConversation 里的内联逻辑，没有测试；抽成纯函数后按
  * 「正常 → 异常 → 边界」逐条覆盖，重点锁住三处易错约定：
- * 删除子任务必须级联清依赖、环检测、并行子任务的事件交错归组。
+ * 删除子任务必须级联清依赖、环检测、参数编辑的作用域。
+ *
+ * 2026-10-05：执行记录分组/统计/配对（`execution-log.ts`）的用例已迁至同目录
+ * `execution-log.test.ts`——测试与被测文件一一对应，本文件回归「规划编辑」单一职责。
  */
 import { describe, it, expect } from 'vitest';
 import {
   clonePlan, updateSubtaskParam, deleteSubtask, setSubtaskDeps,
   validatePlan, isPlanUnchanged, type Plan,
 } from './plan-editing';
-import {
-  groupExecutionLog, countSubtaskSteps, subtaskStepEntries, subtaskStatus, subtaskTitle,
-  type LogEntry,
-} from './execution-log';
 
 const makePlan = (): Plan => ({
   subtasks: [
@@ -131,61 +130,5 @@ describe('isPlanUnchanged — 是否用户确实改过', () => {
   it('属性传递：任一字段变化判定为已改', () => {
     const edited = updateSubtaskParam(makePlan(), 1, '原材料编号', 'RM-002');
     expect(isPlanUnchanged(edited, makePlan())).toBe(false);
-  });
-});
-
-// ─── 执行记录分组 ─────────────────────────────────────────────────────────────
-
-const top = (name: string, type = 'tool_call'): LogEntry =>
-  ({ time: 't', type, name, status: 'done' });
-const child = (seq: number, type: string, name = 'B'): LogEntry =>
-  ({ time: 't', type, name, status: type === 'subtask_done' ? 'done' : 'running', source: 'child', seq });
-
-describe('groupExecutionLog — 执行记录分组', () => {
-  it('属性传递：顶层条目按原位置出现，子任务条目归入其组', () => {
-    const nodes = groupExecutionLog([top('全局'), child(1, 'subtask_start'), child(1, 'tool_call')]);
-    expect(nodes.map(n => n.kind)).toEqual(['top', 'subtask']);
-    expect((nodes[1] as any).entries.length).toBe(2);
-  });
-
-  it('属性传递：并行子任务事件交错到达时，同一 seq 仍归为一组（不能按相邻合并）', () => {
-    const nodes = groupExecutionLog([
-      child(1, 'subtask_start'), child(2, 'subtask_start'), child(1, 'tool_call'), child(2, 'tool_call'),
-    ]);
-    expect(nodes.map(n => (n as any).seq)).toEqual([1, 2]);
-    expect((nodes[0] as any).entries.length).toBe(2);
-    expect((nodes[1] as any).entries.length).toBe(2);
-  });
-
-  it('边界：空记录返回空节点列表', () => {
-    expect(groupExecutionLog([])).toEqual([]);
-  });
-
-  it('边界：source=child 但 seq 缺失时按顶层条目处理', () => {
-    const entry: LogEntry = { time: 't', type: 'tool_call', name: 'X', status: 'done', source: 'child' };
-    expect(groupExecutionLog([entry])[0].kind).toBe('top');
-  });
-});
-
-describe('子任务组统计与标题', () => {
-  const entries = [child(1, 'subtask_start'), child(1, 'subtask_input'), child(1, 'tool_call'), child(1, 'tool_call', 'C'), child(1, 'subtask_done')];
-
-  it('属性传递：步数剔除 start / done / input', () => {
-    expect(countSubtaskSteps(entries)).toBe(2);
-    expect(subtaskStepEntries(entries).length).toBe(2);
-  });
-
-  it('属性传递：状态优先取 subtask_done（避免因归组而停在 running）', () => {
-    expect(subtaskStatus(entries)).toBe('done');
-    expect(subtaskStatus([child(1, 'subtask_start')])).toBe('running');
-  });
-
-  it('边界：无任何事件时状态回退为 running', () => {
-    expect(subtaskStatus([])).toBe('running');
-  });
-
-  it('属性传递：标题带子任务显示名；无 start 事件时回退为序号', () => {
-    expect(subtaskTitle([{ ...child(1, 'subtask_start'), displayName: '查库存' }], 1)).toBe('子任务 1: 查库存');
-    expect(subtaskTitle([], 2)).toBe('子任务 2');
   });
 });
