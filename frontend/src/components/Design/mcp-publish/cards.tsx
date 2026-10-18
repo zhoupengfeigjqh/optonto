@@ -62,10 +62,10 @@ export function FixedServiceCard({ def, card, host, onOpenConfig, onToggle, onSh
             )}
           </div>
         ) : def.transport === 'none' ? (
-          <div className="text-text-muted">零工具：不发布任何 MCP 工具，只提供内部执行端点</div>
+          <div className="text-text-muted">只提供内部执行端点</div>
         ) : (
           // 数据引擎执行服务不是"零工具"：它有 /mcp 工具面（已就绪行为），只是仅内网、不对外
-          <div className="text-text-muted">工具面仅内网（供平台 Agent 挂载），不对外提供</div>
+          <div className="text-text-muted">只提供内部执行端点</div>
         )}
         <div className="leading-relaxed">{def.role}</div>
       </div>

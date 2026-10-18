@@ -334,7 +334,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-base font-semibold text-text-primary">API映射</h3>
-          <p className="text-text-muted text-xs mt-0.5">管理 MCP 类型的数据映射，配置目标接口（MCP 服务与工具）和字段映射关系。注意：请先在MCP配置这里，连接业务系统提供的MCP服务！！！</p>
+          <p className="text-text-muted text-xs mt-0.5">管理本体行为和业务系统接口的数据字段映射。注意：请先在MCP配置这里，连接业务系统提供的MCP服务！！！</p>
         </div>
         <div className="flex items-center gap-2">
         </div>

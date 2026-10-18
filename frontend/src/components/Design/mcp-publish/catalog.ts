@@ -55,19 +55,19 @@ export const FIXED_SERVICES: FixedServiceDef[] = [
     key: 'commonFunction', title: '公共函数 MCP 服务', service: 'common-function',
     endpoint: 'http://{host}:8007/mcp', exposure: '对外', publishTools: true,
     transport: 'streamable',
-    role: '平台级通用算力（filterData / aggregateData / dateDiff 等 7 个）：无本体归属、跨场景共享、纯计算。发布与执行一体——本服务内直接执行，无需转发。与本体函数不同：那个有本体归属、对外需按本体切片，故其执行底座不对外。',
+    role: '平台级通用算力（filterData / aggregateData / dateDiff 等 7 个）：无本体归属、跨场景共享、纯计算。发布与执行一体——本服务内直接执行，无需转发。',
   },
   {
     key: 'functionExecutor', title: '本体函数执行服务', service: 'function-executor',
     endpoint: 'Docker 内网 optonto-ontology-function-executor:8006', exposure: '内网', publishTools: false,
     transport: 'none',
-    role: '函数执行的唯一实现（本地执行函数代码）。零工具：不提供任何 MCP 工具，只接受 /execute-function 调用。',
+    role: '函数执行的唯一实现，在本地执行函数代码。',
   },
   {
     key: 'dataEngine', title: '数据引擎执行服务', service: 'data-engine',
     endpoint: 'Docker 内网 optonto-data-engine-executor:8005', exposure: '内网', publishTools: false,
     transport: 'streamable',
-    role: '本体行为执行的唯一实现（映射翻译 → 下游 MCP）。工具面仅供平台 Agent 内网挂载，不对外提供。',
+    role: '本体行为执行的唯一实现，通过映射翻译来调用下游业务系统的MCP服务。',
   },
   {
     key: 'business', title: '业务系统 MCP', service: 'business',

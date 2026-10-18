@@ -303,8 +303,8 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
         <div>
           <h3 className="text-base font-semibold text-text-primary">MCP 发布</h3>
           <p className="text-text-muted text-xs mt-0.5">
-            发布 Model Context Protocol 服务端点，供 AI 客户端连接使用。分「固定发布」（平台内置）与「自建发布」
-            （按本体切片动态创建容器）两块，右上角可来回切换；每块一页最多 {PAGE_SIZE} 个服务。
+            分「固定发布」（平台内置）与「自建发布」
+            （按本体切片动态创建容器）两块，右上角可来回切换。
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -326,8 +326,8 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
         <section aria-label="固定发布">
           <div className="flex items-center justify-between gap-4 mb-2">
             <span className="text-xs text-text-muted">
-              固定发布（平台内置，compose 常驻管理，不可新建/删除）：<span className="text-accent-blue">本体查询 MCP 服务</span>与
-              <span className="text-accent-blue">公共函数 MCP 服务</span>是两个内置对外工具面（在「MCP 配置」里恒挂载、不可修改）；
+              固定发布为平台内置常驻，不可新建/删除：<span className="text-accent-blue">本体查询 MCP 服务</span>与
+              <span className="text-accent-blue">公共函数 MCP 服务</span>是两个内置对外工具面；
               两个<span className="text-accent-blue">执行服务</span>只在 Docker 内网可达，不对外提供工具
             </span>
             <Button size="small" loading={fixedRefreshing} onClick={() => refresh()}>刷新</Button>
@@ -407,8 +407,8 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
               optionType="button"
               buttonStyle="solid"
               options={[
-                { value: 'ontology_function', label: '本体函数（本地执行）' },
-                { value: 'behavior', label: '本体行为（映射调下游）' },
+                { value: 'ontology_function', label: '本体函数' },
+                { value: 'behavior', label: '本体行为' },
               ]}
             />
           </div>
