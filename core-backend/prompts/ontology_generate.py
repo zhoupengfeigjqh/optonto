@@ -33,6 +33,7 @@ ONTOLOGY_GENERATE_PROMPT_TEMPLATE = """你是一个本体建模专家。请根�
 19.**行为**：关联概念为单一值（字段 `concept`，禁止数组）；command 行为必须填写 `from_status` / `to_status`，取值必须来自其关联概念 status 属性的 `constraint.enum`（创建类行为 `from_status` 留空）；query 行为两者留空。
 20.**规则**：绑定行为为单一值（字段 `behavior`，禁止数组）；规则的约束逻辑由 `related_functions`（关联函数列表）承载——只能引用本本体 `functions` 段已声明的函数名（或公共函数名）；其中**本体函数且 `type=VALIDATION` 者为判断函数**：其代码必须返回统一信封并在 data 内携带 `{{"pass": bool, "reason": str}}`（运行期规则闸据此真阻断主行为）；CALCULATION 等其他类型承担取数/计算；没有合适函数时留空数组。**禁止输出任何已废弃的历史字段**（旧条件树、独立裁决函数字段等一律不得生成；模板未定义的字段一律不得输出）；`data_supplements` 填规则判断需额外拉取的 query 行为名（可留空，前端按关联函数声明关联的概念自动推导）。
 21.**概念术语集与实例标签**：概念可填 `terms`（术语集数组，该概念的其他表述，可为空，建议每概念 0-5 个）——只能填需求文档中实际出现过的其他说法，不得臆造或改写生成；概念还可填 `instance_label`（实例标签，可选，用于实例视图的节点标签）——取值**必须是该概念已定义属性的英文名**，无合适属性则留空，不得编造不存在的属性名。
+22.**概念继承（subClassOf）**：仅当需求明确表达「A 是一种 B」且属性可由 B 继承时，才给 A 填 `sub_class_of: B`（单值，至多一个父概念，空/缺省 = 根概念）；禁止成环、禁止引用本本体不存在的概念。子概念**不得重复声明**父概念已有的属性；如需收窄只能写 `attribute_restrictions`（键 = 继承属性名），且只允许三个维度：`enum` 为父枚举的非空子集（只删不增）、`min`/`max` 不得超出父范围、`pattern` 可任意覆盖。type / unique / required / display_name / description / example 一律由父概念决定，子概念禁止重定义。没有明确继承语义时**一律不输出这两个字段**。
 
 【来源信息】
 来源需求文件（source_file）：{source_file}

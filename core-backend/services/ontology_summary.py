@@ -7,6 +7,8 @@
 
 import json
 
+from services.inheritance import effective_map
+
 # 关系类型中文标签（与前端 RelationTable 的口径一致；空则不输出，不给 LLM 噪音）
 RELATION_TYPE_LABELS = {
     "asymmetric": "非对称", "symmetric": "对称", "transitive": "传递",
@@ -38,10 +40,17 @@ def build(data) -> str:
     """本体数据（OntologyData）→ 摘要文本。"""
     lines = []
     lines.append(f"概念（{len(data.concepts)}个）:")
+    # 有效属性 = 自有 ∪ 继承（spec 005）：继承项标注来源，避免 LLM 误以为可通过行为直接写入
+    effective = effective_map(data.concepts)
     for c in data.concepts:
         lines.append(f"  - {c.name}（{c.display_name or ''}）: {c.description or ''}")
-        for a in (c.attributes or []):
-            lines.append(f"    属性: {a.name} ({a.type}) 展示名={a.display_name or '-'} 约束={format_constraint(a.constraint)}")
+        for ra in effective.get(c.name, []):
+            a = ra.attribute
+            origin = "自有" if ra.inherited_from == c.name else f"继承自 {ra.inherited_from}"
+            lines.append(
+                f"    属性: {a.name} ({a.type}) 展示名={a.display_name or '-'} "
+                f"约束={format_constraint(a.constraint)}（{origin}）"
+            )
     lines.append(f"\n关系（{len(data.relations)}个）:")
     for r in data.relations:
         link = f", 关联: {r.source}.{r.source_attr} = {r.target}.{r.target_attr}" if r.source_attr and r.target_attr else ""

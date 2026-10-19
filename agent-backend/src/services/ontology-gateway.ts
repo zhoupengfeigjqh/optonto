@@ -12,6 +12,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
+import { effectiveAttributes } from './concept-inheritance.js';
 import { getCommonFunctionNames, getCommonFunctionInfo } from './common-functions.js';
 import type { BehaviorMeta, RuleDetail, ConceptInfo, FunctionMeta } from '../types.js';
 
@@ -84,14 +85,17 @@ export class OntologyGateway {
       .filter((n: string) => Boolean(n) && ready.has(n));
   }
 
-  /** 按关联概念名解析概念属性（含 constraint）。行为 related_concepts 与函数 related_concepts 同源共用。 */
+  /** 按关联概念名解析概念属性（含 constraint）。行为 related_concepts 与函数 related_concepts 同源共用。
+   *  spec 005：属性取**有效属性**（自有 ∪ 继承，继承已合成收窄）——否则子概念继承来的字段
+   *  在规划期参数校验/约束回溯里会凭空消失。 */
   private resolveConcepts(data: any, relatedNames: string[]): ConceptInfo[] {
-    return (data?.concepts || [])
+    const all = data?.concepts || [];
+    return all
       .filter((c: any) => relatedNames.includes(c.name))
       .map((c: any) => ({
         name: c.name,
         display_name: c.display_name || c.name,
-        attributes: (c.attributes || []).map((a: any) => ({
+        attributes: effectiveAttributes(all, c.name).map((a: any) => ({
           name: a.name,
           type: a.type || 'string',
           display_name: a.display_name || a.name,

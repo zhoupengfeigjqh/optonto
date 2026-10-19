@@ -8,7 +8,7 @@ import { GraphChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import { message, Spin, Empty, Modal, Tag, Button } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
-import { getOntologyData, OntologyData } from '@/api/client';
+import { getConcepts, getOntologyData, effectiveAttributes, Concept, OntologyData } from '@/api/client';
 
 echarts.use([TooltipComponent, TitleComponent, GraphChart, CanvasRenderer]);
 
@@ -41,6 +41,8 @@ interface GraphEdge {
 
 export default memo(function OntologyGraph({ ontologyId }: Props) {
   const [data, setData] = useState<OntologyData | null>(null);
+  // spec 005：/data 返回的是落盘原样（只含自有属性），继承属性走 /concepts 的派生视图
+  const [concepts, setConcepts] = useState<Concept[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedConcept, setSelectedConcept] = useState<GraphNode | null>(null);
   const chartRef = useRef<ReactEChartsCore>(null);
@@ -48,8 +50,9 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
   const load = async () => {
     setLoading(true);
     try {
-      const ontoData = await getOntologyData(ontologyId);
+      const [ontoData, conceptList] = await Promise.all([getOntologyData(ontologyId), getConcepts(ontologyId)]);
       setData(ontoData);
+      setConcepts(conceptList);
     } catch (e: any) {
       message.error('加载本体数据失败: ' + e.message);
     } finally {
@@ -87,7 +90,8 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
     const nodeIds = new Set<string>();
     const edges: GraphEdge[] = [];
 
-    // Concept nodes
+    // Concept nodes（属性取有效属性：自有 ∪ 继承，spec 005）
+    const conceptMap = new Map(concepts.map(c => [c.name, c]));
     data.concepts.forEach(c => {
       nodes.push({
         id: `concept:${c.name}`,
@@ -96,7 +100,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
         category: 0,
         symbolSize: 55,
         description: c.description,
-        attributes: c.attributes,
+        attributes: effectiveAttributes(conceptMap.get(c.name) || c),
       });
       nodeIds.add(`concept:${c.name}`);
     });
@@ -203,7 +207,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
     });
 
     return { nodes, edges, categories };
-  }, [data]);
+  }, [data, concepts]);
 
   const getOption = () => {
     const { nodes, edges, categories } = buildGraph();

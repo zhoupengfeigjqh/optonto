@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Space, Tag, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, CodeOutlined } from '@ant-design/icons';
-import { getBehaviors, createBehavior, updateBehavior, deleteBehavior, getConcepts, Behavior, Concept } from '@/api/client';
+import { getBehaviors, createBehavior, updateBehavior, deleteBehavior, getConcepts, effectiveAttributes, Behavior, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import JsonEditor from '@/components/JsonEditor';
 
@@ -37,8 +37,9 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
    * 行为的状态跃迁只能取该枚举内的值；概念无 status 属性时无可选项（下拉禁用）。
    */
   const statusOptionsOf = (conceptName: string) => {
-    const c = concepts.find(x => x.name === conceptName);
-    const attr = (c?.attributes || []).find(a => a.name === 'status');
+    // spec 005：status 可能继承自父概念（并可能被收窄），必须取有效属性的枚举
+    const attr = effectiveAttributes(concepts.find(x => x.name === conceptName))
+      .find(a => a.name === 'status');
     const enums = (attr?.constraint?.enum || []) as (string | number)[];
     return enums.map(e => ({ label: String(e), value: String(e) }));
   };

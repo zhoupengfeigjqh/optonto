@@ -5,6 +5,7 @@
  * 结果表格列构建、ECharts option 构建。视图组件仅负责状态与交互，
  * 便于对「行提取」「option 构建」等逻辑单独补测。
  */
+import { effectiveAttributes } from '@/api/client';
 import type { Concept } from '@/api/client';
 
 // ─── 常量 ────────────────────────────────────────────────────────────────
@@ -104,14 +105,16 @@ export function buildResultColumns(
 ): ResultColumn[] {
   if (!resultRows || resultRows.length === 0 || !conceptName) return [];
   const concept = conceptMap.get(conceptName);
-  const attrOrder = (concept?.attributes ?? []).map(a => a.name);
+  // spec 005：属性顺序/展示名取有效属性（自有 ∪ 继承）
+  const attrs = effectiveAttributes(concept);
+  const attrOrder = attrs.map(a => a.name);
   const keys = [...new Set(resultRows.flatMap(r => Object.keys(r)))];
   keys.sort((a, b) => {
     const ia = attrOrder.indexOf(a), ib = attrOrder.indexOf(b);
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   });
   return keys.slice(0, 8).map(k => ({
-    title: concept?.attributes?.find(a => a.name === k)?.display_name || k,
+    title: attrs.find(a => a.name === k)?.display_name || k,
     dataIndex: k,
     key: k,
     ellipsis: true,
@@ -135,8 +138,9 @@ export function buildChartOption(graph: GraphData, conceptMap: Map<string, Conce
         if (params.dataType === 'node') {
           const node = params.data as GNode;
           const concept = conceptMap.get(node.concept);
+          const conceptAttrs = effectiveAttributes(concept);
           const attrLabel = (k: string) =>
-            concept?.attributes?.find(a => a.name === k)?.display_name || k;
+            conceptAttrs.find(a => a.name === k)?.display_name || k;
           let html = `<div style="font-size:13px;color:#e2e8f0;max-width:320px">`;
           html += `<strong style="font-size:14px">${concept?.display_name || node.concept}</strong>`;
           html += `<br/><span style="color:#64748b;font-size:11px">${node.concept}</span>`;

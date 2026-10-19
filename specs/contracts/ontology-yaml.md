@@ -137,6 +137,8 @@
 | concepts[] | `instance_label` | `string` | 实例标签（可选）：实例视图节点标签所用的**属性英文名**，须是该概念已定义的属性 |
 | concepts[].attributes[] | `constraint` | `{unique, required, enum, pattern, min, max}` | 属性约束对象：布尔 / 字符串数组 / 正则（仅 string）/ 数值范围（仅 number、integer）；**全缺省视为无约束，保存时不落盘**；`unique=true` 隐式要求 `required=true` |
 | rules[] | `data_supplements` | `string[]` | 规则取数接口（query 行为名）；前端按关联函数声明的关联概念自动推导，可手工增减 |
+| concepts[] | `sub_class_of` | `string \| null` | 父概念（OWL `subClassOf`）**至多 1 个**；空/缺省 = 根概念；读时兼容 camelCase `subClassOf` 别名 |
+| concepts[] | `attribute_restrictions` | `{属性名: {enum?, min?, max?, pattern?}}` | 对**继承属性**的收窄声明；空对象不落盘 |
 
 **`params` 说明字段口径（两端一致）**：`behaviors[].params` 项的说明字段为 **`description`**，`functions[].params` 项为 **`display_name`**，两者不互换（`mcp-shared/tool_contract.param_spec_to_schema` 以 `display_name or description` 做读取兜底，但**写入**须按各自口径）。
 
@@ -159,6 +161,14 @@
 - 流程（2026-10-05 补齐）：步骤 `current_action` 非空且必须命中本体内已存在的行为；
   `previous_action` 非空时同理 → 否则 400。
 - 函数（2026-10-05 补齐）：`related_concepts` 中的概念必须存在于本体 → 否则 400。
+- 概念继承（2026-10-19，spec 005）：
+  - `sub_class_of` 必须指向本体内已存在的**其他**概念，且不得形成环（自引用 / A→B→A 均 400）；
+  - `attribute_restrictions` 的键必须是**继承来的**属性名（自有属性不可声明收窄）→ 否则 400；
+  - `enum` 必须是父有效枚举的非空子集（只删不增）→ 否则 400；
+  - `min` / `max` 必须落在父有效范围内 → 否则 400；
+  - `pattern` 可任意覆盖（空串 = 显式清除父模式），非空时必须是合法正则 → 否则 400；
+  - 子概念与继承属性同名的自有声明 → **自动剔除**（继承优先），前端保存前以确认弹窗预告名单；
+  - 父概念改名 → 级联改写子概念 `sub_class_of`；父概念删除 → 清空子概念 `sub_class_of` 与其 `attribute_restrictions`（子概念保留）。
 
 > 校验归属铁律不变：**值域类**非法值由 Pydantic validator 静默归一（不报错）；
 > **跨字段强耦合**类由业务层 `services/validators.py` 抛 `errors.InvalidInputError` → 400
@@ -175,6 +185,34 @@
 > 该组用例镜像：`agent-backend/src/services/ontology-gateway.test.ts`（M1-M5）与
 > `core-backend/tests/test_ontology_files_contract.py::TestFieldMigration`（M1-M5）；
 > 更细的模型/校验用例见 `core-backend/tests/test_model_extension.py`（32 例）。
+
+### 概念属性继承（subClassOf，2026-10-19，spec 005）
+
+**落盘口径**：只存 `sub_class_of` + `attribute_restrictions`，**属性不复制**（父概念是唯一权威源）。
+
+**读取口径（三端一致，逐字镜像）**——有效属性 = 自有属性（未被继承同名占用的）+ 父概念有效属性：
+
+1. 同名时**继承优先**：子概念不能再声明父概念已有的属性，只能通过 `attribute_restrictions` 收窄；
+2. 收窄沿继承链逐层叠加：`enum` 取交集（只删不增）、`min` 取最大、`max` 取最小、
+   `pattern` 取最近一层非空覆盖（空串 = 显式清除）；
+3. 多级传递：A→B→C，C 同时得到 A、B 的属性；
+4. 环 / 悬空父概念：读侧**截断 + 告警**，不抛错（运行面容错优先）；写侧 400；
+5. 派生结果不落盘：core API 以 `inherited_attributes` 返回（继承项带 `inherited_from` / `restricted`），
+   mcp-shared 在加载出口把概念 `attributes` 替换为有效属性（只读，运行面不回写）。
+
+| # | 场景 | 期望 |
+| :-: | :-- | :-- |
+| I1 | 子概念 `sub_class_of` 父概念，父有 `status`/`amount`，子自有 `order_no` | 有效属性 = order_no + status + amount |
+| I2 | 子收窄 `status.enum` 为父枚举子集、`amount.max` 小于父 max | 合成后取子集/更小上界 |
+| I3 | 子声明与父同名的自有属性 | 按继承优先剔除自有声明，取父定义 |
+| I4 | 父概念后续删掉一个枚举值 | 子有效枚举自动跟随（交集），无需回刷 |
+| I5 | 环 / 父概念不存在 | 读时截断不报错；写时 400 |
+| I6 | 父概念删除 | 子概念 `sub_class_of` 与 `attribute_restrictions` 清空，子概念保留 |
+| I7 | 父概念改名 | 子概念 `sub_class_of` 级联改写 |
+
+> 镜像用例：`core-backend/tests/test_concept_inheritance.py`（39 例）与
+> `agent-backend/src/services/ontology-gateway.test.ts`（I1-I3）；前端纯函数见
+> `frontend/src/components/Design/concept-inheritance.test.ts`。
 
 ## 7. 统一返回信封与规则判断函数（2026-09-30）
 

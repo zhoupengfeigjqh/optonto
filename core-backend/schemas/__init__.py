@@ -70,13 +70,72 @@ class AttributeItem(BaseModel):
         return v
 
 
+class AttributeRestriction(BaseModel):
+    """继承属性的收窄声明（spec 005，只能收窄不能放宽）。
+
+    三个维度之外的一切属性字段（type / unique / required / display_name /
+    description / example）都由父概念的声明决定，不可在子概念修改。
+    缺省（None / 空）表示该维度完全继承：
+    - ``enum``：必须是父有效枚举的非空子集（只删不增）；
+    - ``min`` / ``max``：必须落在父有效范围内（父无界则可加界）；
+    - ``pattern``：非 None 即覆盖（空串 = 显式清除父的正则）。
+    """
+
+    enum: list | None = Field(None, description="枚举收窄：父枚举的非空子集")
+    min: float | None = Field(None, description="最小值收窄：不得小于父最小值")
+    max: float | None = Field(None, description="最大值收窄：不得大于父最大值")
+    pattern: str | None = Field(None, description="匹配模式覆盖：空串表示清除父模式")
+
+
 class ConceptItem(BaseModel):
     name: str = Field(..., description="概念名")
     description: str = Field("", description="概念描述")
-    attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表")
+    attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表（仅本概念自有声明）")
     display_name: str = Field("", description="展示名称")
     instance_label: str = Field("", description="实例标签：用于实例展示时作为节点标签，可选值为属性的英文名")
     terms: list[str] = Field(default_factory=list, description="术语集：该概念的其他表述（同义词/别名/简称等）")
+    sub_class_of: str | None = Field(None, description="父概念名（OWL subClassOf，至多 1 个，空 = 根概念）")
+    attribute_restrictions: dict[str, AttributeRestriction] = Field(
+        default_factory=dict, description="对继承属性的收窄（key = 属性英文名）"
+    )
+
+    @model_validator(mode='before')
+    @classmethod
+    def _alias_sub_class_of(cls, v: any) -> any:
+        """读时兼容外部导入数据的 camelCase 写法 ``subClassOf``。"""
+        if isinstance(v, dict) and 'sub_class_of' not in v and 'subClassOf' in v:
+            v = {**v, 'sub_class_of': v.get('subClassOf')}
+        return v
+
+    @field_validator('sub_class_of', mode='before')
+    @classmethod
+    def coerce_sub_class_of(cls, v: any) -> str | None:
+        s = str(v).strip() if v is not None else ""
+        return s or None
+
+    @field_validator('attribute_restrictions', mode='before')
+    @classmethod
+    def coerce_restrictions(cls, v: any) -> dict:
+        """规范化：去空键、丢弃三维度全缺省的空限制（避免 YAML 噪音）。"""
+        if not isinstance(v, dict):
+            return {}
+        out: dict = {}
+        for key, raw in v.items():
+            name = str(key).strip()
+            if not name:
+                continue
+            if isinstance(raw, AttributeRestriction):
+                r = raw.model_copy(deep=True)
+            elif isinstance(raw, dict):
+                r = AttributeRestriction(**raw)
+            else:
+                continue
+            if not r.enum:
+                r.enum = None
+            if r.enum is None and r.min is None and r.max is None and r.pattern is None:
+                continue
+            out[name] = r
+        return out
 
     @field_validator('terms', mode='before')
     @classmethod
@@ -94,6 +153,25 @@ class ConceptItem(BaseModel):
             if s and s not in out:
                 out.append(s)
         return out
+
+
+class InheritedAttributeItem(AttributeItem):
+    """继承来的属性（只读派生结果，不落盘）：值已按整条继承链收窄合成。"""
+
+    inherited_from: str = Field("", description="属性实际声明的概念名（继承源头）")
+    restricted: bool = Field(False, description="本概念是否对该属性的枚举/范围/模式做了收窄")
+
+
+class ConceptView(ConceptItem):
+    """概念读取视图：自有声明 + 派生继承属性（spec 005）。
+
+    ``attributes`` 仍只含本概念自有声明（写回不会把继承项固化成自有属性）；
+    ``inherited_attributes`` 是只读派生结果，供设计面置灰展示与运行面约束回溯。
+    """
+
+    inherited_attributes: list[InheritedAttributeItem] = Field(
+        default_factory=list, description="继承属性（已合成收窄，只读）"
+    )
 
 
 class RelationItem(BaseModel):

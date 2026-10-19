@@ -11,6 +11,7 @@ from schemas import RuleItem
 from services import load_ontology_data, save_ontology_data
 from services.entity_crud import ensure_unique, find_index
 from services.function_catalog import available_function_names, read_common_functions
+from services.inheritance import effective_map
 from services.validators import validate_related_functions
 from llm_utils import load_env, llm_json
 
@@ -90,11 +91,14 @@ async def generate_rule(ontology_id: int, body: dict):
     behavior_info = ""
     beh = next((b for b in data.behaviors if b.name == behavior_name), None)
     if beh:
-        concepts = [c for c in data.concepts if c.name == beh.concept]
+        # 概念属性取有效属性（自有 ∪ 继承，spec 005）：继承属性同样是行为可写字段
+        effective = effective_map(data.concepts)
         attrs = []
-        for c in concepts:
-            for a in (c.attributes or []):
-                attrs.append(f"  {c.name}.{a.name} ({a.type}) — {a.display_name or a.description or ''}")
+        for c in [c for c in data.concepts if c.name == beh.concept]:
+            for ra in effective.get(c.name, []):
+                a = ra.attribute
+                origin = "" if ra.inherited_from == c.name else f"，继承自 {ra.inherited_from}"
+                attrs.append(f"  {c.name}.{a.name} ({a.type}) — {a.display_name or a.description or ''}{origin}")
         behavior_info += f"行为：{beh.name} ({beh.display_name or ''})\n"
         behavior_info += f"描述：{beh.description}\n"
         if beh.concept:

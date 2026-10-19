@@ -21,11 +21,14 @@ ontology.yaml（语义模型 + **本体身份**）、data_engines.yaml / securit
 """
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 
 import yaml
+
+logger = logging.getLogger("mcp-shared.data_store")
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/.data"))
 ONTO_MARKET_DIR = DATA_DIR / "onto_market"
@@ -179,6 +182,110 @@ def ontology_market_fingerprint() -> tuple[int, int]:
 _ontology_cache: dict[tuple[str, str], tuple[int, int, int, dict]] = {}
 
 
+# ─── 概念属性继承（spec 005）：运行面读时合成，落盘只存 sub_class_of + 收窄 ─────
+
+_ENUM_TYPES = {"string", "number", "integer"}
+_RANGE_TYPES = {"number", "integer"}
+_PATTERN_TYPES = {"string"}
+
+
+def _apply_restriction(attr: dict, r: dict) -> tuple[dict, bool]:
+    """叠加一层收窄（enum 交集 / min-max 收窄 / pattern 覆盖），返回 (新属性, 是否改变)。"""
+    out = dict(attr)
+    c = dict(attr.get("constraint") or {})
+    changed = False
+
+    enum = r.get("enum")
+    if isinstance(enum, list) and enum and attr.get("type") in _ENUM_TYPES and isinstance(c.get("enum"), list) and c["enum"]:
+        allowed = {str(v) for v in enum}
+        narrowed = [v for v in c["enum"] if str(v) in allowed]
+        if narrowed and narrowed != c["enum"]:
+            c["enum"] = narrowed
+            changed = True
+
+    if attr.get("type") in _RANGE_TYPES:
+        lo = [v for v in (c.get("min"), r.get("min")) if v is not None]
+        hi = [v for v in (c.get("max"), r.get("max")) if v is not None]
+        if lo and max(lo) != c.get("min"):
+            c["min"] = max(lo)
+            changed = True
+        if hi and min(hi) != c.get("max"):
+            c["max"] = min(hi)
+            changed = True
+
+    pat = r.get("pattern")
+    if pat is not None and attr.get("type") in _PATTERN_TYPES:
+        if (c.get("pattern") or "") != pat:
+            c["pattern"] = pat
+            changed = True
+
+    out["constraint"] = c or None
+    return out, changed
+
+
+def resolve_concept_inheritance(data: dict) -> None:
+    """把每个概念的 ``attributes`` 就地替换为**有效属性**（自有 ∪ 继承，同名继承优先）。
+
+    运行面（查询 MCP / 约束回溯）拿到的概念属性因此天然完整，无需各自解析继承；
+    继承行带 ``inherited_from`` / ``restricted`` 标记，自有行保持原样。
+    环与悬空父概念：截断并告警，不抛错（运行面容错优先，与 spec 005 读侧口径一致）。
+    """
+    concepts = data.get("concepts") if isinstance(data, dict) else None
+    if not isinstance(concepts, list):
+        return
+    by_name = {c.get("name"): c for c in concepts if isinstance(c, dict) and c.get("name")}
+    # 内部结构：(属性 dict, 实际声明概念名, 是否被收窄过)；对外只给继承行打标记
+    memo: dict[str, list[tuple[dict, str, bool]]] = {}
+
+    def walk(name: str, stack: tuple[str, ...]) -> list[tuple[dict, str, bool]]:
+        if name in memo:
+            return memo[name]
+        concept = by_name.get(name)
+        if not isinstance(concept, dict):
+            return []
+        if name in stack:
+            logger.warning("概念继承存在环，已截断: %s", " -> ".join([*stack, name]))
+            return []
+
+        parent = str(concept.get("sub_class_of") or "").strip()
+        parent_eff: list[tuple[dict, str, bool]] = []
+        if parent:
+            if parent in by_name:
+                parent_eff = walk(parent, (*stack, name))
+            else:
+                logger.warning("概念 %s 的父概念不存在，已忽略继承: %s", name, parent)
+
+        inherited_names = {a.get("name") for a, _origin, _flag in parent_eff}
+        raw_own = concept.get("attributes") if isinstance(concept.get("attributes"), list) else []
+        resolved: list[tuple[dict, str, bool]] = [
+            (dict(a), name, False) for a in raw_own
+            if isinstance(a, dict) and a.get("name") not in inherited_names
+        ]
+        restrictions = concept.get("attribute_restrictions") if isinstance(concept.get("attribute_restrictions"), dict) else {}
+        for raw, origin, flagged in parent_eff:
+            r = restrictions.get(raw.get("name"))
+            if isinstance(r, dict):
+                applied, changed = _apply_restriction(raw, r)
+                resolved.append((applied, origin, flagged or changed))
+            else:
+                resolved.append((raw, origin, flagged))
+
+        memo[name] = resolved
+        return resolved
+
+    for c in concepts:
+        if isinstance(c, dict) and c.get("name"):
+            name = c["name"]
+            out = []
+            for raw, origin, flagged in walk(name, ()):
+                item = dict(raw)
+                if origin != name:
+                    item["inherited_from"] = origin
+                    item["restricted"] = flagged
+                out.append(item)
+            c["attributes"] = out
+
+
 def load_ontology_data(scenario_name: str, ontology_name: str) -> dict:
     """读取一个本体的完整数据（plain dict）。文件不存在返回空结构。
 
@@ -206,6 +313,8 @@ def load_ontology_data(scenario_name: str, ontology_name: str) -> dict:
         raw = _read_yaml(securities_path) or {}
         items = raw.get("securities", []) if isinstance(raw, dict) else raw
         data["securities"] = items or []
+    # spec 005：概念属性继承在加载出口一次性合成（运行面只读，不落盘）
+    resolve_concept_inheritance(data)
     _ontology_cache[key] = (*fp, data)
     return data
 

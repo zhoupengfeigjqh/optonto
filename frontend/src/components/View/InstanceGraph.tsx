@@ -17,7 +17,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { message, Spin, Empty, Select, Button, Table, Input, InputNumber, Tag } from 'antd';
 import { SearchOutlined, PlusOutlined, ClearOutlined } from '@ant-design/icons';
 import {
-  getOntologyData, callBehavior,
+  getOntologyData, getConcepts, effectiveAttributes, callBehavior,
   OntologyData, Concept, Behavior, Relation,
 } from '@/api/client';
 import { instanceKey } from './instance-hash';
@@ -37,6 +37,8 @@ interface Props {
 
 export default memo(function InstanceGraph({ ontologyId }: Props) {
   const [data, setData] = useState<OntologyData | null>(null);
+  // spec 005：/data 是落盘原样（只含自有属性），有效属性取 /concepts 的派生视图
+  const [concepts, setConcepts] = useState<Concept[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 查询区
@@ -63,7 +65,9 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
     (async () => {
       setLoading(true);
       try {
-        setData(await getOntologyData(ontologyId));
+        const [ontoData, conceptList] = await Promise.all([getOntologyData(ontologyId), getConcepts(ontologyId)]);
+        setData(ontoData);
+        setConcepts(conceptList);
       } catch (e: any) {
         message.error('加载本体数据失败: ' + e.message);
       } finally {
@@ -75,8 +79,8 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
   // ─── 派生结构 ────────────────────────────────────────────────────────
 
   const conceptMap = useMemo(
-    () => new Map((data?.concepts ?? []).map(c => [c.name, c])),
-    [data],
+    () => new Map((concepts.length ? concepts : (data?.concepts ?? [])).map(c => [c.name, c])),
+    [data, concepts],
   );
 
   /** 行为权限：securities 全花名册，scope 含 everyone 才放行；disable/白名单（身份未落地）一律拦截 */

@@ -175,6 +175,67 @@ describe('契约 §6 字段契约与旧格式迁移（spec 003）', () => {
   });
 });
 
+describe('spec 005 概念继承（subClassOf）', () => {
+  it('I1：子概念继承父属性并按收窄合成（枚举子集 / 范围收窄）', () => {
+    writeOntology({
+      concepts: [
+        {
+          name: 'Base',
+          attributes: [
+            { name: 'status', type: 'string', constraint: { enum: ['a', 'b', 'c'] } },
+            { name: 'amount', type: 'number', constraint: { min: 0, max: 100 } },
+          ],
+        },
+        {
+          name: 'Child',
+          sub_class_of: 'Base',
+          attributes: [{ name: 'x', type: 'string' }],
+          attribute_restrictions: { status: { enum: ['a', 'b'] }, amount: { max: 10 } },
+        },
+      ],
+      behaviors: [{ name: 'B1', concept: 'Child' }],
+    });
+    const attrs = gateway.getBehaviorMeta(SC, ON, 'B1').concepts[0].attributes;
+    expect(attrs.map(a => a.name)).toEqual(['x', 'status', 'amount']);
+    expect(attrs.find(a => a.name === 'status')?.constraint?.enum).toEqual(['a', 'b']);
+    expect(attrs.find(a => a.name === 'amount')?.constraint?.max).toBe(10);
+  });
+
+  it('I2：多级继承逐层收窄；同名自有声明按继承优先剔除', () => {
+    writeOntology({
+      concepts: [
+        { name: 'Base', attributes: [{ name: 'status', type: 'string', constraint: { enum: ['a', 'b', 'c'] } }] },
+        { name: 'Mid', sub_class_of: 'Base', attribute_restrictions: { status: { enum: ['a', 'b'] } } },
+        {
+          name: 'Leaf',
+          sub_class_of: 'Mid',
+          attributes: [{ name: 'status', type: 'number', constraint: { min: 1, max: 9 } }],
+          attribute_restrictions: { status: { enum: ['a'] } },
+        },
+      ],
+      behaviors: [{ name: 'B1', concept: 'Leaf' }],
+    });
+    const attrs = gateway.getBehaviorMeta(SC, ON, 'B1').concepts[0].attributes;
+    expect(attrs).toHaveLength(1);
+    expect(attrs[0].type).toBe('string');
+    expect(attrs[0].constraint?.enum).toEqual(['a']);
+  });
+
+  it('I3：环 / 悬空父概念不抛错（运行面容错优先）', () => {
+    writeOntology({
+      concepts: [
+        { name: 'A', sub_class_of: 'B', attributes: [{ name: 'a', type: 'string' }] },
+        { name: 'B', sub_class_of: 'A', attributes: [{ name: 'b', type: 'string' }] },
+        { name: 'Orphan', sub_class_of: 'Ghost', attributes: [{ name: 'o', type: 'string' }] },
+      ],
+      behaviors: [{ name: 'B1', concept: 'A' }, { name: 'B2', concept: 'Orphan' }],
+    });
+    expect(() => gateway.getBehaviorMeta(SC, ON, 'B1')).not.toThrow();
+    const orphan = gateway.getBehaviorMeta(SC, ON, 'B2').concepts[0].attributes;
+    expect(orphan.map(a => a.name)).toEqual(['o']);
+  });
+});
+
 describe('契约 §7 判断函数解析（口径 B：类型即角色）', () => {
   const functions = [
     { name: 'checkU', type: 'VALIDATION' },

@@ -9,20 +9,30 @@
 """
 
 from errors import InvalidInputError
-from schemas import STATUS_ATTR_NAME, BehaviorItem, FunctionItem, OntologyData, ProcessItem, RelationItem, RuleItem
+from schemas import (
+    STATUS_ATTR_NAME,
+    AttributeRestriction,
+    BehaviorItem,
+    ConceptItem,
+    FunctionItem,
+    OntologyData,
+    ProcessItem,
+    RelationItem,
+    RuleItem,
+)
+from services.inheritance import ENUM_TYPES, PATTERN_TYPES, RANGE_TYPES, effective_map
 
 
 def status_enum_of(data: OntologyData, concept_name: str) -> list:
     """取某概念 status 属性的枚举值（生命周期状态全集）。
 
+    走**有效属性**（自有 ∪ 继承，继承已合成收窄）——子概念继承父概念的生命周期
+    状态属性后，行为状态跃迁仍应能取到枚举全集。
     无该概念 / 无 status 属性 / 枚举为空 → 返回空列表。
     """
-    concept = next((c for c in data.concepts if c.name == concept_name), None)
-    if concept is None:
-        return []
-    for a in concept.attributes or []:
-        if a.name == STATUS_ATTR_NAME:
-            return list(getattr(a.constraint, "enum", None) or [])
+    for ra in effective_map(data.concepts).get(concept_name, []):
+        if ra.attribute.name == STATUS_ATTR_NAME:
+            return list(getattr(ra.attribute.constraint, "enum", None) or [])
     return []
 
 
@@ -41,6 +51,87 @@ def validate_status_attribute(attributes: list) -> None:
     enum = getattr(attr.constraint, "enum", None) or []
     if not enum:
         raise InvalidInputError("status（生命周期状态）属性必须填写枚举值（即该对象的生命周期状态集合）")
+
+
+def validate_sub_class_of(concept: ConceptItem, data: OntologyData, old_name: str | None = None) -> None:
+    """父概念（subClassOf）校验：必须存在、不能是自身、不能形成环。
+
+    ``old_name`` = 更新前的概念名（改名场景下，链上命中旧名同样视为环）。
+    """
+    parent = (concept.sub_class_of or "").strip()
+    if not parent:
+        return
+
+    self_names = {n for n in (concept.name, old_name) if n}
+    if parent in self_names:
+        raise InvalidInputError("父概念不能是概念自身")
+    by_name = {c.name: c for c in data.concepts if c.name}
+    if parent not in by_name:
+        raise InvalidInputError(f"父概念不存在: {parent}")
+
+    seen: set[str] = set()
+    cur = parent
+    while cur:
+        if cur in seen:
+            raise InvalidInputError(f"既有父概念链已存在环（{cur}），请先修复后再保存")
+        seen.add(cur)
+        if cur in self_names:
+            raise InvalidInputError(f"父概念设置会形成循环继承：{concept.name} → … → {concept.name}")
+        node = by_name.get(cur)
+        if node is None:
+            break
+        cur = (node.sub_class_of or "").strip()
+
+
+def _validate_one_restriction(attr, name: str, r: AttributeRestriction) -> None:
+    """单条收窄校验：枚举只删不增、范围不超父、模式任意但必须是合法正则。"""
+    if r.enum is not None and attr.type in ENUM_TYPES:
+        base_enum = list(getattr(attr.constraint, "enum", None) or [])
+        if not base_enum:
+            raise InvalidInputError(f"属性「{name}」的父定义没有枚举值，不能新增枚举")
+        if not r.enum:
+            raise InvalidInputError(f"属性「{name}」的枚举限制不能为空（空 = 完全继承，请删除该限制）")
+        allowed = {str(v) for v in base_enum}
+        extra = [v for v in r.enum if str(v) not in allowed]
+        if extra:
+            raise InvalidInputError(
+                f"属性「{name}」的枚举只能从父概念枚举中删除，不能新增："
+                + "、".join(str(v) for v in extra)
+            )
+
+    if (r.min is not None or r.max is not None) and attr.type in RANGE_TYPES:
+        base_min = getattr(attr.constraint, "min", None)
+        base_max = getattr(attr.constraint, "max", None)
+        if base_min is not None and r.min is not None and r.min < base_min:
+            raise InvalidInputError(f"属性「{name}」的最小值不能小于父概念取值范围的 {base_min}")
+        if base_max is not None and r.max is not None and r.max > base_max:
+            raise InvalidInputError(f"属性「{name}」的最大值不能大于父概念取值范围的 {base_max}")
+        if r.min is not None and r.max is not None and r.min > r.max:
+            raise InvalidInputError(f"属性「{name}」的取值范围最小值不能大于最大值")
+
+    if r.pattern is not None and attr.type in PATTERN_TYPES and r.pattern:
+        import re
+
+        try:
+            re.compile(r.pattern)
+        except re.error as e:
+            raise InvalidInputError(f"属性「{name}」的匹配模式不是合法正则: {e}")
+
+
+def validate_restrictions(concept: ConceptItem, data: OntologyData) -> None:
+    """属性收窄校验：只能作用于继承属性，且只能收窄不能放宽（spec 005）。"""
+    restrictions = concept.attribute_restrictions or {}
+    if not restrictions:
+        return
+    parent = (concept.sub_class_of or "").strip()
+    if not parent:
+        raise InvalidInputError("未选择父概念时不能声明属性限制")
+    base = {ra.attribute.name: ra.attribute for ra in effective_map(data.concepts).get(parent, [])}
+    for name, r in restrictions.items():
+        attr = base.get(name)
+        if attr is None:
+            raise InvalidInputError(f"属性限制只能作用于继承属性：{name}")
+        _validate_one_restriction(attr, name, r)
 
 
 def validate_behavior_status(behavior: BehaviorItem, data: OntologyData) -> None:
@@ -117,14 +208,15 @@ def validate_relation(relation: RelationItem, data: OntologyData) -> None:
     if relation.target and relation.target not in concept_names:
         raise InvalidInputError(f"关系的目标概念不存在: {relation.target}")
 
+    # 端点属性取**有效属性**：继承来的属性同样可以作为关系端点（spec 005）
+    effective = effective_map(data.concepts)
     for label, concept_name, attr_name in (
         ("源端", relation.source, relation.source_attr),
         ("目标端", relation.target, relation.target_attr),
     ):
         if not attr_name:
             continue
-        concept = next((c for c in data.concepts if c.name == concept_name), None)
-        attrs = {a.name for a in (concept.attributes or [])} if concept else set()
+        attrs = {ra.attribute.name for ra in effective.get(concept_name, [])}
         if attr_name not in attrs:
             raise InvalidInputError(f"关系{label}关联属性不存在: {concept_name}.{attr_name}")
 

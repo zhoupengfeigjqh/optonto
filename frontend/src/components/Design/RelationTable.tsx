@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Space } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { getRelations, createRelation, updateRelation, deleteRelation, getConcepts, Relation, Concept } from '@/api/client';
+import { getRelations, createRelation, updateRelation, deleteRelation, getConcepts, effectiveAttributes, Relation, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -44,13 +44,13 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
   const isEditing = (record: Relation) => record.name === editingKey;
   const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
 
-  // 概念的属性下拉选项（关联概念属性列用）
+  // 概念的属性下拉选项（关联概念属性列用）。spec 005：继承属性同样可作关系端点。
   const attrOptions = (conceptName?: string) =>
-    (concepts.find(c => c.name === conceptName)?.attributes || [])
+    effectiveAttributes(concepts.find(c => c.name === conceptName))
       .map(a => ({ label: `${a.display_name || a.name}（${a.type}）`, value: a.name }));
   // 属性类型查询（类型一致性校验用）
   const attrType = (conceptName?: string, attrName?: string) =>
-    concepts.find(c => c.name === conceptName)?.attributes?.find(a => a.name === attrName)?.type;
+    effectiveAttributes(concepts.find(c => c.name === conceptName)).find(a => a.name === attrName)?.type;
 
   const handleAdd = () => { setEditData({ name: '', display_name: '', source: undefined, target: undefined, cardinality: '1:N', relation_type: [], source_attr: undefined, target_attr: undefined, description: '' }); setEditingKey('__new__'); };
   const handleEdit = (r: Relation) => { setEditData({ name: r.name, display_name: r.display_name || '', source: r.source, target: r.target, cardinality: r.cardinality, relation_type: r.relation_type || [], source_attr: r.source_attr || undefined, target_attr: r.target_attr || undefined, description: r.description }); setEditingKey(r.name); };
@@ -132,7 +132,7 @@ export default function RelationTable({ ontologyId, activeTab }: Props) {
     if (!r.source_attr || !r.target_attr) return '-';
     const conceptName = (n: string) => concepts.find(c => c.name === n)?.display_name || n;
     const attrName = (cn: string, an: string) => {
-      const a = concepts.find(c => c.name === cn)?.attributes?.find(x => x.name === an);
+      const a = effectiveAttributes(concepts.find(c => c.name === cn)).find(x => x.name === an);
       return a?.display_name || an;
     };
     return `${conceptName(r.source)}.${attrName(r.source, r.source_attr)} = ${conceptName(r.target)}.${attrName(r.target, r.target_attr)}`;

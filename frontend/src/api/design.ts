@@ -23,15 +23,51 @@ export interface Attribute {
   constraint?: AttributeConstraint | null;
 }
 
+/**
+ * 继承属性的收窄（spec 005）：只能收窄不能放宽。
+ * 缺省（undefined）= 该维度完全继承父概念。
+ */
+export interface AttributeRestriction {
+  /** 父有效枚举的非空子集（只删不增） */
+  enum?: (string | number)[];
+  /** 不得小于父最小值 */
+  min?: number;
+  /** 不得大于父最大值 */
+  max?: number;
+  /** 覆盖父匹配模式；空串 = 显式清除父模式 */
+  pattern?: string;
+}
+
+/** 继承来的属性（只读派生结果，值已按整条继承链合成） */
+export interface InheritedAttribute extends Attribute {
+  /** 属性实际声明的概念名（继承源头） */
+  inherited_from?: string;
+  /** 本概念是否对该属性做了收窄 */
+  restricted?: boolean;
+}
+
 export interface Concept {
   name: string;
   description: string;
+  /** 仅本概念自有的属性声明（继承项不落盘） */
   attributes?: Attribute[];
   display_name?: string;
   instance_label?: string;
   /** 术语集：该概念的其他表述（同义词/别名/简称等）；与 instance_label 平级 */
   terms?: string[];
+  /** 父概念（OWL subClassOf），至多 1 个；空 = 根概念 */
+  sub_class_of?: string | null;
+  /** 对继承属性的收窄（key = 属性英文名） */
+  attribute_restrictions?: Record<string, AttributeRestriction>;
+  /** 继承属性（服务端派生，只读） */
+  inherited_attributes?: InheritedAttribute[];
 }
+
+/** 有效属性 = 自有 ∪ 继承（继承项在后，同名继承优先已由服务端保证） */
+export const effectiveAttributes = (c?: Concept | null): Attribute[] => [
+  ...(c?.attributes || []),
+  ...(c?.inherited_attributes || []),
+];
 
 export const getConcepts = (ontologyId: number) =>
   request<Concept[]>(`/api/ontologies/${ontologyId}/concepts`);
@@ -45,8 +81,17 @@ export const deleteConcept = (ontologyId: number, name: string) =>
 export const updateConcept = (ontologyId: number, name: string, data: Concept) =>
   request<Concept>(`/api/ontologies/${ontologyId}/concepts/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
-export const updateAttributes = (ontologyId: number, conceptName: string, attributes: Attribute[]) =>
-  request<Attribute[]>(`/api/ontologies/${ontologyId}/concepts/${encodeURIComponent(conceptName)}/attributes`, { method: 'PUT', body: JSON.stringify(attributes) });
+export const updateAttributes = (
+  ontologyId: number,
+  conceptName: string,
+  attributes: Attribute[],
+  attributeRestrictions?: Record<string, AttributeRestriction>,
+) =>
+  request<Attribute[]>(`/api/ontologies/${ontologyId}/concepts/${encodeURIComponent(conceptName)}/attributes`, {
+    method: 'PUT',
+    // 传了 restrictions 才用对象形态；省略时保持历史裸数组契约
+    body: JSON.stringify(attributeRestrictions === undefined ? attributes : { attributes, attribute_restrictions: attributeRestrictions }),
+  });
 
 // ─── Relation ──────────────────────────────────────────────────────────────
 
