@@ -12,8 +12,10 @@
 - 本体函数**有本体归属**，对外暴露需按本体切片 + 令牌（自建发布的职责），故本服务不对外；
   公共函数无归属、直接对外发布，故走「对外服务自包含」那一侧（见 common-function-mcp）。
 
-归属一致性（契约 ④）：函数名是裸名（不带本体前缀），故执行前必须校验「函数真正所属本体
-== 请求里的 ontology_id」，不等即拒——否则同名函数会被静默路由到错误本体。
+归属一致性（契约 ④，两道闸）：函数名是裸名（不带本体前缀），故执行前必须校验
+① 发布声明（请求里的 ``scope.ontology_id``，自建发布写入工具元数据）== 调用方 ``ontology_id``；
+② 调用方 ``ontology_id`` == 该函数在 .data 中的真实归属（防伪造 scope 绕过路由）。
+不等即拒并给出双方 id + 本体中文名/场景——否则同名函数会被静默路由到错误本体。
 （公共函数无归属概念，**不做**此校验——两侧不可混用同一套校验逻辑。）
 
 直读 .data（data_store，mtime 指纹热加载），运行期零回调 core-backend。
@@ -36,7 +38,10 @@ from mcp_app import TRANSPORT_NONE, build_mcp_app
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from tool_contract import owner_label, require_ontology_id, require_ontology_match, strip_system_params
+from tool_contract import (
+    owner_label, require_ontology_id, require_ontology_match, require_scope_match,
+    strip_system_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +93,18 @@ def _load_ontology_or_error(ontology_id: int):
 # ─── 执行端点（唯一实现；core 设计器测试与自建发布-函数共用）──────────────────────
 
 async def _handle_execute_function(request: Request) -> JSONResponse:
-    """POST /execute-function {ontology_id, function_name, params} — 本体函数执行（ontology_id 必填）。"""
+    """POST /execute-function {ontology_id, scope, function_name, params}（ontology_id 必填）。
+
+    ``ontology_id`` 由调用方（LLM）填写；``scope`` 是自建发布时固化的本体上下文。两道闸：
+    ① 发布声明 == 调用意图（``require_scope_match``，无 scope 时跳过——设计期 REST 调用）；
+    ② 调用意图 == 数据事实（``require_ontology_match``，防伪造 scope 跨本体路由）。
+    """
     body = await request.json()
     fname = body.get("function_name")
     try:
         oid = require_ontology_id(body.get("ontology_id"), "函数 %s" % fname)
-        # 归属一致性（契约 ④）：调用方指定的本体必须是该函数真正所属的本体
+        require_scope_match(body.get("scope"), oid, "函数 %s" % fname)
+        # 数据归属：调用方指定的本体必须是该函数真正所属的本体
         owner = _function_owners().get(fname)
         require_ontology_match((owner or {}).get("ontology_id"), oid, "函数 %s" % fname, owner_label(owner))
         data, sc_name, on_name = _load_ontology_or_error(int(oid))
@@ -103,7 +114,7 @@ async def _handle_execute_function(request: Request) -> JSONResponse:
         code_path = data_store.ontology_function_code_path(sc_name, on_name, fname)
         if not code_path.exists():
             return JSONResponse({"detail": "函数代码文件不存在，请先编写或生成代码"}, status_code=400)
-        # 系统参数剥离：scope/ontology_id 不是业务入参（与工具面同口径）
+        # 系统参数剥离：ontology_id 不是业务入参（与工具面同口径）
         return JSONResponse(run_function_code(code_path.read_text(encoding="utf-8"),
                                               strip_system_params(body.get("params"))))
     except ValueError as e:

@@ -10,7 +10,7 @@ docker.sock 等价宿主机 root。这是 API 层硬边界：不在白名单里�
 | ontology-query | optonto-ontology-query-mcp | 本体查询 MCP 服务（只读 list* 查询） | 内置对外工具面之一 |
 | common-function | optonto-common-function-mcp | 公共函数 MCP 服务（平台通用算力，发布+执行一体） | 是（7 个公共函数工具） |
 | function-executor | optonto-ontology-function-executor | 本体函数执行服务（零工具） | 否，仅内网 |
-| data-engine | optonto-data-engine-executor | 数据引擎执行服务（行为/引擎执行） | 否，仅内网（Agent 挂载） |
+| data-engine | optonto-data-engine-executor | 数据引擎执行服务（行为/引擎执行，零工具） | 否，仅内网 |
 | business | optonto-business-mcp | 业务系统 MCP（模拟外部业务系统） | 是（外部形态） |
 
 **失败语义（2026-10-05 与自建发布统一）**：启动/停止**操作失败一律抛领域异常**

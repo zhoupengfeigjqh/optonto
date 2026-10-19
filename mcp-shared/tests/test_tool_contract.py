@@ -2,11 +2,11 @@
 
 运行：cd mcp-shared && python -m pytest tests -q
 
-口径（2026-10-01 工具发布契约统一）：
-- 分类标记单一来源 = JSON Schema 扩展键 x-category / x-display_name（不再放 scope 内）；
-- 本体上下文块 scope 仅「本体执行类」（本体行为/本体函数）携带，只含上下文键；
-- ontology_id 在调用契约里必填（本体执行类与 listOnto*），缺失即报错、不做兜底；
-- 系统参数（scope + ontology_id）执行前统一剥离，三类发布端共用 strip_system_params。
+口径（2026-10-19 工具发布契约统一）：
+- 分类标记单一来源 = JSON Schema 扩展键 x-category / x-display_name（不放 scope 内）；
+- 本体上下文 x-ontology-scope 是**工具元数据**（schema 顶层，不进 properties），不是参数；
+- ontology_id 在自建发布的工具面是**必填参数**（LLM 填写），执行底座据 scope 校验一致性；
+- 系统参数（只有 ontology_id 路由键）执行前统一剥离，三类发布端共用 strip_system_params。
 """
 import sys
 from pathlib import Path
@@ -18,8 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tool_contract import (  # noqa: E402
     CATEGORY_BEHAVIOR, CATEGORY_COMMON, CATEGORY_QUERY, CATEGORY_KEY, DISPLAY_NAME_KEY,
     SCOPE_KEY, SYSTEM_PARAMS, build_query_schema, is_engine_ready, owner_label,
-    ready_behavior_names, require_ontology_id, require_ontology_match, strip_system_params,
-    with_category, with_ontology_context,
+    params_to_input_schema, ready_behavior_names, require_ontology_id, require_ontology_match,
+    require_scope_match, strip_ontology_scope, strip_system_params, with_category,
+    with_ontology_scope,
 )
 
 
@@ -43,7 +44,7 @@ def test_传入ontology_id原样返回():
 # ─── 系统参数剥离（三类发布端共用）─────────────────────────────────────────────
 
 def test_剥离系统参数只留业务参数():
-    args = {"scope": {"name": "X"}, "ontology_id": 1, "rawMaterialId": "RM-1", "qty": 2}
+    args = {"ontology_id": 1, "rawMaterialId": "RM-1", "qty": 2}
     assert strip_system_params(args) == {"rawMaterialId": "RM-1", "qty": 2}
 
 
@@ -53,7 +54,16 @@ def test_剥离容忍空入参():
 
 
 def test_系统参数集合定义():
-    assert SYSTEM_PARAMS == {SCOPE_KEY, "ontology_id"}
+    # SCOPE_KEY 是元数据键（x-ontology-scope），系统参数只有路由键
+    assert SYSTEM_PARAMS == {"ontology_id"}
+    assert SCOPE_KEY not in SYSTEM_PARAMS
+
+
+def test_剥离本体元数据():
+    schema = {"type": "object", "properties": {"qty": {"type": "integer"}},
+              SCOPE_KEY: {"ontology_id": 1}, "required": ["qty"]}
+    assert strip_ontology_scope(schema) == {"type": "object", "properties": {"qty": {"type": "integer"}},
+                                            "required": ["qty"]}
 
 
 # ─── 分类标记（单一来源）───────────────────────────────────────────────────────
@@ -85,33 +95,86 @@ def test_全局花名册无ontology_id():
     assert "ontology_id" not in schema["properties"]
 
 
-# ─── 本体执行类：scope 上下文块 + 分类标记 ─────────────────────────────────────
+# ─── 本体执行类：本体上下文元数据 + 分类标记 ───────────────────────────────────
 
-def test_本体执行类_上下文块与标记齐备且scope不含分类标记():
-    fn = {"name": "calcSafetyStock", "display_name": "计算安全库存",
-          "ontology_id": 1, "scenario_id": 1, "scenario_name": "生产调度", "ontology_name": "原材料采购和库存"}
-    schema = with_ontology_context(
-        {"type": "object", "properties": {"currentStock": {"type": "number"}}, "required": ["ontology_id"]},
-        fn, CATEGORY_BEHAVIOR)
+def test_本体上下文写入顶层元数据且不污染参数面():
+    scope = {"ontology_id": 1, "scenario_id": 1,
+             "scenario_name": "生产调度", "ontology_name": "原材料采购和库存"}
+    schema = with_ontology_scope(
+        {"type": "object", "properties": {"currentStock": {"type": "number"}},
+         "required": ["ontology_id"]},
+        scope, CATEGORY_BEHAVIOR, "计算安全库存")
     assert schema[CATEGORY_KEY] == CATEGORY_BEHAVIOR
     assert schema[DISPLAY_NAME_KEY] == "计算安全库存"
-    ctx = schema["properties"][SCOPE_KEY]["properties"]
-    assert set(ctx) == {"name", "ontology_id", "scenario_id", "scenario_name", "ontology_name"}
-    assert ctx["name"]["const"] == "calcSafetyStock"
-    assert "category" not in ctx and DISPLAY_NAME_KEY not in ctx  # 同类语义只有一种表达
-    assert schema["required"] == ["ontology_id"]
+    assert schema[SCOPE_KEY] == scope
+    assert "scope" not in schema["properties"]          # 不是参数
+    assert SCOPE_KEY not in schema["properties"]        # 元数据也不混进 properties
+    assert schema["properties"] == {"currentStock": {"type": "number"}}
 
 
-def test_本体执行类_缺失场景本体值时上下文键条件性缺席():
-    schema = with_ontology_context({"type": "object", "properties": {}}, {"name": "f1"}, CATEGORY_BEHAVIOR)
-    assert list(schema["properties"][SCOPE_KEY]["properties"]) == ["name"]
+def test_本体上下文缺省键自动省略():
+    schema = with_ontology_scope({"type": "object", "properties": {}}, {"ontology_id": 7, "scenario_name": None},
+                                 CATEGORY_BEHAVIOR)
+    assert schema[SCOPE_KEY] == {"ontology_id": 7}
 
 
-# ─── 归属一致性（契约 ④）：发布方声明的归属 == 调用方指定的路由本体 ────────────────
+# ─── 参数 schema 编译：ontology_id 必填（自建发布唯一形态）──────────────────────
+
+def test_必填形态_ontology_id进required且带填写说明():
+    schema, conflicts = params_to_input_schema(
+        {"qty": {"type": "integer", "required": True}}, require_ontology_id=True)
+    assert schema["properties"]["ontology_id"]["type"] == "integer"
+    assert "const" not in schema["properties"]["ontology_id"]
+    assert "ontology_id" in schema["required"]
+    assert schema["required"] == ["ontology_id", "qty"]  # 本体 id 置首，业务必填其后
+    assert "必填" in schema["properties"]["ontology_id"]["description"]
+    assert conflicts == []
+
+
+def test_无本体归属形态不出现ontology_id():
+    schema, _ = params_to_input_schema({"qty": {"type": "integer"}}, require_ontology_id=False)
+    assert "ontology_id" not in schema["properties"]
+    assert schema["required"] == []
+
+
+def test_require_ontology_id必须显式指定():
+    with pytest.raises(TypeError):
+        params_to_input_schema({})  # type: ignore[call-arg]
+
+
+# ─── 归属一致性（契约 ④）：发布声明闸 ─────────────────────────────────────────
+
+def test_scope一致时原样返回():
+    scope = {"ontology_id": 1, "ontology_name": "原材料采购和库存"}
+    assert require_scope_match(scope, 1, "函数 checkX") == 1
+    # 数值表示差异（"1" / 1.0）按整数比较 —— 不能因表示不同而误拒合法调用
+    assert require_scope_match(scope, "1", "函数 checkX") == "1"
+    assert require_scope_match({"ontology_id": "1"}, 1, "函数 checkX") == 1
+
+
+def test_scope不一致报错且文案含双方id与中文名():
+    scope = {"ontology_id": 2, "ontology_name": "订单排程", "scenario_name": "生产调度"}
+    with pytest.raises(ValueError) as ei:
+        require_scope_match(scope, 1, "行为 CreatePurchaseRecord")
+    msg = str(ei.value)
+    assert "本体不一致" in msg
+    assert "本体「订单排程」" in msg          # 报错的可读性：给 LLM 中文名，便于自纠
+    assert "ontology_id=2" in msg and "ontology_id=1" in msg
+    assert "场景「生产调度」" in msg
+    assert "请传入 ontology_id=2" in msg     # 给出可执行的修复方向
+
+
+def test_scope缺失时放行由数据归属闸兜底():
+    # 设计期 REST 调用（不经自建发布）不带 scope → 这里不校验
+    assert require_scope_match(None, 7, "函数 checkX") == 7
+    assert require_scope_match({}, 7, "函数 checkX") == 7
+    assert require_scope_match({"ontology_id": ""}, 7, "函数 checkX") == 7
+
+
+# ─── 归属一致性（契约 ④）：数据归属闸 ─────────────────────────────────────────
 
 def test_归属一致时原样返回():
     assert require_ontology_match(1, 1, "函数 checkX") == 1
-    # 数值表示差异（"1" / 1.0）按整数比较 —— 不能因表示不同而误拒合法调用
     assert require_ontology_match(1, "1", "函数 checkX") == "1"
     assert require_ontology_match("1", 1, "函数 checkX") == 1
     assert require_ontology_match(1, 1.0, "函数 checkX") == 1.0
@@ -123,12 +186,12 @@ def test_归属不一致报错且文案含双方id与中文名():
         require_ontology_match(2, 1, "行为 CreatePurchaseRecord", where)
     msg = str(ei.value)
     assert "归属校验失败" in msg
-    assert "本体「订单排程」" in msg          # 报错的可读性：给 LLM 中文名，便于自纠
+    assert "本体「订单排程」" in msg
     assert "ontology_id=2" in msg and "ontology_id=1" in msg
 
 
 def test_归属声明缺失时放行():
-    # 发布方未声明归属（老数据 / 设计期 REST 入口缓存未命中）→ 不误伤
+    # 索引未命中（老数据 / 设计期 REST 入口缓存未命中）→ 不误伤
     assert require_ontology_match(None, 7, "函数 checkX") == 7
     assert require_ontology_match("", 7, "函数 checkX") == 7
 

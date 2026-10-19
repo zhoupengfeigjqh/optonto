@@ -29,7 +29,7 @@ function fakeGateway(): OntologyGatewayPort {
 
 /** 本体函数目录项（带 scope 供本体过滤） */
 function ontoTool(name: string, scenario: string, ontology: string, params: Record<string, any> = {}, displayName = ''): MountableToolInfo {
-  return { name, category: '本体函数', description: '', params, displayName, scope: { scenario_name: scenario, ontology_name: ontology } };
+  return { name, category: '本体函数', description: '', params, displayName, scope: { ontology_id: 1, scenario_name: scenario, ontology_name: ontology } };
 }
 
 function commonTool(name: string, params: Record<string, any> = {}, displayName = ''): MountableToolInfo {
@@ -119,6 +119,36 @@ describe('正常模式 — functionInfo', () => {
   it('三源都无 → null（校验跳过，合法性由 functionNames 名单先行拦截）', async () => {
     const view = await new FunctionCatalog(fakeGateway(), async () => normalCatalog()).view();
     expect(view.functionInfo(SC, ON, 'notExistFn')).toBeNull();
+  });
+});
+
+describe('behaviorNames — 可规划 = 可挂载（方案 B）', () => {
+  const beh = (name: string, scenario: string, ontology: string): MountableToolInfo => ({
+    name, category: '本体行为', description: '', params: {},
+    scope: { ontology_id: 1, scenario_name: scenario, ontology_name: ontology },
+  });
+
+  it('只返回目标本体的行为名（跨本体不混入）——工具名即行为裸名', async () => {
+    const view = await new FunctionCatalog(fakeGateway(), async () => [
+      beh('QueryInventory', SC, ON),
+      beh('CreatePurchaseRecord', SC, ON),
+      beh('QueryOrder', '其他场景', '其他本体'),
+      otherTool('generate_line_chart'),
+    ]).view();
+    expect(view.behaviorNames(SC, ON).sort()).toEqual(['CreatePurchaseRecord', 'QueryInventory']);
+  });
+
+  it('同一行为被多个发布同时提供 → 去重', async () => {
+    const view = await new FunctionCatalog(fakeGateway(), async () => [
+      beh('QueryInventory', SC, ON),
+      beh('QueryInventory', SC, ON),
+    ]).view();
+    expect(view.behaviorNames(SC, ON)).toEqual(['QueryInventory']);
+  });
+
+  it('目录没有行为工具 → 空集（不回落文件声明：MCP 未连接即不可执行）', async () => {
+    const view = await new FunctionCatalog(fakeGateway(), async () => normalCatalog()).view();
+    expect(view.behaviorNames(SC, ON)).toEqual([]);
   });
 });
 

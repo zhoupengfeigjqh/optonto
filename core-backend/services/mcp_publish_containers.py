@@ -153,6 +153,23 @@ def get_publish(name: str) -> dict:
     return store.public_view(entry, container_state(entry["container_name"]))
 
 
+def published_tools(name: str) -> dict:
+    """发布时冻结的工具清单（**不探测容器**）。
+
+    快照在创建发布时就编译进注册表（``build_entry``），与容器是否在跑无关：
+    - 停机/容器缺失时照样可查看——这正是「发布即冻结」的语义，不能靠实时探测；
+    - 条目不存在 → 既有 ``NotFoundError``（404），绝不返回空清单冒充成功
+      （"找不到"显示成"0 个工具"会让用户以为发布没问题）。
+    """
+    entry = store.get_entry(name)
+    return {
+        "name": entry["name"],
+        "kind": entry["kind"],
+        "ontology_name": entry.get("ontology_name", ""),
+        "tools": entry.get("tools") or [],
+    }
+
+
 def client_config(name: str, host: str | None = None) -> dict:
     """生成可直接粘进「MCP配置」的客户端配置片段（含令牌请求头）。
 

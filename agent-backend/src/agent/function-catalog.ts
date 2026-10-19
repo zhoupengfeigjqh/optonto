@@ -16,6 +16,10 @@
  * 行为不进函数三源（functionNames/functionInfo 自然不含），也不设文件兜底：
  * MCP 目录缺行为工具 = 我方 MCP server 未连接，此时行为根本无法执行，校验跳过即可。
  *
+ * 2026-10-19 方案 B：行为工具的唯一来源是自建发布（8005 已零工具）。故**可规划集 = 本快照里的
+ * 行为工具名**（behaviorNames，按 scope 过滤）；"已映射就绪"只是必要条件，不再单独作为判据——
+ * 否则会规划出没有挂载点的行为（契约 ⑥ 的"能规划、挂不上"）。
+ *
  * view() 是 async 快照：MCP 目录发现是 async（其内部 run 级缓存保证重复调用代价可忽略），
  * 快照建好后所有查询同步进行——校验器得以保持纯同步函数（repairPlan 的 isClean/detailOf 闭包直接调）。
  * 一次 run 建一次快照（orchestrator 存 session.catalogView）：规划校验与执行展示同源同时刻。
@@ -44,6 +48,14 @@ export interface FunctionCatalogView {
   functionInfo(scenario: string, ontology: string, functionName: string): FunctionInfo | null;
   /** 行为的编译 inputSchema（按 scope 场景/本体 + 裸名回溯）；无（MCP 未连接/行为不存在）→ null（校验跳过） */
   behaviorSchema(scenario: string, ontology: string, behaviorName: string): Record<string, any> | null;
+  /**
+   * **可规划 = 可挂载**的行为名（目录中实际存在的行为工具，按 scope 场景/本体过滤）。
+   *
+   * 2026-10-19 方案 B：行为工具的唯一来源是自建发布（数据引擎执行服务已零工具化），
+   * 故"目录里有没有"才是"子 Agent 挂得上不上"的唯一事实。**不做文件兜底**——MCP 未连接时
+   * 行为根本无法执行，回落 yaml 声明只会造出"能规划、挂不上"。
+   */
+  behaviorNames(scenario: string, ontology: string): string[];
 }
 
 export class FunctionCatalog {
@@ -94,9 +106,13 @@ export class FunctionCatalog {
         const ext = others.get(functionName);
         return ext ? fromEntry(ext) : null;
       },
-      // 行为工具匹配统一用 scope.name（行为名），不用工具名
+      // 工具名即行为裸名（契约⑤）；本体归属由 scope 限定
       behaviorSchema: (scenario, ontology, behaviorName) =>
-        behaviors.find(t => inOnto(t, scenario, ontology) && t.scope?.name === behaviorName)?.schema ?? null,
+        behaviors.find(t => inOnto(t, scenario, ontology) && t.name === behaviorName)?.schema ?? null,
+      // 同一行为可能被多个自建发布同时发布（同名工具）→ 去重后返回，规划集只关心"能不能挂上"
+      behaviorNames: (scenario, ontology) => [...new Set(
+        behaviors.filter(t => inOnto(t, scenario, ontology)).map(t => t.name),
+      )],
     };
   }
 }

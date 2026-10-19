@@ -20,27 +20,36 @@ core 不再需要聚合编译，留着就是"同一语义两处实现"（且 cor
 | 公共函数 | 全局 | 执行：本地沙箱 |
 | （其他MCP工具） | 外部 | 消费端兜底值：**无标记**的工具，发布端不使用该值 |
 
-**② 本体上下文块（scope）**：仅「本体执行类」（本体行为/本体函数）携带——表示"该工具是某本体的
-执行入口，调用时必须锁定到该本体"。只含上下文键（``name`` + ``ontology_id``/``scenario_id``/
-``scenario_name``/``ontology_name`` 的真实值），**不含分类标记**；执行前由 ``strip_system_params``
-剥离，绝不进入业务参数。
+**② 本体上下文（``x-ontology-scope``）**：仅「本体执行类」（本体行为/本体函数）携带——
+表示"该工具是某本体的执行入口"。它是**发布时固化的工具元数据，不是参数**：放在 schema
+顶层扩展键（不进 ``properties``，故 LLM / 客户端不会把它当参数，也填不了），只含本体身份
+（``ontology_id`` / ``scenario_id`` / ``scenario_name`` / ``ontology_name``）。
+工具名即行为/函数裸名，故不再重复存 ``name``。
 
 **③ 参数契约**
 
-| 类别 | ``ontology_id`` | ``scope`` | 执行前剥离 |
+本体行为 / 本体函数**已无平台固定发布面**：两个执行底座都零工具（8006 自 2026-10-04、
+8005 自 2026-10-19 起 ``transport=none``，``_list_tools`` 恒空）。本体执行类工具的唯一工具面是
+**自建发布**（绑定单一本体），故下表只剩这一种形态：
+
+| 类别 | ``ontology_id`` | ``x-ontology-scope`` | 执行前剥离 |
 |---|---|---|---|
-| 本体行为 / 本体函数（平台固定发布面） | **必填**（schema.required + require_ontology_id 双保险） | 有 | 剥 |
-| 本体行为 / 本体函数（**自建发布**：发布绑定单一本体） | 以 ``const`` 出现但**不进 required**——服务端转发时注入，调用方无需传 | 有 | 剥 |
+| 本体行为 / 本体函数（**自建发布**：发布绑定单一本体） | **必填**——LLM 必须填写当前操作的本体；底座校验其与发布声明一致 | 有（发布时固化） | 剥 ``params`` 内的系统参数（防御性） |
 | 本体查询：``listOnto*`` | **必填** | 无 | 无需（无系统参数） |
 | 本体查询：``listScenarios`` / ``listOntologies`` | 无（全局花名册，不针对某本体） | 无 | — |
 | 公共函数 | 无 | 无 | 剥（防御性：schema 本就没有这些键） |
 | 其他 MCP 工具 | 无 | 无 | 原样透传 |
 
-**④ 归属一致性（执行期）**：本体执行类工具名是裸名（不带本体前缀），故服务端在路由前校验
-「**发布方声明的归属**（本体执行的 ``scope.const.ontology_id`` / 行为条目的 ``ontology_id``）」
-== 「**调用方传入的**顶层 ``ontology_id``」——不等即拒（``require_ontology_match``，报错文案含
-双方 id 与本体的中文名，供调用方/LLM 自纠）；声明缺失则放行（老数据 / 设计期 REST 入口缓存未命中，
-不误伤）。这是 ③ 必填口径的下一句：**必填且必须填对**。
+**④ 归属一致性（执行期，两道闸）**
+
+1. **发布声明闸**（``require_scope_match``）：调用方传入的 ``ontology_id`` 必须等于发布时写入的
+   ``x-ontology-scope.ontology_id``（自建发布容器转发时原样带上）。不等即拒——这是"LLM 把工具
+   挂到别的本体上"的最直接信号，报错文案含双方 id 与本体的中文名/场景，供调用方自纠。
+2. **数据归属闸**（``require_ontology_match``）：调用方 ``ontology_id`` 还必须等于 ``.data`` 中该
+   函数/行为的**真实归属**。它防的是伪造 scope 绕过路由（同名工具不得跨本体执行），并在没有
+   scope 的入口（设计期 REST 调用）单独兜底。
+
+两道闸都不能省：前者校验"发布声明 == 调用意图"，后者校验"调用意图 == 数据事实"。
 
 ⑤ 命名：本体执行类与公共函数一律**工具名 = 裸名**（行为名 / 函数名，不带本体前缀）；本体归属只由
 ``ontology_id`` 决定（跨本体重名由发布端记错误并保留先出现者，不做前缀消歧）。
@@ -67,45 +76,79 @@ CATEGORY_COMMON = "公共函数"
 # 消费端兜底值（无标记 = 外部工具）；发布端不使用
 CATEGORY_EXTERNAL = "其他MCP工具"
 
-# ─── 本体上下文块与系统参数 ────────────────────────────────────────────────────
-SCOPE_KEY = "scope"
-# 系统参数（非业务输入，执行前一律剥离）：本体上下文块 + 路由用 ontology_id
-SYSTEM_PARAMS = frozenset({SCOPE_KEY, "ontology_id"})
+# ─── 本体上下文与系统参数 ──────────────────────────────────────────────────────
+ONTOLOGY_ID_KEY = "ontology_id"
+# 本体上下文：工具级**元数据**（发布时固化），放 schema 顶层扩展键、不进 properties——
+# 因而 LLM/客户端看不到、也填不了（它不是输入参数）。
+SCOPE_KEY = "x-ontology-scope"
+# 系统参数（非业务输入，执行前一律剥离）：只有路由键 ontology_id
+SYSTEM_PARAMS = frozenset({ONTOLOGY_ID_KEY})
+
+
+def _same_owner_id(a, b) -> bool:
+    """归属 id 等价判定：兼容 ``1`` / ``"1"`` / ``1.0`` 三种表示。"""
+    if a == b:
+        return True
+    if a is None or b is None or a == "" or b == "":
+        return False
+    try:
+        return int(a) == int(b)
+    except (TypeError, ValueError):
+        return False
 
 
 def require_ontology_id(value, label: str):
-    """ontology_id 是调用契约的必填项（MCP schema 的 required 与 REST 入口同一口径）。
+    """ontology_id 是**执行入口与 MCP 工具面**的必填项（路由键：``load_ontology_data_by_id``
+    靠它定位本体数据）。
 
-    缺失或空串一律报错，**不按发布时记录的本体回退**：调用方必须显式声明在操作哪个本体——
-    跨本体的行为/函数同名时（工具名不带本体前缀），回退会静默路由到错误本体。
+    自建发布把它声明为必填参数，由调用方（LLM）填写；缺失或空串一律报错，**不按发布时记录的
+    本体回退**：转发方必须显式声明在操作哪个本体——跨本体的行为/函数同名时（工具名不带本体
+    前缀），回退会静默路由到错误本体。
     """
     if value is None or value == "":
         raise ValueError(f"{label} 缺少 ontology_id")
     return value
 
 
+def require_scope_match(scope, requested_owner, label: str):
+    """发布声明闸（契约 ④-1）：``scope.ontology_id`` 必须等于调用方传入的 ``ontology_id``。
+
+    ``scope`` 是自建发布时写入工具 schema 的本体上下文（容器转发时原样带上）。它声明的是
+    "这套工具属于哪个本体"；调用方传入的 ``ontology_id`` 表达的是"我这次要操作哪个本体"。
+    两者不等 = 工具被挂到了别的本体上，必须中止——继续执行只会把 A 本体的行为作用到 B 本体。
+
+    报错读者是调用方 LLM：给出双方 id + 本体中文名/场景 + 怎么改，才能让它自纠。
+
+    ``scope`` 缺失（设计期 REST 调用不经自建发布）→ 不校验，由数据归属闸单独兜底。
+    """
+    declared = scope.get(ONTOLOGY_ID_KEY) if isinstance(scope, dict) else None
+    if declared is None or declared == "":
+        return requested_owner
+    if _same_owner_id(declared, requested_owner):
+        return requested_owner
+    where = owner_label(scope) or f"ontology_id={declared}"
+    raise ValueError(
+        f"{label} 本体不一致：发布时声明属于{where}，调用方传入的 ontology_id={requested_owner}。"
+        f"工具不能跨本体调用——请传入 ontology_id={declared}（该工具所属本体），"
+        f"或改用属于 ontology_id={requested_owner} 的本体工具。"
+    )
+
+
 def require_ontology_match(declared_owner, requested_owner, label: str, owner_label: str = ""):
-    """归属一致性（契约 ④）：工具**发布时声明的归属本体**必须等于调用方指定的路由本体。
+    """数据归属闸（契约 ④-2）：``.data`` 中该函数/行为的真实归属必须等于调用方指定本体。
 
-    ``declared_owner`` 是发布期从本体数据取的权威快照（本体执行的 ``scope.const.ontology_id`` /
-    行为条目的 ``ontology_id``）；``requested_owner`` 是调用方传入的顶层 ``ontology_id``；
-    ``owner_label`` 是发布方归属的可读描述（``owner_label()`` 的产物），只用于报错文案。
+    ``declared_owner`` 是本体的**数据事实**（函数/行为索引里的 ``ontology_id``）；
+    ``requested_owner`` 是调用方传入的 ``ontology_id``；``owner_label`` 只用于报错文案。
     工具名是裸名（不带本体前缀），两者不等而放行 = 同名工具被挂到另一个本体上执行
-    （行为侧跨本体重名可构造：executor 按 ``(ontology_id, 行为名)`` 直接查，绕过发布期去重）。
+    （executor 按 ``(ontology_id, 名称)`` 直接查，绕过发布期去重）。
 
-    - ``declared_owner`` 缺失（``None``/空串）→ **放行**：发布方未声明归属（老数据 / 设计期 REST
-      入口缓存未命中），不误伤；
-    - 数值按整数比较，兼容 ``1`` / ``"1"`` / ``1.0`` 三种表示。
+    - ``declared_owner`` 缺失（``None``/空串）→ **放行**：索引未命中（数据目录不可见等），不误伤；
+    - 数值按整数比较（``1`` / ``"1"`` / ``1.0`` 等价）。
     """
     if declared_owner is None or declared_owner == "":
         return requested_owner
-    if declared_owner == requested_owner:
+    if _same_owner_id(declared_owner, requested_owner):
         return requested_owner
-    try:
-        if int(declared_owner) == int(requested_owner):
-            return requested_owner
-    except (TypeError, ValueError):
-        pass
     where = owner_label or f"ontology_id={declared_owner}"
     raise ValueError(
         f"{label} 归属校验失败：该工具属于{where}，但调用方指定的是 ontology_id={requested_owner}；"
@@ -127,10 +170,10 @@ def owner_label(item: dict | None) -> str:
 
 
 def strip_system_params(arguments: dict | None) -> dict:
-    """剥离系统参数（scope 上下文块 + ontology_id），只留业务参数。
+    """剥离系统参数（``ontology_id`` 路由键），只留业务参数。
 
     三类发布端共用同一实现：本体函数/行为（执行前剥）、公共函数（防御性剥——
-    其 schema 本就没有这些键，避免外部调用方多传后污染函数 params）。
+    其 schema 本就没有这个键，避免外部调用方多传后污染函数 params）。
     """
     return {k: v for k, v in (arguments or {}).items() if k not in SYSTEM_PARAMS}
 
@@ -276,37 +319,28 @@ def param_spec_to_schema(spec: dict, attr_map: dict | None = None) -> dict:
 
 
 def params_to_input_schema(params: dict, concepts=None, *,
-                          ontology_id_mode: str = "required",
-                          ontology_id=None) -> tuple[dict, list[str]]:
+                          require_ontology_id: bool) -> tuple[dict, list[str]]:
     """params dict → (完整 MCP Tool inputSchema, 约束冲突警告列表)。
 
-    ``ontology_id_mode`` 三种形态（发布面差异的唯一开关，其余编译逻辑完全一致）：
+    ``require_ontology_id`` **必须显式指定**（不设默认值：漏写会在调用点立刻报错，而不是
+    悄悄落回某个历史口径）：
 
-    - ``required``（默认）：``ontology_id`` 进 properties 且 required —— **平台固定发布面**口径
-      （一次发布覆盖全部本体，归属由调用方声明，配合契约 ④ 归属校验防跨本体误路由）；
-    - ``const``：**自建发布**口径（2026-10-04）——发布**绑定单一本体**，``ontology_id`` 以
-      ``const`` 真实值出现但**不进 required**：调用方（LLM / 外部 MCP 客户端）无需传，
-      由自建发布容器在转发时注入。跨本体误路由在结构上不可能发生（契约 ④ 对该形态天然满足）；
-    - ``none``：完全不出现（无本体归属的执行类工具）。
+    - ``True``：**自建发布**（本体执行类唯一工具面）——``ontology_id`` 是**必填参数**，由
+      调用方（LLM）填写；底座用发布时固化的 ``x-ontology-scope`` 校验它是否一致（契约 ④-1）；
+    - ``False``：完全不出现（无本体归属的执行类工具）。
 
-    concepts 传入时按「参数名 = 属性名」回溯合并属性约束（三形态一致）。
+    concepts 传入时按「参数名 = 属性名」回溯合并属性约束。
     """
-    if ontology_id_mode not in ("required", "const", "none"):
-        raise ValueError(f"未知 ontology_id_mode: {ontology_id_mode}")
     attr_map, conflicts = build_attr_constraint_map(concepts)
     props: dict = {}
     required: list[str] = []
-    if ontology_id_mode == "required":
-        props["ontology_id"] = {"type": "integer", "description": "本体 ID"}
-        required.append("ontology_id")
-    elif ontology_id_mode == "const":
-        if ontology_id is None:
-            raise ValueError("ontology_id_mode='const' 必须提供 ontology_id")
-        props["ontology_id"] = {
+    if require_ontology_id:
+        props[ONTOLOGY_ID_KEY] = {
             "type": "integer",
-            "const": ontology_id,
-            "description": "本体 ID（本发布服务固定绑定该本体，服务端自动注入，调用方无需填写）",
+            "description": "本体 ID（必填）：本工具所属本体；请填写当前操作的本体 ID，"
+                           "执行底座会校验其与工具发布声明是否一致",
         }
+        required.append(ONTOLOGY_ID_KEY)
     for k, v in (params or {}).items():
         if not isinstance(v, dict):
             continue
@@ -366,28 +400,28 @@ def build_query_schema(extra_properties: dict | None = None, *,
     return {"type": "object", "properties": props, "required": required}
 
 
-def with_ontology_context(input_schema: dict, fn: dict, category: str) -> dict:
-    """本体执行类工具（本体行为 / 本体函数）：注入本体上下文块 ``scope`` + 分类标记。
+def with_ontology_scope(input_schema: dict, scope: dict, category: str,
+                        display_name: str = "") -> dict:
+    """本体执行类工具（本体行为 / 本体函数）：写入本体上下文 ``x-ontology-scope`` + 分类标记。
 
-    scope 块置参数之前、**只含上下文键**（``name`` + 场景/本体真实值，全 const），用途：
-    - 父 Agent 经 ``listPlannableFunctions`` 了解归属、填子任务 scenario/ontology 字段；
-    - 子 Agent 挂载期据 ``scope.name`` 做挂载过滤 / disable 闸 / 展示回溯；
-    执行前由 ``strip_system_params`` 剥离（非输入参数）。
+    ``scope`` 是**发布时固化的本体身份**（``ontology_id`` / ``scenario_id`` /
+    ``scenario_name`` / ``ontology_name``，缺省键自动省略）。它放在 schema 顶层扩展键而非
+    ``properties``：
+    - 不是输入参数——LLM/客户端无法看到、也不会填写（要求 2）；
+    - 平台内部据它做归属判定：父 Agent 过滤可规划集、子 Agent 挂载、执行底座校验
+      ``ontology_id`` 是否一致（契约 ④-1）；
+    - 消费侧用 ``strip_ontology_scope`` 在交给 LLM 前剥掉（元数据不进参数面）。
     """
-    ctx: dict = {"name": {"type": "string", "const": fn.get("name") or ""}}
-    for k, t in (("ontology_id", "integer"), ("scenario_id", "integer"),
-                 ("scenario_name", "string"), ("ontology_name", "string")):
-        v = fn.get(k)
-        if v is not None:
-            ctx[k] = {"type": t, "const": v}
-    props: dict = {
-        SCOPE_KEY: {
-            "type": "object",
-            "description": "本工具所属场景/本体上下文（规划时填子任务对应字段；非输入参数，执行时自动剥离）",
-            "properties": ctx,
-        },
-    }
-    props.update((input_schema or {}).get("properties", {}))
-    merged = {"type": "object", "properties": props,
-              "required": (input_schema or {}).get("required", [])}
-    return with_category(merged, category, fn.get("display_name") or "")
+    marked = dict(input_schema or {})
+    marked[SCOPE_KEY] = {k: v for k, v in (scope or {}).items() if v is not None}
+    return with_category(marked, category, display_name)
+
+
+def strip_ontology_scope(input_schema: dict | None) -> dict:
+    """剥离工具级本体元数据（``x-ontology-scope``）——只给平台内部用，不进 LLM 参数面。"""
+    out = dict(input_schema or {})
+    out.pop(SCOPE_KEY, None)
+    required = out.get("required")
+    if isinstance(required, list):
+        out["required"] = [k for k in required if k != SCOPE_KEY]
+    return out

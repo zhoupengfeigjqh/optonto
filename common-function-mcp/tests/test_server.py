@@ -93,7 +93,7 @@ def test_系统参数被剥离(monkeypatch):
     seen = []
     monkeypatch.setattr(server, "run_function_code",
                         lambda code, params: seen.append(params) or {"success": True, "data": {}})
-    asyncio.run(server.handle_call_tool(name, {"scope": {"name": name}, "ontology_id": 1, "biz": 2}))
+    asyncio.run(server.handle_call_tool(name, {"ontology_id": 1, "biz": 2}))
     assert seen == [{"biz": 2}]
 
 

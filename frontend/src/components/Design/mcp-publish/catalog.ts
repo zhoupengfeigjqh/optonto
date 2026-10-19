@@ -7,38 +7,53 @@
  *
  * 键名即角色（2026-10-04 语义统一）：
  * - 对外发布工具：本体查询 MCP 服务、公共函数 MCP 服务、业务系统 MCP；
- * - 执行底座（不对外）：本体函数执行服务（零工具）、数据引擎执行服务（工具面仅内网）。
+ * - 执行底座（零工具，不对外）：本体函数执行服务、数据引擎执行服务（2026-10-19 方案 B：
+ *   后者不再挂 /mcp，行为工具的唯一提供方是自建发布）。
  * - 对外提供"可执行能力"（函数/行为）只有一条路：自建发布。
  */
-import type { McpServiceKey, PublishKind, PublishTransport } from '@/api/client';
+import type { McpServiceKey, PublishKind, PublishTransport, ToolInfo } from '@/api/client';
 
-/** MCP 工具清单条目（对外工具面 /tools 返回形状） */
-export interface ToolInfo { name: string; description: string; inputSchema?: any }
+/**
+ * 工具清单条目：**唯一形状在 `@/api/mcp`**（固定服务 `/tools` 与自建发布工具快照同一结构），
+ * 此处只再做一次导出，避免同一份声明在“接口层”与“展示层”各写一遍后漂移。
+ */
+export type { ToolInfo } from '@/api/client';
 
 export type CardKey = 'ontologyQuery' | 'commonFunction' | 'functionExecutor' | 'dataEngine' | 'business';
 
+/** 固定服务卡片状态（运行态与工具清单；刷新中由 `checking` 表达） */
 export interface CardState {
   checking: boolean;
   running: boolean;
   toggling: boolean;
   tools: ToolInfo[];
-  statusText: string;
 }
 
-export const INIT: CardState = { checking: true, running: false, toggling: false, tools: [], statusText: '' };
+export const INIT: CardState = { checking: true, running: false, toggling: false, tools: [] };
 
 /**
  * 固定服务的**协议传输模式**（事实源 = 各服务 `server.py` 的 `build_mcp_app(transport=…)`，
  * 缺省即 `streamable`）：
- * - `streamable`：只挂 `/mcp` 单端点（本体查询 8002 / 公共函数 8007 / 业务系统 8004 / 数据引擎执行 8005）；
+ * - `streamable`：只挂 `/mcp` 单端点（本体查询 8002 / 公共函数 8007 / 业务系统 8004）；
  * - `sse`：`/sse` + `/messages/`（固定服务都不用，仅自建发布可选）；
- * - `none`：**不挂任何协议端点**——零工具的执行底座（本体函数执行服务 8006）。
+ * - `none`：**不挂任何协议端点**——零工具的执行底座（本体函数执行 8006、数据引擎执行 8005）。
  */
 export type FixedTransport = 'streamable' | 'sse' | 'none';
 
 export interface FixedServiceDef {
   key: CardKey; title: string; service: McpServiceKey;
   endpoint: string; exposure: '对外' | '内网'; publishTools: boolean;
+  /**
+   * 客户端配置片段里的服务标识（稳定、与显示名解耦）：显示名可改，粘贴出去的 key 不该跟着变。
+   * 无协议端点（transport='none'）的服务没有片段，故缺省。
+   */
+  clientKey?: string;
+  /**
+   * **容器内**可达地址（容器名 + 容器内端口 + 端点）：同一服务有两套地址，用途相反——
+   * `endpoint` 的宿主地址给平台外客户端；本字段给本平台 Agent（它在容器里，localhost 指向自己）。
+   * 无协议端点的服务缺省。
+   */
+  internalEndpoint?: string;
   /** 协议端点形态（卡片展示 + 配置片段 type 的唯一来源） */
   transport: FixedTransport;
   role: string;
@@ -48,12 +63,14 @@ export const FIXED_SERVICES: FixedServiceDef[] = [
   {
     key: 'ontologyQuery', title: '本体查询 MCP 服务', service: 'ontology-query',
     endpoint: 'http://{host}:8002/mcp', exposure: '对外', publishTools: true,
+    clientKey: 'optonto-ontology-query', internalEndpoint: 'http://optonto-ontology-query-mcp:8002/mcp',
     transport: 'streamable',
     role: '回答「本体里有什么」：概念 / 关系 / 函数清单 / 行为清单 / 流程 / 安全配置 / 花名册（只读、无副作用）。',
   },
   {
     key: 'commonFunction', title: '公共函数 MCP 服务', service: 'common-function',
     endpoint: 'http://{host}:8007/mcp', exposure: '对外', publishTools: true,
+    clientKey: 'optonto-common-function', internalEndpoint: 'http://optonto-common-function-mcp:8007/mcp',
     transport: 'streamable',
     role: '平台级通用算力（filterData / aggregateData / dateDiff 等 7 个）：无本体归属、跨场景共享、纯计算。发布与执行一体——本服务内直接执行，无需转发。',
   },
@@ -66,12 +83,13 @@ export const FIXED_SERVICES: FixedServiceDef[] = [
   {
     key: 'dataEngine', title: '数据引擎执行服务', service: 'data-engine',
     endpoint: 'Docker 内网 optonto-data-engine-executor:8005', exposure: '内网', publishTools: false,
-    transport: 'streamable',
-    role: '本体行为执行的唯一实现，通过映射翻译来调用下游业务系统的MCP服务。',
+    transport: 'none',
+    role: '本体行为执行的唯一实现，通过映射翻译来调用下游业务系统的MCP服务。零工具：行为对外只经自建发布。',
   },
   {
     key: 'business', title: '业务系统 MCP', service: 'business',
     endpoint: 'http://{host}:8004/mcp', exposure: '对外', publishTools: true,
+    clientKey: 'optonto-business', internalEndpoint: 'http://optonto-business-mcp:8004/mcp',
     transport: 'streamable',
     role: '业务侧集成边缘：模拟外部业务系统（直连 business-backend）。与其他固定服务同权，可启停。',
   },
@@ -84,6 +102,15 @@ export const KIND_LABEL: Record<PublishKind, string> = { ontology_function: '本
 export const TRANSPORT_LABEL: Record<PublishTransport, string> = { sse: 'sse', streamable: 'streamable-http' };
 
 /**
+ * 新建发布的「传输模式」下拉选项文案（含端点形态，帮助选择时判断客户端怎么连）。
+ * 与卡片上的 `TRANSPORT_LABEL` 分工：那个是**展示名**（`streamable-http`），这个是**选择项**。
+ */
+export const TRANSPORT_OPTION_LABEL: Record<PublishTransport, string> = {
+  streamable: 'streamable-http（/mcp）',
+  sse: 'sse（/sse + /messages/）',
+};
+
+/**
  * 固定服务传输模式的展示文案（与自建发布卡片同一套叫法：streamable-http / sse）。
  *
  * 用 `streamable-http`（**MCP 规范里的传输名**）而不是 `http-streamable`——词序反了就是自造词，
@@ -92,7 +119,7 @@ export const TRANSPORT_LABEL: Record<PublishTransport, string> = { sse: 'sse', s
 export const FIXED_TRANSPORT_LABEL: Record<FixedTransport, string> = {
   streamable: 'streamable-http（/mcp 单端点）',
   sse: 'sse（/sse + /messages/）',
-  none: '无协议端点（零工具，仅 /execute-function）',
+  none: '无协议端点（零工具，仅内网执行端点）',
 };
 
 /**

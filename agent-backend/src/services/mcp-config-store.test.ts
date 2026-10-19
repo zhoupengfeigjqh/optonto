@@ -4,8 +4,8 @@
  * 四组语义：
  * 1. 内置固定项（**本体查询 MCP** 与 **公共函数 MCP**，2026-10-05 起两者并列）：恒存在、恒启用、
  *    恒全选、恒在队首（顺序固定）、不可编辑/停用/删除，篡改会被 normalize 复位；
- * 2. 数据引擎执行服务（2026-10-04 起为**预置**服务）：首次默认配置里作种子；存储中的条目原样
- *    保留（含 allowed_tools）、builtin 残留被剥离、不被强制覆盖、删除后不复活；
+ * 2. 数据引擎执行服务条目（2026-10-19 起**已下线**）：不再预置；存量配置里指向它的条目
+ *    （当前 8005 地址与更名前容器名，任意路径/斜杠）一律被 normalize 丢弃、不复活；
  * 3. 存量配置归位（2026-10-04 服务更名 / 端口收敛的迁移保证）：旧 URL 命中的条目必须被
  *    **替换**为新条目，而不是与新条目并存——否则 Agent 会同时挂载两个本体查询服务，
  *    或挂到已不存在的容器上（静默失效，最难排查）。
@@ -17,8 +17,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 import {
-  MCPConfigStore, BUILTIN_MCP_URL, BUILTIN_DATA_ENGINE_MCP_URL, BUILTIN_COMMON_FUNCTION_MCP_URL,
-  isBusinessDataServer,
+  MCPConfigStore, BUILTIN_MCP_URL, BUILTIN_COMMON_FUNCTION_MCP_URL, isBusinessDataServer,
 } from './mcp-config-store.js';
 
 let dir: string;
@@ -36,44 +35,45 @@ afterEach(() => {
 const write = (servers: any[]) => writeFileSync(cfgPath, JSON.stringify({ servers }, null, 2), 'utf-8');
 
 describe('MCPConfigStore 规整', () => {
-  it('无配置文件：默认种子 = 本体查询MCP + 公共函数MCP（均内置）+ 数据引擎执行服务（预置非内置）', () => {
+  it('无配置文件：默认种子只有两个内置项（本体查询MCP + 公共函数MCP）', () => {
     const config = new MCPConfigStore(cfgPath).getConfig();
+    expect(config.servers).toHaveLength(2);
     expect(config.servers[0]).toMatchObject({ name: '本体查询MCP', url: BUILTIN_MCP_URL, enabled: true, builtin: true });
     expect(config.servers[1]).toMatchObject({ name: '公共函数MCP', url: BUILTIN_COMMON_FUNCTION_MCP_URL, enabled: true, builtin: true });
-    expect(config.servers[2]).toMatchObject({ name: '数据引擎执行服务', url: BUILTIN_DATA_ENGINE_MCP_URL, enabled: true });
-    expect(config.servers[2].builtin).toBeUndefined();
   });
 
-  it('存储中的数据引擎条目原样保留：allowed_tools 生效、builtin 残留被剥离、不被强制覆盖', () => {
+  it('存量数据引擎条目被丢弃（不复活、不残留失效连接）', () => {
     write([
       { name: '本体MCP', url: BUILTIN_MCP_URL, enabled: false, builtin: true },
-      { name: '数据引擎MCP', url: BUILTIN_DATA_ENGINE_MCP_URL, enabled: true, builtin: true, allowed_tools: ['queryInventory'] },
+      { name: '数据引擎MCP', url: 'http://optonto-data-engine-executor:8005/mcp', enabled: true, allowed_tools: ['queryInventory'] },
     ]);
     const config = new MCPConfigStore(cfgPath).getConfig();
+    expect(config.servers).toHaveLength(2);
     expect(config.servers[0]).toMatchObject({ name: '本体查询MCP', enabled: true, builtin: true });
-    // 按 URL 定位（显示名不做迁移：用户的命名习惯不该被系统改写）
-    const de = config.servers.find(s => s.url === BUILTIN_DATA_ENGINE_MCP_URL)!;
-    expect(de.builtin).toBeUndefined();
-    expect(de.allowed_tools).toEqual(['queryInventory']);
-    expect(de.enabled).toBe(true);
+    expect(config.servers.some(s => s.url.includes(':8005'))).toBe(false);
   });
 
-  it('管理员删除数据引擎执行服务后 normalize 不复活', () => {
-    write([{ name: '本体查询MCP', url: BUILTIN_MCP_URL, enabled: true, builtin: true }]);
+  it('更名前容器名 / 历史路径的数据引擎条目同样被丢弃（host:port 判定）', () => {
+    write([
+      { name: '旧引擎-1', url: 'http://optonto-data-engine-mcp:8005/sse', enabled: true },
+      { name: '旧引擎-2', url: 'http://optonto-data-engine-mcp:8005/mcp', enabled: true },
+      { name: '手写尾斜杠', url: ' http://optonto-data-engine-executor:8005/mcp/ ', enabled: true },
+    ]);
     const config = new MCPConfigStore(cfgPath).getConfig();
-    expect(config.servers[0].name).toBe('本体查询MCP');
-    expect(config.servers.some(s => s.name === '数据引擎执行服务')).toBe(false);
+    expect(config.servers.map(s => s.name)).toEqual(['本体查询MCP', '公共函数MCP']);
   });
 
-  it('saveConfig 同样规整：本体查询恒启用、数据引擎允许停用', () => {
+  it('saveConfig 同样丢弃数据引擎条目：本体查询恒启用、其余用户服务原样保留', () => {
     const store = new MCPConfigStore(cfgPath);
     store.saveConfig({ servers: [
       { name: '本体MCP', url: 'http://tampered/mcp', enabled: false, builtin: false } as any,
-      { name: '数据引擎执行服务', url: BUILTIN_DATA_ENGINE_MCP_URL, enabled: false },
+      { name: '数据引擎执行服务', url: 'http://optonto-data-engine-executor:8005/mcp', enabled: false },
+      { name: '官方发布', url: 'http://optonto-mcp-publish-x:8100/mcp', enabled: true },
     ] });
     const saved = store.getConfig();
     expect(saved.servers[0]).toMatchObject({ name: '本体查询MCP', url: BUILTIN_MCP_URL, enabled: true, builtin: true });
-    expect(saved.servers.find(s => s.name === '数据引擎执行服务')!.enabled).toBe(false);
+    expect(saved.servers.some(s => s.name === '数据引擎执行服务')).toBe(false);
+    expect(saved.servers.find(s => s.name === '官方发布')!.enabled).toBe(true);
   });
 
   it('内置识别容忍 URL 差异（尾斜杠 / 两侧空白）——本体查询与公共函数同口径', () => {
@@ -137,7 +137,7 @@ describe('business_data 标记（2026-10-05）', () => {
 });
 
 describe('存量配置归位（2026-10-04 服务更名）', () => {
-  it('旧本体查询 / 数据引擎 URL 均归位为新地址，不与新条目并存', () => {
+  it('旧本体查询 URL 归位为新地址；旧数据引擎条目被清除', () => {
     write([
       { name: '本体MCP', url: 'http://optonto-ontology-mcp:8002/mcp', enabled: true, builtin: true },
       { name: '数据引擎MCP', url: 'http://optonto-data-engine-mcp:8005/mcp', enabled: true },
@@ -146,9 +146,7 @@ describe('存量配置归位（2026-10-04 服务更名）', () => {
     const onto = config.servers.filter(s => s.url.includes(':8002'));
     expect(onto).toHaveLength(1);
     expect(onto[0].url).toBe(BUILTIN_MCP_URL);
-    const de = config.servers.filter(s => s.url.includes(':8005'));
-    expect(de).toHaveLength(1);
-    expect(de[0].url).toBe(BUILTIN_DATA_ENGINE_MCP_URL);
+    expect(config.servers.some(s => s.url.includes(':8005'))).toBe(false);
   });
 
   it('旧本体查询 URL + 旧显示名（builtin 残留）也能被识别为内置并归位', () => {

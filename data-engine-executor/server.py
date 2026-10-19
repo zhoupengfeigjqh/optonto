@@ -1,4 +1,4 @@
-"""optonto-data-engine-executor — 数据引擎执行服务（行为/引擎执行的**唯一实现**）。
+"""optonto-data-engine-executor — 数据引擎执行服务（行为/引擎执行的**唯一实现**，零工具）。
 
 职责：把「本体行为」翻译成对外部业务系统的调用——
 
@@ -6,10 +6,13 @@
   （``target.server_url`` + ``target.tool_name``）→ 映射翻译出参；
 - **执行端点**：``/call-behavior``（按行为名执行）、``/call-engine``（按引擎名直调）。
 
-**工具面定位**（2026-10-04 语义收敛）：本服务是**执行底座**，不作为对外发布面。
-它的 MCP 工具面（已就绪行为）仅供**平台 Agent 内网挂载**（docker 内网 URL，不发布宿主端口、
-不经 nginx 代理），对外提供"可执行行为"只有一条路：自建发布（``mcp-publish``，带令牌、
-绑定单一本体）。这样"谁能调用哪些行为"由发布配置决定，而不是底座天然全开。
+**工具面已下线**（2026-10-19 方案 B，用户拍板）：本服务是**零工具执行底座**
+（``transport=none``，不挂 ``/mcp``、``/sse``，外部误连直接 404）。对 Agent 提供
+"可执行行为"的唯一出口是自建发布（``mcp-publish`` 动态容器：按本体切片、带令牌、
+发布即授权）；本服务只作为它的下游执行面，以及 core 设计器测试的转发目标。
+
+这样两类执行底座口径一致（本体函数执行 8006 / 数据引擎执行 8005 都是零工具），
+且"谁能调用哪些行为"完全由发布配置决定，不再存在第二套全量工具面。
 
 直读 .data（data_store），运行期零回调 core-backend。
 core-backend 的 ``/behaviors/{name}/call`` 与 ``/data-engines/{name}/call`` 转发到本服务
@@ -27,73 +30,26 @@ for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from mcp.server import Server
-from mcp.types import TextContent, Tool
+from mcp_app import TRANSPORT_NONE, build_mcp_app
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from mcp_app import build_mcp_app
 from tool_contract import (
-    owner_label, require_ontology_id, require_ontology_match, strip_system_params,
+    owner_label, require_ontology_id, require_ontology_match, require_scope_match,
+    strip_system_params,
 )
 
-import behavior_tools
+import behavior_index
 import executor
 
-server = Server("optonto-data-engine-executor")
+
+async def _list_tools() -> list:
+    """零工具：本服务不通过 MCP 协议暴露任何工具（``/tools`` 恒为空，仅作自检）。"""
+    return []
 
 
-async def _list_tools() -> list[Tool]:
-    """已就绪行为的工具面：**仅内网**（平台 Agent 挂载用），不作为对外发布面。"""
-    return behavior_tools.load_behavior_tools()
-
-
-@server.list_tools()
-async def handle_list_tools() -> list[Tool]:
-    return await _list_tools()
-
-
-@server.call_tool()
-async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
-    # 确保行为缓存已加载（MCP 协议先 list_tools 后 call_tool，此处兜底直连场景）
-    entries = behavior_tools.behavior_entries()
-    entry = entries.get(name)
-    if entry is None:
-        # 契约 ⑥：行为存在但未就绪（未完成映射）→ 专用报错，与"未知工具"区分开（指向病根，
-        # 而不是让调用方以为是自己不存在的工具名写错了）
-        unready = behavior_tools.unready_behavior(name)
-        if unready:
-            raise ValueError(
-                f"行为 {name} 尚未就绪：未完成数据引擎映射，未发布为工具"
-                f"（本体「{unready.get('ontology_name')}」）；请先在映射页完成配置")
-        raise ValueError(f"未知工具: {name}")
-
-    bname = entry["name"]  # 工具名 = 行为裸名（无本体前缀）
-    oid = require_ontology_id(arguments.get("ontology_id"), f"行为 {bname}")
-    # 归属一致性（契约 ④）：entry["ontology_id"] 是本行为发布时的权威归属（与 scope.const 同源）。
-    # 不等说明调用方把工具挂到了错误的本体上（行为侧跨本体重名可构造，会静默执行错本体）→ 拒。
-    require_ontology_match(entry.get("ontology_id"), oid, f"行为 {bname}", owner_label(entry))
-    # scope 是规划元数据（非行为输入），剥离；ontology_id 仅路由用，亦剥离（共用实现）
-    params = strip_system_params(arguments)
-
-    try:
-        result = await executor.execute_behavior(int(oid), bname, params)
-    except ValueError as e:
-        raise RuntimeError(f"行为 {bname} 调用配置错误: {str(e)}")
-    except Exception as e:
-        raise RuntimeError(f"行为 {bname} 执行失败: {str(e)}")
-
-    # 下游错误状态必须置 isError（抛异常），交由 agent 判定失败——
-    # 信封里的 status_code 只是数据，不转的话 agent 侧把失败当成功文本。
-    if isinstance(result, dict) and result.get("status_code", 200) >= 400:
-        detail = json.dumps(result.get("data", ""), ensure_ascii=False)[:2000]
-        raise RuntimeError(f"行为 {bname} 执行失败 (下游 HTTP {result['status_code']}): {detail}")
-
-    return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
-
-
-# ─── 设计期转发入口（core 转发，与 behavior_tools 共用 executor 同一实现）─────────
+# ─── 执行入口（REST；自建发布与 core 设计器测试共用同一实现）───────────────────
 
 
 def _envelope_response(result: dict, label: str) -> JSONResponse:
@@ -108,15 +64,21 @@ def _envelope_response(result: dict, label: str) -> JSONResponse:
 
 
 async def _handle_call_behavior(request: Request) -> JSONResponse:
-    """POST /call-behavior {ontology_id, behavior_name, params}（ontology_id 必填）。"""
+    """POST /call-behavior {ontology_id, scope, behavior_name, params}（ontology_id 必填）。
+
+    ``ontology_id`` 由调用方（LLM）填写；``scope`` 是自建发布时固化的本体上下文。两道闸：
+    ① 发布声明 == 调用意图（``require_scope_match``，无 scope 时跳过——设计期 REST 调用）；
+    ② 调用意图 == 数据事实（``require_ontology_match``，防伪造 scope 跨本体路由）。
+    """
     body = await request.json()
     bname = body.get("behavior_name")
     try:
         oid = require_ontology_id(body.get("ontology_id"), f"行为 {bname}")
-        # 归属一致性（契约 ④）：与 MCP 入口同口径（设计期转发也走这条路径）
-        entry = behavior_tools.behavior_entries().get(bname)
+        require_scope_match(body.get("scope"), oid, f"行为 {bname}")
+        # 数据归属：来自行为索引（与发布面同一份就绪判据）
+        entry = behavior_index.behavior_entries().get(bname)
         require_ontology_match((entry or {}).get("ontology_id"), oid, f"行为 {bname}", owner_label(entry))
-        # 系统参数剥离：与 MCP 入口同口径（scope/ontology_id 不进业务参数、不进映射翻译）
+        # 系统参数剥离：ontology_id 不进业务参数、不进映射翻译
         result = await executor.execute_behavior(int(oid), bname, strip_system_params(body.get("params")))
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -132,7 +94,7 @@ async def _handle_call_engine(request: Request) -> JSONResponse:
     try:
         oid = require_ontology_id(body.get("ontology_id"), f"数据引擎 {ename}")
         # 有意**不**做系统参数剥离：引擎 params 是用户自定义字段（SYSTEM_PARAMS 只属本体执行类），
-        # 剥了会误删真名为 scope/ontology_id 的引擎参数。
+        # 剥了会误删真名为 ontology_id 的引擎参数。
         result = await executor.execute_engine(int(oid), ename, body.get("params") or {})
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -142,7 +104,8 @@ async def _handle_call_engine(request: Request) -> JSONResponse:
 
 
 starlette_app = build_mcp_app(
-    server, _list_tools, "optonto-data-engine-executor",
+    None, _list_tools, "optonto-data-engine-executor",
+    transport=TRANSPORT_NONE,
     extra_routes=[
         Route("/call-behavior", endpoint=_handle_call_behavior, methods=["POST"]),
         Route("/call-engine", endpoint=_handle_call_engine, methods=["POST"]),

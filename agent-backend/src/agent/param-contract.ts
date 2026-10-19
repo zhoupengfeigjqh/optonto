@@ -159,7 +159,9 @@ export function validateParamsAgainstSchema(schema: any, provided: Record<string
   const errors: string[] = [];
   if (!schema || typeof schema !== 'object') return errors;
   const props: Record<string, any> = schema.properties && typeof schema.properties === 'object' ? schema.properties : {};
-  const keys = Object.keys(props).filter(k => k !== 'ontology_id' && k !== 'scope');
+  // 系统参数不参与规划期参数校验：ontology_id 由子任务所属本体给出（函数直连路径自动补齐 /
+  // 子 Agent 调用时自行填写），不该让规划期报"缺参数"。
+  const keys = Object.keys(props).filter(k => k !== 'ontology_id');
   const required = (Array.isArray(schema.required) ? schema.required.map(String) : [])
     .filter((k: string) => keys.includes(k));
 

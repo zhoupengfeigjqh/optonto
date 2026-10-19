@@ -4,19 +4,23 @@
  * MCP发布页的只读弹窗：工具清单（可展开参数）与配置片段（可复制）。
  * 均为受控展示组件（`data` 为 null 即关闭），不持有业务状态。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Modal, message } from 'antd';
 import { clickableProps } from '@/utils/a11y';
 import type { ToolInfo } from './catalog';
 import type { ConfigModalContent } from './config-snippets';
 
 interface ToolsModalProps {
-  data: { title: string; tools: ToolInfo[] } | null;
+  /** `note`：清单语义说明（自建发布用：「发布时快照，改本体需重新发布」）；固定服务不传 */
+  data: { title: string; tools: ToolInfo[]; note?: string } | null;
   onClose: () => void;
 }
 
 export function ToolsModal({ data, onClose }: ToolsModalProps) {
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
+  // 切换到另一个服务的清单时收起上一份的展开项：否则同名工具会"莫名其妙"处于展开态，
+  // 用户看到的是上一个服务的参数（弹窗是复用的，`data` 换了但组件没卸载）。
+  useEffect(() => { setSelectedTool(null); }, [data?.title]);
   return (
     <Modal
       title={`${data?.title || ''} 工具列表`}
@@ -25,8 +29,13 @@ export function ToolsModal({ data, onClose }: ToolsModalProps) {
       footer={null}
       width={650}
     >
+      {data?.note && (
+        <p className="text-text-muted text-xs mb-3 whitespace-pre-line">{data.note}</p>
+      )}
       {!data || data.tools.length === 0 ? (
-        <p className="text-text-muted text-sm py-8 text-center">暂无工具信息</p>
+        <p className="text-text-muted text-sm py-8 text-center">
+          {data?.note ? '0 个工具（发布时未勾选任何工具）' : '暂无工具信息'}
+        </p>
       ) : (
         <div className="max-h-96 overflow-y-auto -mx-6 -mb-4 px-6 pb-4">
           {data.tools.map(t => {

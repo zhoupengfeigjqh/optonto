@@ -10,6 +10,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 vi.mock('@/api/client', () => ({
+  // 编译期清单（真实模块导出常量，非函数）：mock 工厂必须一并给出，否则 import 拿到 undefined
+  ALL_PUBLISH_KINDS: ['ontology_function', 'behavior'],
+  ALL_PUBLISH_TRANSPORTS: ['streamable', 'sse'],
   getMcpStatus: vi.fn(),
   startMcp: vi.fn(),
   stopMcp: vi.fn(),
@@ -23,6 +26,7 @@ vi.mock('@/api/client', () => ({
   stopPublished: vi.fn(),
   deletePublished: vi.fn(),
   getPublishedClientConfig: vi.fn(),
+  getPublishedTools: vi.fn(),
   getFunctions: vi.fn(),
   getBehaviors: vi.fn(),
   getDataEngines: vi.fn(),
@@ -134,9 +138,9 @@ describe('MCPPublish', () => {
   it('自建发布「查看配置」给出两段片段：宿主地址（外部客户端）+ 容器内地址（平台 Agent）', async () => {
     vi.mocked(api.listPublished).mockResolvedValue({ services: [publishedSvc] } as any);
     vi.mocked(api.getPublishedClientConfig).mockResolvedValue({
-      mcpServers: { 'order-query': { type: 'url', url: 'http://h:8030/mcp', headers: { 'X-MCP-Token': 'tk' } } },
+      mcpServers: { 'order-query': { type: 'http', url: 'http://h:8030/mcp', headers: { 'X-MCP-Token': 'tk' } } },
       internal_mcpServers: {
-        'order-query': { type: 'url', url: 'http://optonto-mcp-publish-x:8100/mcp', headers: { 'X-MCP-Token': 'tk' } },
+        'order-query': { type: 'http', url: 'http://optonto-mcp-publish-x:8100/mcp', headers: { 'X-MCP-Token': 'tk' } },
       },
     } as any);
     render(<MCPPublish ontologyId={1} />);
@@ -147,6 +151,53 @@ describe('MCPPublish', () => {
     await waitFor(() => expect(screen.getByText(/本平台 Agent（容器内地址/)).toBeTruthy());
     expect(screen.getByText(/h:8030\/mcp/)).toBeTruthy();
     expect(screen.getByText(/optonto-mcp-publish-x:8100\/mcp/)).toBeTruthy();
+  });
+
+  it('自建发布「查看工具」：弹窗列出快照工具并标注快照语义', async () => {
+    vi.mocked(api.listPublished).mockResolvedValue({ services: [publishedSvc] } as any);
+    vi.mocked(api.getPublishedTools).mockResolvedValue({
+      name: 'order-query', kind: 'behavior', ontology_name: '订单排程',
+      tools: [{ name: 'QueryOrder', description: '查询订单', inputSchema: { type: 'object', properties: {} } }],
+    } as any);
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+    await waitFor(() => expect(screen.getByText('order-query')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '查看工具' }));
+    await waitFor(() => expect(screen.getByText('QueryOrder')).toBeTruthy());
+    // 卡片上本来就有「工具清单为发布时快照」，弹窗里还应有完整说明
+    expect(screen.getAllByText(/发布时快照/).length).toBeGreaterThanOrEqual(2);
+    expect(api.getPublishedTools).toHaveBeenCalledWith('order-query');
+  });
+
+  it('自建发布「查看工具」失败：提示原因且不打开空清单', async () => {
+    vi.mocked(api.listPublished).mockResolvedValue({ services: [publishedSvc] } as any);
+    vi.mocked(api.getPublishedTools).mockRejectedValue(new Error('不存在'));
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+    await waitFor(() => expect(screen.getByText('order-query')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '查看工具' }));
+    // 失败以错误提示呈现；不得把“找不到”显示成“0 个工具”
+    await waitFor(() => expect(document.body.textContent).toContain('读取「order-query」工具清单失败'));
+    // 弹窗根本不该打开（否则“找不到”会被误读成“0 个工具”）
+    expect(screen.queryByText('0 个工具（发布时未勾选任何工具）')).toBeNull();
+    expect(screen.queryByText(/工具列表/)).toBeNull();
+  });
+
+  it('新建表单的类型/传输模式选项来自后端 /meta（不在前端硬编码）', async () => {
+    vi.mocked(api.getPublishMeta).mockResolvedValue({
+      kinds: ['behavior'], transports: ['sse'], host_port_min: 8020, host_port_max: 8099,
+    } as any);
+    render(<MCPPublish ontologyId={1} />);
+    switchTo('自建发布');
+    fireEvent.click(screen.getByRole('button', { name: /新建发布/ }));
+    await waitFor(() => expect(screen.getByText('新建 MCP 发布')).toBeTruthy());
+
+    // 只渲染后端下发的类型；并把当前选择收敛到合法值
+    await waitFor(() => expect(screen.getByText(/勾选本体行为/)).toBeTruthy());
+    expect(screen.queryByText('本体函数')).toBeNull();
+    expect(screen.getByText('sse（/sse + /messages/）')).toBeTruthy();
   });
 
   it('打开新建弹窗时拉取本体函数/行为/数据引擎（就绪判据的唯一数据源）', async () => {

@@ -25,7 +25,7 @@ import { Agent } from '@earendil-works/pi-agent-core';
 // 整体替换 pi-agent-core：捕获 new Agent(config) 的 config（含 transformContext）
 vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
 
-/** MCP callTool 调用记录（验证 scopeToOntology 的 ontology_id 强制注入与剥 scope）；
+/** MCP callTool 调用记录（验证参数原样透传：agent 不再注入/覆盖 ontology_id）；
  *  responses 可按工具名注入自定义返回（闸2.5 判断用例：信封 data.pass=false） */
 export const mcpCalls = vi.hoisted(() => ({
   list: [] as { name: string; args: any }[],
@@ -35,28 +35,25 @@ export const mcpCalls = vi.hoisted(() => ({
 // MCP 配置：一个启用的内置本体 MCP server（供 discoverTools 发现工具）
 vi.mock('../services/mcp-config-store.js', () => ({
   MCPConfigStore: class { getConfig() { return { servers: [{ name: '本体MCP', url: 'http://mcp-test/sse', enabled: true, builtin: true }] }; } },
-  isDataEngineMcpUrl: () => false,
   // 业务数据闸判定（真实实现的同口径：严格 === true，缺省=否）。本装配的服务均未声明该字段 → 闸不生效
   isBusinessDataServer: (s: any) => s?.business_data === true,
 }));
 
 /**
  * 发布形态 schema 构造（与 mcp-shared/tool_contract.py 契约一致）：
- * 分类标记 = 顶层 x-category / x-display_name；scope 上下文块只含本体上下文（无标记）。
+ * 分类标记 = 顶层 x-category / x-display_name；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
+ * ontology_id 是必填业务参数（由 LLM 填写）。
  */
-export function ontoTool(category: string, bareName: string, displayName: string, ontologyId: number,
+export function ontoTool(category: string, _bareName: string, displayName: string, ontologyId: number,
                 ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,
     'x-display_name': displayName,
+    'x-ontology-scope': {
+      ontology_id: ontologyId, scenario_id: 1,
+      scenario_name: '生产调度', ontology_name: ontologyName,
+    },
     properties: {
-      scope: { type: 'object', properties: {
-        name: { type: 'string', const: bareName },
-        ontology_id: { type: 'integer', const: ontologyId },
-        scenario_id: { type: 'integer', const: 1 },
-        scenario_name: { type: 'string', const: '生产调度' },
-        ontology_name: { type: 'string', const: ontologyName },
-      } },
       ontology_id: { type: 'integer' },
       ...props,
     },
@@ -207,8 +204,8 @@ export function mkFactory(): AgentFactory {
 }
 
 /**
- * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → scopeToOntology）。
- * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
+ * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → guardExecution）。
+ * 走公开路径而非直接调私有 guardExecution，保证测试覆盖的是真实装配链路。
  */
 export async function captureChildTools(legalCalls?: LegalCalls, security?: ChildSecurityCtx, ruleGate?: RuleGate) {
   await mkFactory().createChildAgent(

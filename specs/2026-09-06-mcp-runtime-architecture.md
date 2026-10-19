@@ -2,6 +2,11 @@
 
 **日期**：2026-09-06 · **状态**：已确认，待实施 · **原则**：高内聚、低耦合
 
+> **历史文档（2026-10-19 注）**：本文记录的是拆服务当时的方案与理由，其中"行为工具由
+> `data-engine-executor` 发布"的形态**已被 2026-10-19 方案 B 取代**：该服务零工具化，
+> 行为工具的唯一出口是自建发布。现行口径见 `specs/contracts/mcp-tools.md`，
+> 决策与影响面见 `specs/2026-10-19-zero-tool-executor-decision.md`。下文相关措辞仅作历史参考。
+
 ---
 
 ## 一、总体架构
@@ -50,7 +55,7 @@
 |---|---|---|
 | optonto-mcp | **optonto-ontology-query-mcp** | 本体查询面：list 查询（只读，内置对外工具面之一） |
 | optonto-mcp | **optonto-ontology-function-executor** | 本体函数执行面：函数/公共函数本地执行（零工具，仅内网） |
-| —（新服务） | **optonto-data-engine-executor** | 映射执行面：行为工具发布、前后翻译、MCP 分发 |
+| —（新服务） | **optonto-data-engine-executor** | 映射执行面：行为执行（前后翻译、MCP 分发）；行为**工具发布**已于 2026-10-19 移交自建发布 |
 | —（新服务） | **optonto-business-mcp** | 业务集成面：业务 REST 包装为 MCP 工具 |
 
 同构命名 `optonto-<职责>-mcp`。改名在阶段一同步完成（compose/nginx/mcp-config-store/前端文案机械替换）；agent-backend 内置身份识别已有"builtin 标记 + 当前 URL + 历史默认 URL"三重判定，旧配置文件兼容。端口不变（ontology-query-mcp 仍 8002），Agent 侧无感。
@@ -63,7 +68,7 @@
 |---|---|---|
 | optonto-ontology-query-mcp | 本体查询（对外） | 业务接口、映射 |
 | optonto-ontology-function-executor | 本体/公共函数本地执行（内网，零工具） | 业务接口、映射 |
-| optonto-data-engine-executor | **映射与执行的唯一权威**：行为工具发布、翻译、参数契约检查、MCP 分发 | 下游接口实现细节（只见 MCP 工具） |
+| optonto-data-engine-executor | **映射与执行的唯一权威**：翻译、参数契约检查、MCP 分发（零工具；工具发布归自建发布） | 下游接口实现细节（只见 MCP 工具） |
 | optonto-business-mcp | 业务 REST → MCP 工具，自描述 input/outputSchema | 本体、映射、Agent |
 | core-backend | 设计期：建模、映射生成/存储、部署 | 运行期执行（归零） |
 | agent-backend | 编排：规划、RuleGate、安全确认、记忆 | 映射（从不接触，本轮不变） |
@@ -92,7 +97,7 @@ optonto/
 │
 ├── data-engine-executor/      # optonto-data-engine-executor 容器
 │   ├── server.py              # 协议层（薄）
-│   ├── behavior_tools.py      # 行为工具发布：命名、约束编译 schema、scope 剥离
+│   ├── behavior_index.py      # 行为索引：归属校验 + 未就绪区分（工具发布已移交自建发布）
 │   ├── executor.py            # MCP 分发（连接池+重连+15s 超时）/ SQL（只读闸+连接池）+ 契约检查
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -141,9 +146,9 @@ target:
 
 **策略：配映射即收编 + 业务数据服务整站准入闸**
 
-| 接口状态 | 下游 MCP 原始工具 | data-engine-executor 行为工具 |
+| 接口状态 | 下游 MCP 原始工具 | 行为工具（自建发布，2026-10-19 起） |
 |---|---|---|
-| 已配映射（绑定行为） | **对 Agent 隐藏** | ✅ 唯一入口 |
+| 已配映射（绑定行为） | **对 Agent 隐藏** | ✅ 唯一入口（须发布） |
 | 未配映射，服务**非**业务数据（图表/工具类辅助服务） | ✅ 直通暴露 | — |
 | 未配映射，服务**已声明业务数据**（`business_data: true`） | **对 Agent 隐藏** | — （须先配映射才有行为） |
 
@@ -156,7 +161,7 @@ business-mcp 承载 `POST/PUT/DELETE` 写接口，其未映射的原始工具一
 其原始未映射工具一律不进 Agent 目录，业务接口必须经映射发布为行为。
 
 **闸只挡无 `x-category` 标记者**：带标记的平台自身工具（本体行为 / 本体函数 / 公共函数）照常进目录——
-否则会误伤 `data-engine-executor`（发布本体行为工具，行为子任务的唯一执行入口）与自建发布。
+否则会误伤自建发布（本体行为/本体函数的唯一工具面）。
 判定单点 `mcp-config-store.isBusinessDataServer`，闸位单点 `agent-factory.discoverTools`。
 
 **实现**：agent-backend 挂载下游 MCP 时按 `allowed_tools` 白名单过滤（机制已有）；隐藏清单由 data-engine-executor 同步映射配置时自动生成（凡 `engine_type: MCP` 的 target 工具名即入对应服务的隐藏名单），零人工维护。E2E 增加"已映射接口的原始工具不可见"断言。

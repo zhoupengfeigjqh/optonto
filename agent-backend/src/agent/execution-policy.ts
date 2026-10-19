@@ -9,7 +9,7 @@
  * 派生规则（三件套同源）：
  * - legalCalls：主行为 + 规则关联行为/函数 + 父 Agent 指定的 related_functions（本文件 legalCallNames 私有化，
  *   唯一调用点即 buildSubtaskPolicy——"能调什么"与"怎么设防"同生同灭，不允许脱离策略对象单独取集合）。
- *   语义（2026-09 行为工具化后）：子 Agent 挂载期过滤的唯一依据——行为工具按 scope.name 裸名匹配
+ *   语义（2026-09 行为工具化后）：子 Agent 挂载期过滤的唯一依据——行为工具按工具名（= 行为裸名）匹配
  *   legalCalls.behaviors，函数工具按工具名匹配 legalCalls.functions；未挂载即不可调用，机制即白名单。
  *   参数合法性不再由运行期闸门负责：行为/函数工具的 inputSchema（core 编译，含约束）由 harness 校验。
  *   data_supplements 是规则取数接口，【约定只读】（前提已文档化；若未来需要防御，
@@ -147,7 +147,7 @@ export function buildSubtaskPolicy(
   const legalCalls = legalCallNames(meta, subTask.behavior, subTask.related_functions);
 
   // 禁用集合（闸1 输入）：合法清单内 scope 含 disable 的行为（含主行为与规则补充行为）。
-  // 键为行为裸名（与行为工具 scope.name const 同口径）；主行为 display_name 取 meta，补充行为走 info.behaviorDisplayName。
+  // 键为行为裸名（与行为工具名同口径）；主行为 display_name 取 meta，补充行为走 info.behaviorDisplayName。
   const disabled = new Map<string, string>();
   for (const bn of legalCalls.behaviors) {
     if (info.behaviorScope(subTask.scenario_name, subTask.ontology_name, bn).includes('disable')) {

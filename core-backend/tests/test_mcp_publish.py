@@ -27,7 +27,12 @@ def _entry(**over):
         "transport": store.TRANSPORT_STREAMABLE,
         "container_name": "optonto-mcp-publish-order-abc123",
         "token": "tok-123",
-        "tools": [{"name": "f1", "description": "d", "inputSchema": {"type": "object", "properties": {}}}],
+        "tools": [{"name": "f1", "description": "d", "inputSchema": {
+            "type": "object",
+            "properties": {"ontology_id": {"type": "integer"}},
+            "required": ["ontology_id"],
+            "x-ontology-scope": {"ontology_id": 1, "scenario_name": "生产调度", "ontology_name": "原材料采购和库存"},
+        }}],
     }
     base.update(over)
     return base
@@ -113,7 +118,9 @@ class ContainerSpecCase(unittest.TestCase):
         config = json.loads(env["PUBLISH_CONFIG_JSON"])
         self.assertEqual(config["name"], "order-svc")
         self.assertEqual(config["kind"], "ontology_function")
-        self.assertEqual(config["ontology_id"], 1)
+        # 本体归属只存在于工具元数据（单一事实来源），配置不重复存 ontology_id
+        self.assertNotIn("ontology_id", config)
+        self.assertEqual(config["tools"][0]["inputSchema"]["x-ontology-scope"]["ontology_id"], 1)
         self.assertNotIn("token", config)
         self.assertEqual(env["AUTH_TOKEN"], "tok-123")
         self.assertEqual(env["PORT"], str(store.CONTAINER_PORT))
@@ -181,6 +188,96 @@ class RegistryCase(unittest.TestCase):
     def test_delete_missing_raises_not_found(self):
         with self.assertRaises(NotFoundError):
             store.delete_entry("ghost")
+
+
+class SharedReaderSchemaCase(unittest.TestCase):
+    """跨模块护栏：注册表**写入字段**必须能被运行面只读投影（mcp-shared/publish_registry）读出。
+
+    查询面（listOntoBehaviors）按「已就绪 ∩ 已发布」过滤，依赖 kind/ontology_id/items 三个字段。
+    写入侧一旦改名，这里立即失败——而不是等用户发现"发布完了行为清单还是空的"。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self._origin = store.REGISTRY_FILE
+        store.REGISTRY_FILE = Path(self._tmp.name) / "publishes.json"
+
+    def tearDown(self):
+        store.REGISTRY_FILE = self._origin
+
+    def test_行为类发布可被运行面按本体读出(self):
+        from services.mcp_contract_bridge import published_behavior_names
+
+        store.save_entry(_entry(kind=store.KIND_BEHAVIOR, ontology_id=1, items=["QueryInventory", "CreatePurchaseRecord"]))
+        store.save_entry(_entry(name="other", kind=store.KIND_BEHAVIOR, ontology_id=2, items=["QueryOrder"]))
+        store.save_entry(_entry(name="func-svc", kind=store.KIND_ONTOLOGY_FUNCTION, ontology_id=1, items=["f1"]))
+
+        read = lambda oid: published_behavior_names(oid, registry_file=store.REGISTRY_FILE)  # noqa: E731
+        self.assertEqual(read(1), {"QueryInventory", "CreatePurchaseRecord"})
+        self.assertEqual(read(2), {"QueryOrder"})
+        # 函数类发布不进入行为规划面
+        self.assertNotIn("f1", read(1))
+        # 缺省 = 全平台并集
+        self.assertEqual(published_behavior_names(registry_file=store.REGISTRY_FILE),
+                         {"QueryInventory", "CreatePurchaseRecord", "QueryOrder"})
+
+    def test_注册表损坏按空处理而非抛错(self):
+        from services.mcp_contract_bridge import published_behavior_names
+
+        store.REGISTRY_FILE.write_text("{not-json", encoding="utf-8")
+        self.assertEqual(published_behavior_names(registry_file=store.REGISTRY_FILE), set())
+
+
+class PublishedToolsCase(unittest.TestCase):
+    """`GET /api/mcp/published/{name}/tools`：发布时冻结的工具快照（只读，不探测容器）。
+
+    为什么单独立契约：卡片上的「可用工具：N」与弹窗里的清单必须同源——
+    数量对不上或"找不到"被显示成"0 个工具"，用户会以为发布没问题而实际早已失效。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self._origin = store.REGISTRY_FILE
+        store.REGISTRY_FILE = Path(self._tmp.name) / "publishes.json"
+        from fastapi.testclient import TestClient
+        from main import app
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        store.REGISTRY_FILE = self._origin
+
+    def test_返回快照四字段与工具顺序(self):
+        tools = [
+            {"name": "QueryInventory", "description": "查询库存", "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "CreatePurchaseRecord", "description": "创建采购单", "inputSchema": {"type": "object", "properties": {}}},
+        ]
+        store.save_entry(_entry(kind=store.KIND_BEHAVIOR, ontology_name="原材料采购和库存",
+                                items=["QueryInventory", "CreatePurchaseRecord"], tools=tools))
+
+        resp = self.client.get("/api/mcp/published/order-svc/tools")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["name"], "order-svc")
+        self.assertEqual(body["kind"], store.KIND_BEHAVIOR)
+        self.assertEqual(body["ontology_name"], "原材料采购和库存")
+        self.assertEqual([t["name"] for t in body["tools"]], ["QueryInventory", "CreatePurchaseRecord"])
+        self.assertEqual(len(body["tools"]), 2)
+
+    def test_空快照是合法成功响应(self):
+        store.save_entry(_entry(tools=[]))
+        resp = self.client.get("/api/mcp/published/order-svc/tools")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["tools"], [])
+
+    def test_不存在返回404而不是空清单(self):
+        resp = self.client.get("/api/mcp/published/ghost/tools")
+        self.assertEqual(resp.status_code, 404)
+        body = resp.json()
+        self.assertEqual(body.get("code"), 404)
+        self.assertIn("不存在", body.get("message", ""))
+        self.assertNotIn("tools", body)
 
 
 if __name__ == "__main__":

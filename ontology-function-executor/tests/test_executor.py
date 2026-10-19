@@ -87,8 +87,8 @@ def test_系统参数被剥离(monkeypatch):
                         lambda code, params: seen.append(params) or {"success": True, "data": {}})
     TestClient(server.starlette_app).post("/execute-function", json={
         "ontology_id": owner["ontology_id"], "function_name": name,
-        "params": {"scope": {"name": name}, "ontology_id": owner["ontology_id"], "biz": 1}})
-    assert seen and seen[0] == {"biz": 1}, "scope/ontology_id 必须剥离，业务参数保留"
+        "params": {"ontology_id": owner["ontology_id"], "biz": 1}})
+    assert seen and seen[0] == {"biz": 1}, "ontology_id 必须剥离，业务参数保留"
 
 
 def test_归属不一致被拒且不执行(monkeypatch):
@@ -120,6 +120,48 @@ def test_缺ontology_id被拒():
         "function_name": "whatever", "params": {}})
     assert resp.status_code == 400
     assert "ontology_id" in resp.json()["detail"]
+
+
+def test_发布scope与调用本体不一致被拒且不执行(monkeypatch):
+    """契约 ④-1：scope（发布时固化的工具元数据）必须等于调用方 ontology_id。
+
+    本用例让**数据归属仍是本体的**（传对了 ontology_id），只让 scope 指向别的本体——
+    校验顺序保证先因"发布声明不一致"中止，而不是落到归属/执行阶段。
+    """
+    picked = _fn_with_code()
+    if not picked:
+        pytest.skip("当前 .data 无带代码文件的本体函数")
+    name, owner = picked
+    others = sorted({o.get("id") for o in server.data_store.list_all_ontologies()} - {owner["ontology_id"]})
+    if not others:
+        pytest.skip("需要至少两个本体才能构造跨本体用例")
+    ran = []
+    monkeypatch.setattr(server, "run_function_code",
+                        lambda code, params: ran.append(params) or {"success": True, "data": {}})
+    resp = TestClient(server.starlette_app).post("/execute-function", json={
+        "ontology_id": owner["ontology_id"], "function_name": name, "params": {},
+        "scope": {"ontology_id": others[0], "ontology_name": "别的本体", "scenario_name": "生产调度"},
+    })
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert "本体不一致" in detail
+    assert f"ontology_id={owner['ontology_id']}" in detail and f"ontology_id={others[0]}" in detail
+    assert ran == [], "发布声明不一致时不得执行函数代码"
+
+
+def test_scope一致时正常执行(monkeypatch):
+    picked = _fn_with_code()
+    if not picked:
+        pytest.skip("当前 .data 无带代码文件的本体函数")
+    name, owner = picked
+    monkeypatch.setattr(server, "run_function_code",
+                        lambda code, params: {"success": True, "data": {"ok": 1}})
+    resp = TestClient(server.starlette_app).post("/execute-function", json={
+        "ontology_id": owner["ontology_id"], "function_name": name, "params": {},
+        "scope": {"ontology_id": str(owner["ontology_id"]), "ontology_name": owner.get("ontology_name")},
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"] == {"ok": 1}
 
 
 def test_公共函数端点已迁走():

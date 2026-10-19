@@ -13,11 +13,16 @@
 由发布配置决定——发布即授权：自带端口、传输模式（sse / streamable）与访问令牌。
 
 配置形态（由 core 的动态发布面生成，本服务只读不改）：
-``{"name": 服务名, "kind": "ontology_function"|"behavior", "ontology_id": 1, "tools": [{name, description, inputSchema}]}``
+``{"name": 服务名, "kind": "ontology_function"|"behavior",
+   "tools": [{name, description, inputSchema}]}``
 
-``tools[].name`` 即转发目标（函数名/行为名裸名，与平台发布面同一命名口径）。工具 schema 由
-core 用 mcp-shared/tool_contract 编译（``ontology_id_mode="const"``：绑定单一本体，调用方
-无需传 ontology_id），故本服务运行期不再需要本体数据。
+``tools[].name`` 即转发目标（函数名/行为名裸名，与执行底座的执行键同一口径）。
+本体归属**只存在于工具的 metadata**（``inputSchema["x-ontology-scope"]``，发布时固化）：
+- ``ontology_id`` 是必填参数，由调用方（LLM）填写，本服务原样转发；
+- ``scope`` 由本服务从该工具的元数据取出、随转发载荷带给执行底座，由底座校验两者一致——
+  门面不做业务判断（校验逻辑只有一份，在执行底座）。
+
+故本服务运行期不需要本体数据，也不存在"配置里的 id"与"工具声明的 id"两个来源。
 
 配置非法即**启动失败**（fail-fast，绝不静默起一个空服务）：core 侧会轮询 /health，
 失败时把容器日志尾部回传给用户，而不是让用户面对一个"能连但没工具"的服务。
@@ -45,7 +50,7 @@ from publish_upstream import (  # 转发契约的**唯一权威实现**（core �
     KINDS as PUBLISH_KINDS,
     upstream_of,
 )
-from tool_contract import strip_system_params
+from tool_contract import ONTOLOGY_ID_KEY, SCOPE_KEY, strip_system_params
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +83,11 @@ def _parse_config(raw: str | None) -> dict:
     if kind not in PUBLISH_KINDS:
         raise ConfigError(f"发布类型 kind 非法: {kind!r}（可选 {', '.join(PUBLISH_KINDS)}）")
 
-    ontology_id = cfg.get("ontology_id")
-    if ontology_id is None or str(ontology_id).strip() == "":
-        raise ConfigError("发布配置缺少 ontology_id（自建发布必须绑定唯一本体）")
-
     tools = cfg.get("tools") or []
     if not isinstance(tools, list) or not tools:
         raise ConfigError("发布配置未包含任何工具（tools 为空）")
     names: set[str] = set()
+    ontology_ids: set[str] = set()
     for t in tools:
         if not isinstance(t, dict) or not str(t.get("name") or "").strip():
             raise ConfigError(f"发布配置含非法工具条目: {t!r}")
@@ -93,8 +95,22 @@ def _parse_config(raw: str | None) -> dict:
         if tool_name in names:
             raise ConfigError(f"发布配置含重名工具: {tool_name}")
         names.add(tool_name)
+        # 本体归属必须由发布端写入工具元数据（本服务运行期不读本体数据，无法自行推断）。
+        # 缺失 = 配置不是 MCP发布 编译的 → 启动即失败，而不是起一个"能连但一调就 500"的服务。
+        scope = (t.get("inputSchema") or {}).get(SCOPE_KEY)
+        if not isinstance(scope, dict) or scope.get(ONTOLOGY_ID_KEY) in (None, ""):
+            raise ConfigError(
+                f"工具 {tool_name} 缺少本体上下文 {SCOPE_KEY}（配置须由 MCP发布 生成；"
+                f"请删除该发布后重新创建）")
+        ontology_ids.add(str(scope[ONTOLOGY_ID_KEY]))
 
-    return {"name": name, "kind": kind, "ontology_id": int(ontology_id), "tools": tools}
+    # 自建发布 = 一个本体的切片；混入多个本体说明配置被拼错了（每工具都带自己的 scope，
+    # 不拦就会让同一个服务悄悄提供跨本体工具，且转发时的 scope 各说各话）
+    if len(ontology_ids) > 1:
+        raise ConfigError(
+            f"同一发布只能绑定一个本体，检测到多个 ontology_id: {', '.join(sorted(ontology_ids))}")
+
+    return {"name": name, "kind": kind, "tools": tools}
 
 
 CONFIG = _parse_config(os.getenv("PUBLISH_CONFIG_JSON"))
@@ -110,6 +126,10 @@ _TOOLS: list[Tool] = [
     for t in CONFIG["tools"]
 ]
 _TOOL_NAMES = {t.name for t in _TOOLS}
+# 工具名 → 发布时固化的本体上下文（转发时随载荷带给执行底座做一致性校验）
+_TOOL_SCOPES: dict[str, dict] = {
+    str(t["name"]).strip(): t["inputSchema"][SCOPE_KEY] for t in CONFIG["tools"]
+}
 
 server = Server(CONFIG["name"])
 
@@ -132,18 +152,22 @@ def _upstream_url() -> str:
 async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
     """按发布类型转发到既有执行面；下游错误置 isError（抛异常），交由调用方判定失败。
 
-    ``ontology_id`` 一律用**发布时绑定的本体**（忽略调用方传入值）：自建发布的服务面就是
-    这个本体的切片，跨本体调用在结构上不可能发生，故调用方无需传、也不允许改。
+    - ``ontology_id``：**调用方（LLM）填写的值**原样转发——工具契约要求它必填，值对不对由
+      执行底座用发布声明校验（本服务不做业务判断）；
+    - ``scope``：本工具发布时固化的本体上下文，随载荷带给底座做一致性校验；
+    - ``params``：剥掉系统参数，只留业务入参。
     """
     if name not in _TOOL_NAMES:
         raise ValueError(f"未知工具: {name}（本发布仅提供 {len(_TOOL_NAMES)} 个工具）")
 
+    args = arguments or {}
     spec = upstream_of(CONFIG["kind"])
     payload = {
-        "ontology_id": CONFIG["ontology_id"],
+        "ontology_id": args.get(ONTOLOGY_ID_KEY),
+        "scope": _TOOL_SCOPES[name],
         spec["target_key"]: name,
-        # 系统参数（scope/ontology_id）不是业务入参——调用方（agent 挂载期）可能带上，剥掉
-        "params": strip_system_params(arguments),
+        # 系统参数（ontology_id 路由键）不是业务入参——防御性剥离
+        "params": strip_system_params(args),
     }
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

@@ -104,23 +104,43 @@ def test_查询分支校验入口直接报错():
         server._ontology_of("listOntoBehaviors", {})
 
 
-def test_行为清单只列就绪行为(monkeypatch):
-    """契约 ⑥ 的查询面同口径：未就绪（未完成映射）的行为不出现在 listOntoBehaviors。"""
+def test_行为清单只列就绪且已发布行为(monkeypatch):
+    """契约 ⑥ 的查询面同口径：只有「已就绪 ∩ 已发布」的行为才会出现在清单里。"""
     import json
     data = {
-        "behaviors": [{"name": "Ready1"}, {"name": "NotReady2"}],
-        "data_engines": [{"behavior_name": "Ready1",
-                          "target": {"server_url": "http://downstream/mcp", "tool_name": "t"}}],
+        "metadata": {"ontology_id": 1},
+        "behaviors": [{"name": "Ready1"}, {"name": "NotReady2"}, {"name": "ReadyNotPublished3"}],
+        "data_engines": [
+            {"behavior_name": "Ready1", "target": {"server_url": "http://downstream/mcp", "tool_name": "t"}},
+            {"behavior_name": "ReadyNotPublished3", "target": {"server_url": "http://downstream/mcp", "tool_name": "t"}},
+        ],
         "rules": [],
     }
     monkeypatch.setattr(server, "_ontology_of", lambda n, a: data)
+    # 方案 B：行为工具唯一来源是自建发布 → 已就绪但未发布者不可规划
+    monkeypatch.setattr(server, "published_behavior_names", lambda _oid: {"Ready1"})
     out = asyncio.run(server.handle_call_tool("listOntoBehaviors", {"ontology_id": 1}))
     assert [b["name"] for b in json.loads(out[0].text)] == ["Ready1"]
 
 
-def test_行为清单_全未就绪时为空(monkeypatch):
+def test_行为清单_已发布但未就绪仍不列出(monkeypatch):
+    """契约 ⑥ 的映射面不能被发布状态绕过：发布勾选项必须已就绪（发布面本身也拒），查询面同口径。"""
     import json
-    monkeypatch.setattr(server, "_ontology_of", lambda n, a: {"behaviors": [{"name": "B1"}]})
+    data = {
+        "metadata": {"ontology_id": 2},
+        "behaviors": [{"name": "B1"}],
+        "data_engines": [],
+    }
+    monkeypatch.setattr(server, "_ontology_of", lambda n, a: data)
+    monkeypatch.setattr(server, "published_behavior_names", lambda _oid: {"B1"})
+    out = asyncio.run(server.handle_call_tool("listOntoBehaviors", {"ontology_id": 2}))
+    assert json.loads(out[0].text) == []
+
+
+def test_行为清单_全未发布时为空(monkeypatch):
+    import json
+    monkeypatch.setattr(server, "_ontology_of", lambda n, a: {"metadata": {"ontology_id": 2}, "behaviors": [{"name": "B1"}]})
+    monkeypatch.setattr(server, "published_behavior_names", lambda _oid: set())
     out = asyncio.run(server.handle_call_tool("listOntoBehaviors", {"ontology_id": 2}))
     assert json.loads(out[0].text) == []
 

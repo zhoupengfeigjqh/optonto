@@ -54,6 +54,9 @@ function mkCtx(catalog?: Partial<FunctionCatalogView>): { ctx: PlanRepairCtx; ev
         functionInfo: () => null,
         functionNames: () => [],
         behaviorSchema: () => null,
+        // 方案 B：行为名以实际挂载目录为准。默认与 gateway 就绪列表一致，
+        // 需要验证"就绪但未发布"的用例显式覆盖为 () => []
+        behaviorNames: (sc: string, on: string) => gateway.getReadyBehaviorNames(sc, on),
         ...catalog,
       } as unknown as FunctionCatalogView,
       allowedOntologyIds: new Set([1]), // 测试允许集：本体 1（与 mkSub 的 ontology_id 对齐）
@@ -205,6 +208,47 @@ describe('PlanGate · 参数校验（validateInitial · 编译 schema 统一 nud
     const out = await gate.validateInitial(dirty, ctx);
     expect(out).toBe(fixed);
     expect(promptParent.mock.calls[0][1]).toContain('缺少必填参数 recordSet');
+  });
+});
+
+describe('PlanGate · 行为名以实际挂载目录为准（方案 B：未发布 ≠ 未就绪）', () => {
+  it('已就绪但未发布（目录无该行为）→ nudge 指向「自建发布」，不误导去补映射', async () => {
+    const { ctx } = mkCtx({ behaviorNames: () => [] });
+    const promptParent = vi.fn();
+    const gate = new PlanGate({ gateway, promptParent });
+
+    expect(await gate.validateInitial({ subtasks: [mkSub(1)] }, ctx)).toBeNull();
+    expect(promptParent).toHaveBeenCalledTimes(1);
+    const nudgeText = promptParent.mock.calls[0][1] as string;
+    expect(nudgeText).toContain('尚未发布为工具');
+    expect(nudgeText).toContain('MCP发布');
+    expect(nudgeText).not.toContain('未完成数据引擎映射');
+  });
+
+  it('已声明但未就绪（映射未完成）→ nudge 指向补映射，与未发布分开', async () => {
+    const notReadyGateway = {
+      ...gateway,
+      getReadyBehaviorNames: () => [],
+    } as unknown as OntologyGatewayPort;
+    // 目录同样没有该行为（未就绪 → 不发布 → 不可挂载）
+    const { ctx } = mkCtx({ behaviorNames: () => [] });
+    const promptParent = vi.fn();
+    const gate = new PlanGate({ gateway: notReadyGateway, promptParent });
+
+    expect(await gate.validateInitial({ subtasks: [mkSub(1)] }, ctx)).toBeNull();
+    const nudgeText = promptParent.mock.calls[0][1] as string;
+    expect(nudgeText).toContain('尚未就绪');
+    expect(nudgeText).not.toContain('尚未发布为工具');
+  });
+
+  it('已发布（目录有该行为）→ 放行，不 nudge', async () => {
+    const { ctx } = mkCtx({ behaviorNames: () => ['QuerySupplier'] });
+    const promptParent = vi.fn();
+    const gate = new PlanGate({ gateway, promptParent });
+    const plan: SubTaskPlan = { subtasks: [mkSub(1)] };
+
+    expect(await gate.validateInitial(plan, ctx)).toBe(plan);
+    expect(promptParent).not.toHaveBeenCalled();
   });
 });
 

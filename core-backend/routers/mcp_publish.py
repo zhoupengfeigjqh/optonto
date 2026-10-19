@@ -43,6 +43,12 @@ async def published_client_config(name: str, host: str | None = None):
     return runtime.client_config(name, host)
 
 
+@router.get("/{name}/tools")
+async def published_tools(name: str):
+    """发布时冻结的工具清单（只读注册表：不启停、不探测容器；停机也能看）。"""
+    return runtime.published_tools(name)
+
+
 @router.post("", status_code=201)
 async def create_published(body: dict):
     """创建发布：``{ontology_id, name, kind, items[], host_port, transport}``。

@@ -93,13 +93,13 @@ describe('validateParamsAgainstSchema · 结构校验', () => {
     expect(errors).toEqual(['子任务2(fn) 参数 days 类型应为 integer，实际 string']);
   });
 
-  it('ontology_id / scope 键一律跳过（编译 schema 带，规划期不填）', () => {
-    const withScope = {
+  it('ontology_id 键一律跳过（编译 schema 带，规划期不填）', () => {
+    const withOntoId = {
       type: 'object',
-      properties: { ontology_id: { type: 'integer' }, scope: { type: 'object' }, date: { type: 'string' } },
+      properties: { ontology_id: { type: 'integer' }, date: { type: 'string' } },
       required: ['ontology_id', 'date'],
     };
-    expect(validateParamsAgainstSchema(withScope, { date: { value: '2026-08-17' } }, 1, 'fn')).toEqual([]);
+    expect(validateParamsAgainstSchema(withOntoId, { date: { value: '2026-08-17' } }, 1, 'fn')).toEqual([]);
   });
 });
 

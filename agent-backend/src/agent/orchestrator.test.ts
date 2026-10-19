@@ -8,6 +8,18 @@ import { Orchestrator, planNeedsConfirm } from './orchestrator.js';
 import type { AgentFactoryPort, OntologyGatewayPort } from './agent-ports.js';
 import type { AgentPort } from './agent-ports.js';
 import type { SubTask, SubTaskPlan, SSEEvent, ConversationScope } from '../types.js';
+import type { MountableToolInfo } from './tool-catalog.js';
+
+/**
+ * 可挂载行为工具（方案 B 后，行为可规划集 = 实际发现的行为工具）。
+ * 测试里 Behavior1..5 覆盖各用例的子任务名；scope 与 mkSubtask 的本体对齐。
+ */
+function behaviorTools(): MountableToolInfo[] {
+  return [1, 2, 3, 4, 5].map(i => ({
+    name: `Behavior${i}`, category: '本体行为', description: '', params: {},
+    scope: { ontology_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' },
+  }));
+}
 
 /** 测试对话作用域：本体 1（与 mkSubtask 的 ontology_id 对齐）；contexts 空 = 通用模式 */
 const SCOPE: ConversationScope = {
@@ -57,7 +69,7 @@ function mkFactory(createParentAgent: AgentFactoryPort['createParentAgent']): Ag
     createParentAgent,
     createChildAgent: vi.fn(),
     callFunctionTool: vi.fn(),
-    getMountableToolCatalog: vi.fn().mockResolvedValue([]),
+    getMountableToolCatalog: vi.fn().mockResolvedValue(behaviorTools()),
     closeAll: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -169,7 +181,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
         });
         return parent;
       }),
-      // 子 Agent fake：prompt 时模拟工具层闸1 命中——置 run 级 violation（真实判定在 scopeToOntology）
+      // 子 Agent fake：prompt 时模拟工具层闸1 命中——置 run 级 violation（真实判定在 guardExecution）
       createChildAgent: vi.fn().mockImplementation(async (_ctx, policy) => ({
         prompt: async () => { policy.security.gate.violation = '🔒 行为已被禁用：Behavior1 的权限范围为 disable，已中断执行。'; },
         abort: () => {},
@@ -177,7 +189,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
         state: { messages: [] },
       })),
       callFunctionTool: vi.fn(),
-      getMountableToolCatalog: vi.fn().mockResolvedValue([]),
+      getMountableToolCatalog: vi.fn().mockResolvedValue(behaviorTools()),
       closeAll: vi.fn().mockResolvedValue(undefined),
     };
     const gateway = {
@@ -255,7 +267,7 @@ describe('Orchestrator · 言行不一闸（假提交声明 → 立即拦截，�
         state: { messages: [{ role: 'assistant', content: '子任务执行完成' }] },
       })),
       callFunctionTool: vi.fn(),
-      getMountableToolCatalog: vi.fn().mockResolvedValue([]),
+      getMountableToolCatalog: vi.fn().mockResolvedValue(behaviorTools()),
       closeAll: vi.fn().mockResolvedValue(undefined),
     };
     return { parent, factory };
@@ -433,7 +445,7 @@ describe('Orchestrator · 规划确认/重规划循环', () => {
       }),
       createChildAgent: vi.fn().mockResolvedValue(noopChild),
       callFunctionTool: vi.fn(),
-      getMountableToolCatalog: vi.fn().mockResolvedValue([]),
+      getMountableToolCatalog: vi.fn().mockResolvedValue(behaviorTools()),
       closeAll: vi.fn().mockResolvedValue(undefined),
     };
     const confirm = {

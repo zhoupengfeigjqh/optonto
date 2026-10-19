@@ -6,7 +6,7 @@
  * 两块视图（语义不同，不可混为一谈），右上角切换、**每块一页最多 6 个服务**（见 ServiceGrid）：
  * 1. **固定发布（5 个）**：平台内置，compose 常驻管理——① 本体查询 MCP 服务（内置对外工具面，只读查询）；
  *    ② 公共函数 MCP 服务（平台通用算力，发布 + 执行一体）；③ 本体函数执行服务（零工具、仅内网）；
- *    ④ 数据引擎执行服务（行为执行底座、工具面仅内网）；⑤ 业务系统 MCP（业务侧集成边缘，模拟外部业务系统）。
+ *    ④ 数据引擎执行服务（行为执行底座，零工具、仅内网）；⑤ 业务系统 MCP（业务侧集成边缘，模拟外部业务系统）。
  *    五者均可启停，不可新建/删除。声明唯一来源见 `./mcp-publish/catalog.ts`。
  * 2. **自建发布**：用户在当前本体上勾选函数/行为切片创建的**动态容器**（一个镜像多实例，
  *    宿主端口 8020-8099）。可启动/停止/删除，带访问令牌（对外暴露必须鉴权）。
@@ -19,19 +19,30 @@ import { Button, Input, InputNumber, Modal, Radio, Segmented, Select, message } 
 import {
   getMcpStatus, startMcp, stopMcp, getMcpTools, getBusinessMcpTools, getCommonFunctionMcpTools,
   createPublished, deletePublished, getPublishMeta, listPublished, startPublished, stopPublished,
-  getPublishedClientConfig, getFunctions, getBehaviors, getDataEngines,
+  getPublishedClientConfig, getPublishedTools, getFunctions, getBehaviors, getDataEngines,
+  ALL_PUBLISH_KINDS, ALL_PUBLISH_TRANSPORTS,
   PublishedService, PublishKind, PublishTransport,
 } from '@/api/client';
 import { getMCPConfig } from '@/api/agent-client';
 import { FixedServiceCard, PublishedServiceCard } from './mcp-publish/cards';
 import { ConfigModalView, ToolsModal } from './mcp-publish/PublishModals';
-import { PAGE_SIZE, ServiceGrid } from './mcp-publish/ServiceGrid';
+import { ServiceGrid } from './mcp-publish/ServiceGrid';
 import {
   CardKey, CardState, EXEC_NOTE, FIXED_SERVICES, FixedServiceDef, INIT,
-  KIND_LABEL, SelectableItem, ToolInfo,
+  KIND_LABEL, SelectableItem, ToolInfo, TRANSPORT_OPTION_LABEL,
 } from './mcp-publish/catalog';
-import { ConfigModalContent, staticServiceConfig } from './mcp-publish/config-snippets';
+import { ConfigModalContent, findServiceEntry, staticServiceConfig } from './mcp-publish/config-snippets';
 import { readyBehaviorNames } from './mcp-publish/readiness';
+
+/**
+ * 对外工具面的工具清单拉取器 —— 启停后回填用。
+ * 两个执行底座是零工具（无协议端点），**刻意不在表内**：没有清单可拉，也不该显示「查看工具」。
+ */
+const TOOL_FETCHERS: Partial<Record<CardKey, () => Promise<ToolInfo[]>>> = {
+  ontologyQuery: getMcpTools,
+  commonFunction: getCommonFunctionMcpTools,
+  business: getBusinessMcpTools,
+};
 
 /** 两块视图（右上角切换）：fixed=固定发布（平台内置）/ published=自建发布（动态容器） */
 type PublishView = 'fixed' | 'published';
@@ -41,7 +52,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
     ontologyQuery: { ...INIT }, commonFunction: { ...INIT }, functionExecutor: { ...INIT },
     dataEngine: { ...INIT }, business: { ...INIT },
   });
-  const [toolsModal, setToolsModal] = useState<{ title: string; tools: ToolInfo[] } | null>(null);
+  const [toolsModal, setToolsModal] = useState<{ title: string; tools: ToolInfo[]; note?: string } | null>(null);
   /** 当前视图（右上角切换按钮）：两块互斥展示，各自独立分页（切走再切回从第 1 页开始） */
   const [view, setView] = useState<PublishView>('fixed');
   const [configModal, setConfigModal] = useState<ConfigModalContent | null>(null);
@@ -52,15 +63,21 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
   const [loadingPublished, setLoadingPublished] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [meta, setMeta] = useState<{ host_port_min: number; host_port_max: number } | null>(null);
+  /** `/meta` 下发的可选值与约束（kinds/transports 为运行时事实源；端口段用于表单预校验） */
+  const [meta, setMeta] = useState<{
+    kinds: PublishKind[]; transports: PublishTransport[]; host_port_min: number; host_port_max: number;
+  } | null>(null);
   const [options, setOptions] = useState<Record<PublishKind, SelectableItem[]>>({ ontology_function: [], behavior: [] });
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [form, setForm] = useState<{
     name: string; kind: PublishKind; items: string[]; host_port: number; transport: PublishTransport;
-  }>({ name: '', kind: 'ontology_function', items: [], host_port: 8020, transport: 'streamable' });
+  }>({ name: '', kind: ALL_PUBLISH_KINDS[0], items: [], host_port: 8020, transport: ALL_PUBLISH_TRANSPORTS[0] });
 
   const patch = (key: CardKey, p: Partial<CardState>) =>
     setCards(prev => ({ ...prev, [key]: { ...prev[key], ...p } }));
+
+  /** 当前发布类型的可勾选项；若后端下发了本端未登记的 kind，退回空列表而不是读 `undefined` 崩掉 */
+  const itemsOfKind: SelectableItem[] = options[form.kind] ?? [];
 
   const refresh = useCallback(async (silent = false) => {
     // 重置为检查中，给用户明确的"正在刷新"反馈
@@ -74,27 +91,27 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
     // 本体查询 MCP 服务：内置对外工具面，工具清单经 nginx /mcp/ 拉取
     try {
       const [s, tools] = await Promise.all([getMcpStatus('ontology-query'), getMcpTools()]);
-      patch('ontologyQuery', { checking: false, running: s.running, tools, statusText: s.status });
+      patch('ontologyQuery', { checking: false, running: s.running, tools });
     } catch { patch('ontologyQuery', { checking: false, running: false, tools: [] }); }
     // 公共函数 MCP 服务：第二个内置对外工具面（平台通用算力，发布 + 执行一体）
     try {
       const [s, tools] = await Promise.all([getMcpStatus('common-function'), getCommonFunctionMcpTools()]);
-      patch('commonFunction', { checking: false, running: s.running, tools, statusText: s.status });
+      patch('commonFunction', { checking: false, running: s.running, tools });
     } catch { patch('commonFunction', { checking: false, running: false, tools: [] }); }
     // 本体函数执行服务：零工具（transport=none），只看运行态
     try {
       const s = await getMcpStatus('function-executor');
-      patch('functionExecutor', { checking: false, running: s.running, statusText: s.status });
+      patch('functionExecutor', { checking: false, running: s.running });
     } catch { patch('functionExecutor', { checking: false, running: false }); }
-    // 数据引擎执行服务：工具面仅内网（不对外代理），故只读运行态
+    // 数据引擎执行服务：同样零工具（2026-10-19 方案 B，不挂 /mcp），只看运行态
     try {
       const s = await getMcpStatus('data-engine');
-      patch('dataEngine', { checking: false, running: s.running, statusText: s.status });
+      patch('dataEngine', { checking: false, running: s.running });
     } catch { patch('dataEngine', { checking: false, running: false }); }
     // 业务系统 MCP：与其他固定服务同权，可启停（2026-10-04 用户决策）
     try {
       const [s, tools] = await Promise.all([getMcpStatus('business'), getBusinessMcpTools()]);
-      patch('business', { checking: false, running: s.running, tools, statusText: s.status });
+      patch('business', { checking: false, running: s.running, tools });
     } catch { patch('business', { checking: false, running: false, tools: [] }); }
     if (!silent) message.success('状态已刷新');
   }, []);
@@ -135,7 +152,18 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
           getBehaviors(ontologyId),
           getDataEngines(ontologyId),
         ]);
-        setMeta({ host_port_min: m.host_port_min, host_port_max: m.host_port_max });
+        setMeta({
+          kinds: m.kinds?.length ? m.kinds : ALL_PUBLISH_KINDS,
+          transports: m.transports?.length ? m.transports : ALL_PUBLISH_TRANSPORTS,
+          host_port_min: m.host_port_min,
+          host_port_max: m.host_port_max,
+        });
+        // 后端清单可能收窄（例如某类发布暂不支持）：把当前选择收敛到合法值，避免提交被 400 拒绝
+        setForm(f => ({
+          ...f,
+          kind: m.kinds?.includes(f.kind) ? f.kind : (m.kinds?.[0] ?? f.kind),
+          transport: m.transports?.includes(f.transport) ? f.transport : (m.transports?.[0] ?? f.transport),
+        }));
         // 就绪判据与运行面同源（契约 ⑥）：唯一实现在 ./mcp-publish/readiness，对齐后端 is_engine_ready
         const ready = readyBehaviorNames(engines);
         setOptions({
@@ -171,7 +199,13 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
       });
       message.success(`发布「${created.name}」已创建并启动（${created.tool_count} 个工具）`);
       setDrawerOpen(false);
-      setForm({ name: '', kind: 'ontology_function', items: [], host_port: 8020, transport: 'streamable' });
+      setForm({
+        name: '',
+        kind: ALL_PUBLISH_KINDS[0],
+        items: [],
+        host_port: meta?.host_port_min ?? 8020,
+        transport: ALL_PUBLISH_TRANSPORTS[0],
+      });
       await refreshPublished(true);
     } catch (e: any) {
       message.error('创建发布失败: ' + e.message);
@@ -233,23 +267,45 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
     }
   };
 
-  /** 查看配置片段：对外工具面与执行底座为静态文案（config-snippets）；业务系统 MCP 走「MCP 配置」页。 */
+  /**
+   * 查看配置片段：全部走静态两段生成（与自建发布同构）。
+   *
+   * 业务系统是唯一**非内置**的对外服务，需要去「MCP 配置」页取它登记的请求头（若配了鉴权）；
+   * 读配置失败或未登记都**不阻断**——片段照给（无 headers），只在说明里提示，绝不整条回显内部条目。
+   */
   const openConfig = async (def: FixedServiceDef) => {
-    const preset = staticServiceConfig(def, host);
-    if (preset) { setConfigModal(preset); return; }
+    if (def.key !== 'business') {
+      setConfigModal(staticServiceConfig(def, host));
+      return;
+    }
     try {
       const cfg = await getMCPConfig();
-      const entry = cfg.servers.find(s => !s.builtin && s.url.includes('business-mcp'));
-      setConfigModal(entry ? {
-        title: '业务系统 MCP（对外）',
-        json: JSON.stringify(entry, null, 2),
-        note: '业务侧集成边缘（非平台内置，外部形态）。以上为「MCP 配置」页中手工维护的条目（含 headers 鉴权）。',
-      } : {
-        title: '业务系统 MCP（对外）',
-        json: JSON.stringify({ name: '业务系统MCP', url: 'http://optonto-business-mcp:8004/mcp', enabled: true }, null, 2),
-        note: '尚未在「MCP 配置」页配置该服务。以上为参考条目——请前往 MCP 配置页手工新增（它不是平台内置服务，不会自动注册）。',
+      const entry = findServiceEntry(def, cfg.servers);
+      // 空对象也按“没配请求头”处理：片段里不出现 `headers: {}`（客户端会当成要发一个空头集合）
+      const headers = entry?.headers && Object.keys(entry.headers).length > 0 ? entry.headers : undefined;
+      setConfigModal(staticServiceConfig(def, host, { headers, registered: !!entry }));
+    } catch (e: any) {
+      setConfigModal(staticServiceConfig(def, host, { configError: e.message }));
+    }
+  };
+
+  /**
+   * 查看自建发布的工具清单：数据来自**发布时冻结的快照**（core 读注册表，不探测容器）。
+   *
+   * 失败时只 toast 原因、**不打开空清单**——"找不到"显示成"0 个工具"会让用户以为发布没问题；
+   * 真正的空快照（0 条）才走弹窗空态。
+   */
+  const showPublishedTools = async (svc: PublishedService) => {
+    try {
+      const r = await getPublishedTools(svc.name);
+      setToolsModal({
+        title: `自建发布「${svc.name}」`,
+        tools: r.tools,
+        note: '工具清单为发布时快照，修改本体后需重新发布才会更新（停机也可查看）。',
       });
-    } catch (e: any) { message.error('读取 MCP 配置失败: ' + e.message); }
+    } catch (e: any) {
+      message.error(`读取「${svc.name}」工具清单失败: ${e.message}`);
+    }
   };
 
   /** 启停固定服务（五个固定服务同权；停机前一律弹影响面确认） */
@@ -281,12 +337,13 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
         : await startMcp(def.service);
       message.success(r.message);
       patch(key, { running: r.running });
-      // 只有对外工具面需要回填工具清单（执行底座的工具面不对外）
-      if (r.running && key === 'ontologyQuery') {
+      // 三个对外工具面启动后都要回填清单（执行底座零工具，不在 TOOL_FETCHERS 里）
+      const fetchTools = TOOL_FETCHERS[key];
+      if (r.running && fetchTools) {
         for (let attempt = 0; attempt < 6; attempt++) {
           await new Promise(r2 => setTimeout(r2, 1000));
           try {
-            const tools = await getMcpTools();
+            const tools = await fetchTools();
             if (tools && tools.length > 0) { patch(key, { tools }); break; }
           } catch { /* retry：等容器就绪 */ }
         }
@@ -326,9 +383,10 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
         <section aria-label="固定发布">
           <div className="flex items-center justify-between gap-4 mb-2">
             <span className="text-xs text-text-muted">
-              固定发布为平台内置常驻，不可新建/删除：<span className="text-accent-blue">本体查询 MCP 服务</span>与
+              固定发布为平台内置常驻（不可新建/删除）：<span className="text-accent-blue">本体查询 MCP 服务</span>与
               <span className="text-accent-blue">公共函数 MCP 服务</span>是两个内置对外工具面；
-              两个<span className="text-accent-blue">执行服务</span>只在 Docker 内网可达，不对外提供工具
+              两个<span className="text-accent-blue">执行服务</span>零工具、只在 Docker 内网可达；
+              对外服务的「查看配置」给出宿主与容器内两段
             </span>
             <Button size="small" loading={fixedRefreshing} onClick={() => refresh()}>刷新</Button>
           </div>
@@ -352,7 +410,8 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
         <section aria-label="自建发布">
           <div className="flex items-center justify-between gap-4 mb-2">
             <span className="text-xs text-text-muted">
-              自建发布（动态容器：对外提供执行能力的唯一出口。一个镜像多实例，宿主端口 8020-8099，发布即冻结工具清单）
+              自建发布为动态容器（一个镜像多实例，宿主端口 8020-8099，可启停/删除）：按本体切片对外提供函数或行为；
+              发布即冻结工具清单，可随时查看快照（与固定发布的卡片结构一致）
             </span>
             <Button size="small" loading={loadingPublished} onClick={() => refreshPublished()}>刷新</Button>
           </div>
@@ -368,6 +427,7 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
                 onShowConfig={showPublishedConfig}
                 onToggle={togglePublished}
                 onRemove={removePublished}
+                onShowTools={showPublishedTools}
               />
             )}
             empty={(
@@ -406,10 +466,11 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
               onChange={e => setForm({ ...form, kind: e.target.value as PublishKind, items: [] })}
               optionType="button"
               buttonStyle="solid"
-              options={[
-                { value: 'ontology_function', label: '本体函数' },
-                { value: 'behavior', label: '本体行为' },
-              ]}
+              // 选项来自后端 `/meta`（运行时事实源）：后端新增/收窄发布类型时前端无需改代码
+              options={(meta?.kinds ?? ALL_PUBLISH_KINDS).map(k => ({
+                value: k,
+                label: (KIND_LABEL as Record<string, string | undefined>)[k] ?? k,
+              }))}
             />
           </div>
           <div>
@@ -425,9 +486,9 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
               loading={loadingOptions}
               placeholder={loadingOptions ? '加载本体清单中...' : `选择要发布的${KIND_LABEL[form.kind]}`}
               optionFilterProp="label"
-              options={options[form.kind].map(o => ({ value: o.name, label: o.label, disabled: !o.ready }))}
+              options={itemsOfKind.map(o => ({ value: o.name, label: o.label, disabled: !o.ready }))}
               optionRender={opt => {
-                const item = options[form.kind].find(o => o.name === opt.value);
+                const item = itemsOfKind.find(o => o.name === opt.value);
                 return (
                   <div className="flex items-center justify-between gap-3">
                     <span>{item?.label}</span>
@@ -456,10 +517,11 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
                 className="w-full"
                 value={form.transport}
                 onChange={v => setForm({ ...form, transport: v as PublishTransport })}
-                options={[
-                  { value: 'streamable', label: 'streamable-http（/mcp）' },
-                  { value: 'sse', label: 'sse（/sse + /messages/）' },
-                ]}
+                // 同上：选项以后端 `/meta` 为准，文案与端点形态的对应收在 catalog 里
+                options={(meta?.transports ?? ALL_PUBLISH_TRANSPORTS).map(t => ({
+                  value: t,
+                  label: (TRANSPORT_OPTION_LABEL as Record<string, string | undefined>)[t] ?? t,
+                }))}
               />
             </div>
           </div>

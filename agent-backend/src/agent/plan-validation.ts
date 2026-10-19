@@ -10,26 +10,39 @@ import { validateParamsAgainstSchema } from './param-contract.js';
 export interface InvalidTaskName {
   sub: SubTask;
   valid: string[];
-  /** 非法原因（行为名专用）：missing=本体未声明该行为；notReady=已声明但未就绪（未完成映射、
-   *  未发布为工具，契约 ⑥）——两者给父 Agent 的自纠方向不同，故分开 */
-  reason?: 'missing' | 'notReady';
+  /** 非法原因（行为名专用），三者给父 Agent 的自纠方向不同，故分开：
+   *  - missing=本体未声明该行为（多半是名字写错）；
+   *  - notReady=已声明但未就绪（未完成数据引擎映射）；
+   *  - notPublished=已就绪但**没有挂载点**（2026-10-19 方案 B：行为工具唯一来源是自建发布）。 */
+  reason?: 'missing' | 'notReady' | 'notPublished';
 }
 
 /**
- * 行为名合法性：**就绪行为**才可规划（契约 ⑥ 的规划面同口径）。
+ * 行为名合法性：**能挂上才算合法**（契约 ⑥ 的规划面同口径）。
  *
- * 发布面只发布已映射的行为（未就绪者不在工具清单里）；这里若按本体声明的全量名单放行，
- * 未就绪行为会被规划、却在挂载期找不到工具——子 Agent 只能以"工具不存在"含糊失败。
- * 故规划期即拒，并把"不存在"与"未就绪"分开报（后者要换行为或如实告知用户，不是改名）。
+ * 2026-10-19 方案 B：数据引擎执行服务已零工具化，行为工具只能来自自建发布。此时"已就绪"
+ * 不再等于"能执行"——若只按就绪放行，父 Agent 会规划一个没有挂载点的行为，子 Agent 只能以
+ * "工具不存在"含糊失败。故传了 catalog 时**以实际挂载目录为准**，就绪列表只用于区分原因：
+ * 已就绪但目录里没有 → notPublished（引导去发布，而不是改名）。
+ *
+ * catalog 缺省（未连接/通用模式/旧调用）时退回就绪列表，保持既有语义。
  */
-export function validateBehaviorNames(gateway: OntologyGatewayPort, plan: SubTaskPlan): InvalidTaskName[] {
+export function validateBehaviorNames(
+  gateway: OntologyGatewayPort,
+  plan: SubTaskPlan,
+  catalog?: Pick<FunctionCatalogView, 'behaviorNames'>,
+): InvalidTaskName[] {
   const invalid: InvalidTaskName[] = [];
   for (const st of plan.subtasks) {
     if (st.function) continue; // 函数子任务不走行为名校验
     const ready = gateway.getReadyBehaviorNames(st.scenario_name, st.ontology_name);
-    if (ready.includes(st.behavior)) continue;
+    const mountable = catalog ? catalog.behaviorNames(st.scenario_name, st.ontology_name) : ready;
+    if (mountable.includes(st.behavior)) continue;
     const declared = gateway.getBehaviorNames(st.scenario_name, st.ontology_name);
-    invalid.push({ sub: st, valid: ready, reason: declared.includes(st.behavior) ? 'notReady' : 'missing' });
+    const reason: InvalidTaskName['reason'] = !declared.includes(st.behavior)
+      ? 'missing'
+      : (ready.includes(st.behavior) ? 'notPublished' : 'notReady');
+    invalid.push({ sub: st, valid: mountable, reason });
   }
   return invalid;
 }

@@ -39,16 +39,15 @@ _MCP_SUFFIXES = ("-mcp", "-executor")
 # compose 环境变量里以地址形式注入的键 → 必须指向真实容器
 _CORE_ENV_URL_KEYS = (
     "MCP_BUILTIN_URL",
-    "MCP_BUILTIN_DATA_ENGINE_URL",
     "MCP_BUILTIN_COMMON_FUNCTION_URL",
     "DATA_ENGINE_EXECUTOR_URL",
     "ONTOLOGY_FUNCTION_EXECUTOR_URL",
     "COMMON_FUNCTION_MCP_URL",
 )
-# agent 侧「预置/内置服务」的默认地址常量 → 必须指向真实容器
+# agent 侧「内置服务」的默认地址常量 → 必须指向真实容器
+# （数据引擎执行服务 2026-10-19 已零工具化，不再有 agent 侧默认地址常量）
 _AGENT_DEFAULT_URL_CONSTS = (
     "DEFAULT_BUILTIN_URL",
-    "DEFAULT_DATA_ENGINE_URL",
     "DEFAULT_COMMON_FUNCTION_URL",
 )
 _URL_RE = re.compile(r"(?:http://)?([a-z0-9-]+):(\d+)(/[^\s\"'`,]*)?")
@@ -302,8 +301,8 @@ class TransportClaimCase(TopologyCase):
     def test_不挂协议端点的服务不得对外(self):
         """`none`（无 /mcp、无 /sse）只能是「内网 + 不提供对外工具」——否则工具面无处可达。
 
-        注意反向不成立：数据引擎执行服务是 `streamable` 但 `publishTools: false`
-        （有 /mcp，仅供 Agent 内网挂载，只是不对外）。故只校验单向蕴含。
+        2026-10-19 方案 B 后两个执行底座（8005 / 8006）都是 `none`；本断言防的是
+        "改成零工具却仍宣称对外/提供工具"的自相矛盾。
         """
         for key, body in self._ui_items():
             hit = re.search(r"transport:\s*'(\w+)'", body)
@@ -312,6 +311,18 @@ class TransportClaimCase(TopologyCase):
                 continue
             self.assertIn("publishTools: false", body, f"{key}: 不挂协议端点却宣称对外提供工具")
             self.assertIn("exposure: '内网'", body, f"{key}: 不挂协议端点却宣称对外暴露")
+
+    def test_执行底座零工具是结构性保证(self):
+        """8005 / 8006 必须 `TRANSPORT_NONE`，且不注册任何 MCP 协议回调。
+
+        这是「不对外提供工具靠结构保证、而非约定」的落地点：只要有人把 transport 改回
+        streamable、或把 list_tools/call_tool 注册回来，本护栏立即失败。
+        """
+        for rel in ("data-engine-executor/server.py", "ontology-function-executor/server.py"):
+            text = self.read(rel)
+            self.assertIn("TRANSPORT_NONE", text, f"{rel}: 执行底座必须 transport=none")
+            self.assertNotIn("@server.list_tools()", text, f"{rel}: 零工具服务不得注册 list_tools")
+            self.assertNotIn("@server.call_tool()", text, f"{rel}: 零工具服务不得注册 call_tool")
 
     def test_客户端配置片段的type取客户端认的取值(self):
         """`type` 必须是客户端认的 http/sse，不能是自造的 url。
@@ -384,6 +395,39 @@ class SurfaceClaimCase(TopologyCase):
             self.assertIn(container, table, f"契约文档 §1 未列出 {container}（文档是协议事实源）")
         for token in set(re.findall(r"`(optonto-[a-z0-9-]+)`", table)):
             self.assertIn(token, self.containers, f"契约文档 §1 提到不存在的容器 {token}")
+
+
+class FixedSnippetCase(TopologyCase):
+    """固定服务「查看配置」片段 ⇄ 声明事实源（2026-10-19 两段式统一）。
+
+    防的是三类漂移：
+    1. 服务标识（clientKey）重复/缺失——两段片段的 key 来自它，重了就会互相覆盖；
+    2. 容器内地址指向不存在的容器或错端口——平台 Agent 只能走容器名（localhost 指向自己）；
+    3. 平台管理字段（enabled / business_data / allowed_tools / builtin）混进片段——
+       任何 MCP 客户端都不认，用户粘进去只会连不上。
+    """
+
+    def test_三个对外服务都有唯一的客户端标识(self):
+        text = self.read(_UI_SERVICE_CATALOG)
+        keys = re.findall(r"clientKey:\s*'([^']+)'", text)
+        self.assertEqual(len(keys), 3, f"应有 3 个对外服务声明 clientKey，实际 {keys}")
+        self.assertEqual(len(set(keys)), 3, f"clientKey 不得重复：{keys}")
+        for key in keys:
+            self.assertRegex(key, r"^optonto-[a-z0-9-]+$", f"clientKey 不是稳定服务标识：{key}")
+
+    def test_容器内地址指向真实容器与容器内端口(self):
+        text = self.read(_UI_SERVICE_CATALOG)
+        urls = re.findall(r"internalEndpoint:\s*'([^']+)'", text)
+        self.assertEqual(len(urls), 3, f"应有 3 个对外服务声明 internalEndpoint，实际 {urls}")
+        for url in urls:
+            self.assert_url_real(url, f"前端容器内地址 {url}")
+
+    def test_片段不写入平台管理字段(self):
+        snippets = self.read(_UI_CONFIG_SNIPPETS)
+        self.assertIn("mcpServers", snippets, "片段必须仍是 {mcpServers: …} 结构")
+        self.assertIn("internalEndpoint", snippets, "第二段应由声明里的容器内地址生成")
+        for forbidden in ('"enabled"', '"business_data"', '"allowed_tools"', '"builtin"'):
+            self.assertNotIn(forbidden, snippets, f"配置片段不得写入平台管理字段 {forbidden}")
 
 
 if __name__ == "__main__":

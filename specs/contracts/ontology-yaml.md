@@ -200,7 +200,7 @@
 
 **归一化（`mcp-shared/function_runner.py::_normalize_output`，读时兼容）**：新式（带 bool `success`）原样放行；
 旧式 `{"result": …}` 拆包进 `data`（单 result 键取其值，多顶层键整包保留）；裸返回整包作 `data`（stderr 告警）。
-行为（behavior_tools 发布）与外部 MCP 工具**不在信封范围**（各有既有消费方 / 源头不受控）。
+行为（自建发布；2026-10-19 起 8005 零工具）与外部 MCP 工具**不在信封范围**（各有既有消费方 / 源头不受控）。
 
 ### 规则关联函数与判断函数（口径 B：类型即角色 → 真阻断）
 

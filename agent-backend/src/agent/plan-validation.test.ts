@@ -123,13 +123,14 @@ function plan(subtasks: SubTask[]): SubTaskPlan {
   return { subtasks };
 }
 
-const ONTARIO_SCOPE = { name: '', ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' };
+const ONTARIO_SCOPE = { ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' };
 
-/** 本体行为目录项（行为工具；schema = core 编译产物，scope.name 为裸名） */
-function behaviorTool(bareName: string, schema: Record<string, any>, toolName?: string): MountableToolInfo {
+/** 本体行为目录项（行为工具；schema = core 编译产物，工具名即行为裸名） */
+/** 本体行为目录项：工具名即行为裸名（契约⑤），scope 只含本体身份 */
+function behaviorTool(name: string, schema: Record<string, any>): MountableToolInfo {
   return {
-    name: toolName ?? bareName, category: '本体行为', description: '', params: {},
-    schema, scope: { ...ONTARIO_SCOPE, name: bareName },
+    name, category: '本体行为', description: '', params: {},
+    schema, scope: { ...ONTARIO_SCOPE },
   };
 }
 
@@ -137,7 +138,7 @@ function behaviorTool(bareName: string, schema: Record<string, any>, toolName?: 
 function ontoFnTool(name: string, schema: Record<string, any>): MountableToolInfo {
   return {
     name, category: '本体函数', description: '', params: {},
-    schema, scope: { ...ONTARIO_SCOPE, name },
+    schema, scope: { ...ONTARIO_SCOPE },
   };
 }
 
@@ -215,6 +216,44 @@ describe('validateBehaviorNames · 就绪才是可规划集（契约 ⑥）', ()
   });
 });
 
+describe('validateBehaviorNames · 方案 B：可挂载才是可规划集', () => {
+  /** 网关桩：两个行为已就绪（映射完成），但目录（实际挂载）可能一个都没有 */
+  const gw = {
+    ...fakeGateway(),
+    getBehaviorNames: () => ['QueryPurchaseRecords', 'CreatePurchaseRecord'],
+    getReadyBehaviorNames: () => ['QueryPurchaseRecords', 'CreatePurchaseRecord'],
+  } as OntologyGatewayPort;
+  const catalog = (names: string[]) => ({ behaviorNames: () => names });
+
+  it('已就绪但未发布（目录无该行为）→ notPublished，valid 为目录实际名单', () => {
+    const invalid = validateBehaviorNames(gw, plan([behSubtask('CreatePurchaseRecord')]), catalog([]));
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0].reason).toBe('notPublished');
+    expect(invalid[0].valid).toEqual([]);
+  });
+
+  it('已发布（目录有该行为）→ 放行', () => {
+    expect(validateBehaviorNames(gw, plan([behSubtask('CreatePurchaseRecord')]), catalog(['CreatePurchaseRecord'])))
+      .toEqual([]);
+  });
+
+  it('目录有但网关就绪集滞后 → 以实际挂载为准放行（不因状态缓存误拦）', () => {
+    const staleGateway = { ...gw, getReadyBehaviorNames: () => [] } as OntologyGatewayPort;
+    expect(validateBehaviorNames(staleGateway, plan([behSubtask('QueryPurchaseRecords')]), catalog(['QueryPurchaseRecords'])))
+      .toEqual([]);
+  });
+
+  it('目录与就绪集都没有、但本体声明了 → 仍区分为 notReady（映射未完成）', () => {
+    const gwNotReady = {
+      ...fakeGateway(),
+      getBehaviorNames: () => ['StartSchedTask'],
+      getReadyBehaviorNames: () => [],
+    } as OntologyGatewayPort;
+    const invalid = validateBehaviorNames(gwNotReady, plan([behSubtask('StartSchedTask')]), catalog([]));
+    expect(invalid[0].reason).toBe('notReady');
+  });
+});
+
 describe('validateAllParams · 编译 schema 校验（行为/函数统一）', () => {
   const BEH_SCHEMA = {
     type: 'object',
@@ -248,10 +287,9 @@ describe('validateAllParams · 编译 schema 校验（行为/函数统一）', (
     expect(errors.some(e => e.includes('不在枚举值'))).toBe(true);
   });
 
-  it('行为子任务：按 scope.name（行为名）回溯 schema，不依赖工具名', async () => {
-    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA, '工具名与行为名不同时的兜底')]);
-    const errors = validateAllParams(view, plan([behSubtask('CreatePurchaseRecord')]));
-    expect(errors).toEqual(['子任务1(CreatePurchaseRecord) 缺少必填参数 rawMaterialId']);
+  it('行为子任务：schema 按工具名回溯（工具名即行为裸名，契约⑤）', async () => {
+    const view = await mkView([behaviorTool('CreatePurchaseRecord', BEH_SCHEMA)]);
+    expect(view.behaviorSchema('生产调度', '原材料采购和库存', 'CreatePurchaseRecord')).toEqual(BEH_SCHEMA);
   });
 
   it('行为无 schema（目录无该行为工具）→ 跳过（执行期 harness schema 兜底）', async () => {

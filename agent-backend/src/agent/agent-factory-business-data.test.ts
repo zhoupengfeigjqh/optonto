@@ -5,7 +5,7 @@
  * （business-mcp 支持 GET/POST/PUT/DELETE），且无 `x-category` 标记者——消费端兜底归类为
  * 「其他MCP工具」。这类工具一旦进入 Agent 目录，父 Agent 可把它规划成「函数子任务」，
  * 而函数子任务走 `AgentFactory.callFunctionTool` 直连路径，该路径**不经过**
- * `createChildAgent` 的 `scopeToOntology` 包装——安全确认、disable 权限闸、前置/后置规则闸、
+ * `createChildAgent` 的 `guardExecution` 包装——安全确认、disable 权限闸、前置/后置规则闸、
  * 报错预算四道闸一道都没有（等于业务写入零人工闸门直接落库）。
  *
  * 治理口径：`business_data === true`（声明为业务数据）的服务，其**原始未映射工具**
@@ -38,11 +38,11 @@ const MARKED_BIZ = 'http://biz-marked:8004/mcp';
 const CHART = 'http://chart:9000/mcp';
 
 /**
- * 本体行为工具的完整形态：带 x-category 与 scope 上下文块（否则 assertToolProtocol 会判版本错配）。
+ * 本体行为工具的完整形态：x-category + 本体上下文 x-ontology-scope（否则 assertToolProtocol 会判版本错配）。
  *
- * 注意 `x-category` / `x-display_name` 位于 **inputSchema 内**——分类标记是 JSON Schema 的扩展键
- * （发布端 `mcp-shared/tool_contract.py: with_category` 注入的就是 input_schema），
- * 消费端 `tool-catalog.publishedCategory(schema)` 也从 schema 顶层读，两端口径一致。
+ * 注意 `x-category` / `x-display_name` / `x-ontology-scope` 位于 **inputSchema 内**——都是 JSON Schema
+ * 的扩展键（发布端 `mcp-shared/tool_contract.py` 注入的就是 input_schema），
+ * 消费端 `tool-catalog.publishedCategory/readOntologyScope` 也从 schema 顶层读，两端口径一致。
  */
 const BEHAVIOR_TOOL = {
   name: 'QueryInventory',
@@ -50,22 +50,16 @@ const BEHAVIOR_TOOL = {
   inputSchema: {
     type: 'object',
     properties: {
-      scope: {
-        type: 'object',
-        description: '本体上下文',
-        properties: {
-          name: { type: 'string', const: 'QueryInventory' },
-          ontology_id: { type: 'integer', const: 1 },
-          scenario_id: { type: 'integer', const: 1 },
-          scenario_name: { type: 'string', const: '生产调度' },
-          ontology_name: { type: 'string', const: '原材料采购和库存' },
-        },
-      },
+      ontology_id: { type: 'integer', description: '本体 ID（必填）' },
       keyword: { type: 'string', description: '查询关键字' },
     },
-    required: ['keyword'],
+    required: ['ontology_id', 'keyword'],
     'x-category': '本体行为',
     'x-display_name': '查询库存',
+    'x-ontology-scope': {
+      ontology_id: 1, scenario_id: 1,
+      scenario_name: '生产调度', ontology_name: '原材料采购和库存',
+    },
   },
 };
 

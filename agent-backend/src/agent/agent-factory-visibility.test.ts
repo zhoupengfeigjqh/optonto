@@ -26,7 +26,6 @@ vi.mock('../services/mcp-config-store.js', () => ({
       ] };
     }
   },
-  isDataEngineMcpUrl: () => false,
   // 业务数据闸判定（真实实现同口径：严格 === true，缺省=否）。此处「业务系统MCP」未声明该字段
   // → 闸不生效，本文件专注验证「配映射即收编」这一条治理动作不被新闸干扰
   isBusinessDataServer: (s: any) => s?.business_data === true,

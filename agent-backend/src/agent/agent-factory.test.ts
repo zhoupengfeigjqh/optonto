@@ -3,7 +3,7 @@
  *
  * 覆盖：createParentAgent 历史映射（summary → assistant +【历史摘要】前缀）、
  * submit_plan 互斥门与键省略容忍、父/子 Agent 工具职责边界（2026-09 行为工具化后：
- * 本体行为是一等 MCP 工具，子 Agent 按 legalCalls.behaviors 的 scope.name 裸名挂载，
+ * 本体行为是一等 MCP 工具，子 Agent 按 legalCalls.behaviors（工具名即行为裸名）挂载，
  * 挂载期过滤即白名单）、子 Agent 三道安全闸（闸1 disable / 闸2 前置规则留痕 /
  * 闸2.5 判断函数）、toMountableToolInfo 发布方标记分类。
  *
@@ -27,7 +27,7 @@ import type { SubtaskPolicy, RuleGate, LegalCalls } from './execution-policy.js'
 import type { ThreadMessage, ConversationScope } from '../types.js';
 vi.mock('@earendil-works/pi-agent-core', () => ({ Agent: vi.fn() }));
 
-/** MCP callTool 调用记录（验证 scopeToOntology 的 ontology_id 强制注入与剥 scope）；
+/** MCP callTool 调用记录（验证参数原样透传：agent 不再注入/覆盖 ontology_id）；
  *  responses 可按工具名注入自定义返回（闸2.5 判断用例：信封 data.pass=false） */
 const mcpCalls = vi.hoisted(() => ({
   list: [] as { name: string; args: any }[],
@@ -37,28 +37,25 @@ const mcpCalls = vi.hoisted(() => ({
 // MCP 配置：一个启用的内置本体 MCP server（供 discoverTools 发现工具）
 vi.mock('../services/mcp-config-store.js', () => ({
   MCPConfigStore: class { getConfig() { return { servers: [{ name: '本体MCP', url: 'http://mcp-test/sse', enabled: true, builtin: true }] }; } },
-  isDataEngineMcpUrl: () => false,
   // 业务数据闸判定（真实实现的同口径：严格 === true，缺省=否）。本装配的服务均未声明该字段 → 闸不生效
   isBusinessDataServer: (s: any) => s?.business_data === true,
 }));
 
 /**
  * 发布形态 schema 构造（与 mcp-shared/tool_contract.py 契约一致）：
- * 分类标记 = 顶层 x-category / x-display_name；scope 上下文块只含本体上下文（无标记）。
+ * 分类标记 = 顶层 x-category / x-display_name；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
+ * ontology_id 是必填业务参数（由 LLM 填写）。
  */
-function ontoTool(category: string, bareName: string, displayName: string, ontologyId: number,
+function ontoTool(category: string, _bareName: string, displayName: string, ontologyId: number,
                 ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,
     'x-display_name': displayName,
+    'x-ontology-scope': {
+      ontology_id: ontologyId, scenario_id: 1,
+      scenario_name: '生产调度', ontology_name: ontologyName,
+    },
     properties: {
-      scope: { type: 'object', properties: {
-        name: { type: 'string', const: bareName },
-        ontology_id: { type: 'integer', const: ontologyId },
-        scenario_id: { type: 'integer', const: 1 },
-        scenario_name: { type: 'string', const: '生产调度' },
-        ontology_name: { type: 'string', const: ontologyName },
-      } },
       ontology_id: { type: 'integer' },
       ...props,
     },
@@ -187,8 +184,8 @@ export async function captureTransformContext(): Promise<{ config: any; transfor
 }
 
 /**
- * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → scopeToOntology）。
- * 走公开路径而非直接调私有 scopeToOntology，保证测试覆盖的是真实装配链路。
+ * 捕获子 Agent 配置中的工具列表（createChildAgent → discoverTools → guardExecution）。
+ * 走公开路径而非直接调私有 guardExecution，保证测试覆盖的是真实装配链路。
  * policy 完整策略对象直造（生产路径由 buildSubtaskPolicy 派生；工厂只消费不派生）：
  * legalCalls 默认含主行为 + 一个规则关联行为 + 关联函数。
  */
@@ -417,13 +414,13 @@ describe('AgentFactory 父 Agent 工具职责边界', () => {
     // 完整参数结构（type/required/description/example）
     expect(byName['getCurrentDate'].params).toEqual({});
     expect(byName['weatherQuery'].params).toEqual({ city: { type: 'string', required: false } });
-    // 本体函数：params 剔除 scope/ontology_id，另附 scope 真实值（含 name 裸名；父 Agent 填子任务场景/本体字段用）
-    expect(byName['calcSafetyStock'].params).toEqual({
-      currentStock: { type: 'number', required: false },
-      safetyStock: { type: 'number', required: false },
-    });
+    // 本体函数：本体元数据不进参数面；ontology_id 是必填参数（由调用方填写）
+    expect(byName['calcSafetyStock'].params.ontology_id).toMatchObject({ type: 'integer', required: true });
+    expect(byName['calcSafetyStock'].params.currentStock).toEqual({ type: 'number', required: false });
+    expect(byName['calcSafetyStock'].params.safetyStock).toEqual({ type: 'number', required: false });
+    expect(byName['calcSafetyStock'].params.scope).toBeUndefined();
+    // 归属元数据另附（父 Agent 填子任务场景/本体字段用），且不含冗余的 name（工具名即裸名）
     expect(byName['calcSafetyStock'].scope).toEqual({
-      name: 'calcSafetyStock',
       ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存',
     });
     expect(byName['weatherQuery'].scope).toBeUndefined(); // 非本体函数无 scope
@@ -519,30 +516,35 @@ describe('AgentFactory 子 Agent 工具职责边界与挂载期过滤（机制�
     expect(withExternal.map(t => t.name)).toContain('weatherQuery');
   });
 
-  it('行为/函数工具：子 Agent 视角 schema 已剔除 ontology_id 与 scope 块；调用时强制注入本run本体 id', async () => {
+  it('行为/函数工具：LLM 看不到本体元数据，ontology_id 是必填参数且调用方值原样透传', async () => {
     const tools = await captureChildTools();
     const behTool = tools.find(t => t.name === 'CreatePurchaseRecord');
-    const behProps = (behTool.parameters as any)?.properties ?? {};
-    expect('ontology_id' in behProps).toBe(false);
-    expect('scope' in behProps).toBe(false);
+    const behSchema = behTool.parameters as any;
+    const behProps = behSchema.properties ?? {};
+    expect(behProps.ontology_id).toEqual({ type: 'integer' }); // 必填参数，LLM 可见可填
+    expect(behSchema.required).toContain('ontology_id');
+    expect('scope' in behProps).toBe(false);                   // scope 不是参数
+    expect('x-ontology-scope' in behSchema).toBe(false);       // 元数据不交给 LLM
+    expect(behTool.ontologyScope).toEqual({                    // 元数据留在平台内部
+      ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存',
+    });
     // 编译 schema 的参数与约束原样保留（harness 校验依据）
     expect(behProps.qty).toEqual({ type: 'integer', minimum: 1, maximum: 100 });
-    await behTool.execute('call-1', { rawMaterialId: 'RM-1', qty: 10 });
+    await behTool.execute('call-1', { ontology_id: 1, rawMaterialId: 'RM-1', qty: 10 });
     expect(mcpCalls.list[0].name).toBe('CreatePurchaseRecord');
-    expect(mcpCalls.list[0].args).toEqual({ rawMaterialId: 'RM-1', qty: 10, ontology_id: 1 }); // 强制注入
+    expect(mcpCalls.list[0].args).toEqual({ ontology_id: 1, rawMaterialId: 'RM-1', qty: 10 });
 
     const fnTool = tools.find(t => t.name === 'calcSafetyStock');
-    expect('ontology_id' in ((fnTool.parameters as any)?.properties ?? {})).toBe(false);
-    await fnTool.execute('call-2', { currentStock: 10, safetyStock: 5 });
-    expect(mcpCalls.list[1].args).toEqual({ currentStock: 10, safetyStock: 5, ontology_id: 1 });
+    expect((fnTool.parameters as any).properties.ontology_id).toEqual({ type: 'integer' });
+    await fnTool.execute('call-2', { ontology_id: 1, currentStock: 10, safetyStock: 5 });
+    expect(mcpCalls.list[1].args).toEqual({ ontology_id: 1, currentStock: 10, safetyStock: 5 });
   });
 
-  it('行为工具锁定到当前本体：调用方所传 ontology_id 被本run值覆盖（不信任 LLM 传参）', async () => {
+  it('ontology_id 由调用方（LLM）填写并原样透传——agent 不覆盖（覆盖会掩盖填错的本体，校验形同虚设）', async () => {
     const tools = await captureChildTools();
     const behavior = tools.find(t => t.name === 'QuerySupplier');
     await behavior.execute('call-3', { ontology_id: 999 });
-    // scopeToOntology 一律注入本run ontology_id=1（跨本体调用由编排层另行负责，子 Agent 视角恒锁本run本体）
-    expect(mcpCalls.list[0].args.ontology_id).toBe(1);
+    expect(mcpCalls.list[0].args.ontology_id).toBe(999);
   });
 });
 
@@ -709,49 +711,66 @@ describe('AgentFactory 子 Agent 前置判断函数判断闸（闸2.5：判断�
 // ─── toMountableToolInfo：发布方标记分类（纯函数，脱离 MCP 连接直测） ─────────────
 
 describe('toMountableToolInfo 标记分类', () => {
-  it('本体函数：x-category 标记 → 归本体函数，剥离 scope/ontology_id，scope 留上下文四值 + name 裸名', () => {
+  const NEW_SCOPE = {
+    ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存',
+  };
+
+  it('本体函数：元数据提升为 scope；ontology_id 保留为必填参数；参数面不含 scope', () => {
     const info = toMountableToolInfo({
       name: 'calcSafetyStock',
       description: '计算安全库存',
-      parameters: { type: 'object', 'x-category': '本体函数', 'x-display_name': '计算安全库存', properties: {
-        scope: { type: 'object', properties: {
-          name: { const: 'calcSafetyStock' },
-          ontology_id: { const: 1 }, scenario_id: { const: 1 },
-          scenario_name: { const: '生产调度' }, ontology_name: { const: '原材料采购和库存' },
-        } },
-        ontology_id: { type: 'integer' }, currentStock: { type: 'number' },
-      }, required: ['ontology_id'] },
+      parameters: {
+        type: 'object',
+        'x-category': '本体函数',
+        'x-display_name': '计算安全库存',
+        'x-ontology-scope': NEW_SCOPE,
+        properties: { ontology_id: { type: 'integer' }, currentStock: { type: 'number' } },
+        required: ['ontology_id'],
+      },
     });
     expect(info.category).toBe('本体函数');
     expect(info.displayName).toBe('计算安全库存');
-    expect(info.params).toEqual({ currentStock: { type: 'number', required: false } }); // ontology_id/scope 已剥离
-    expect(info.scope).toEqual({ name: 'calcSafetyStock', ontology_id: 1, scenario_id: 1, scenario_name: '生产调度', ontology_name: '原材料采购和库存' });
-    // schema 原文（剥 scope/ontology_id）随条目携带——规划期参数校验数据源
-    expect(info.schema?.properties).toEqual({ currentStock: { type: 'number' } });
-    // required 同步剔除被剥的 ontology_id：不自相矛盾（required 不引用未声明的键）
-    expect(info.schema?.required).toEqual([]);
+    // ontology_id 是调用方必填参数（不再被剥掉）；scope 元数据不是参数
+    expect(info.params.ontology_id).toMatchObject({ type: 'integer', required: true });
+    expect(info.params.currentStock).toEqual({ type: 'number', required: false });
+    expect(info.params.scope).toBeUndefined();
+    // 归属元数据独立携带（工具名即裸名，故无冗余 name）
+    expect(info.scope).toEqual(NEW_SCOPE);
+    // schema 原文（已剥元数据）随条目携带——规划期参数校验数据源
+    expect(info.schema?.properties).toEqual({ ontology_id: { type: 'integer' }, currentStock: { type: 'number' } });
+    expect(info.schema?.required).toEqual(['ontology_id']);
+    expect(info.schema?.['x-ontology-scope']).toBeUndefined();
   });
 
-  it('本体行为：x-category=本体行为 → 归类正确，工具名即行为名（scope.name 同值）', () => {
+  it('本体行为：工具名即行为名；约束随 schema 携带', () => {
     const info = toMountableToolInfo({
-      name: 'CreatePurchaseRecord', // 工具名 = 行为裸名（无本体前缀）
+      name: 'CreatePurchaseRecord',
       description: '创建采购记录',
-      parameters: { type: 'object', 'x-category': '本体行为', 'x-display_name': '创建采购记录', properties: {
-        scope: { type: 'object', properties: {
-          name: { const: 'CreatePurchaseRecord' },
-          ontology_id: { const: 1 }, scenario_id: { const: 1 },
-          scenario_name: { const: '生产调度' }, ontology_name: { const: '原材料采购和库存' },
-        } },
-        ontology_id: { type: 'integer' },
-        qty: { type: 'integer', minimum: 1, maximum: 100 },
-      }, required: ['ontology_id'] },
+      parameters: {
+        type: 'object',
+        'x-category': '本体行为',
+        'x-display_name': '创建采购记录',
+        'x-ontology-scope': NEW_SCOPE,
+        properties: { ontology_id: { type: 'integer' }, qty: { type: 'integer', minimum: 1, maximum: 100 } },
+        required: ['ontology_id'],
+      },
     });
     expect(info.category).toBe('本体行为');
     expect(info.name).toBe('CreatePurchaseRecord'); // 工具名（挂载键）
-    expect(info.scope?.name).toBe('CreatePurchaseRecord'); // 匹配键（与工具名同值）
+    expect(info.scope).toEqual(NEW_SCOPE);
     expect(info.params.qty).toEqual({ type: 'integer', required: false });
-    expect(info.schema?.properties?.qty).toEqual({ type: 'integer', minimum: 1, maximum: 100 }); // 约束随 schema 携带
-    expect(info.schema?.required).toEqual([]); // required 同步剔除被剥的 ontology_id
+    expect(info.schema?.properties?.qty).toEqual({ type: 'integer', minimum: 1, maximum: 100 });
+    expect(info.schema?.required).toEqual(['ontology_id']);
+  });
+
+  it('发现期已提升 ontologyScope 时直接复用（schema 里没有元数据也不影响）', () => {
+    const lifted = toMountableToolInfo({
+      name: 'calcSafetyStock', description: '',
+      parameters: { type: 'object', 'x-category': '本体函数', properties: { ontology_id: { type: 'integer' } }, required: ['ontology_id'] },
+      ontologyScope: NEW_SCOPE,
+    });
+    expect(lifted.scope).toEqual(NEW_SCOPE);
+    expect(lifted.params.ontology_id).toBeTruthy(); // ontology_id 是参数，保留
   });
 
   it('公共函数：x-category 标记 → 归公共函数，x-display_name 进 displayName', () => {
@@ -773,7 +792,7 @@ describe('toMountableToolInfo 标记分类', () => {
     expect(info.displayName).toBeUndefined();
   });
 
-  it('本体查询类：ontology_id 是父 Agent 真实填写的参数 → 保留在 required（不被误剔）', () => {
+  it('本体查询类：ontology_id 是父 Agent 真实填写的参数 → 保留在 required', () => {
     const info = toMountableToolInfo({
       name: 'listOntoFunctions', description: '查询函数清单',
       parameters: { type: 'object', 'x-category': '本体查询', properties: {
@@ -784,37 +803,39 @@ describe('toMountableToolInfo 标记分类', () => {
     expect(info.schema?.properties?.ontology_id).toEqual({ type: 'integer' });
   });
 
-  it('回归：外部工具碰巧带 ontology_id 参数 → 仍归其他MCP工具，参数不被误删（hasOntologyId 特征猜测已退役）', () => {
+  it('回归：外部工具碰巧带 ontology_id 参数 → 仍归其他MCP工具，参数不被误删', () => {
     const info = toMountableToolInfo({
       name: 'externalReport', description: '外部报表',
       parameters: { type: 'object', properties: { ontology_id: { type: 'integer' }, title: { type: 'string' } }, required: ['ontology_id'] },
     });
     expect(info.category).toBe('其他MCP工具');
-    expect(info.params.ontology_id).toBeTruthy(); // 真实业务参数原样保留
+    expect(info.params.ontology_id).toBeTruthy();
     expect(info.scope).toBeUndefined();
   });
 
-  it('协议不变式①：带 scope 块但缺 x-category → 快速失败（旧版发布形态，不得降级为外部工具）', () => {
-    const legacy = { type: 'object', properties: {
-      scope: { type: 'object', properties: { category: { const: '本体函数' }, ontology_id: { const: 1 } } },
-      ontology_id: { type: 'integer' },
-    }, required: ['ontology_id'] };
-    expect(() => assertToolProtocol('legacyFn', legacy)).toThrow('版本不匹配');
+  it('协议不变式①：带本体上下文但缺 x-category → 快速失败（不得降级为外部工具）', () => {
+    expect(() => assertToolProtocol('orphanFn',
+      { type: 'object', 'x-ontology-scope': NEW_SCOPE, properties: {} })).toThrow('版本不匹配');
   });
 
-  it('协议不变式②：标为本体行为/函数但缺 scope 块 → 快速失败（拿不到锁定依据）', () => {
+  it('协议不变式②：标为本体行为/函数但缺本体上下文 → 快速失败（拿不到归属依据）', () => {
     expect(() => assertToolProtocol('CreatePurchaseRecord',
-      { type: 'object', 'x-category': '本体行为', properties: {} })).toThrow('缺 scope 上下文块');
+      { type: 'object', 'x-category': '本体行为', properties: {} })).toThrow('缺本体上下文');
     expect(() => assertToolProtocol('calcSafetyStock',
-      { type: 'object', 'x-category': '本体函数', properties: {} })).toThrow('缺 scope 上下文块');
+      { type: 'object', 'x-category': '本体函数', properties: {} })).toThrow('缺本体上下文');
   });
 
-  it('协议不变式：本体查询 / 公共函数 / 外部工具（均无 scope）→ 校验通过', () => {
+  it('协议不变式：本体查询 / 公共函数 / 外部工具（均无本体上下文）→ 校验通过', () => {
     expect(() => assertToolProtocol('listOntoBehaviors',
       { type: 'object', 'x-category': '本体查询', properties: {} })).not.toThrow();
     expect(() => assertToolProtocol('getCurrentDate',
       { type: 'object', 'x-category': '公共函数', properties: {} })).not.toThrow();
     expect(() => assertToolProtocol('weatherQuery',
       { type: 'object', properties: {} })).not.toThrow();
+  });
+
+  it('协议不变式：本体执行类带 x-ontology-scope → 校验通过', () => {
+    expect(() => assertToolProtocol('calcSafetyStock',
+      { type: 'object', 'x-category': '本体函数', 'x-ontology-scope': NEW_SCOPE, properties: {} })).not.toThrow();
   });
 });

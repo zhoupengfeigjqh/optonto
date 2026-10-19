@@ -20,19 +20,18 @@ describe('固定服务传输模式', () => {
     }
   });
 
-  it('传输模式与服务端实际一致：8002/8007/8004/8005 = streamable，8006 = none', () => {
+  it('传输模式与服务端实际一致：8002/8007/8004 = streamable，8005/8006 = none', () => {
     const byKey = Object.fromEntries(FIXED_SERVICES.map(d => [d.key, d.transport]));
     expect(byKey).toEqual({
       ontologyQuery: 'streamable',
       commonFunction: 'streamable',
-      dataEngine: 'streamable',
+      dataEngine: 'none',
       business: 'streamable',
       functionExecutor: 'none',
     });
   });
 
   it('不挂协议端点（none）的只能是「内网 + 不提供对外工具」', () => {
-    // 反向不成立：数据引擎执行服务是 streamable 但 publishTools=false（有 /mcp，仅供内网挂载）
     for (const def of FIXED_SERVICES) {
       if (def.transport !== 'none') continue;
       expect(def.publishTools).toBe(false);

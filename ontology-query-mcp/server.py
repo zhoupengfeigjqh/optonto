@@ -6,8 +6,10 @@
 **不承担执行职责**（2026-10-04 拆分）：
 
 - 本体函数与公共函数的**执行唯一实现**已独立为 ``ontology-function-executor``（零工具，仅内网）；
-- 本体行为的**执行唯一实现**是 ``data-engine-executor``（仅内网）；
+- 本体行为的**执行唯一实现**是 ``data-engine-executor``（2026-10-19 起同样零工具，仅内网 REST）；
 - 对外提供"可执行能力"只有一条路：自建发布（``mcp-publish`` 动态容器，带令牌）。
+- 因此 ``listOntoBehaviors`` 按「**已就绪 ∩ 已发布**」过滤（见 ``publish_registry``）：
+  已映射但没有挂载点的行为不可规划，列出来只会诱导父 Agent 规划一个挂不上的行为。
 
 直读 .data（data_store，mtime 指纹热加载），运行期零回调 core-backend。
 
@@ -30,6 +32,7 @@ from mcp.types import TextContent, Tool
 
 import data_store
 from mcp_app import build_mcp_app
+from publish_registry import published_behavior_names
 from tool_contract import (
     CATEGORY_QUERY, build_query_schema, ready_behavior_names,
     require_ontology_id, with_category,
@@ -158,12 +161,14 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "listOntoBehaviors":
         data = _ontology_of(name, arguments)
-        # 契约 ⑥ 的**查询面**同口径：只列就绪（已映射、已发布为工具）的行为。
-        # 未就绪者不可规划（发布面已剔除、规划闸也拒），列出来只会诱导父 Agent 规划一个挂不上的行为；
-        # 查看未就绪行为请走设计器 / core API（设计期花名册视角，不经本工具）。
+        # 契约 ⑥ 的**查询面**同口径：只列「已就绪 ∩ 已发布」的行为。
+        # 2026-10-19 方案 B：行为工具唯一来源是自建发布，已就绪 ≠ 可执行——没有挂载点的行为
+        # 列出来只会诱导父 Agent 规划一个挂不上的行为（规划闸会拒，白费一轮）。
+        # 查看未就绪/未发布行为请走设计器 / core API（设计期花名册视角，不经本工具）。
         ready = ready_behavior_names(data)
+        published = published_behavior_names((data.get("metadata") or {}).get("ontology_id"))
         behaviors = [dict(b) for b in data.get("behaviors") or []
-                     if isinstance(b, dict) and b.get("name") in ready]
+                     if isinstance(b, dict) and b.get("name") in ready and b.get("name") in published]
         # 附带每个行为关联的规则：规则经 绑定行为（behavior 标量；旧数据 related_behaviors 数组取首个）反向挂到行为上
         rules = data.get("rules") or []
         for b in behaviors:

@@ -36,7 +36,7 @@ export interface MCPServerConfig {
 /**
  * 是否业务数据服务（缺省 = 否）——`business_data` 的唯一判定口径。
  *
- * 与 `isBuiltinServer` / `isDataEngineMcpUrl` / `isCommonFunctionMcpUrl` 同族：配置层的身份判定
+ * 与 `isBuiltinServer` / `isCommonFunctionMcpUrl` 同族：配置层的身份判定
  * 全部收在本文件，消费端（agent 目录装配、UI 下拉过滤）不得各写一份 `=== true` 判断。
  */
 export function isBusinessDataServer(s: MCPServerConfig | undefined | null): boolean {
@@ -63,31 +63,26 @@ const DEFAULT_BUILTIN_URL = 'http://optonto-ontology-query-mcp:8002/mcp';
 export const BUILTIN_MCP_URL = process.env['MCP_BUILTIN_URL'] || DEFAULT_BUILTIN_URL;
 
 /**
- * 数据引擎执行服务 —— 行为工具的**内网挂载入口**（2026-10-04 语义收敛）。
+ * 已下线的「数据引擎执行服务」MCP 地址（2026-10-19 方案 B，用户拍板）。
  *
- * 它是执行底座：不发布宿主端口、不对外提供工具，工具面仅供平台 Agent 内网挂载；
- * 对外提供"可执行行为"只有一条路：自建发布（mcp-publish 动态容器，带令牌、绑定单一本体）。
+ * 该服务已降为**零工具执行底座**（`transport=none`）：不再挂 `/mcp`，行为工具的唯一
+ * 提供方是自建发布（mcp-publish 动态容器，按本体切片 + 令牌 + 发布即授权）。
+ * 因此这里不再有"预置条目"，也不做地址归位——存量配置里指向该服务的条目必须**清除**：
+ * 留着它只会让 Agent 每次发现工具时连一个 404 端点（静默失效，最难排查）。
  *
- * 2026-10-04 口径变更（用户拍板）：从「内置恒全选」降级为「预置服务」——首次默认配置里仍带它（开箱可用），
- * 但此后与手工配置的 MCP 服务（如 antv）同权：可做工具范围选择（allowed_tools）、可停用、可编辑、可删除，
- * normalize 不复活、不强制覆盖。只有「行为工具永不收编」按 URL 豁免保留（见 agent-factory discoverTools）。
- * 旧服务名 optonto-data-engine-mcp 已列入 LEGACY，存量配置自动归位。
+ * 按 **host:port** 判定（而非整串精确匹配）：历史上有过 `/sse`、`/mcp` 与更名前的容器名，
+ * 且用户可能手写过尾部路径/斜杠。
  */
-const DEFAULT_DATA_ENGINE_URL = 'http://optonto-data-engine-executor:8005/mcp';
-const LEGACY_DATA_ENGINE_URL = 'http://optonto-data-engine-mcp:8005/sse';
-/** 2026-10-04 服务更名前的地址（存量配置自动归位，避免出现两个数据引擎条目） */
-const LEGACY_DATA_ENGINE_URLS = [
-  LEGACY_DATA_ENGINE_URL,
-  'http://optonto-data-engine-mcp:8005/mcp',
-];
-export const BUILTIN_DATA_ENGINE_MCP_URL = process.env['MCP_BUILTIN_DATA_ENGINE_URL'] || DEFAULT_DATA_ENGINE_URL;
+const DEAD_DATA_ENGINE_HOSTS = new Set([
+  'optonto-data-engine-executor:8005',
+  'optonto-data-engine-mcp:8005', // 2026-10-04 更名前的容器名
+]);
 
-/** 预置数据引擎执行服务（非内置）：仅用于首次默认配置种子，不承担内置语义 */
-export const PRESET_DATA_ENGINE_MCP = {
-  name: '数据引擎执行服务',
-  url: BUILTIN_DATA_ENGINE_MCP_URL,
-  enabled: true,
-} as MCPServerConfig;
+/** 是否已下线的数据引擎执行服务地址（host:port 判定，容忍路径/斜杠差异） */
+function isDeadDataEngineUrl(url: string | undefined | null): boolean {
+  const hit = /^https?:\/\/([^/]+)/i.exec(normalizeUrl(url ?? ''));
+  return !!hit && DEAD_DATA_ENGINE_HOSTS.has(hit[1].toLowerCase());
+}
 
 /**
  * 公共函数 MCP —— 平台级通用算力（filterData / aggregateData / dateDiff 等 7 个）。
@@ -138,19 +133,8 @@ function normalizeUrl(url: string): string {
   return (url || '').trim().replace(/\/+$/, '');
 }
 
-/** 是否数据引擎执行服务（当前 URL 或历史 URL——含 /sse 与 2026-10-04 更名前的地址）——用于收编豁免等内置语义 */
-export function isDataEngineMcpUrl(url: string | undefined | null): boolean {
-  const u = normalizeUrl(url ?? '');
-  return u === normalizeUrl(BUILTIN_DATA_ENGINE_MCP_URL)
-    || LEGACY_DATA_ENGINE_URLS.some((legacy) => u === normalizeUrl(legacy));
-}
-
 const DEFAULT_CONFIG: MCPConfig = {
-  servers: [
-    BUILTIN_MCP,
-    BUILTIN_COMMON_FUNCTION_MCP,
-    { ...PRESET_DATA_ENGINE_MCP },
-  ],
+  servers: [BUILTIN_MCP, BUILTIN_COMMON_FUNCTION_MCP],
 };
 
 /**
@@ -162,8 +146,8 @@ const DEFAULT_CONFIG: MCPConfig = {
  * 仅靠 URL 会认不出该条目 → 内置项被复位的同时**残留一个指向错地址的同名条目**（重复 + 静默失效）。
  * 内置显示名（`BUILTIN_NAMES`）视为保留名：占用它的条目一律按内置对待并归位为常量形态。
  *
- * 注意：历史配置里**数据引擎**条目带 `builtin:true` 残留——它的显示名不在保留名内、URL 也不是内置 URL，
- * 因此仍会被正确保留（迁移只剥离 builtin 标记）。不能仅凭 builtin 标记判定内置。
+ * 注意：不能仅凭 builtin 标记判定内置——历史配置里数据引擎条目也曾带该标记残留，
+ * 而它的显示名不在保留名内、URL 也不是内置 URL；数据引擎条目现已由 `isDeadDataEngineUrl` 直接丢弃。
  */
 function isBuiltinServer(s: MCPServerConfig | undefined | null): boolean {
   if (!s) return false;
@@ -186,19 +170,22 @@ function isBuiltinServer(s: MCPServerConfig | undefined | null): boolean {
 function migrateUrl(url: string): string {
   const u = normalizeUrl(url);
   if (!u) return url;
-  if (LEGACY_DATA_ENGINE_URLS.some(legacy => u === normalizeUrl(legacy))) {
-    return BUILTIN_DATA_ENGINE_MCP_URL;
-  }
+  // 数据引擎执行服务不再有 MCP 地址可归位：其条目在 normalize 的前一步已被丢弃
   if (LEGACY_COMMON_FUNCTION_URLS.some(legacy => u === normalizeUrl(legacy))) {
     return BUILTIN_COMMON_FUNCTION_MCP_URL;
   }
   return url;
 }
 
+/** 失效条目清理只提示一次（normalize 每次读配置都跑，不逐次刷屏） */
+let deadDataEngineWarned = false;
+
 /**
  * 规整配置：确保**两个内置服务**（本体查询 MCP、公共函数 MCP）恒存在且形态固定；
- * 其余服务（含预置/手工配置的数据引擎执行服务与用户自建服务）剥离 builtin 标记、
- * **URL 归位**、其余字段原样保留。
+ * 其余用户自建服务剥离 builtin 标记、**URL 归位**、其余字段原样保留。
+ *
+ * 已下线的数据引擎执行服务条目（见 `isDeadDataEngineUrl`）在此**丢弃**——它不再有 MCP
+ * 端点，留着只会在 Agent 发现工具时连 404。丢弃是幂等的：写入侧下一次保存即彻底落盘。
  *
  * 内置项一律以常量形态置于队首（顺序固定：本体查询 → 公共函数），用户的删除/停用/改工具范围
  * 对内置项无效——这正是「固定配置，不能修改」的落地点。
@@ -206,6 +193,15 @@ function migrateUrl(url: string): string {
 function normalize(config: MCPConfig): MCPConfig {
   const others = (config.servers || [])
     .filter(s => s && !isBuiltinServer(s))
+    .filter(s => {
+      if (!isDeadDataEngineUrl((s as any).url)) return true;
+      if (!deadDataEngineWarned) {
+        deadDataEngineWarned = true;
+        console.warn('[mcp-config] 已忽略失效的「数据引擎执行服务」条目：该服务不再提供 MCP 工具面'
+          + '（行为工具请经「MCP发布 → 自建发布」提供）');
+      }
+      return false;
+    })
     .map(s => {
       const { builtin, ...rest } = s as any;
       return { ...rest, url: migrateUrl(rest.url) };

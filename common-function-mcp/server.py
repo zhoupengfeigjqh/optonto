@@ -20,8 +20,8 @@
 | 声明位置 | 本体 ontology.yaml 的 functions[].params | .data/common_functions/functions.json 的 manifest |
 | 参数声明格式 | params 需**编译**（类型映射 + 按「参数名=属性名」回溯概念约束 + 必填非空） | manifest 的 inputSchema **已是 JSON Schema → 直接透传，零编译** |
 | 唯一性 | 全局唯一（跨本体 + 跨公共函数，由 core 拦截重名） | manifest 内唯一 |
-| 工具 schema | 带 scope 上下文块 + ontology_id const | **不带** scope、**不带** ontology_id |
-| agent 侧分类 | 本体执行类（挂载期剥 scope、执行期注入 ontology_id） | 非本体执行类（isOntologyExec 为 false → 零适配） |
+| 工具 schema | ontology_id **必填** + 本体上下文元数据 x-ontology-scope | **不带** scope、**不带** ontology_id |
+| agent 侧分类 | 本体执行类（scope 元数据只给平台内部，LLM 不可见；ontology_id 由 LLM 填写、底座校验） | 非本体执行类（isOntologyExec 为 false → 零适配） |
 | 能否作规则判断函数 | 可（type=VALIDATION → 进 judge_functions → 进裁决闸） | 不可（无 type，只留痕不阻断） |
 
 对外端点：
@@ -103,7 +103,7 @@ async def _list_tools() -> list[Tool]:
 def _run_common_function(name: str, arguments: dict) -> dict:
     """公共函数执行（唯一实现）：读 .py → 受限 globals exec → 调用 run(params)。
 
-    系统参数剥离（防御性）：公共函数 schema 本就没有 scope/ontology_id，
+    系统参数剥离（防御性）：公共函数 schema 本就没有 ontology_id，
     但外部调用方（agent 挂载、REST 直调）可能多传，剥掉以防污染函数入参。
     """
     _tools, names = _load_common_tools()

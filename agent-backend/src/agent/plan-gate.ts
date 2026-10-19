@@ -98,29 +98,36 @@ export class PlanGate {
     });
   }
 
-  /** 校验行为子任务的行为名合法性（gateway 花名册，按子任务所属本体过滤）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
+  /** 校验行为子任务的行为名合法性（**实际挂载目录为准**，按子任务所属本体过滤）；非法时提示父Agent 自动修正（最多1次）。返回修正后的规划，无法修正返回 null。 */
   private async validateTaskBehaviorNames(plan: SubTaskPlan, ctx: PlanRepairCtx): Promise<SubTaskPlan | null> {
-    const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateBehaviorNames(this.deps.gateway, p);
+    const invalidOf = (p: SubTaskPlan): InvalidTaskName[] => validateBehaviorNames(this.deps.gateway, p, ctx.catalog);
+    const REASON_LABEL: Record<string, string> = { notReady: '，未就绪', notPublished: '，未发布' };
     return this.repairPlan(plan, ctx, {
       label: '行为名校验',
       doneLabel: '行为名已修正',
-      detailOf: (p) => `不可用的 behavior: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}${iv.reason === 'notReady' ? '，未就绪' : ''}）`).join('、')}`,
+      detailOf: (p) => `不可用的 behavior: ${invalidOf(p).map(iv => `子任务${iv.sub.seq}: ${iv.sub.behavior}（${iv.sub.scenario_name}/${iv.sub.ontology_name}${REASON_LABEL[iv.reason ?? ''] ?? ''}）`).join('、')}`,
       isClean: (p) => invalidOf(p).length === 0,
       nudge: (p) => {
         const invalid = invalidOf(p);
         // 按子任务分行列各自的合法名单（不合并成总表）：跨本体规划中合并名单会导致父 Agent
-        // 跨本体误选、白白浪费唯一的修正机会；valid 为空（本体无行为/yaml缺失）时给删除或换本体的出口
+        // 跨本体误选、白白浪费唯一的修正机会；valid 为空（本体无行为/未连接）时给删除或换本体的出口
         const lines = invalid.map(iv => {
           const head = `- 子任务${iv.sub.seq}（${iv.sub.behavior}，${iv.sub.scenario_name}/${iv.sub.ontology_name}）`;
-          // 未就绪（契约 ⑥）：名字合法但未配映射、未发布为工具——列合法名单没用，要让它换行为或如实告知用户
+          // 未就绪（契约 ⑥ 的映射面）：名字合法但未配映射——列合法名单没用，要换行为或如实告知用户
           if (iv.reason === 'notReady') {
-            return `${head} 尚未就绪（未完成数据引擎映射，未发布为工具）——请改用该本体下的就绪行为，或如实告知用户该能力尚未配置`;
+            return `${head} 尚未就绪（未完成数据引擎映射）——请改用该本体下的就绪行为，或如实告知用户该能力尚未配置`;
+          }
+          // 未发布（方案 B：行为工具唯一来源是自建发布）——自纠方向是"去发布/换已发布行为"，
+          // 不是改名；与 notReady 分开，否则父 Agent 会误以为要去补映射
+          if (iv.reason === 'notPublished') {
+            const known = iv.valid.length > 0 ? `该本体当前可用的行为有：${iv.valid.join('、')}` : '该本体当前没有任何已发布的行为';
+            return `${head} 已完成映射但尚未发布为工具（${known}）——请改用已发布行为，或告知用户需在「MCP发布 → 自建发布」为该本体发布后再试`;
           }
           return iv.valid.length > 0
             ? `${head}，合法行为名有：${iv.valid.join('、')}`
             : `${head}，该本体下没有任何合法行为名——请检查 scenario_name/ontology_name 是否填错，或删除该子任务`;
         });
-        return `以下子任务的 behavior 不可用（不存在或未就绪）：\n${lines.join('\n')}\n请严格按各子任务对应的合法名单修正（严禁跨子任务借用名单），保持其余子任务不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
+        return `以下子任务的 behavior 不可用（不存在、未就绪或未发布）：\n${lines.join('\n')}\n请严格按各子任务对应的合法名单修正（严禁跨子任务借用名单），保持其余子任务不变，然后重新调用 submit_plan 工具提交修正后的规划。`;
       },
     });
   }

@@ -61,6 +61,13 @@ export type PublishKind = 'ontology_function' | 'behavior';
 /** 传输模式：streamable-http（单端点 /mcp）/ sse（双通道 /sse + /messages/） */
 export type PublishTransport = 'streamable' | 'sse';
 
+/**
+ * 发布类型/传输模式的**编译期清单**（与上面的联合类型同处维护，只作类型与默认值使用）。
+ * 表单选项以 `/api/mcp/published/meta` 下发的运行时值为准——后端新增类型时前端无需改代码。
+ */
+export const ALL_PUBLISH_KINDS: PublishKind[] = ['ontology_function', 'behavior'];
+export const ALL_PUBLISH_TRANSPORTS: PublishTransport[] = ['streamable', 'sse'];
+
 export interface PublishedService {
   name: string;
   kind: PublishKind;
@@ -78,6 +85,35 @@ export interface PublishedService {
   status: string;
   running: boolean;
 }
+
+/**
+ * MCP 工具声明 —— **唯一形状**（固定服务 `/tools` 与自建发布工具快照同构）。
+ * 展示层（`mcp-publish/catalog.ts`）只再导出它，避免两处各写一份后漂移。
+ */
+export interface ToolInfo {
+  name: string;
+  description: string;
+  inputSchema?: {
+    type?: string;
+    properties?: Record<string, { type?: string; description?: string }>;
+    required?: string[];
+  };
+}
+
+/** 自建发布的工具快照：`tools.length` 与列表接口的 `tool_count` 同源 */
+export interface PublishedToolsResponse {
+  name: string;
+  kind: PublishKind;
+  ontology_name: string;
+  tools: ToolInfo[];
+}
+
+/**
+ * 发布时冻结的工具清单（只读注册表，不探测容器）：
+ * 停机也能看；条目不存在返回 404，绝不返回空清单冒充成功。
+ */
+export const getPublishedTools = (name: string) =>
+  request<PublishedToolsResponse>(`/api/mcp/published/${encodeURIComponent(name)}/tools`);
 
 export interface PublishMeta {
   kinds: PublishKind[];
@@ -113,7 +149,10 @@ export const stopPublished = (name: string) =>
 export const deletePublished = (name: string) =>
   request<{ message: string; name: string }>(`/api/mcp/published/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-/** 可粘贴连接片段：`{"mcpServers": {"<名字>": {"type":"url","url":"…","headers":{"X-MCP-Token":"…"}}}}` */
+/**
+ * 可粘贴连接片段：`{"mcpServers": {"<名字>": {"type":"http","url":"…","headers":{"X-MCP-Token":"…"}}}}`。
+ * `type` 取客户端认的取值（`http` = Streamable HTTP / `sse`），不是平台传输模式名，也不是自造的 `url`。
+ */
 export type McpClientSnippet = Record<string, { type: string; url: string; headers: Record<string, string> }>;
 
 /** 生成可直接粘进「MCP配置」的客户端配置片段（host 省略时用占位符） */

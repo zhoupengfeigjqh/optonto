@@ -144,6 +144,17 @@ def validate_kind(kind) -> str:
     return kind
 
 
+def validate_ontology_id(value) -> int:
+    """本体 id 规整为整数（早失败）：非法值报 400，而不是让下游按"本体不存在"报 404。"""
+    try:
+        oid = int(value)
+    except (TypeError, ValueError):
+        raise InvalidInputError("ontology_id 必须是本体数字 ID")
+    if oid <= 0:
+        raise InvalidInputError("ontology_id 必须是正整数")
+    return oid
+
+
 # ─── 工具清单编译（发布快照；约束编译唯一实现在 mcp-shared/tool_contract）────────
 
 # 统一信封说明（追加到 description 尾部；response 声明描述的是 data 内容）
@@ -161,18 +172,19 @@ def _description(item: dict, ontology_name: str, note: str) -> str:
 
 
 def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, list[dict]]:
-    """勾选项 → (本体中文名, 工具清单)。inputSchema 已编译、scope 上下文块已注入。
+    """勾选项 → (本体中文名, 工具清单)。inputSchema 已编译、本体上下文已写入。
 
-    走 ``ontology_id_mode="const"``：自建发布绑定单一本体，``ontology_id`` 以 const 出现但
-    **不进 required**——调用方（LLM / 外部 MCP 客户端）无需传，容器转发时注入绑定值，
-    跨本体误路由在结构上不可能发生。scope 块仍注入（agent 侧挂载过滤依赖它），
-    分类标记取真实归位（本体函数 / 本体行为），故 agent 侧零改动即可挂载这些工具。
+    形态（契约 ③）：
+    - ``ontology_id`` 是**必填参数**——LLM 填写当前操作的本体，执行底座用发布声明校验一致；
+    - ``x-ontology-scope`` 是**发布时固化的工具元数据**（本体身份四元组），不是参数：
+      agent 侧据它做归属过滤/挂载，执行底座据它做一致性校验，LLM 看不到也填不了；
+    - 分类标记取真实归位（本体函数 / 本体行为），agent 侧零适配即可挂载。
     """
     from repositories.metadata import get_ontology_name_by_id
     from services import load_ontology_data
     from services.mcp_contract_bridge import (
         CATEGORY_BEHAVIOR, CATEGORY_FUNCTION, behavior_concept_names,
-        params_to_input_schema, ready_behavior_names, related_concepts, with_ontology_context,
+        params_to_input_schema, ready_behavior_names, related_concepts, with_ontology_scope,
     )
 
     located = get_ontology_name_by_id(ontology_id)
@@ -182,7 +194,7 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
     data = load_ontology_data(sc_name, on_name).model_dump()
 
     if kind == KIND_BEHAVIOR:
-        # ── 本体行为分支：取本体 behaviors 段，编译入参 schema（带 ontology_id const + scope）
+        # ── 本体行为分支：取本体 behaviors 段，编译入参 schema（ontology_id 必填 + 本体上下文元数据）
         # 契约 ⑥：未完成数据引擎映射的行为不可发布——工具清单是对 LLM 的可调用承诺，
         # "清单里有、调用必失败"就是违约。这里直接拒，不给"建了才发现用不了"。
         ready = ready_behavior_names(data)
@@ -198,7 +210,7 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
         category, note, concepts_of = CATEGORY_BEHAVIOR, _BEHAVIOR_ENVELOPE_NOTE, behavior_concept_names
     else:
         # ── 本体函数分支：取本体 functions 段，**编译**入参 schema（params → JSON Schema，
-        #    并按「参数名=属性名」回溯概念属性约束），再注入 ontology_id const + scope 块。
+        #    并按「参数名=属性名」回溯概念属性约束），再写入 ontology_id 必填 + 本体上下文元数据。
         #    公共函数**不走这里**：它无本体归属、由 common-function-mcp 直接对外发布（无需按本体切片）。
         catalog = {f.get("name"): f for f in data.get("functions") or [] if isinstance(f, dict)}
         missing = [n for n in items if n not in catalog]
@@ -208,19 +220,18 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
         concepts_of = lambda it: it.get("related_concepts") or []  # noqa: E731
 
     meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    # 本体身份（发布时固化）：scope 是工具元数据，不是参数；工具名即行为/函数裸名，故不含 name
+    scope = {"ontology_id": ontology_id, "scenario_id": meta.get("scenario_id"),
+             "scenario_name": sc_name, "ontology_name": on_name}
     tools: list[dict] = []
     for name in items:
         item = catalog[name]
         schema, _conflicts = params_to_input_schema(
             item.get("params"), related_concepts(data, concepts_of(item)),
-            ontology_id_mode="const", ontology_id=ontology_id,
+            require_ontology_id=True,
         )
-        context = {"name": name, "ontology_id": ontology_id,
-                   "scenario_name": sc_name, "ontology_name": on_name}
-        if meta.get("scenario_id") is not None:
-            context["scenario_id"] = meta["scenario_id"]
-        input_schema = with_ontology_context(
-            schema, {**context, "display_name": item.get("display_name", "")}, category)
+        input_schema = with_ontology_scope(
+            schema, scope, category, item.get("display_name", ""))
         # 注：2026-10-05 移除了旧的 `x-publish-service` 标记——它写进 inputSchema 但**无任何运行期消费者**
         # （消费端按 x-category 判定归属），属"写而不读"的死数据，留在工具契约里只会让契约多一个无意义键。
         tools.append({
@@ -244,11 +255,15 @@ def build_container_name(name: str) -> str:
 
 
 def build_publish_config(entry: dict) -> dict:
-    """容器消费的配置（只含容器需要的字段；令牌走独立环境变量，不进配置）。"""
+    """容器消费的配置（只含容器需要的字段；令牌走独立环境变量，不进配置）。
+
+    **不含 ontology_id**：本体归属已随每个工具的 ``x-ontology-scope`` 固化进 ``tools``，
+    容器转发时从该工具的元数据取——同一事实只存一处，避免"配置里的 id"与"工具声明的 id"
+    两个来源漂移。注册表条目仍保留 ``ontology_id``（管控面/展示/标签用）。
+    """
     return {
         "name": entry["name"],
         "kind": entry["kind"],
-        "ontology_id": entry["ontology_id"],
         "tools": entry["tools"],
     }
 
@@ -301,6 +316,7 @@ def build_entry(*, ontology_id: int, name, kind, items, host_port, transport) ->
     勾选项不存在或未就绪 404/400。
     """
     entries = _read_registry()
+    ontology_id = validate_ontology_id(ontology_id)
     kind = validate_kind(kind)
     name = validate_name(name, entries)
     transport = validate_transport(transport)
@@ -310,7 +326,7 @@ def build_entry(*, ontology_id: int, name, kind, items, host_port, transport) ->
     return {
         "name": name,
         "kind": kind,
-        "ontology_id": int(ontology_id),
+        "ontology_id": ontology_id,
         "ontology_name": ontology_name,
         "items": names,
         "tool_count": len(tools),
@@ -324,7 +340,12 @@ def build_entry(*, ontology_id: int, name, kind, items, host_port, transport) ->
 
 
 def public_view(entry: dict, runtime: dict) -> dict:
-    """注册表条目 + 运行态 → 对外视图（令牌一并给出：用户要填进 MCP 配置才能连）。"""
+    """注册表条目 + 运行态 → 对外视图（令牌一并给出：用户要填进 MCP 配置才能连）。
+
+    **不含 `tools`**：完整工具声明（含 inputSchema）只在「查看工具」时按需拉取
+    （`GET /api/mcp/published/{name}/tools`）。列表接口每次刷新都会调用，内联 schema 会让
+    载荷按“发布数 × 工具数 × schema 大小”膨胀，而查看工具是低频动作。
+    """
     return {
         "name": entry["name"],
         "kind": entry["kind"],

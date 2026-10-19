@@ -2,7 +2,7 @@ import { Agent } from '@earendil-works/pi-agent-core';
 import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from '@sinclair/typebox';
 import { MCPClient } from '../services/mcp-client.js';
-import { MCPConfigStore, isBusinessDataServer, isDataEngineMcpUrl } from '../services/mcp-config-store.js';
+import { MCPConfigStore, isBusinessDataServer } from '../services/mcp-config-store.js';
 import { SkillLoader } from '../services/skill-loader.js';
 import { VisibilityGuard } from '../services/visibility-guard.js';
 import { resolveDeepSeekModel } from '../services/llm.js';
@@ -14,10 +14,10 @@ import { createLoadSkillTool, createSubmitPlanTool, createListPlannableFunctions
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
 import {
-  CATEGORY, SCOPE_KEY, assertToolProtocol, isOntologyExec, isQueryTool, publishedCategory,
-  toMountableToolInfo,
+  CATEGORY, assertToolProtocol, isQueryTool, publishedCategory,
+  readOntologyScope, stripOntologyScope, toMountableToolInfo,
 } from './tool-catalog.js';
-import type { MountableToolInfo } from './tool-catalog.js';
+import type { MountableToolInfo, OntologyScope } from './tool-catalog.js';
 import type { AgentPort } from './agent-ports.js';
 import type { SubtaskPolicy } from './execution-policy.js';
 import { missingRuleFunctions, parseRuleVerdict } from './execution-policy.js';
@@ -36,11 +36,14 @@ import type { ThreadMessage, SkillContext, SubTaskPlan, SkillSelection, Conversa
  * 阶段 1（初始）：system prompt 只放技能名称和描述
  * 阶段 2（按需）：Agent 调用 load_skill 工具加载完整 SKILL.md
  */
+/** 发现期工具：SDK 工具 + 从发布 schema 提升出来的本体元数据（不是参数，故不留在 parameters 里） */
+export type DiscoveredTool = AgentTool & { ontologyScope?: OntologyScope };
+
 export class AgentFactory {
   /** 按 MCP server URL 缓存连接，避免每个 Agent/子任务新建连接造成传输资源泄漏 */
   private clientCache = new Map<string, MCPClient>();
   /** 按 run 作用域缓存的工具发现结果（closeAll 时清空）。一次 run 内工具列表不变，避免父/子 Agent 每次创建都重复 listTools */
-  private toolsCache: AgentTool[] | null = null;
+  private toolsCache: DiscoveredTool[] | null = null;
 
   constructor(
     private mcpConfigStore: MCPConfigStore,
@@ -76,14 +79,14 @@ export class AgentFactory {
   /**
    * 工具发现结果的公开观察口（2026-10-06，宪法 II：跨模块能力 MUST 提升为公开 API）。
    *
-   * `discoverTools` 是私有方法，但三个测试文件（visibility / dataengine-scope /
+   * `discoverTools` 是私有方法，但三个测试文件（visibility / dead-data-engine /
    * business-data）都需要读它的产出，且此前是`(factory as any).discoverTools()`
    * —— 用类型断言强穿封装，等价于「私有成员被外部依赖」，一旦内部改名测试就静默失效。
    *
    * 范式同 `Orchestrator.hasActiveRun()`：显式开洞，洞的用途与稳定性写进注释。
    * 仅供测试与诊断观察，**MUST NOT** 用于业务判断。
    */
-  observeDiscoveredTools(): Promise<AgentTool[]> {
+  observeDiscoveredTools(): Promise<DiscoveredTool[]> {
     return this.discoverTools();
   }
 
@@ -198,7 +201,7 @@ export class AgentFactory {
 
   /**
    * 创建子 Agent（执行专家）。
-   * 挂载业务执行工具集：本体行为工具（按 policy.legalCalls.behaviors，scope.name 裸名匹配）
+   * 挂载业务执行工具集：本体行为工具（按 policy.legalCalls.behaviors，工具名即行为名）
    * + 本体函数/公共函数/其他 MCP 工具（一律按 policy.legalCalls.functions = 规则声明 ∪ 父 Agent related_functions 挂载）。
    * 挂载期过滤即白名单机制：未挂载的工具子 Agent 物理上不可调用，无需运行期名单闸。
    * 参数合法性由工具 inputSchema（core 编译，含 enum/pattern/min/max/必填约束）在 harness 层校验。
@@ -206,6 +209,9 @@ export class AgentFactory {
    * context 来自 SKILL.md frontmatter 提取，不从 URL/body 获取。
    * policy 为 buildSubtaskPolicy 派生的完整执行策略（合法清单/安全上下文/报错预算），
    * 安全闸与预算包装恒在——不存在"半设防"形态，缺哪样都编译不过。
+   *
+   * 本体归属**不在 agent 侧注入或覆盖**：`ontology_id` 是工具必填参数，由子 Agent（LLM）填写，
+   * 执行底座据发布时固化的 scope 校验一致性。agent 的归属闸 = 挂载期只挂本子任务本体的工具。
    */
   async createChildAgent(context: SkillContext, policy: SubtaskPolicy): Promise<AgentPort> {
     const { scenario_name: scenario, ontology_name: ontology, ontology_id: ontologyId } = context;
@@ -213,21 +219,20 @@ export class AgentFactory {
     // MCP 配置全局唯一，不区分场景/本体
     const allMcp = await this.discoverTools();
     // 剔除本体浏览工具（list*）——子 Agent 只执行业务。
-    // 执行工具按当前本体锁定：ontology_id 从参数剔除并强制注入，杜绝跨本体干扰
-    // （无 ontology_id 的工具如公共函数/新增 MCP 原样透传）。
     const legal = policy.legalCalls;
     const mcpTools = allMcp
       .filter(tool => {
         if (isQueryTool(tool.parameters)) return false; // 元数据查询工具父 Agent 专用
         const category = publishedCategory(tool.parameters);
-        const scopeName = (tool.parameters as any)?.properties?.[SCOPE_KEY]?.properties?.name?.const;
-        // 本体行为工具：按 scope.name（行为名）匹配合法行为集合，与挂载过滤/disable 闸/展示回溯同源
-        if (category === CATEGORY.BEHAVIOR) return legal.behaviors.includes(scopeName ?? '');
+        // 本体行为工具：工具名即行为裸名（契约⑤）
+        if (category === CATEGORY.BEHAVIOR) return legal.behaviors.includes(tool.name);
         // 本体函数 / 公共函数 / 其他 MCP 工具：一律按 legalCalls.functions（规则声明 ∪ 父 Agent related_functions）挂载
         return legal.functions.includes(tool.name);
       })
-      .map(tool => this.scopeToOntology(tool, ontologyId, policy));
-    const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n直接调用已挂载的行为/函数工具（工具名即行为名/函数名），参数结构以各工具 schema 为准。${timeNote()}`;
+      .map(tool => this.guardExecution(tool, policy));
+    const systemPrompt = `${CHILD_SYSTEM_PROMPT}\n\n## 当前上下文\n- 场景: ${scenario}\n- 本体: ${ontology}\n- 本体ID: ${ontologyId}\n\n`
+      + `直接调用已挂载的行为/函数工具（工具名即行为名/函数名），参数结构以各工具 schema 为准。`
+      + `调用本体行为/本体函数时 ontology_id 是必填参数，须填 ${ontologyId}（本子任务的所属本体）；填错会被执行底座拒绝。${timeNote()}`;
     const agent = new Agent({
       initialState: { systemPrompt, model, tools: mcpTools, thinkingLevel: 'off' },
     });
@@ -236,8 +241,8 @@ export class AgentFactory {
 
   /**
    * 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。
-   * 从已发现工具清单按名定位工具；本体函数工具 schema 带 ontology_id → 强制注入本体 id（与 scopeToOntology 同源锁定），
-   * 公共函数/其他 MCP 工具无 ontology_id → 参数原样透传。
+   * 从已发现工具清单按名定位工具；本体函数的 `ontology_id` 若计划期未填，用子任务本体补齐
+   * （调用方已填则**原样透传**——绝不静默覆盖，否则一致性校验就失去意义）。
    * 复用 discoverTools 的原始 execute（内含 ontology_id/scenario_id 数字强转 + isError→抛错），调用一次即返回。
    * 不抛异常：错误一律折叠为 { isError: true }，由 orchestrator 记入结果，避免函数失败打断整波并行。
    */
@@ -248,9 +253,10 @@ export class AgentFactory {
       return { text: `函数 ${functionName} 不在可挂载工具清单中`, isError: true };
     }
     // 本体函数判定用发布方分类标记（x-category），不靠 ontology_id 属性猜测：
-    // 外部工具碰巧带 ontology_id 参数时按原样透传，不被误注入本体 id
+    // 外部工具碰巧带 ontology_id 参数时按原样透传，不被误补本体 id
     const isOntoFn = publishedCategory(found.parameters) === CATEGORY.FUNCTION;
-    const p = isOntoFn ? { ...params, ontology_id: ontologyId } : { ...params };
+    const hasOntologyId = (params as any)?.ontology_id !== undefined && (params as any)?.ontology_id !== null;
+    const p = isOntoFn && !hasOntologyId ? { ...params, ontology_id: ontologyId } : { ...params };
     try {
       const res = await found.execute('direct-function-call', p);
       return { text: toolResultToText(res.content), isError: false };
@@ -260,38 +266,23 @@ export class AgentFactory {
   }
 
   /**
-   * 将执行类工具限定到指定本体：
-   * - 参数 schema 剔除 ontology_id（LLM 不需要也不能指定所属本体）与 scope 块（规划元数据）
-   * - 调用时强制注入本体的 ontology_id，忽略 LLM 传入的任何 id
+   * 执行类工具的安全闸包装（不改 schema、不改参数）：
    * - 三道安全闸（按序，见 execute 内；参数合法性由工具 inputSchema 在 harness 层校验，不再设运行期参数闸）：
    *   闸0 入口短路（violation 已置位 → 一律 terminate，中断信号广播到全 run）→
-   *   闸1 disable（本体行为工具按 scope.name 裸名查禁用集合：置 violation + terminate，不抛错不走预算，无自纠空间）→
+   *   闸1 disable（本体行为工具按行为名查禁用集合：置 violation + terminate，不抛错不走预算，无自纠空间）→
    *   闸2 前置规则留痕（仅主行为：前置规则关联函数未成功执行 → 抛错引导补跑，可恢复走报错预算）
    *   （行为/函数工具的合法性已在 createChildAgent 挂载期按 legalCalls 过滤，机制即白名单）
    * - 成功台账：execute 正常 resolve 后把工具名记入 policy.ruleGate.succeeded（后置闸收尾核查的数据源）
-   * 无 ontology_id 的工具（如公共函数/新增 MCP）原样返回。
+   *
+   * 这里**不再改写参数**：本体元数据在发现期已从参数面剥离（LLM 看不到），`ontology_id` 是
+   * 调用方必填、原样透传——覆盖它会掩盖调用方填错的本体，让执行底座的一致性校验形同虚设。
    */
-  private scopeToOntology(tool: AgentTool, ontologyId: number, policy: SubtaskPolicy): AgentTool {
+  private guardExecution(tool: AgentTool, policy: SubtaskPolicy): AgentTool {
     const { security, errorBudget } = policy;
-    const schema = tool.parameters as any;
-    const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
-    const scopeProps = props?.[SCOPE_KEY]?.properties;
-    const category = publishedCategory(schema);
-    // 本体锁定对象：本体行为工具 + 本体函数，均按发布方分类标记（x-category）判定。
-    // 不靠 ontology_id 属性猜测——外部工具碰巧带该参数时不会被误剥参数/误注入本体 id
+    const category = publishedCategory(tool.parameters);
     const isBehavior = category === CATEGORY.BEHAVIOR;
-    const needLock = isOntologyExec(category);
-    // 仅锁定的工具做 ontology_id 剔除 + 强制注入；其余（公共函数/外部 MCP）原样透传参数
-    let nextParameters = schema;
-    if (needLock && props) {
-      const nextProps = { ...props };
-      delete nextProps.ontology_id;
-      delete nextProps[SCOPE_KEY]; // scope 是规划元数据（非输入参数），子 Agent 不该看见/填写
-      const required = Array.isArray(schema.required)
-        ? (schema.required as string[]).filter(k => k !== 'ontology_id')
-        : undefined;
-      nextParameters = { ...schema, properties: nextProps, ...(required ? { required } : {}) };
-    }
+    // 行为名 = 工具名（契约⑤）
+    const behaviorName = tool.name;
     const originalExecute = tool.execute;
     // 判断函数集合（裁决解析触发名单）：仅本体且 type=VALIDATION 的判断函数会产生裁决结论；
     // 普通关联函数（CALCULATION/公共函数）即使返回同名 pass 字段也不进裁决台账（口径 B：类型即角色）。
@@ -305,15 +296,15 @@ export class AgentFactory {
       if (security.gate.violation) {
         return securityTerminateResult(security.gate.violation);
       }
-      const p = needLock ? { ...(params as any), ontology_id: ontologyId } : (params as any); // 强制锁定
+      const p = params as any; // 参数原样透传（ontology_id 由调用方填写，底座校验）
 
       // ── 闸1 disable（策略级拒绝）──
-      // 行为工具按 scope.name（行为名）查禁用集合——行为名才是 securities 登记键。
+      // 行为工具按行为名查禁用集合——行为名才是 securities 登记键。
       // 命中：置 run 级 violation（first-writer-wins）+ 返回 terminate:true，真实 MCP 调用零发生。
       // 不抛错、不计报错预算：策略拒绝无自纠空间（重试必败），terminate 当场停内层循环（与预算超限同机制），
       // SubtaskRunner 见 violation 返回 securityViolation 失败 → orchestrator 以 securityBlocked 中断整个 run。
       if (isBehavior) {
-        const bare = scopeProps?.name?.const ?? tool.name;
+        const bare = behaviorName;
         if (security.disabled.has(bare)) {
           security.gate.violation ??= buildDisableMessage(bare, security.disabled.get(bare));
           return securityTerminateResult(security.gate.violation);
@@ -360,7 +351,6 @@ export class AgentFactory {
     };
     return {
       ...tool,
-      ...(nextParameters !== schema ? { parameters: nextParameters } : {}),
       // 恒包上报错计数——预算由策略对象保证存在，不再有"无预算"形态
       execute: wrapExecuteWithErrorBudget(execute, errorBudget),
     };
@@ -393,13 +383,13 @@ export class AgentFactory {
   /**
    * 从 MCP 配置中连接启用的服务，自动发现并注册工具。
    */
-  private async discoverTools(): Promise<AgentTool[]> {
+  private async discoverTools(): Promise<DiscoveredTool[]> {
     // 一次 run 内工具列表不变：缓存发现结果，避免父/子 Agent 每次创建都重复 listTools。
     // 缓存生命周期与连接缓存一致，由 closeAll() 在 run 结束时清空。
     if (this.toolsCache) return this.toolsCache;
     // MCP 配置全局唯一（./config/mcp-config.json），不区分场景/本体
     const mcpConfig = this.mcpConfigStore.getConfig();
-    const tools: AgentTool[] = [];
+    const tools: DiscoveredTool[] = [];
 
     for (const server of mcpConfig.servers) {
       if (!server.enabled) continue;
@@ -424,9 +414,11 @@ export class AgentFactory {
           }
           // 可见性收编（配映射即收编，架构文档 §六）：已映射接口的原始工具对 Agent 隐藏，
           // 行为工具是唯一入口——绕过它会跳过映射翻译/RuleGate/安全管控。**内置固定项**（本体查询 MCP、
-          // 公共函数 MCP，server.builtin）永不收编；数据引擎MCP 2026-10-04 起为非内置预置服务，
-          // 但行为工具发布方就是它，仍按 URL 豁免收编（行为工具永不收编是不变式）。
-          if (!server.builtin && !isDataEngineMcpUrl(server.url) && this.visibilityGuard?.isHidden(server.url, toolName)) {
+          // 公共函数 MCP，server.builtin）永不收编。
+          //
+          // 2026-10-19 方案 B：数据引擎执行服务已零工具化（不再挂 /mcp），行为工具的唯一发布方是
+          // 自建发布容器——其 URL 从不作为映射 target，故天然不会被收编，无需再按 URL 豁免。
+          if (!server.builtin && this.visibilityGuard?.isHidden(server.url, toolName)) {
             hiddenCount++;
             continue;
           }
@@ -439,7 +431,7 @@ export class AgentFactory {
           //
           // 为什么必须挡：原始业务接口是写操作（business-mcp 支持 POST/PUT/DELETE）。一旦被父 Agent
           // 规划成「函数子任务」，就走 callFunctionTool 直连路径（agent-factory.ts:233），而该路径
-          // 【不经过】createChildAgent 的 scopeToOntology 包装（:263）——安全确认、disable 权限闸、
+          // 【不经过】createChildAgent 的 guardExecution 包装（:263）——安全确认、disable 权限闸、
           // 前置/后置规则闸、报错预算四道闸一道都没有，等于业务写入零人工闸门直接落库。
           //
           // 为什么只挡无标记者：带 x-category 的平台自身工具照常进目录，否则会误伤——
@@ -450,15 +442,18 @@ export class AgentFactory {
             businessBlockedCount++;
             continue;
           }
-          // 消费边界协议校验：分类标记与 scope 上下文块必须自洽（版本错配即快速失败，不静默降级）
+          // 消费边界协议校验：分类标记与本体上下文必须自洽（版本错配即快速失败，不静默降级）
           assertToolProtocol(toolName, inputSchema);
+          // 本体上下文是**工具元数据而非参数**：发现期提升为独立字段，交给 LLM 的 schema 去掉它
+          const hasSchema = inputSchema && typeof inputSchema === 'object' && Object.keys(inputSchema).length > 0;
           tools.push({
             name: toolName,
             label: toolName,
             description: (t.description as string) || `[${server.name}] ${toolName}`,
-            parameters: inputSchema && typeof inputSchema === 'object' && Object.keys(inputSchema).length > 0
-              ? inputSchema
+            parameters: hasSchema
+              ? stripOntologyScope(inputSchema)
               : Type.Object({}, { additionalProperties: true }),
+            ontologyScope: readOntologyScope(inputSchema),
             execute: async (toolCallId, params) => {
               if (!client) throw new Error('MCP 未连接');
               const p = params as any;

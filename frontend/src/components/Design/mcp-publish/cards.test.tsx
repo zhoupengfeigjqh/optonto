@@ -38,7 +38,7 @@ describe('FixedServiceCard', () => {
     expect(screen.queryByRole('button', { name: /刷\s*新/ })).toBeNull();
   });
 
-  it('内网执行底座：显示检查中、零工具说明，但**不暴露传输模式**', () => {
+  it('内网执行底座（8006）：显示检查中、零工具说明，但**不暴露传输模式**', () => {
     const fn = vi.fn();
     const executor = FIXED_SERVICES.find(d => d.key === 'functionExecutor')!;
     render(
@@ -50,14 +50,14 @@ describe('FixedServiceCard', () => {
       />,
     );
     expect(screen.getByText('检查中...')).toBeTruthy();
-    // 「零工具」在卡片正文与角色说明各出现一次，故按出现次数断言
-    expect(screen.getAllByText(/零工具/).length).toBeGreaterThan(0);
+    // 零工具：正文只说明内部执行端点，不给工具数/查看工具
+    expect(screen.getByText('只提供内部执行端点')).toBeTruthy();
     // 内网执行底座不对外，传输模式不上卡片（只对对外工具面展示）
     expect(screen.queryByText(/传输模式/)).toBeNull();
     expect(screen.queryByRole('button', { name: '查看工具' })).toBeNull();
   });
 
-  it('数据引擎执行服务：传输模式不上卡片，且不得谎称「零工具」', () => {
+  it('数据引擎执行服务（8005）：2026-10-19 起零工具，传输模式不上卡片', () => {
     const fn = vi.fn();
     const engine = FIXED_SERVICES.find(d => d.key === 'dataEngine')!;
     render(
@@ -68,10 +68,12 @@ describe('FixedServiceCard', () => {
         onOpenConfig={fn} onToggle={fn} onShowTools={fn}
       />,
     );
-    // 它有 /mcp 工具面（已就绪行为，仅内网挂载），不是零工具
-    expect(screen.getByText('工具面仅内网（供平台 Agent 挂载），不对外提供')).toBeTruthy();
-    expect(screen.queryByText(/零工具/)).toBeNull();
+    // 与 8006 同构：不挂 /mcp，行为工具只经自建发布
+    expect(engine.transport).toBe('none');
+    expect(screen.getByText('只提供内部执行端点')).toBeTruthy();
+    expect(screen.getAllByText(/零工具/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/传输模式/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看工具' })).toBeNull();
   });
 });
 
@@ -116,5 +118,41 @@ describe('PublishedServiceCard', () => {
     render(<PublishedServiceCard svc={{ ...svc, running: false, status: 'not_found' }} host="h" onShowConfig={fn} onToggle={fn} onRemove={fn} />);
     expect(screen.getByText('容器缺失')).toBeTruthy();
     expect(screen.getByRole('button', { name: '启 动' })).toBeTruthy();
+  });
+
+  it('信息层级与固定卡片一致：端点 / 传输模式 / 可用工具 / 领域信息 / 快照提示', () => {
+    const onShowTools = vi.fn();
+    render(
+      <PublishedServiceCard
+        svc={svc} host="h"
+        onShowConfig={vi.fn()} onToggle={vi.fn()} onRemove={vi.fn()} onShowTools={onShowTools}
+      />,
+    );
+    // 与固定卡片同一套标签与叫法
+    expect(screen.getByText('端点：')).toBeTruthy();
+    expect(screen.getByText('传输模式：')).toBeTruthy();
+    expect(screen.getByText('streamable-http')).toBeTruthy();
+    expect(screen.getByText('可用工具：')).toBeTruthy();
+    expect(screen.getByText('1')).toBeTruthy();
+    // 领域信息必须保留（令牌 / 本体 / 已选工具 / 依赖）
+    expect(screen.getByText('tk')).toBeTruthy();
+    expect(screen.getByText('已选工具：')).toBeTruthy();
+    expect(screen.getByText('QueryOrder')).toBeTruthy();
+    expect(screen.getByText(/工具清单为发布时快照/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看工具' }));
+    expect(onShowTools).toHaveBeenCalledWith(svc);
+  });
+
+  it('零工具发布不渲染「查看工具」入口（与固定卡片一致）', () => {
+    const fn = vi.fn();
+    render(
+      <PublishedServiceCard
+        svc={{ ...svc, tool_count: 0, items: [] }} host="h"
+        onShowConfig={fn} onToggle={fn} onRemove={fn} onShowTools={fn}
+      />,
+    );
+    expect(screen.getByText('0')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '查看工具' })).toBeNull();
   });
 });

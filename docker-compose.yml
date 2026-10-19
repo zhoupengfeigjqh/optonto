@@ -30,8 +30,6 @@ services:
       - MCP_CONFIG_PATH=/app/config/mcp-config.json
       # 内置本体查询 MCP 地址（内置对外工具面之一，只读查询）
       - MCP_BUILTIN_URL=http://optonto-ontology-query-mcp:8002/mcp
-      # 内置数据引擎执行服务地址（行为工具内网挂载入口，不对外发布）
-      - MCP_BUILTIN_DATA_ENGINE_URL=http://optonto-data-engine-executor:8005/mcp
       # 内置公共函数 MCP 地址（内置固定项，与本体查询 MCP 同权：恒存在/恒启用/恒全选）
       - MCP_BUILTIN_COMMON_FUNCTION_URL=http://optonto-common-function-mcp:8007/mcp
     networks:
@@ -183,9 +181,10 @@ services:
     networks:
       - optonto-net
 
-  # ─── 数据引擎执行服务（行为/引擎执行唯一实现；工具面仅内网供 Agent 挂载）──────
+  # ─── 数据引擎执行服务（行为/引擎执行唯一实现；零工具执行底座）────────────────
   # 对外：不发布宿主端口、不经 nginx 代理（外部客户端连不到）
-  # 调用方：平台 Agent 内网挂载 + 自建发布（行为类）转发
+  # 协议面：transport=none，不挂 /mcp、/sse（行为工具的唯一出口是自建发布）
+  # 调用方：core 设计器测试转发 + 自建发布（行为类）转发（都是 REST /call-*）
   optonto-data-engine-executor:
     build:
       context: .

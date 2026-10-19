@@ -463,7 +463,7 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
     deps.info.behaviorDisplayName = () => '创建采购记录';
 
     const runner = new SubtaskRunner(deps);
-    // 闸在工具层（scopeToOntology）：runner 不拦截，正常装配并跑通
+    // 闸在工具层（guardExecution）：runner 不拦截，正常装配并跑通
     const result = await runner.run(subTask, meta, noopChannel);
 
     expect(result.success).toBe(true);
@@ -505,7 +505,7 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
   it('工具层闸命中（violation 置位）→ 返回 securityViolation 失败：先于预算/结果解析，即使 LLM 自报成功', async () => {
     const deps = makeDeps(async (_ctx, policy) => ({
       prompt: async () => {
-        // 模拟工具层闸1 命中：置 run 级 violation + terminate（真实判定在 scopeToOntology）
+        // 模拟工具层闸1 命中：置 run 级 violation + terminate（真实判定在 guardExecution）
         policy.security.gate.violation = buildDisableMessage('CreatePurchaseRecord', '创建采购记录');
       },
       abort: () => {},
