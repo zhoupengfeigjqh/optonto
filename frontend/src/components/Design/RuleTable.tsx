@@ -5,6 +5,7 @@ import { Button, Input, Select, Modal, message, Space, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, RobotOutlined, WarningOutlined } from '@ant-design/icons';
 import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, generateRule, Rule, Behavior, Function } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import { useTablePagination } from '@/lib/table-pagination';
 import { resolveOpType } from './behavior-op-type';
 import { deriveDataSupplements } from './rule/rule-logic';
 import { functionLabel, functionLabelParts } from './rule/function-label';
@@ -20,6 +21,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
+  const { pagination, goToRow } = useTablePagination();
 
   // smart generate loading
   const [genLoading, setGenLoading] = useState(false);
@@ -58,7 +60,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   }, [editingKey, editData.behavior, editData.related_functions, editData.data_supplements, funcs, behaviors]);
 
   const emptyEdit = { name: '', display_name: '', description: '', position: '', behavior: '', related_functions: [], data_supplements: [] };
-  const handleAdd = () => { setEditData({ ...emptyEdit }); setEditingKey('__new__'); };
+  const handleAdd = () => { setEditData({ ...emptyEdit }); setEditingKey('__new__'); goToRow(rules.length); };
   const handleEdit = (r: Rule) => {
     setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: r.data_supplements || [] });
     setEditingKey(r.name);
@@ -221,7 +223,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增规则</Button>
       </div>
       <p className="text-text-muted text-xs mb-3">配置行为执行前后的约束规则（规则绑定唯一行为；约束逻辑由「关联函数」承载——其中本体且类型为 VALIDATION 的判断函数返回 data.pass/reason，前置规则判断不通过时系统拒绝主行为；数据补充按关联函数声明的关联概念自动推导对应的查询行为，可手工增减）</p>
-      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
+      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
     </div>
   );
 }

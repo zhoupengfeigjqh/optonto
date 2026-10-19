@@ -38,16 +38,42 @@ concepts:
       min: 0
       max: 100
   display_name: 概念展示名称
-  instance_label: attrName（可选：实例展示时作为节点标签的属性英文名，须是本概念已定义的属性；无则留空）
+  instance_label: attrName
   terms:
-  - 该概念的其他表述（同义词/别名/简称，可为空）
+  - 采购记录
+  sub_class_of: ParentConcept
+  attribute_restrictions:
+    parentAttrName:
+      enum:
+      - 有效
+concept_relations:
+- name: ChildConceptSubClassOfParentConcept
+  display_name: 子概念 是一种 父概念
+  relation_type: SubClassOf
+  source: ChildConcept
+  target: ParentConcept
+  source_attr: attrName
+  target_attr: attrName
+  description: 由概念设计父子关系自动同步，仅关联概念属性可修改
+- name: ProcurementOrderEquivalentClassPurchaseOrder
+  display_name: 采购订单与采购单等价
+  relation_type: EquivalentClass
+  source: ProcurementOrder
+  target: PurchaseOrder
+  description: 同一业务对象的不同叫法，内涵与外延一致
+- name: DraftOrderDisjointWithSubmittedOrder
+  display_name: 草稿订单与已提交订单互斥
+  relation_type: DisjointWith
+  source: DraftOrder
+  target: SubmittedOrder
+  description: 同一订单不能同时处于两种状态
 relations:
-- name: relationName
+- name: HasDetail
   source: SourceConcept
   target: TargetConcept
   cardinality: 1:N
   relation_type:
-  - functional
+  - Functional
   source_attr: attrName
   target_attr: attrName
   description: 关系描述
@@ -103,7 +129,7 @@ functions:
   code_file: functions/sumRawNotArrivalQty.py
   type: CALCULATION
 behaviors:
-- name: behaviorName
+- name: CreateOrder
   description: 行为描述
   op_type: command
   params:
@@ -177,7 +203,7 @@ behaviors:
   from_status: 原状态（command 行为填写，取自关联概念 status 属性的枚举；query 行为留空）
   to_status: 新状态（command 行为填写，同上；query 行为留空）
   display_name: 行为展示名称
-- name: queryOrderSQL
+- name: QueryOrderSQL
   description: 根据订单状态查询订单明细
   op_type: query
   params:
@@ -209,22 +235,22 @@ behaviors:
   concept: ConceptName
   display_name: SQL查询订单
 rules:
-- name: ruleName
+- name: OrderTypeValid
   description: 规则描述，详细的规则逻辑
-  behavior: behaviorName
+  behavior: CreateOrder
   related_functions:
-  - functionName
+  - sumRawNotArrivalQty
   display_name: 规则展示名称
   position: 前置/后置
   data_supplements:
-  - queryBehaviorName
+  - QueryOrderSQL
 processes:
-- name: processName
+- name: OrderFulfillment
   display_name: 流程展示名称
   goal: 流程目标
   description: 流程描述
   steps:
-  - current_action: behaviorName
+  - current_action: CreateOrder
     previous_action: ''
     description: 步骤描述
     connection_type: 串行

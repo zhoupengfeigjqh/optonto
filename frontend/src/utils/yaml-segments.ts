@@ -13,7 +13,8 @@ export const ALL = '__all__';
 export const KEY_LABELS: Record<string, string> = {
   metadata: '元数据',
   concepts: '概念',
-  relations: '关系',
+  concept_relations: '概念关系',
+  relations: '对象关系',
   functions: '函数',
   behaviors: '行为',
   rules: '规则',

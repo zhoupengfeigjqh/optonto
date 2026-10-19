@@ -27,23 +27,46 @@ from services.validators import (  # noqa: E402
 
 
 class TestRelationType(unittest.TestCase):
-    """关系类型：5 值多选，值域外静默丢弃（不阻断保存）"""
+    """关系类型：5 值多选（大驼峰），读时兼容存量蛇形，值域外静默丢弃（不阻断保存）"""
 
     def test_多选保留(self) -> None:
-        r = RelationItem(name="r", source="A", target="B", relation_type=["symmetric", "transitive"])
-        self.assertEqual(r.relation_type, ["symmetric", "transitive"])
+        r = RelationItem(name="r", source="A", target="B", relation_type=["Symmetric", "Transitive"])
+        self.assertEqual(r.relation_type, ["Symmetric", "Transitive"])
+
+    def test_大驼峰五值全部保留(self) -> None:
+        """驼峰边界的多词值（InverseFunctional）必须原样保留，不得被归一表漏掉。"""
+        values = ["Asymmetric", "Symmetric", "Transitive", "Functional", "InverseFunctional"]
+        for v in values:
+            self.assertEqual(
+                RelationItem(name="r", source="A", target="B", relation_type=[v]).relation_type,
+                [v],
+            )
+        self.assertEqual(
+            RelationItem(name="r", source="A", target="B", relation_type=values).relation_type,
+            values,
+        )
+
+    def test_存量蛇形归一为大驼峰(self) -> None:
+        r = RelationItem(
+            name="r", source="A", target="B",
+            relation_type=["asymmetric", "symmetric", "transitive", "functional", "inverse_functional"],
+        )
+        self.assertEqual(
+            r.relation_type,
+            ["Asymmetric", "Symmetric", "Transitive", "Functional", "InverseFunctional"],
+        )
 
     def test_非法值丢弃且不报错(self) -> None:
-        r = RelationItem(name="r", source="A", target="B", relation_type=["symmetric", "bogus", 123])
-        self.assertEqual(r.relation_type, ["symmetric"])
+        r = RelationItem(name="r", source="A", target="B", relation_type=["Symmetric", "bogus", 123])
+        self.assertEqual(r.relation_type, ["Symmetric"])
 
     def test_去重保序(self) -> None:
-        r = RelationItem(name="r", source="A", target="B", relation_type=["transitive", "transitive", "functional"])
-        self.assertEqual(r.relation_type, ["transitive", "functional"])
+        r = RelationItem(name="r", source="A", target="B", relation_type=["Transitive", "transitive", "Functional"])
+        self.assertEqual(r.relation_type, ["Transitive", "Functional"])
 
     def test_字符串单值兼容(self) -> None:
         r = RelationItem(name="r", source="A", target="B", relation_type="functional")
-        self.assertEqual(r.relation_type, ["functional"])
+        self.assertEqual(r.relation_type, ["Functional"])
 
     def test_缺省为空列表(self) -> None:
         r = RelationItem(name="r", source="A", target="B")
@@ -52,7 +75,7 @@ class TestRelationType(unittest.TestCase):
     def test_与基数并存(self) -> None:
         r = RelationItem(name="r", source="A", target="B", cardinality="N:1", relation_type=["functional"])
         self.assertEqual(r.cardinality, "N:1")
-        self.assertEqual(r.relation_type, ["functional"])
+        self.assertEqual(r.relation_type, ["Functional"])
 
 
 class TestConceptTerms(unittest.TestCase):

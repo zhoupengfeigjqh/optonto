@@ -10,16 +10,19 @@
 
 from errors import InvalidInputError
 from schemas import (
+    CONCEPT_RELATION_TYPES,
     STATUS_ATTR_NAME,
     AttributeRestriction,
     BehaviorItem,
     ConceptItem,
+    ConceptRelationItem,
     FunctionItem,
     OntologyData,
     ProcessItem,
     RelationItem,
     RuleItem,
 )
+from services.concept_relations import DISJOINT_WITH, EQUIVALENT_CLASS, is_ancestor
 from services.inheritance import ENUM_TYPES, PATTERN_TYPES, RANGE_TYPES, effective_map
 
 
@@ -219,6 +222,100 @@ def validate_relation(relation: RelationItem, data: OntologyData) -> None:
         attrs = {ra.attribute.name for ra in effective.get(concept_name, [])}
         if attr_name not in attrs:
             raise InvalidInputError(f"关系{label}关联属性不存在: {concept_name}.{attr_name}")
+
+
+def _effective_attr_type(data: OntologyData, concept_name: str, attr_name: str) -> str | None:
+    """有效属性（自有 ∪ 继承）的类型；不存在返回 None。"""
+    for ra in effective_map(data.concepts).get(concept_name, []):
+        if ra.attribute.name == attr_name:
+            return ra.attribute.type or ""
+    return None
+
+
+def validate_link_attributes(
+    data: OntologyData,
+    source: str,
+    target: str,
+    source_attr: str,
+    target_attr: str,
+    label: str = "概念关系",
+) -> None:
+    """关联概念属性（两端 join 字段）校验：同填同空、必须存在、两端类型一致。
+
+    概念关系的关联概念属性**选填**（互斥/等价多数没有连接键）；对象关系仍由
+    ``validate_relation`` 按既有口径校验，本函数只服务概念关系。
+    """
+    has_source = bool((source_attr or "").strip())
+    has_target = bool((target_attr or "").strip())
+    if not has_source and not has_target:
+        return
+    if has_source != has_target:
+        raise InvalidInputError(f"{label}的关联概念属性必须两端同时填写，或同时留空")
+    source_type = _effective_attr_type(data, source, source_attr)
+    if source_type is None:
+        raise InvalidInputError(f"{label}源端关联属性不存在: {source}.{source_attr}")
+    target_type = _effective_attr_type(data, target, target_attr)
+    if target_type is None:
+        raise InvalidInputError(f"{label}目标端关联属性不存在: {target}.{target_attr}")
+    if source_type != target_type:
+        raise InvalidInputError(
+            f"{label}两端关联属性类型不一致：{source}.{source_attr}（{source_type or '空'}）"
+            f" ≠ {target}.{target_attr}（{target_type or '空'}）"
+        )
+
+
+def validate_concept_relation(
+    relation: ConceptRelationItem, data: OntologyData, exclude_name: str | None = None
+) -> None:
+    """概念关系校验（类级公理）：类型、端点、对称去重、继承链矛盾、关联属性。
+
+    值域类非法值已在 Pydantic 层归一为空串，这里统一转 400（跨字段强耦合）。
+    """
+    if relation.relation_type not in CONCEPT_RELATION_TYPES:
+        raise InvalidInputError(
+            "概念关系类型只能为 SubClassOf / EquivalentClass / DisjointWith，且不可为空"
+        )
+
+    concept_names = {c.name for c in data.concepts if c.name}
+    if not relation.source:
+        raise InvalidInputError("概念关系缺少源概念")
+    if not relation.target:
+        raise InvalidInputError("概念关系缺少目标概念")
+    if relation.source not in concept_names:
+        raise InvalidInputError(f"概念关系的源概念不存在: {relation.source}")
+    if relation.target not in concept_names:
+        raise InvalidInputError(f"概念关系的目标概念不存在: {relation.target}")
+    if relation.source == relation.target:
+        raise InvalidInputError("概念关系不能指向概念自身")
+
+    if relation.relation_type == EQUIVALENT_CLASS:
+        if is_ancestor(data, relation.source, relation.target) or is_ancestor(
+            data, relation.target, relation.source
+        ):
+            raise InvalidInputError("等价关系不能建立在祖先-后代概念之间（与继承关系矛盾）")
+    if relation.relation_type == DISJOINT_WITH:
+        if is_ancestor(data, relation.source, relation.target) or is_ancestor(
+            data, relation.target, relation.source
+        ):
+            raise InvalidInputError("互斥关系不能建立在祖先-后代概念之间")
+
+    # 对称关系（等价/互斥）：同一无序概念对只允许登记一条，反向重复直接拒绝
+    if relation.relation_type in (EQUIVALENT_CLASS, DISJOINT_WITH):
+        pair = frozenset((relation.source, relation.target))
+        for other in data.concept_relations:
+            if other.name == exclude_name:
+                continue
+            if other.relation_type != relation.relation_type:
+                continue
+            if frozenset((other.source, other.target)) == pair:
+                raise InvalidInputError(
+                    f"概念关系已存在（{other.name}）：{relation.relation_type} 是对称关系，"
+                    "同一概念对只登记一条，禁止反向重复"
+                )
+
+    validate_link_attributes(
+        data, relation.source, relation.target, relation.source_attr, relation.target_attr
+    )
 
 
 def validate_process(process: ProcessItem, data: OntologyData) -> None:

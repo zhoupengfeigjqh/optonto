@@ -21,7 +21,7 @@ interface Props {
 type PreviewSource = 'thread' | 'version-dir' | 'deployed';
 
 const STAT_LABELS: Record<string, string> = {
-  concepts: '概念', relations: '关系', functions: '函数',
+  concepts: '概念', concept_relations: '概念关系', relations: '对象关系', functions: '函数',
   behaviors: '行为', rules: '规则', processes: '流程',
 };
 

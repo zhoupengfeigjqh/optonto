@@ -126,7 +126,7 @@
 
 | 节 | 字段 | 形态 | 说明 |
 | :-- | :-- | :-- | :-- |
-| relations[] | `relation_type` | `string[]` | 关系类型多选：`asymmetric`/`symmetric`/`transitive`/`functional`/`inverse_functional`；值域外静默丢弃 |
+| relations[] | `relation_type` | `string[]` | **对象关系**类型多选（大驼峰）：`Asymmetric`/`Symmetric`/`Transitive`/`Functional`/`InverseFunctional`；值域外静默丢弃。读时兼容 2026-10-19 之前的蛇形写法（`asymmetric` → `Asymmetric`、`inverse_functional` → `InverseFunctional`），内存与下次落盘恒为大驼峰 |
 | concepts[] | `terms` | `string[]` | 概念术语集（其他表述）；去重去空 |
 | concepts[].attributes[] | `name == "status"` | `string` + `constraint.enum` | 生命周期状态属性：类型恒为 string，枚举值即状态全集 |
 | functions[] | `type` | `string` | 函数类型英文码：`TRANSFORMATION`/`CALCULATION`/`DERIVATION`/`VALIDATION`/`MODEL`；值域外归一为空串 |
@@ -139,6 +139,14 @@
 | rules[] | `data_supplements` | `string[]` | 规则取数接口（query 行为名）；前端按关联函数声明的关联概念自动推导，可手工增减 |
 | concepts[] | `sub_class_of` | `string \| null` | 父概念（OWL `subClassOf`）**至多 1 个**；空/缺省 = 根概念；读时兼容 camelCase `subClassOf` 别名 |
 | concepts[] | `attribute_restrictions` | `{属性名: {enum?, min?, max?, pattern?}}` | 对**继承属性**的收窄声明；空对象不落盘 |
+| concept_relations[] | `relation_type` | `string` | **概念关系**类型单选：`SubClassOf` / `EquivalentClass` / `DisjointWith`；值域外归一为空串（业务层 400） |
+| concept_relations[] | `name` / `display_name` / `source` / `target` / `source_attr` / `target_attr` / `description` | `string` | 概念关系字段 = 对象关系去掉 `cardinality`；关联概念属性**选填**（两端同填同空、类型一致） |
+
+**概念关系口径（2026-10-19）**：
+
+- `SubClassOf` 的成员关系**唯一权威是 `concepts[].sub_class_of`**：`concept_relations` 中的同类型条目只作「关联概念属性」持久化锚点，读取时由后端按概念图派生（`name` = `{子概念}SubClassOf{父概念}`、`display_name` = `{子中文} 是一种 {父中文}`），失配锚点自动剪枝。API 只允许对 SubClassOf 行更新两端属性，禁止新增/删除。
+- `EquivalentClass` / `DisjointWith` 由 `concept_relations` 落盘；二者对称，同一无序概念对只登记一条（反向重复 → 400）；不得用于祖先-后代概念。
+- 概念关系与对象关系（`relations`）分属两个一级节，互不混用；部署合并、生成范围勾选均按一级节独立处理。
 
 **`params` 说明字段口径（两端一致）**：`behaviors[].params` 项的说明字段为 **`description`**，`functions[].params` 项为 **`display_name`**，两者不互换（`mcp-shared/tool_contract.param_spec_to_schema` 以 `display_name or description` 做读取兜底，但**写入**须按各自口径）。
 

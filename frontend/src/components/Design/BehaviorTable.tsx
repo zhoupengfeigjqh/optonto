@@ -6,6 +6,7 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutline
 import { getBehaviors, createBehavior, updateBehavior, deleteBehavior, getConcepts, effectiveAttributes, Behavior, Concept } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import JsonEditor from '@/components/JsonEditor';
+import { useTablePagination } from '@/lib/table-pagination';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -17,6 +18,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const [editData, setEditData] = useState<Record<string, any>>({});
   const [paramsEditorOpen, setParamsEditorOpen] = useState(false);
   const [responseEditorOpen, setResponseEditorOpen] = useState(false);
+  const { pagination, goToRow } = useTablePagination();
 
   const load = async () => {
     setLoading(true);
@@ -47,6 +49,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const handleAdd = () => {
     setEditData({ name: '', display_name: '', description: '', op_type: '', params: '{}', response: '{}', concept: '', from_status: '', to_status: '' });
     setEditingKey('__new__');
+    goToRow(behaviors.length);
   };
 
   const handleEdit = (b: Behavior) => {
@@ -211,7 +214,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增行为</Button>
       </div>
       <p className="text-text-muted text-xs mb-3">定义业务原子操作及其接口参数，该参数需要在数据引擎处与外部业务系统接口进行映射配置</p>
-      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
+      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
 
       <Modal title="编辑接口参数" open={paramsEditorOpen} onOk={() => { try { const parsed = JSON.parse(editData.params || '{}');
         for (const [k, v] of Object.entries(parsed)) { if (typeof v === 'object' && v !== null) { if (!('type' in (v as any))) throw new Error(`${k} 缺少 type`); } else if (typeof v !== 'string') throw new Error(`${k} 格式无效`); }

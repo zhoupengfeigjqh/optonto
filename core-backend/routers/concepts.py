@@ -9,6 +9,7 @@ from errors import InvalidInputError, NotFoundError
 from dependencies import get_ontology_names
 from schemas import AttributeItem, ConceptItem, ConceptView, InheritedAttributeItem
 from services import load_ontology_data, save_ontology_data
+from services import concept_relations as cr
 from services.entity_crud import ensure_unique, find_index
 from services.inheritance import (
     clear_parent_references,
@@ -106,6 +107,9 @@ async def update_concept(ontology_id: int, concept_name: str, item: ConceptItem)
     data.concepts[idx] = item
     # 父概念改名 → 级联改写子概念引用，避免悬空（口径 4 的姊妹规则）
     rename_parent_references(data.concepts, concept_name, item.name)
+    # 概念关系（概念关系页签）同口径级联：改写引用 + 刷新 SubClassOf 派生名，再清理失配锚点
+    cr.rename_concept_references(data, concept_name, item.name)
+    cr.prune_stale_sub_class_links(data)
     save_ontology_data(sc_name, on_name, data)
     return item
 
@@ -152,6 +156,9 @@ async def delete_concept(ontology_id: int, concept_name: str):
             b.to_status = ""
     # 子概念保留，只清除父引用与依附于父属性的收窄（spec 005 口径 4）
     clear_parent_references(data.concepts, concept_name)
+    # 概念关系同口径级联：删除引用该概念的等价/互斥行与 SubClassOf 锚点
+    cr.remove_concept_references(data, concept_name)
+    cr.prune_stale_sub_class_links(data)
 
     save_ontology_data(sc_name, on_name, data)
     return {"message": "概念已删除"}

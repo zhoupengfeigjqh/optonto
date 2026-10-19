@@ -5,6 +5,7 @@ import { Button, Input, Select, Modal, message, Space, Tag } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { getProcesses, createProcess, updateProcess, deleteProcess, getBehaviors, Process, ProcessStep, Behavior } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import { useTablePagination } from '@/lib/table-pagination';
 
 interface Props { ontologyId: number; activeTab?: string; }
 
@@ -26,6 +27,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
   const [steps, setSteps] = useState<ProcessStep[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [origName, setOrigName] = useState('');
+  const { pagination, goToRow } = useTablePagination();
 
   const load = async () => {
     setLoading(true);
@@ -84,6 +86,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
       if (isNew) {
         if (processes.some(p => p.name === data.name)) { message.warning('流程名称已存在'); return; }
         await createProcess(ontologyId, data); message.success('流程已添加');
+        goToRow(processes.length);
       } else {
         await updateProcess(ontologyId, origName, data); message.success('流程已更新');
       }
@@ -116,7 +119,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
       </div>
       <p className="text-text-muted text-xs mb-3">可供参考的核心业务价值链（业务流程）</p>
 
-      <ResizableTable dataSource={processes.map(p => ({ ...p, _key: p.name }))} columns={columns} rowKey="_key" loading={loading} pagination={false} />
+      <ResizableTable dataSource={processes.map(p => ({ ...p, _key: p.name }))} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
 
       <Modal
         title={isNew ? '新增流程' : `编辑流程 - ${editProcess.display_name || origName}`}

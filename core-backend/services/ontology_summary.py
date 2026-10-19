@@ -10,7 +10,10 @@ import json
 from services.inheritance import effective_map
 
 # 关系类型中文标签（与前端 RelationTable 的口径一致；空则不输出，不给 LLM 噪音）
+# 2026-10-19 起规范值为大驼峰；保留存量蛇形键兜底（旧 yaml 直接读入未经 schema 归一的历史路径）
 RELATION_TYPE_LABELS = {
+    "Asymmetric": "非对称", "Symmetric": "对称", "Transitive": "传递",
+    "Functional": "函数性", "InverseFunctional": "反函数性",
     "asymmetric": "非对称", "symmetric": "对称", "transitive": "传递",
     "functional": "函数性", "inverse_functional": "反函数性",
 }

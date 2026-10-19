@@ -41,7 +41,9 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/deploy", tags=["本体�
 
 # 合并目标节：securities / data_engines 由 save_ontology_data 派生（全花名册
 # 同步 / 独立文件），不从需求 yaml 里带进来（单一权威来源）
-_MERGE_SECTIONS = ("concepts", "relations", "functions", "behaviors", "rules", "processes")
+_MERGE_SECTIONS = (
+    "concepts", "concept_relations", "relations", "functions", "behaviors", "rules", "processes",
+)
 
 
 def _collect_version_docs(ontology_name: str) -> dict[str, list[dict]]:

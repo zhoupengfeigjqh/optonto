@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/threads", tags=["对话"])
 
 # 「本体生成」可按用户勾选裁剪的一级目录（metadata 恒输出，不在此列）
 _FILTERABLE_SECTIONS = (
-    "concepts", "relations", "functions", "behaviors",
+    "concepts", "concept_relations", "relations", "functions", "behaviors",
     "rules", "processes", "securities", "data_engines",
 )
 
@@ -317,7 +317,7 @@ async def generate_ontology(thread_id: str, body: dict):
 
         ontology_dict = ontology_data.model_dump(exclude_none=True)
         # 空节整节省略，不再输出 `functions: []` 这类空列表
-        for key in ("concepts", "relations", "functions", "behaviors", "rules",
+        for key in ("concepts", "concept_relations", "relations", "functions", "behaviors", "rules",
                     "processes", "securities", "data_engines"):
             if not ontology_dict.get(key):
                 ontology_dict.pop(key, None)
@@ -342,6 +342,7 @@ async def generate_ontology(thread_id: str, body: dict):
             "ontology": onto,
             "stats": {
                 "concepts": len(ontology_data.concepts),
+                "concept_relations": len(ontology_data.concept_relations),
                 "relations": len(ontology_data.relations),
                 "functions": len(ontology_data.functions),
                 "behaviors": len(ontology_data.behaviors),

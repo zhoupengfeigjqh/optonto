@@ -1,6 +1,6 @@
 /** 本体（Ontology）与本体文件接口 —— 自原 client.ts 拆出，行为不变。 */
 import { request } from './http';
-import type { Behavior, Concept, Function, Process, Relation, Rule, Security } from './design';
+import type { Behavior, Concept, ConceptRelation, Function, Process, Relation, Rule, Security } from './design';
 import type { DataEngine } from './data-engines';
 
 export interface Ontology {
@@ -18,6 +18,8 @@ export interface Ontology {
 
 export interface OntologyData {
   concepts: Concept[];
+  /** 概念关系（类级公理）：SubClassOf / EquivalentClass / DisjointWith */
+  concept_relations?: ConceptRelation[];
   relations: Relation[];
   behaviors: Behavior[];
   rules: Rule[];

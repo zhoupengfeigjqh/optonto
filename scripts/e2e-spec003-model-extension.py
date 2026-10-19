@@ -99,14 +99,15 @@ def main():
          "constraint": {"enum": ["待入库", "已入库", "已取消"], "required": True}},
     ])
 
-    print("\n== 2. 关系类型（多选 + 非法值丢弃） ==")
+    print("\n== 2. 关系类型（多选 + 非法值丢弃 + 蛇形归一为大驼峰） ==")
     s, rel = req("POST", f"{CORE}/ontologies/{oid}/relations",
-                 {"name": "recordsRawMaterial", "source": "PurchaseRecord", "target": "PurchaseRecord",
+                 {"name": "RecordsRawMaterial", "source": "PurchaseRecord", "target": "PurchaseRecord",
                   "cardinality": "N:1", "relation_type": ["functional", "transitive", "bogus", 42],
                   "source_attr": "purchaseRecordId", "target_attr": "purchaseRecordId",
                   "description": "测试关系"})
     check("创建关系", s in (200, 201), (s, rel))
-    check("关系类型过滤非法值", rel and rel.get("relation_type") == ["functional", "transitive"],
+    check("关系类型过滤非法值并归一为大驼峰",
+          rel and rel.get("relation_type") == ["Functional", "Transitive"],
           rel and rel.get("relation_type"))
 
     print("\n== 3. 函数类型（英文码 + 值域归一） ==")

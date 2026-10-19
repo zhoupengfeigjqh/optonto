@@ -8,6 +8,7 @@ import {
   Concept, Attribute, AttributeRestriction, effectiveAttributes,
 } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
+import { useTablePagination } from '@/lib/table-pagination';
 import ConceptAttributeModal from './ConceptAttributeModal';
 import { parentCandidates } from './concept-inheritance';
 
@@ -19,6 +20,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const [editingKey, setEditingKey] = useState<string>('');
   const [editData, setEditData] = useState<Record<string, any>>({});
   const [attrConcept, setAttrConcept] = useState<Concept | null>(null);
+  const { pagination, goToRow } = useTablePagination();
 
   const load = async () => {
     setLoading(true);
@@ -35,6 +37,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const handleAdd = () => {
     setEditData({ name: '', display_name: '', description: '', instance_label: '', terms: [], sub_class_of: undefined });
     setEditingKey('__new__');
+    goToRow(concepts.length);
   };
 
   const handleEdit = (record: Concept) => {
@@ -260,7 +263,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增概念</Button>
       </div>
       <p className="text-text-muted text-xs mb-3">定义业务中的核心对象及其属性结构；父概念（subClassOf）的属性自动继承，子概念只能收窄枚举、取值范围与匹配模式</p>
-      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
+      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
 
       <ConceptAttributeModal
         open={!!attrConcept}

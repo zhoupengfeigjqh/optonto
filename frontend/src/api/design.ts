@@ -100,7 +100,7 @@ export interface Relation {
   source: string;
   target: string;
   cardinality: string;
-  /** 关系类型（可多选）：asymmetric/symmetric/transitive/functional/inverse_functional */
+  /** 关系类型（可多选，大驼峰）：Asymmetric/Symmetric/Transitive/Functional/InverseFunctional */
   relation_type?: string[];
   source_attr?: string;
   target_attr?: string;
@@ -119,6 +119,39 @@ export const deleteRelation = (ontologyId: number, name: string) =>
 
 export const updateRelation = (ontologyId: number, name: string, data: Relation) =>
   request<Relation>(`/api/ontologies/${ontologyId}/relations/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+// ─── ConceptRelation（概念关系：类级公理，无基数） ─────────────────────────────
+
+export type ConceptRelationType = 'SubClassOf' | 'EquivalentClass' | 'DisjointWith';
+
+/**
+ * 概念关系。`SubClassOf` 的成员关系由概念设计的父子关系派生（只读，仅关联概念属性可改），
+ * 用户手工新增只允许 `EquivalentClass` / `DisjointWith`。
+ */
+export interface ConceptRelation {
+  name: string;
+  display_name?: string;
+  relation_type: ConceptRelationType;
+  /** SubClassOf：源 = 子概念 */
+  source: string;
+  /** SubClassOf：目标 = 父概念 */
+  target: string;
+  source_attr?: string;
+  target_attr?: string;
+  description?: string;
+}
+
+export const getConceptRelations = (ontologyId: number) =>
+  request<ConceptRelation[]>(`/api/ontologies/${ontologyId}/concept-relations`);
+
+export const createConceptRelation = (ontologyId: number, data: ConceptRelation) =>
+  request<ConceptRelation>(`/api/ontologies/${ontologyId}/concept-relations`, { method: 'POST', body: JSON.stringify(data) });
+
+export const updateConceptRelation = (ontologyId: number, name: string, data: ConceptRelation) =>
+  request<ConceptRelation>(`/api/ontologies/${ontologyId}/concept-relations/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteConceptRelation = (ontologyId: number, name: string) =>
+  request<{ message: string }>(`/api/ontologies/${ontologyId}/concept-relations/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 // ─── Function ───────────────────────────────────────────────────────────────
 

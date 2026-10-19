@@ -12,8 +12,32 @@ logger = logging.getLogger("core-backend")
 
 # ─── 枚举值域（spec 003）──────────────────────────────────────────────────────
 
-# 关系类型：5 值，可多选（值域外的值静默丢弃）
-RELATION_TYPES = ('asymmetric', 'symmetric', 'transitive', 'functional', 'inverse_functional')
+# 对象关系类型：5 值，可多选（大驼峰；值域外的值静默丢弃）。
+# 读时兼容 2026-10-19 之前的蛇形写法（asymmetric / inverse_functional …），归一为大驼峰后落盘。
+RELATION_TYPES = ('Asymmetric', 'Symmetric', 'Transitive', 'Functional', 'InverseFunctional')
+
+# 关系类型归一表：命中键（小写、去首尾空白）→ 规范值。
+# 键必须同时覆盖「大驼峰小写化」与「存量蛇形」两种形态——
+# 大驼峰驼峰边界的多词值（InverseFunctional.lower()='inversefunctional'）
+# 与蛇形（inverse_functional）不是同一字符串，漏掉前者会导致该选项被静默丢弃。
+_RELATION_TYPE_CANON = {
+    'asymmetric': 'Asymmetric',
+    'symmetric': 'Symmetric',
+    'transitive': 'Transitive',
+    'functional': 'Functional',
+    'inversefunctional': 'InverseFunctional',
+    'inverse_functional': 'InverseFunctional',
+}
+
+# 概念关系类型：类级公理，单选。SubClassOf 的成员关系以 concepts[].sub_class_of 为唯一权威。
+CONCEPT_RELATION_TYPES = ('SubClassOf', 'EquivalentClass', 'DisjointWith')
+_CONCEPT_RELATION_CANON = {
+    'subclassof': 'SubClassOf', 'sub_class_of': 'SubClassOf', 'subclass': 'SubClassOf',
+    'equivalentclass': 'EquivalentClass', 'equivalent_class': 'EquivalentClass',
+    'equivalent': 'EquivalentClass',
+    'disjointwith': 'DisjointWith', 'disjoint_with': 'DisjointWith', 'disjoint': 'DisjointWith',
+}
+
 # 函数类型：5 值单选，英文码（值域外归一为空串）
 FUNCTION_TYPES = ('TRANSFORMATION', 'CALCULATION', 'DERIVATION', 'VALIDATION', 'MODEL')
 # 概念生命周期状态属性名：该属性承担对象生命周期语义，其 constraint.enum 即状态全集
@@ -186,7 +210,8 @@ class RelationItem(BaseModel):
 
     relation_type: list[str] = Field(
         default_factory=list,
-        description="关系类型（可多选）：asymmetric/symmetric/transitive/functional/inverse_functional",
+        description="关系类型（可多选，大驼峰）：Asymmetric/Symmetric/Transitive/Functional/InverseFunctional；"
+        "读时兼容存量蛇形写法",
     )
 
     @field_validator('cardinality', mode='before')
@@ -199,7 +224,7 @@ class RelationItem(BaseModel):
     @field_validator('relation_type', mode='before')
     @classmethod
     def coerce_relation_type(cls, v: any) -> list[str]:
-        """关系类型规范化：值域外丢弃、去重保序（不阻断保存）。"""
+        """关系类型规范化：归一为大驼峰 → 值域外丢弃 → 去重保序（不阻断保存）。"""
         if v is None:
             return []
         if isinstance(v, str):
@@ -208,10 +233,36 @@ class RelationItem(BaseModel):
             return []
         out: list[str] = []
         for t in v:
-            s = str(t)
-            if s in RELATION_TYPES and s not in out:
-                out.append(s)
+            canon = _RELATION_TYPE_CANON.get(str(t).strip().lower())
+            if canon and canon not in out:
+                out.append(canon)
         return out
+
+
+class ConceptRelationItem(BaseModel):
+    """概念关系（类级公理）：SubClassOf / EquivalentClass / DisjointWith，单选，无基数。
+
+    单一权威口径（2026-10-19）：
+    - ``SubClassOf`` 的成员关系只来自 ``concepts[].sub_class_of``；本节的 SubClassOf 条目
+      仅作为「关联概念属性」的持久化锚点，读写时由 ``services.concept_relations`` 派生/合并；
+    - ``EquivalentClass`` / ``DisjointWith`` 完全由本节落盘（对称关系只登记一条）。
+    """
+
+    name: str = Field(..., description="概念关系名（SubClassOf 由后端派生）")
+    display_name: str = Field("", description="展示名称")
+    relation_type: str = Field("", description="概念关系类型：SubClassOf / EquivalentClass / DisjointWith")
+    source: str = Field("", description="源概念（SubClassOf = 子概念）")
+    target: str = Field("", description="目标概念（SubClassOf = 父概念）")
+    source_attr: str = Field("", description="关联概念属性-源端（选填）")
+    target_attr: str = Field("", description="关联概念属性-目标端（选填，与源端同填同空）")
+    description: str = Field("", description="关系说明")
+
+    @field_validator('relation_type', mode='before')
+    @classmethod
+    def coerce_concept_relation_type(cls, v: any) -> str:
+        """概念关系类型规范化：兼容大小写/蛇形写法，值域外归一为空串（由业务层拦截）。"""
+        key = str(v).strip().lower() if v is not None else ""
+        return _CONCEPT_RELATION_CANON.get(key, "")
 
 
 class BehaviorItem(BaseModel):
@@ -428,6 +479,9 @@ class OntologyData(BaseModel):
     """本体完整数据结构，对应 YAML 文件内容。"""
     metadata: dict = Field(default_factory=dict, description="元数据（名称、来源等）")
     concepts: list[ConceptItem] = Field(default_factory=list)
+    concept_relations: list[ConceptRelationItem] = Field(
+        default_factory=list, description="概念关系（类级公理）：SubClassOf / EquivalentClass / DisjointWith"
+    )
     relations: list[RelationItem] = Field(default_factory=list)
     functions: list[FunctionItem] = Field(default_factory=list, description="函数列表")
     behaviors: list[BehaviorItem] = Field(default_factory=list)

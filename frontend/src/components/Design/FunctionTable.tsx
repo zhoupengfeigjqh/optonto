@@ -7,6 +7,7 @@ import { getFunctions, createFunction, updateFunction, deleteFunction, getConcep
 import ResizableTable from '@/components/ResizableTable';
 import PythonEditor from '@/components/PythonEditor';
 import JsonEditor from '@/components/JsonEditor';
+import { useTablePagination } from '@/lib/table-pagination';
 import { FUNCTION_TYPE_OPTIONS, functionTypeLabel } from './function-type-labels';
 
 interface Props { ontologyId: number; activeTab?: string; }
@@ -17,6 +18,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState('');
   const [editData, setEditData] = useState<Record<string, any>>({});
+  const { pagination, goToRow } = useTablePagination();
 
   // params editor
   const [paramsEditorOpen, setParamsEditorOpen] = useState(false);
@@ -55,6 +57,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const handleAdd = () => {
     setEditData({ name: '', display_name: '', description: '', related_concepts: [], params: '{}', response: '{}', code_file: '', type: '' });
     setEditingKey('__new__');
+    goToRow(funcs.length);
   };
 
   const handleEdit = (g: Function) => {
@@ -284,7 +287,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增函数</Button>
       </div>
       <p className="text-text-muted text-xs mb-3">定义可复用的属性计算函数（根据对象数据做一些简单的计算或统计，不用单独开发新接口）</p>
-      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={false} />
+      <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
 
       {/* ─── Params Editor Modal ───────────────────────────────────── */}
       <Modal title="编辑输入参数" open={paramsEditorOpen} onOk={() => { try { JSON.parse(editData.params || '{}'); setParamsEditorOpen(false); } catch (e: any) { message.warning('JSON 格式无效: ' + e.message); } }} onCancel={() => setParamsEditorOpen(false)} okText="确认" cancelText="取消" width={700}>

@@ -15,6 +15,7 @@ from routers import (
     scenarios_router,
     ontologies_router,
     concepts_router,
+    concept_relations_router,
     relations_router,
     behaviors_router,
     rules_router,
@@ -52,6 +53,7 @@ app.add_middleware(
 app.include_router(scenarios_router)
 app.include_router(ontologies_router)
 app.include_router(concepts_router)
+app.include_router(concept_relations_router)
 app.include_router(relations_router)
 app.include_router(behaviors_router)
 app.include_router(rules_router)

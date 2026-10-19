@@ -60,9 +60,11 @@ describe('assemble — 段组装', () => {
 });
 
 describe('常量', () => {
-  it('ALL 为全量哨兵值，KEY_LABELS 覆盖九个顶层节', () => {
+  it('ALL 为全量哨兵值，KEY_LABELS 覆盖十个顶层节', () => {
     expect(ALL).toBe('__all__');
-    expect(Object.keys(KEY_LABELS)).toHaveLength(9);
+    expect(Object.keys(KEY_LABELS)).toHaveLength(10);
     expect(KEY_LABELS.behaviors).toBe('行为');
+    expect(KEY_LABELS.concept_relations).toBe('概念关系');
+    expect(KEY_LABELS.relations).toBe('对象关系');
   });
 });

@@ -229,6 +229,18 @@ def _stamp_identity_metadata(data: OntologyData, scenario_name: str, ontology_na
     data.metadata["ontology_id"] = ontology_id
 
 
+def _compact_concept_relations(ontology_dict: dict) -> None:
+    """概念关系条目去掉空串字段（SubClassOf 锚点只保留两端属性，避免与派生值重复落盘）。"""
+    rows = ontology_dict.get("concept_relations")
+    if not rows:
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in [k for k, v in row.items() if v == ""]:
+            row.pop(key)
+
+
 def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyData) -> None:
     """Save ontology data to YAML file."""
     yaml_path = get_yaml_path(scenario_name, ontology_name)
@@ -246,6 +258,7 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     ontology_dict = ontology_data.model_dump(exclude_none=True)
     ontology_dict.pop("data_engines", None)
     ontology_dict.pop("securities", None)
+    _compact_concept_relations(ontology_dict)
 
     fs_store.write_yaml(yaml_path, ontology_dict)
     fs_store.write_yaml(
@@ -307,6 +320,7 @@ def save_ontology_version(scenario_name: str, ontology_name: str, version: str, 
     ontology_dict = ontology_data.model_dump(exclude_none=True)
     ontology_dict.pop("data_engines", None)
     ontology_dict.pop("securities", None)
+    _compact_concept_relations(ontology_dict)
 
     fs_store.write_yaml(vdir / "ontology.yaml", ontology_dict)
     fs_store.write_yaml(vdir / "data_engines.yaml", {"data_engines": [e.model_dump(exclude_none=True) for e in engines]})
