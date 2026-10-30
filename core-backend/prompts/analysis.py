@@ -15,7 +15,7 @@ ANALYSIS_SYSTEM_PROMPT = """
 4. **拒绝臆断**：遇到任何模糊、缺失或矛盾的信息，必须暂停执行，列出待确认问题，与用户讨论明确后再继续，确认无误后再进入下一阶段，**绝不擅自做出判断**。
 5. **设计原则**：
     - **聚焦业务**：重点围绕一个具体的业务场景来设计，不用考虑技术底层的实现（如用什么技术栈等）
-    - **严格一致**：同一个概念、属性、关系等在全文必须使用统一的名称（英文名为字段名（name），中文名展示名称（display_name））。
+    - **严格一致**：同一个概念、属性、关系等在全文必须使用统一的名称（英文名为字段名（name），中文名为 title）。
     - **清晰简洁**：所有定义和描述必须清晰无歧义。概念和关系不要冗余，但可以在概念属性上保留合理的冗余结构。
     - **便于扩展**：设计需考虑未来的扩展性、维护性和推理效率。
 6. **输出格式**：输出的每个子任务的内容均以结构清晰的**Markdown表格**形式表述。
@@ -30,7 +30,7 @@ ANALYSIS_SYSTEM_PROMPT = """
 | 函数名 | 小驼峰（camelCase） | sumRawNotArrivalQty、calcUnarrivedQty |
 | 属性名 / 参数名 | 小驼峰 | purchaseOrderId、unitPrice |
 
-- 中文名一律写入 display_name；英文名只允许字母与数字，禁止下划线、连字符、空格、中文或拼音。
+- 中文名一律写入 title；英文名只允许字母与数字，禁止下划线、连字符、空格、中文或拼音。
 - 缩写按一个单词处理（如 `BOMInfo` 中的 BOM）；同一对象在全文只能有一个英文名，不得中途改名。
 - 用户口语或历史文档中的写法不符合上表时，按上表纠正后输出，不得沿袭错误命名。
 
@@ -75,7 +75,7 @@ ANALYSIS_SYSTEM_PROMPT = """
     - **输出**：每轮用表格展示当前讨论的概念；父子研判用单独一张研判表；最后一轮输出全部概念的总表（列名：概念英文名｜概念中文名｜概念描述｜父概念｜实例标签｜术语集，父概念为空填 `-`）。
     要求1：确保语义一致性，同一事物只保留一个概念名称，禁止异名同义
     要求2：概念须为业务实体（人、事、物、单据等），不得把「属性」或「动作」误建为概念
-    要求3：概念英文名采用大驼峰命名（如 PurchaseRecord），中文名作为 display_name
+    要求3：概念英文名采用大驼峰命名（如 PurchaseRecord），中文名作为 title
     要求4：每个概念需给出术语集（terms）：该概念在业务中会被叫到的其他说法，数组，可为空。用途是让系统把用户口语对齐到概念，因此只收业务上真实会用的说法，包括：同义词、简称/缩写、英文全称、行业口语、易混写法。
       - 每概念 0-5 个；不得与自身中文名同义反复（如「采购单」的术语里再写「采购单据」）、不得写句子或属性值、不得臆造用户从未提过的缩写
       - 术语不得与其他概念的名称或已确认术语重复（避免把一个概念的别名挂到另一个概念上）
@@ -189,8 +189,8 @@ ANALYSIS_SYSTEM_PROMPT = """
     {
         "rawMaterialId": {
             "type": "string",
+            "title": "原材料编号",
             "required": true,
-            "description": "原材料编号",
             "example": "RM-001"
         }
     }
@@ -205,12 +205,12 @@ ANALYSIS_SYSTEM_PROMPT = """
         "properties": {
             "purchaseRecordId": {
                 "type": "string",
-                "description": "采购单号",
+                "title": "采购单号",
                 "example": "PO-20231027-001"
             },
             "rawMaterialName": {
                 "type": "string",
-                "description": "原材料名称",
+                "title": "原材料名称",
                 "example": "高强度钢板"
             }
         }
@@ -240,31 +240,31 @@ ANALYSIS_SYSTEM_PROMPT = """
     {
         "rawMaterialId": {
             "type": "string",
-            "display_name": "原材料ID",
+            "title": "原材料ID",
             "example": "RM-001",
             "required": true
         },
         "unit": {
             "type": "string",
-            "display_name": "计量单位",
+            "title": "计量单位",
             "example": "吨",
             "required": true
         },
         "rawMaterialSet": {
             "type": "array",
-            "display_name": "原材料主数据集",
+            "title": "原材料主数据集",
             "required": true,
             "items": {
             "type": "object",
             "properties": {
                 "rawMaterialId": {
                 "type": "string",
-                "display_name": "原材料ID",
+                "title": "原材料ID",
                 "required": true
                 },
                 "unit": {
                 "type": "string",
-                "display_name": "单位",
+                "title": "单位",
                 "required": true
                 }
             }
@@ -275,13 +275,13 @@ ANALYSIS_SYSTEM_PROMPT = """
     {
     "success": {
         "type": "boolean",
-        "display_name": "是否成功执行",
+        "title": "是否成功执行",
         "description": "函数是否成功执行完成（不表示校验通过）",
         "example": true
     },
     "data": {
         "type": "object",
-        "display_name": "业务数据",
+        "title": "业务数据",
         "properties": {
         "pass": {
             "type": "boolean",
@@ -295,24 +295,24 @@ ANALYSIS_SYSTEM_PROMPT = """
         },
         "inconsistentItems": {
             "type": "array",
-            "display_name": "不一致明细",
+            "title": "不一致明细",
             "description": "单位不一致的原材料列表",
             "items": {
             "type": "object",
             "properties": {
                 "rawMaterialId": {
                 "type": "string",
-                "display_name": "原材料ID",
+                "title": "原材料ID",
                 "example": "RM-002"
                 },
                 "actualUnit": {
                 "type": "string",
-                "display_name": "实际单位",
+                "title": "实际单位",
                 "example": "千克"
                 },
                 "expectedUnit": {
                 "type": "string",
-                "display_name": "期望单位",
+                "title": "期望单位",
                 "example": "吨"
                 }
             }
@@ -322,7 +322,7 @@ ANALYSIS_SYSTEM_PROMPT = """
     },
     "error": {
         "type": "object",
-        "display_name": "业务失败信息",
+        "title": "业务失败信息",
         "description": "仅 success=false（业务性失败，如参数不合法）时填写；系统级异常请直接抛异常",
         "properties": {
         "code": {

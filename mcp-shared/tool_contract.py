@@ -10,7 +10,17 @@ core 不再需要聚合编译，留着就是"同一语义两处实现"（且 cor
 
 **① 分类标记（单一来源：JSON Schema 扩展键，协议透传、不进 properties）**
 - ``x-category``：工具类别（五类之一，见下表）；**不再使用 scope 内的 category**（同一语义只允许一种表达）
-- ``x-display_name``：发布方权威中文名（同理，不再放 scope）
+- ``x-title``：工具中文名在**平台内的投影键**（2026-10-30 反转方向）——权威值是**工具级 ``title``**
+  （发布快照 ``tools[].title`` / 查询工具 label / 公共函数 manifest ``title``，最终源自本体
+  ``functions/behaviors[].title``），容器启动时由 ``mcp_app.titled_tool_kwargs()`` **唯一一处**把它投影成
+  ``inputSchema["x-title"]``。本模块**不再**编译该键：编译产物只带 ``x-category``，避免同一中文名两个写入点。
+
+**①b 参数节点**：三个键各承一义，编译产物与源数据同形，**不设取值兜底**——
+``title`` = 中文名（``properties[k].title``）、``description`` = 补充说明、``example`` = 示例值。
+中文字段唯一来源是源数据的 ``title``；``description`` 不再兼作中文名。
+**唯一例外**是编译器注入的系统参数 ``ontology_id``（本体执行类 + 本体查询类）：它在源数据里不存在，
+没有可搬运的中文名，故由编译器自带 ``title: 本体ID``——这不是"兜底"，而是该参数的声明本身
+（2026-10-30 补齐，此前注入块只有 ``description``，前端/LLM 只能看到英文键名）。
 
 | x-category | 归位 | 性质 |
 |---|---|---|
@@ -67,7 +77,7 @@ _JSON_TYPES = {"string", "number", "integer", "boolean", "object", "array"}
 
 # ─── 分类标记（单一来源；x- 扩展键，协议透传）────────────────────────────────────
 CATEGORY_KEY = "x-category"
-DISPLAY_NAME_KEY = "x-display_name"
+TITLE_KEY = "x-title"
 
 CATEGORY_BEHAVIOR = "本体行为"
 CATEGORY_FUNCTION = "本体函数"
@@ -285,16 +295,17 @@ def param_spec_to_schema(spec: dict, attr_map: dict | None = None) -> dict:
     t = _map_type(spec.get("type"))
     schema: dict = {"type": t}
 
-    # 可读说明：展示名（或描述）优先，示例拼进 description（比 examples 关键字兼容性更好）。
-    label = spec.get("display_name") or spec.get("description") or ""
+    # 三键各承一义，与源数据同形：title=中文名、description=补充说明、example=示例值。
+    # 中文名只认 title——不再从 description 兜底（同一语义只允许一个来源）。
+    label = spec.get("title")
+    if isinstance(label, str) and label:
+        schema["title"] = label
+    note = spec.get("description")
+    if isinstance(note, str) and note:
+        schema["description"] = note
     example = spec.get("example")
-    parts: list[str] = []
-    if label:
-        parts.append(str(label))
     if example is not None and str(example) != "":
-        parts.append(f"示例: {example}")
-    if parts:
-        schema["description"] = "，".join(parts)
+        schema["example"] = example
 
     if t == "array" and isinstance(spec.get("items"), dict):
         schema["items"] = param_spec_to_schema(spec["items"], attr_map)
@@ -337,6 +348,7 @@ def params_to_input_schema(params: dict, concepts=None, *,
     if require_ontology_id:
         props[ONTOLOGY_ID_KEY] = {
             "type": "integer",
+            "title": "本体ID",
             "description": "本体 ID（必填）：本工具所属本体；请填写当前操作的本体 ID，"
                            "执行底座会校验其与工具发布声明是否一致",
         }
@@ -375,12 +387,14 @@ def behavior_concept_names(behavior: dict) -> list[str]:
     return list(legacy) if isinstance(legacy, list) else []
 
 
-def with_category(input_schema: dict, category: str, display_name: str = "") -> dict:
-    """注入分类标记（``x-category`` / ``x-display_name``）——工具分类的唯一来源。"""
+def with_category(input_schema: dict, category: str) -> dict:
+    """注入分类标记 ``x-category``——工具分类的唯一来源。
+
+    **不再写 ``x-title``**（2026-10-30）：中文名的权威值是工具级 ``title``，私有键由
+    ``mcp_app.titled_tool_kwargs()`` 在构造 ``Tool`` 时统一投影，编译侧只管类别。
+    """
     marked = dict(input_schema or {})
     marked[CATEGORY_KEY] = category
-    if display_name:
-        marked[DISPLAY_NAME_KEY] = display_name
     return marked
 
 
@@ -394,14 +408,13 @@ def build_query_schema(extra_properties: dict | None = None, *,
     props: dict = {}
     required: list[str] = []
     if requires_ontology:
-        props["ontology_id"] = {"type": "integer", "description": "本体 ID"}
+        props["ontology_id"] = {"type": "integer", "title": "本体ID", "description": "本体 ID"}
         required.append("ontology_id")
     props.update(extra_properties or {})
     return {"type": "object", "properties": props, "required": required}
 
 
-def with_ontology_scope(input_schema: dict, scope: dict, category: str,
-                        display_name: str = "") -> dict:
+def with_ontology_scope(input_schema: dict, scope: dict, category: str) -> dict:
     """本体执行类工具（本体行为 / 本体函数）：写入本体上下文 ``x-ontology-scope`` + 分类标记。
 
     ``scope`` 是**发布时固化的本体身份**（``ontology_id`` / ``scenario_id`` /
@@ -414,7 +427,7 @@ def with_ontology_scope(input_schema: dict, scope: dict, category: str,
     """
     marked = dict(input_schema or {})
     marked[SCOPE_KEY] = {k: v for k, v in (scope or {}).items() if v is not None}
-    return with_category(marked, category, display_name)
+    return with_category(marked, category)
 
 
 def strip_ontology_scope(input_schema: dict | None) -> dict:

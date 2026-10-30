@@ -34,13 +34,12 @@ _FN_CONFIG = {
     "name": "订单函数发布",
     "kind": "ontology_function",
     "tools": [
-        {"name": "calcOrderAmount", "description": "计算订单金额",
+        {"name": "calcOrderAmount", "title": "计算订单金额", "description": "计算订单金额",
+         "category": "本体函数", "ontologyScope": _SCOPE,
          "inputSchema": {
              "type": "object",
              "properties": {"ontology_id": {"type": "integer"}, "qty": {"type": "integer"}},
              "required": ["ontology_id", "qty"],
-             "x-category": "本体函数",
-             "x-ontology-scope": _SCOPE,
          }},
     ],
 }
@@ -48,12 +47,11 @@ _BH_CONFIG = {
     "name": "订单行为发布",
     "kind": "behavior",
     "tools": [{"name": "createOrder", "description": "创建订单",
+               "category": "本体行为", "ontologyScope": _SCOPE,
                "inputSchema": {
                    "type": "object",
                    "properties": {"ontology_id": {"type": "integer"}, "sku": {"type": "string"}},
                    "required": ["ontology_id"],
-                   "x-category": "本体行为",
-                   "x-ontology-scope": _SCOPE,
                }}],
 }
 
@@ -90,12 +88,12 @@ def _load_server(config=None, **extra_env):
     ({"name": "x", "kind": "ontology_function", "tools": []}, "未包含任何工具"),
     ({"name": "x", "kind": "ontology_function", "tools": [{"name": ""}]}, "非法工具条目"),
     ({"name": "x", "kind": "ontology_function", "tools": [
-        {"name": "a", "inputSchema": {"x-ontology-scope": {"ontology_id": 1}}},
-        {"name": "a", "inputSchema": {"x-ontology-scope": {"ontology_id": 1}}},
+        {"name": "a", "ontologyScope": {"ontology_id": 1}},
+        {"name": "a", "ontologyScope": {"ontology_id": 1}},
     ]}, "重名工具"),
     ({"name": "x", "kind": "ontology_function", "tools": [
-        {"name": "a", "inputSchema": {"x-ontology-scope": {"ontology_id": 1}}},
-        {"name": "b", "inputSchema": {"x-ontology-scope": {"ontology_id": 2}}},
+        {"name": "a", "ontologyScope": {"ontology_id": 1}},
+        {"name": "b", "ontologyScope": {"ontology_id": 2}},
     ]}, "只能绑定一个本体"),
 ])
 def test_配置非法一律拒绝启动(config, hint):
@@ -150,6 +148,27 @@ def test_未发布的工具不可调用():
     s = _load_server(_FN_CONFIG)
     with pytest.raises(ValueError, match="未知工具"):
         asyncio.run(s.handle_call_tool("createOrder", {}))
+
+
+# ─── 工具级字段 → 协议字段 + 扩展键投影（2026-10-30）────────────────────────────
+
+def test_快照的工具级字段投影成协议title与扩展键():
+    """快照只存 title / category / ontologyScope；三个 x- 键由启动时投影（平台读扩展键，客户端读 title）。"""
+    s = _load_server(_FN_CONFIG)
+    tool = asyncio.run(s._list_tools())[0]
+    assert tool.title == "计算订单金额"
+    assert tool.inputSchema["x-title"] == "计算订单金额"
+    assert tool.inputSchema["x-category"] == "本体函数"
+    assert tool.inputSchema["x-ontology-scope"] == _SCOPE
+    assert tool.inputSchema["properties"].keys() == {"ontology_id", "qty"}   # 元数据不进参数面
+
+
+def test_无中文名时协议字段与投影都不产出():
+    s = _load_server(_BH_CONFIG)
+    tool = asyncio.run(s._list_tools())[0]
+    assert tool.title is None
+    assert "x-title" not in tool.inputSchema
+    assert tool.inputSchema["x-category"] == "本体行为"      # 类别与归属照常投影
 
 
 def test_工具面受令牌保护():

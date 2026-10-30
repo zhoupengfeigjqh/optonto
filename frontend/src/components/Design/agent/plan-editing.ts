@@ -12,7 +12,7 @@
 export interface PlanSubtask {
   seq: number;
   behavior: string;
-  display_name?: string;
+  title?: string;
   description?: string;
   /** 参数：`{ [key]: { value, description?, required? } }` 或历史裸值 */
   params?: Record<string, any>;

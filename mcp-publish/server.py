@@ -45,12 +45,12 @@ import httpx
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 
-from mcp_app import build_mcp_app
+from mcp_app import build_mcp_app, tool_kwargs
 from publish_upstream import (  # 转发契约的**唯一权威实现**（core 注入侧读的是同一份）
     KINDS as PUBLISH_KINDS,
     upstream_of,
 )
-from tool_contract import ONTOLOGY_ID_KEY, SCOPE_KEY, strip_system_params
+from tool_contract import ONTOLOGY_ID_KEY, strip_system_params
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +95,14 @@ def _parse_config(raw: str | None) -> dict:
         if tool_name in names:
             raise ConfigError(f"发布配置含重名工具: {tool_name}")
         names.add(tool_name)
-        # 本体归属必须由发布端写入工具元数据（本服务运行期不读本体数据，无法自行推断）。
-        # 缺失 = 配置不是 MCP发布 编译的 → 启动即失败，而不是起一个"能连但一调就 500"的服务。
-        scope = (t.get("inputSchema") or {}).get(SCOPE_KEY)
+        # 本体归属必须由发布端写入**工具级**字段 `ontologyScope`（2026-10-30 起不再混进参数 schema；
+        # 本服务运行期不读本体数据，无法自行推断）。缺失 = 配置不是 MCP发布 编译的 → 启动即失败，
+        # 而不是起一个"能连但一调就 500"的服务。
+        scope = t.get("ontologyScope")
         if not isinstance(scope, dict) or scope.get(ONTOLOGY_ID_KEY) in (None, ""):
             raise ConfigError(
-                f"工具 {tool_name} 缺少本体上下文 {SCOPE_KEY}（配置须由 MCP发布 生成；"
-                f"请删除该发布后重新创建）")
+                f"工具 {tool_name} 缺少本体上下文 ontologyScope（配置须由 MCP发布 生成；"
+                f"如为旧发布请删除后重新创建）")
         ontology_ids.add(str(scope[ONTOLOGY_ID_KEY]))
 
     # 自建发布 = 一个本体的切片；混入多个本体说明配置被拼错了（每工具都带自己的 scope，
@@ -117,18 +118,22 @@ CONFIG = _parse_config(os.getenv("PUBLISH_CONFIG_JSON"))
 
 # 自建发布的工具集是**发布时冻结**的：改勾选 = 改发布配置 = 重建容器（不热加载，
 # 否则"页面看到的清单"与"容器内实际注册"会不一致，工具清单的可信度就没了）
+#
+# 工具级元数据（title / category / ontologyScope）以快照为准；三个 ``x-`` 扩展键由
+# ``tool_kwargs`` 启动时投影（平台自身读扩展键，外部客户端只认 ``Tool.title``）。
 _TOOLS: list[Tool] = [
     Tool(
         name=str(t["name"]).strip(),
         description=str(t.get("description") or t["name"]),
-        inputSchema=t.get("inputSchema") or {"type": "object", "properties": {}},
+        **tool_kwargs(t.get("inputSchema"), title=t.get("title"),
+                      category=t.get("category"), scope=t.get("ontologyScope")),
     )
     for t in CONFIG["tools"]
 ]
 _TOOL_NAMES = {t.name for t in _TOOLS}
 # 工具名 → 发布时固化的本体上下文（转发时随载荷带给执行底座做一致性校验）
 _TOOL_SCOPES: dict[str, dict] = {
-    str(t["name"]).strip(): t["inputSchema"][SCOPE_KEY] for t in CONFIG["tools"]
+    str(t["name"]).strip(): dict(t["ontologyScope"]) for t in CONFIG["tools"]
 }
 
 server = Server(CONFIG["name"])

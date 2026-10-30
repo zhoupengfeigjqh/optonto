@@ -121,8 +121,8 @@ export default function PlanConfirmModal({
             <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-dark-border bg-dark-bg/60">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-accent-blue text-xs font-mono shrink-0">{idx + 1}.</span>
-                <span className="text-text-primary text-sm font-medium truncate">{st.display_name || st.behavior}</span>
-                {st.display_name && (
+                <span className="text-text-primary text-sm font-medium truncate">{st.title || st.behavior}</span>
+                {st.title && (
                   <span className="text-text-muted text-xs font-mono shrink-0">{st.behavior}</span>
                 )}
                 {st.description && (
@@ -140,8 +140,9 @@ export default function PlanConfirmModal({
             {/* 参数表：与安全确认弹窗一致的 divide 行 */}
             <div className="divide-y divide-dark-border/60">
               {st.params && Object.keys(st.params).length > 0 && Object.entries(st.params).map(([key, val]: [string, any]) => {
-                const pDesc = val !== null && typeof val === 'object' && val?.description ? val.description : '';
-                const label = pDesc || key;
+                // 参数中文名只认 title（spec 006 FR-016）；description 是补充说明，不参与中文名取数
+                const pTitle = val !== null && typeof val === 'object' ? (val?.title || '') : '';
+                const label = pTitle || key;
                 const rawVal = val !== null && typeof val === 'object' ? (val.value ?? '') : String(val ?? '');
                 const required = val !== null && typeof val === 'object' && val.required;
                 const expandKey = `${st.seq}:${key}`;

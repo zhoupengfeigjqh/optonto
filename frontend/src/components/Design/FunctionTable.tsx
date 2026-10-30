@@ -52,16 +52,16 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const isEditing = (record: Function) => record.name === editingKey;
   const isNewRow = (record: Function) => editingKey === '__new__' && record.name === '__new__';
 
-  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.title || c.name, value: c.name }));
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', related_concepts: [], params: '{}', response: '{}', code_file: '', type: '' });
+    setEditData({ name: '', title: '', description: '', related_concepts: [], params: '{}', response: '{}', code_file: '', type: '' });
     setEditingKey('__new__');
     goToRow(funcs.length);
   };
 
   const handleEdit = (g: Function) => {
-    setEditData({ name: g.name, display_name: g.display_name || '', description: g.description || '', related_concepts: g.related_concepts || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '', type: g.type || '' });
+    setEditData({ name: g.name, title: g.title || '', description: g.description || '', related_concepts: g.related_concepts || [], params: JSON.stringify(g.params || {}, null, 2), response: JSON.stringify(g.response || {}, null, 2), code_file: g.code_file || '', type: g.type || '' });
     setEditingKey(g.name);
   };
 
@@ -165,7 +165,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     try {
       const data: Function = {
         name: editData.name.trim(),
-        display_name: editData.display_name?.trim() || '',
+        title: editData.title?.trim() || '',
         description: editData.description?.trim() || '',
         related_concepts: editData.related_concepts || [],
         params: parsedParams,
@@ -202,7 +202,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     };
 
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={setF('name')} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={setF('display_name')} className="bg-dark-bg border-dark-border text-text-primary" />;
+    if (dataIndex === 'title') return <Input size="small" value={editData.title || ''} onChange={setF('title')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'related_concepts') return <Select size="small" mode="multiple" placeholder="选" value={editData.related_concepts || []} onChange={setF('related_concepts')} options={conceptOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'type') return <Select size="small" allowClear placeholder="选" value={editData.type || undefined} onChange={v => setEditData((p: any) => ({...p, type: v || ''}))} options={FUNCTION_TYPE_OPTIONS} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
@@ -213,26 +213,27 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
   };
 
   const dataSource = funcs.map(g => ({ ...g, _key: g.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', related_concepts: [], type: '' } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', title: '', description: '', related_concepts: [], type: '' } as any);
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 100, render: (v: any, r: Function) => renderCell(v, r, 'name') },
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 120, render: (v: any, r: Function) => renderCell(v, r, 'title', (v2: string) => v2 || '-') },
     { title: '计算逻辑', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'description') },
     { title: '函数类型', dataIndex: 'type', key: 'type', width: 110, render: (v: any, r: any) => renderCell(v, r, 'type', (v2: string) => (r.origin === 'common' ? '-' : functionTypeLabel(v2))) },
-    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.display_name || name).join(',') || '-') },
+    { title: '关联概念', dataIndex: 'related_concepts', key: 'related_concepts', width: 200, ellipsis: true, render: (v: any, r: Function) => renderCell(v, r, 'related_concepts', (list: string[]) => list?.map(name => concepts.find(c => c.name === name)?.title || name).join(',') || '-') },
     { title: '输入参数', key: 'params', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setParamsEditorOpen(true)}>编辑</Button>;
       const raw = r.params || {};
-      const items: { name: string; type: string; description: string; example: string }[] = [];
+      const items: { name: string; type: string; title: string; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') items.push({ name: k, type: v, description: '', example: '' });
-        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', description: (v as any).description || '', example: (v as any).example || '' });
-        else items.push({ name: k, type: String(v), description: '', example: '' });
+        if (typeof v === 'string') items.push({ name: k, type: v, title: '', description: '', example: '' });
+        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', title: (v as any).title || '', description: (v as any).description || '', example: (v as any).example || '' });
+        else items.push({ name: k, type: String(v), title: '', description: '', example: '' });
       }
       return items.length > 0 ? items.map((p, i) => {
         const tip = [];
-        if (p.description) tip.push(`描述: ${p.description}`);
+        if (p.title) tip.push(`中文名: ${p.title}`);
+        if (p.description) tip.push(`说明: ${p.description}`);
         if (p.example) tip.push(`示例: ${p.example}`);
         const tag = <Tag key={i} color="blue" className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>;
         return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
@@ -241,15 +242,16 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
     { title: '返回结构', key: 'response', width: 200, render: (_: any, r: Function) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={() => setResponseEditorOpen(true)}>编辑</Button>;
       const raw = r.response || {};
-      const items: { name: string; type: string; description: string; example: string }[] = [];
+      const items: { name: string; type: string; title: string; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') items.push({ name: k, type: v, description: '', example: '' });
-        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', description: (v as any).description || '', example: (v as any).example || '' });
-        else items.push({ name: k, type: String(v), description: '', example: '' });
+        if (typeof v === 'string') items.push({ name: k, type: v, title: '', description: '', example: '' });
+        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', title: (v as any).title || '', description: (v as any).description || '', example: (v as any).example || '' });
+        else items.push({ name: k, type: String(v), title: '', description: '', example: '' });
       }
       return items.length > 0 ? items.map((p, i) => {
         const tip = [];
-        if (p.description) tip.push(`描述: ${p.description}`);
+        if (p.title) tip.push(`中文名: ${p.title}`);
+        if (p.description) tip.push(`说明: ${p.description}`);
         if (p.example) tip.push(`示例: ${p.example}`);
         const tag = <Tag key={i} color="green" className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>;
         return tip.length > 0 ? <Tooltip key={i} title={<div>{tip.map((t, j) => <div key={j}>{t}</div>)}</div>}>{tag}</Tooltip> : tag;
@@ -305,7 +307,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
 
       {/* ─── Code Editor Modal ─────────────────────────────────────── */}
       <Modal
-        title={`函数代码编辑 - ${editData.display_name || editData.name || ''}`}
+        title={`函数代码编辑 - ${editData.title || editData.name || ''}`}
         open={codeEditorOpen}
         onOk={saveCodeEditor}
         onCancel={() => setCodeEditorOpen(false)}
@@ -324,7 +326,7 @@ export default function FunctionTable({ ontologyId, activeTab }: Props) {
 
       {/* ─── Test Modal ────────────────────────────────────────────── */}
       <Modal
-        title={`函数测试 - ${editData.display_name || editData.name || ''}`}
+        title={`函数测试 - ${editData.title || editData.name || ''}`}
         open={testOpen}
         onCancel={() => setTestOpen(false)}
         footer={null}

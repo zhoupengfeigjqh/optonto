@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""直连 MCP server (SSE) 列出工具目录，核对发布方标记（单一来源：顶层 x-category / x-display_name）：
+"""直连 MCP server (SSE) 列出工具目录，核对发布方标记（单一来源：顶层 x-category / x-title）：
 ①本体行为/本体函数/本体查询/公共函数 → x-category 四值；②无标记 → 消费端兜底为「其他MCP工具」。
 raw socket 读 SSE（uvicorn 用 \r\n 行尾 + chunked，urllib 的 read 语义会踩坑）。
 用法: python probe-mcp-catalog.py [host:port]   默认 localhost:8002
@@ -112,8 +112,8 @@ print(f'工具总数: {len(tools)}')
 for t in tools:
     s = t.get('inputSchema', {})
     cat = s.get('x-category') or '(无标记→其他MCP工具)'
-    dn = s.get('x-display_name') or ''
-    print(f'  {t["name"]:35s} category={cat:15s} display_name={dn}')
+    dn = s.get('x-title') or ''
+    print(f'  {t["name"]:35s} category={cat:15s} title={dn}')
 for t in tools:
     if t['name'] == 'sumRawNotArrivalQty':
         print('\nsumRawNotArrivalQty scope 全貌:')

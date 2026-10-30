@@ -50,7 +50,7 @@ export interface SubTask {
   depends_on?: number[];
   related_functions?: string[];
   /** 展示名（后端 enrichPlanDisplay 注入，纯展示不参与校验） */
-  display_name?: string;
+  title?: string;
 }
 
 export interface SubTaskPlan {

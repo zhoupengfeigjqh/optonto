@@ -1,6 +1,6 @@
 data_engines:
 - name: CreatePurchaseRecord
-  display_name: ''
+  title: ''
   behavior_name: CreatePurchaseRecord
   target:
     data_source_name: aps
@@ -10,42 +10,42 @@ data_engines:
     params:
       rawMaterialId:
         type: string
-        display_name: 原材料ID
+        title: 原材料ID
         required: true
         example: RM-001
       rawMaterialName:
         type: string
-        display_name: 原材料名称
+        title: 原材料名称
         required: true
         example: 高强度钢板
       unit:
         type: string
-        display_name: 单位 (吨/千件/桶/千米)
+        title: 单位 (吨/千件/桶/千米)
         required: true
         example: 吨
       supplierName:
         type: string
-        display_name: 供应商名称
+        title: 供应商名称
         required: true
         example: 宝钢钢铁集团
       arrivalTime:
         type: string
-        display_name: 到货日期 (yyyy-MM-dd)
+        title: 到货日期 (yyyy-MM-dd)
         required: true
         example: '2026-08-01'
       arrivalQuantity:
         type: number
-        display_name: 到货数量
+        title: 到货数量
         required: true
         example: 100
       relatedOrderId:
         type: string
-        display_name: 关联客户订单ID
+        title: 关联客户订单ID
         required: false
         example: SO-20231001-001
       relatedOrderName:
         type: string
-        display_name: 关联客户订单名称
+        title: 关联客户订单名称
         required: false
         example: 2023年10月-A客户-建筑钢结构
     response:
@@ -57,47 +57,47 @@ data_engines:
         properties:
           purchaseOrderId:
             type: string
-            display_name: 采购单号
+            title: 采购单号
             example: PO-20260716-026
           rawMaterialId:
             type: string
-            display_name: 原材料ID
+            title: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
-            display_name: 原材料名称
+            title: 原材料名称
             example: 高强度钢板
           unit:
             type: string
-            display_name: 单位
+            title: 单位
             example: 吨
           purchaseTime:
             type: string
-            display_name: 采购时间
+            title: 采购时间
             example: '2026-07-16'
           arrivalTime:
             type: string
-            display_name: 到货日期
+            title: 到货日期
             example: '2026-08-01'
           arrivalQuantity:
             type: number
-            display_name: 到货数量
+            title: 到货数量
             example: 100
           supplierName:
             type: string
-            display_name: 供应商名称
+            title: 供应商名称
             example: 宝钢钢铁集团
           relatedOrderId:
             type: string
-            display_name: 关联客户订单ID
+            title: 关联客户订单ID
             example: SO-20231001-001
           relatedOrderName:
             type: string
-            display_name: 关联客户订单名称
+            title: 关联客户订单名称
             example: 2023年10月-A客户-建筑钢结构
           status:
             type: string
-            display_name: 状态
+            title: 状态
             example: 待入库
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: create_purchase_record
@@ -128,7 +128,7 @@ data_engines:
     data.leadTime: ''
     data.status: result.status
 - name: CancelPurchaseRecord
-  display_name: ''
+  title: ''
   behavior_name: CancelPurchaseRecord
   target:
     data_source_name: aps
@@ -138,7 +138,7 @@ data_engines:
     params:
       purchaseOrderId:
         type: string
-        display_name: 采购单号
+        title: 采购单号
         required: true
         example: PO-20260716-026
     response:
@@ -150,19 +150,19 @@ data_engines:
         properties:
           purchaseOrderId:
             type: string
-            display_name: 采购单号
+            title: 采购单号
             example: PO-20260716-026
           rawMaterialId:
             type: string
-            display_name: 原材料ID
+            title: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
-            display_name: 原材料名称
+            title: 原材料名称
             example: 高强度钢板
           status:
             type: string
-            display_name: 状态
+            title: 状态
             example: 已取消
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: cancel_purchase_record
@@ -177,7 +177,7 @@ data_engines:
     data.rawMaterialId: result.rawMaterialId
     data.rawMaterialName: result.rawMaterialName
 - name: ReceiveRawMaterial
-  display_name: ''
+  title: ''
   behavior_name: ReceiveRawMaterial
   target:
     data_source_name: aps
@@ -187,7 +187,7 @@ data_engines:
     params:
       purchaseOrderId:
         type: string
-        display_name: 采购单号
+        title: 采购单号
         required: true
         example: PO-20260716-026
     response:
@@ -199,27 +199,27 @@ data_engines:
         properties:
           purchaseOrderId:
             type: string
-            display_name: 采购单号
+            title: 采购单号
             example: PO-20260716-026
           rawMaterialId:
             type: string
-            display_name: 原材料ID
+            title: 原材料ID
             example: RM-001
           rawMaterialName:
             type: string
-            display_name: 原材料名称
+            title: 原材料名称
             example: 高强度钢板
           unit:
             type: string
-            display_name: 单位
+            title: 单位
             example: 吨
           arrivalQuantity:
             type: number
-            display_name: 到货数量
+            title: 到货数量
             example: 100
           status:
             type: string
-            display_name: 状态
+            title: 状态
             example: 已入库
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: receive_purchase_record
@@ -234,7 +234,7 @@ data_engines:
     data.rawMaterialId: result.rawMaterialId
     data.rawMaterialName: result.rawMaterialName
 - name: QueryInventory
-  display_name: ''
+  title: ''
   behavior_name: QueryInventory
   target:
     data_source_name: aps
@@ -244,12 +244,12 @@ data_engines:
     params:
       rawMaterialId:
         type: string
-        display_name: 原材料ID
+        title: 原材料ID
         required: false
         example: RM-001
       rawMaterialName:
         type: string
-        display_name: 原材料名称，模糊匹配
+        title: 原材料名称，模糊匹配
         required: false
         example: 高强度钢板
     response:
@@ -263,39 +263,39 @@ data_engines:
           properties:
             rawMaterialId:
               type: string
-              display_name: 原材料ID
+              title: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
-              display_name: 原材料名称
+              title: 原材料名称
               example: 高强度钢板
             unit:
               type: string
-              display_name: 单位
+              title: 单位
               example: 吨
             pendingReceiptQuantity:
               type: number
-              display_name: 待入库量
+              title: 待入库量
               example: 0
             cumulativeStockQuantity:
               type: number
-              display_name: 累计库存量
+              title: 累计库存量
               example: 2400
             availableQuantity:
               type: number
-              display_name: 可用库存
+              title: 可用库存
               example: 1800
             consumedQuantity:
               type: number
-              display_name: 已消耗量
+              title: 已消耗量
               example: 600
             createdAt:
               type: string
-              display_name: 创建时间
+              title: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
-              display_name: 更新时间
+              title: 更新时间
               example: '2026-07-15T22:33:33'
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_inventories
@@ -316,7 +316,7 @@ data_engines:
     data[*].availableStock: result[*].availableQuantity
     data[*].unit: result[*].unit
 - name: QueryPurchaseRecords
-  display_name: ''
+  title: ''
   behavior_name: QueryPurchaseRecords
   target:
     data_source_name: aps
@@ -326,22 +326,22 @@ data_engines:
     params:
       purchaseOrderId:
         type: string
-        display_name: 采购单号
+        title: 采购单号
         required: false
         example: PO-20260716-026
       rawMaterialId:
         type: string
-        display_name: 原材料ID
+        title: 原材料ID
         required: false
         example: RM-001
       rawMaterialName:
         type: string
-        display_name: 原材料名称，模糊匹配
+        title: 原材料名称，模糊匹配
         required: false
         example: 高强度钢板
       relatedOrderId:
         type: string
-        display_name: 关联订单ID
+        title: 关联订单ID
         required: false
         example: SO-20231001-001
     response:
@@ -355,55 +355,55 @@ data_engines:
           properties:
             purchaseOrderId:
               type: string
-              display_name: 采购单号
+              title: 采购单号
               example: PO-20260716-026
             rawMaterialId:
               type: string
-              display_name: 原材料ID
+              title: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
-              display_name: 原材料名称
+              title: 原材料名称
               example: 高强度钢板
             unit:
               type: string
-              display_name: 单位
+              title: 单位
               example: 吨
             purchaseTime:
               type: string
-              display_name: 采购时间
+              title: 采购时间
               example: '2026-07-16'
             arrivalTime:
               type: string
-              display_name: 到位时间
+              title: 到位时间
               example: '2026-08-01'
             arrivalQuantity:
               type: number
-              display_name: 到位数量
+              title: 到位数量
               example: 100
             supplierName:
               type: string
-              display_name: 供应商名称
+              title: 供应商名称
               example: 宝钢钢铁集团
             relatedOrderId:
               type: string
-              display_name: 关联订单ID
+              title: 关联订单ID
               example: SO-20231001-001
             relatedOrderName:
               type: string
-              display_name: 关联订单名称
+              title: 关联订单名称
               example: 2023年10月-A客户-建筑钢结构
             status:
               type: string
-              display_name: 状态
+              title: 状态
               example: 已入库
             createdAt:
               type: string
-              display_name: 创建时间
+              title: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
-              display_name: 更新时间
+              title: 更新时间
               example: '2026-07-15T22:33:33'
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_purchase_records
@@ -428,7 +428,7 @@ data_engines:
     data[*].relatedOrderName: result[*].relatedOrderName
     data[*].leadTime: ''
 - name: QueryRawMaterials
-  display_name: ''
+  title: ''
   behavior_name: QueryRawMaterials
   target:
     data_source_name: aps
@@ -438,12 +438,12 @@ data_engines:
     params:
       rawMaterialId:
         type: string
-        display_name: 原材料ID
+        title: 原材料ID
         required: false
         example: RM-001
       rawMaterialName:
         type: string
-        display_name: 原材料名称，模糊匹配
+        title: 原材料名称，模糊匹配
         required: false
         example: 高强度钢板
     response:
@@ -457,27 +457,27 @@ data_engines:
           properties:
             rawMaterialId:
               type: string
-              display_name: 原材料ID
+              title: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
-              display_name: 原材料名称
+              title: 原材料名称
               example: 高强度钢板
             unit:
               type: string
-              display_name: 单位
+              title: 单位
               example: 吨
             safetyStock:
               type: number
-              display_name: 安全库存
+              title: 安全库存
               example: 100
             createdAt:
               type: string
-              display_name: 创建时间
+              title: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
-              display_name: 更新时间
+              title: 更新时间
               example: '2026-07-15T22:33:33'
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_raw_materials
@@ -494,7 +494,7 @@ data_engines:
     data[*].unit: result[*].unit
     data[*].safetyStock: result[*].safetyStock
 - name: QuerySuppliers
-  display_name: ''
+  title: ''
   behavior_name: QuerySuppliers
   target:
     data_source_name: aps
@@ -504,12 +504,12 @@ data_engines:
     params:
       supplierName:
         type: string
-        display_name: 供应商名称，模糊匹配
+        title: 供应商名称，模糊匹配
         required: false
         example: 宝钢钢铁集团
       rawMaterialName:
         type: string
-        display_name: 原材料名称
+        title: 原材料名称
         required: false
         example: 钢板008
     response:
@@ -523,39 +523,39 @@ data_engines:
           properties:
             supplierName:
               type: string
-              display_name: 供应商名称
+              title: 供应商名称
               example: 宝钢钢铁集团
             address:
               type: string
-              display_name: 地址
+              title: 地址
               example: 上海市宝山区富锦路888号
             contactPerson:
               type: string
-              display_name: 联系人
+              title: 联系人
               example: 张经理
             contactPhone:
               type: string
-              display_name: 联系电话
+              title: 联系电话
               example: '13800131001'
             rawMaterialId:
               type: string
-              display_name: 原材料ID
+              title: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
-              display_name: 原材料名称
+              title: 原材料名称
               example: 高强度钢板
             leadTime:
               type: number
-              display_name: 交货周期
+              title: 交货周期
               example: 100
             createdAt:
               type: string
-              display_name: 创建时间
+              title: 创建时间
               example: '2026-07-15T22:33:33'
             updatedAt:
               type: string
-              display_name: 更新时间
+              title: 更新时间
               example: '2026-07-15T22:33:33'
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_suppliers
@@ -573,7 +573,7 @@ data_engines:
     data[*].contactPerson: result[*].contactPerson
     data[*].contactPhone: result[*].contactPhone
 - name: QuerySupplierCapability
-  display_name: ''
+  title: ''
   behavior_name: QuerySupplierCapability
   target:
     data_source_name: aps
@@ -583,12 +583,12 @@ data_engines:
     params:
       supplierName:
         type: string
-        display_name: 供应商名称，模糊匹配
+        title: 供应商名称，模糊匹配
         required: false
         example: 宝钢钢铁集团
       rawMaterialName:
         type: string
-        display_name: 原材料名称
+        title: 原材料名称
         required: false
         example: 钢板008
     response:
@@ -602,39 +602,39 @@ data_engines:
           properties:
             supplierName:
               type: string
-              display_name: 供应商名称
+              title: 供应商名称
               example: 宝钢钢铁集团
             address:
               type: string
-              display_name: 地址
+              title: 地址
               example: 上海市宝山区富锦路888号
             contactPerson:
               type: string
-              display_name: 联系人
+              title: 联系人
               example: 张经理
             contactPhone:
               type: string
-              display_name: 联系电话
+              title: 联系电话
               example: '13800131001'
             rawMaterialId:
               type: string
-              display_name: 原材料ID
+              title: 原材料ID
               example: RM-001
             rawMaterialName:
               type: string
-              display_name: 原材料名称
+              title: 原材料名称
               example: 高强度钢板
             leadTime:
               type: number
-              display_name: 交货周期
+              title: 交货周期
               example: 100
             createdAt:
               type: string
-              display_name: 创建时间
+              title: 创建时间
               example: '2026-07-15T22:33:13'
             updatedAt:
               type: string
-              display_name: 更新时间
+              title: 更新时间
               example: '2026-07-15T22:33:33'
     server_url: http://optonto-business-mcp:8004/mcp
     tool_name: query_suppliers

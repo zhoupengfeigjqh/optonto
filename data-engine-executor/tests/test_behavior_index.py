@@ -43,7 +43,7 @@ def _stub_data_store(monkeypatch, ontologies: list[tuple[int, str, list[str]]],
             if name == on:
                 return {
                     "behaviors": [
-                        {"name": n, "display_name": n, "description": "", "op_type": "command", "params": {}}
+                        {"name": n, "title": n, "description": "", "op_type": "command", "params": {}}
                         for n in behaviors
                     ],
                     "data_engines": [
@@ -90,7 +90,7 @@ def test_引擎存在但target不全仍不就绪(monkeypatch):
     monkeypatch.setattr(behavior_index.data_store, "list_all_ontologies",
                         lambda: [{"id": 1, "scenario_id": 1, "scenario_name": "SC", "ontology_name": "A"}])
     monkeypatch.setattr(behavior_index.data_store, "load_ontology_data", lambda _sc, _on: {
-        "behaviors": [{"name": "HalfMapped", "display_name": "半成品", "params": {}}],
+        "behaviors": [{"name": "HalfMapped", "title": "半成品", "params": {}}],
         "data_engines": [{"name": "E1", "behavior_name": "HalfMapped",
                           "target": {"server_url": "http://downstream/mcp"}}],
     })

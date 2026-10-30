@@ -16,7 +16,7 @@
  *   可在建集合时用 getBehaviorMeta(...).isWrite 过滤写行为）。
  *   公共函数不再恒挂全部——按「规则声明或父 Agent 指定」的并集挂载；
  *   新增 MCP 工具不在集合内：不承载 behavior/function 名，需父 Agent 经 related_functions 显式指定才挂载。
- * - security.disabled：合法清单内 scope 含 disable 的行为集合（值带 display_name，报错文案用）
+ * - security.disabled：合法清单内 scope 含 disable 的行为集合（值带 title，报错文案用）
  * - errorBudget：每子任务一份新预算（连续报错上限熔断）
  *
  * needsSecurityConfirm 也同居此文件（原 security-policy.ts）：它是"要不要弹确认窗"的执行面判定，
@@ -33,10 +33,10 @@ import type { SubTask, BehaviorMeta, RuleDetail } from '../types.js';
  * orchestrator 一次性接线（gateway + run 级函数目录快照），SubtaskRunner 不再逐字段声明查询 lambda。
  */
 export interface SubtaskInfoPort {
-  /** 按 (scenario, ontology, behavior) 解析行为中文名 display_name（工具调用展示 / disable 报错文案用） */
-  behaviorDisplayName(scenario: string, ontology: string, behaviorName: string): string;
-  /** 按 (scenario, ontology, function) 解析函数中文名 display_name（工具调用展示用） */
-  functionDisplayName(scenario: string, ontology: string, functionName: string): string;
+  /** 按 (scenario, ontology, behavior) 解析行为中文名 title（工具调用展示 / disable 报错文案用） */
+  behaviorTitle(scenario: string, ontology: string, behaviorName: string): string;
+  /** 按 (scenario, ontology, function) 解析函数中文名 title（工具调用展示用） */
+  functionTitle(scenario: string, ontology: string, functionName: string): string;
   /** 按 (scenario, ontology, behavior) 解析权限范围 scope（恒数组；disable 禁用集合数据源） */
   behaviorScope(scenario: string, ontology: string, behaviorName: string): string[];
 }
@@ -147,13 +147,13 @@ export function buildSubtaskPolicy(
   const legalCalls = legalCallNames(meta, subTask.behavior, subTask.related_functions);
 
   // 禁用集合（闸1 输入）：合法清单内 scope 含 disable 的行为（含主行为与规则补充行为）。
-  // 键为行为裸名（与行为工具名同口径）；主行为 display_name 取 meta，补充行为走 info.behaviorDisplayName。
+  // 键为行为裸名（与行为工具名同口径）；主行为 title 取 meta，补充行为走 info.behaviorTitle。
   const disabled = new Map<string, string>();
   for (const bn of legalCalls.behaviors) {
     if (info.behaviorScope(subTask.scenario_name, subTask.ontology_name, bn).includes('disable')) {
       disabled.set(bn, bn === subTask.behavior
-        ? (meta.display_name || '')
-        : info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, bn));
+        ? (meta.title || '')
+        : info.behaviorTitle(subTask.scenario_name, subTask.ontology_name, bn));
     }
   }
 

@@ -131,11 +131,11 @@ export interface RuleDetail {
 /** 概念属性信息 */
 export interface ConceptInfo {
   name: string;
-  display_name: string;
+  title: string;
   attributes: {
     name: string;
     type: string;
-    display_name: string;
+    title: string;
     /** 属性约束（唯一/非空/枚举/匹配模式/取值范围）。规划期枚举/正则/取值范围校验的权威来源（按属性名回溯，单一事实源）。 */
     constraint?: { unique?: boolean; required?: boolean; enum?: (string | number)[]; pattern?: string; min?: number; max?: number } | null;
   }[];
@@ -143,8 +143,8 @@ export interface ConceptInfo {
 
 /** 行为元信息（OntologyGateway 提取结果） */
 export interface BehaviorMeta {
-  /** 行为中文名（display_name），用于展示 */
-  display_name?: string;
+  /** 行为中文名（title），用于展示 */
+  title?: string;
   params: Record<string, any>;
   preRules: RuleDetail[];
   postRules: RuleDetail[];
@@ -176,7 +176,7 @@ export interface BehaviorMeta {
  *  与 function-catalog.FunctionInfo 区分：本类型是 gateway 文件投影（snake_case 贴 yaml/json 源形），
  *  FunctionInfo 是 run 级目录快照的单出口返回单元（camelCase 编排侧）。 */
 export interface FunctionMeta {
-  display_name: string;
+  title: string;
   description?: string;
   params: Record<string, any>;
   /** 函数类型英文码（本体函数 functions[].type：VALIDATION 即判断函数；公共函数恒为空串） */
@@ -222,10 +222,9 @@ export interface ExecutionEntry {
   toolCallId?: string;
   /** 所属子任务编号（仅子任务相关条目），前端据此分组展示 */
   seq?: number;
-  /** 子任务展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord）。执行记录侧面板用 */
-  displayName?: string;
-  /** 纯中文展示名（行为 display_name 或子任务描述），聊天区用 */
-  displayLabel?: string;
+  /** 子任务中文名（行为/函数 title，空则回退子任务描述）。全平台"中文名"的唯一字段名；
+   *  「中文（英文）」组合串由渲染层按 title/name 拼接，不再作为字段下发 */
+  title?: string;
   /** 子任务描述（父 Agent 生成），聊天区标题副行用 */
   description?: string;
 }

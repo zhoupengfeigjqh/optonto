@@ -71,7 +71,13 @@ def test_发布面恰好是查询八件套():
 def test_所有工具都带分类标记与中文名():
     for name, tool in _published_tools().items():
         assert tool.inputSchema.get("x-category") == "本体查询", f"{name} 分类标记应为本体查询"
-        assert tool.inputSchema.get("x-display_name"), f"{name} 缺中文名标记"
+        assert tool.inputSchema.get("x-title"), f"{name} 缺中文名标记"
+
+
+def test_中文名同时投影到协议title():
+    """协议级显示名只服务外部 MCP 客户端；平台自身仍读 inputSchema["x-title"]。"""
+    for name, tool in _published_tools().items():
+        assert tool.title == tool.inputSchema["x-title"], f"{name} 协议 title 与 x-title 不一致"
 
 
 def test_查询工具参数矩阵():

@@ -2,7 +2,7 @@
  * security-policy 单测 —— run 级安全闸（disable 硬闸）。
  *
  * 本文件补的是**分支覆盖**：该文件此前无任何测试，branches 覆盖率仅 50%
- * （`buildDisableMessage` 的有无 displayName 两分支只覆盖了一条）。
+ * （`buildDisableMessage` 的有无 title 两分支只覆盖了一条）。
  * 安全相关模块的分支缺口必须补齐——否则「分支未测」意味着
  * 「某条安全路径从未被执行验证过」。
  *

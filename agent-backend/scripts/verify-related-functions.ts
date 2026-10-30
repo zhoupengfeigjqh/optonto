@@ -26,8 +26,8 @@ const runner = new SubtaskRunner({
   confirmManager: null as unknown as ConfirmManager,
   createChildAgent: async () => (null as any),
   childAgents: new Set(),
-  getBehaviorDisplayName: (s: string, o: string, b: string) => gateway.getBehaviorMeta(s, o, b).display_name || '',
-  getFunctionDisplayName: (s: string, o: string, f: string) => gateway.getFunctionInfo(s, o, f)?.display_name || '',
+  getBehaviorTitle: (s: string, o: string, b: string) => gateway.getBehaviorMeta(s, o, b).title || '',
+  getFunctionTitle: (s: string, o: string, f: string) => gateway.getFunctionInfo(s, o, f)?.title || '',
   getBehaviorParams: (s: string, o: string, b: string) => gateway.getBehaviorMeta(s, o, b).params || {},
 });
 

@@ -363,7 +363,7 @@ export class AgentFactory {
    * 与规划校验（函数名/参数结构与行为编译 schema 数据源）共用。
    * 每个条目：
    *   - category：发布方 x-category 标记（五类之一），无标记 = 其他MCP工具（外部）
-   *   - displayName：中文显示名（发布方 x-display_name），无则上层兜底
+   *   - title：中文显示名（发布方 x-title），无则上层兜底
    *   - params：完整参数结构（inputSchema 剔除 scope/ontology_id 后经 schemaToDeclaredParams 转声明形状
    *     {key: {type, required, description(含示例), example?}}），与子任务 params 填法同形
    *   - schema：编译 inputSchema 原文（剥 scope/ontology_id），规划期参数校验（TypeBox）的数据源

@@ -19,7 +19,7 @@ vi.mock('./NarrativeBlock', () => ({
   default: ({ item }: any) => <div data-testid="narrative">{item.content}</div>,
 }));
 vi.mock('./SubtaskBlock', () => ({
-  default: ({ item }: any) => <div data-testid="subtask">{item.displayName}</div>,
+  default: ({ item }: any) => <div data-testid="subtask">{item.title}</div>,
 }));
 vi.mock('./SecurityConfirmModal', () => ({
   default: ({ confirmModal }: any) => <div data-testid="security-modal">{confirmModal.confirmId}</div>,
@@ -172,7 +172,7 @@ describe('AgentConversation — SSE 事件路由（事件触发）', () => {
   it('exec_entry(source=child) 事件生成子任务块', async () => {
     setup([]);
     vi.mocked(agentApi.agentChatStream).mockResolvedValue(okResponse([
-      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', displayName: '查询库存', status: 'running', source: 'child', seq: 1 } },
+      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', title: '查询库存', status: 'running', source: 'child', seq: 1 } },
       { type: 'done' },
     ]) as any);
 
@@ -301,7 +301,7 @@ describe('AgentConversation — 规划确认交互', () => {
         type: 'plan_confirm', confirmId: 'c1',
         plan: {
           subtasks: [
-            { seq: 1, behavior: 'QueryInventory', display_name: '查询库存', params: { 原材料编号: { value: 'RM-001', required: true } } },
+            { seq: 1, behavior: 'QueryInventory', title: '查询库存', params: { 原材料编号: { value: 'RM-001', required: true } } },
             { seq: 2, behavior: 'CreatePurchaseRecord', params: {} },
           ],
         },
@@ -379,7 +379,7 @@ describe('AgentConversation — 执行记录面板交互', () => {
   it('子任务事件进入执行记录，可折叠/展开', async () => {
     setup([]);
     vi.mocked(agentApi.agentChatStream).mockResolvedValue(okResponse([
-      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', displayName: '查询库存', status: 'running', source: 'child', seq: 1 } },
+      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', title: '查询库存', status: 'running', source: 'child', seq: 1 } },
       { type: 'exec_entry', entry: { time: '10:01', type: 'tool_call', name: 'query_inventories', status: 'done', source: 'child', seq: 1 } },
     ]) as any);
     await send('执行');
@@ -416,8 +416,8 @@ describe('AgentConversation — 执行记录面板交互', () => {
   it('子任务完成事件更新子任务块状态', async () => {
     setup([]);
     vi.mocked(agentApi.agentChatStream).mockResolvedValue(okResponse([
-      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', displayName: '查询库存', status: 'running', source: 'child', seq: 1 } },
-      { type: 'exec_entry', entry: { time: '10:02', type: 'subtask_done', name: 'QueryInventory', displayName: '查询库存', status: 'done', source: 'child', seq: 1 } },
+      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', title: '查询库存', status: 'running', source: 'child', seq: 1 } },
+      { type: 'exec_entry', entry: { time: '10:02', type: 'subtask_done', name: 'QueryInventory', title: '查询库存', status: 'done', source: 'child', seq: 1 } },
     ]) as any);
     await send('执行');
     expect(await screen.findByTestId('subtask')).toHaveTextContent('查询库存');
@@ -426,7 +426,7 @@ describe('AgentConversation — 执行记录面板交互', () => {
   it('子任务阶段后的首个 token 会新开一条总结消息', async () => {
     setup([]);
     vi.mocked(agentApi.agentChatStream).mockResolvedValue(okResponse([
-      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', displayName: '查询库存', status: 'running', source: 'child', seq: 1 } },
+      { type: 'exec_entry', entry: { time: '10:00', type: 'subtask_start', name: 'QueryInventory', title: '查询库存', status: 'running', source: 'child', seq: 1 } },
       { type: 'token', token: '总结：库存充足' },
     ]) as any);
     await send('执行');

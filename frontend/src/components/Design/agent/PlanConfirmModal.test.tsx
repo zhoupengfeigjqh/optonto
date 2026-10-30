@@ -12,7 +12,7 @@ import { selectOption } from '@/test/antd';
 const plan = {
   subtasks: [
     {
-      seq: 1, behavior: 'QueryInventory', display_name: '查询库存', description: '查当前库存',
+      seq: 1, behavior: 'QueryInventory', title: '查询库存', description: '查当前库存',
       params: {
         原材料编号: { value: 'RM-001', required: true, description: '原材料编号' },
         数量: { value: '', required: false },

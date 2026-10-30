@@ -23,7 +23,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
 
   // Edit modal
   const [modalOpen, setModalOpen] = useState(false);
-  const [editProcess, setEditProcess] = useState<Process>({ name: '', display_name: '', goal: '', description: '', steps: [] });
+  const [editProcess, setEditProcess] = useState<Process>({ name: '', title: '', goal: '', description: '', steps: [] });
   const [steps, setSteps] = useState<ProcessStep[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [origName, setOrigName] = useState('');
@@ -39,10 +39,10 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
 
   useEffect(() => { if (activeTab === 'processes') load(); }, [ontologyId, activeTab]);
 
-  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
+  const behaviorOptions = behaviors.map(b => ({ label: b.title || b.name, value: b.name }));
 
   const openAdd = () => {
-    setEditProcess({ name: '', display_name: '', goal: '', description: '', steps: [] });
+    setEditProcess({ name: '', title: '', goal: '', description: '', steps: [] });
     setSteps([]);
     setIsNew(true);
     setOrigName('');
@@ -96,7 +96,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 100 },
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, render: (v: string) => v || '-' },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 120, render: (v: string) => v || '-' },
     { title: '流程目标', dataIndex: 'goal', key: 'goal', width: 150, ellipsis: true, render: (v: string) => v || '-' },
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: string) => v || '-' },
     { title: '步骤数', key: 'steps_count', width: 70, render: (_: any, r: Process) => <Tag color="blue">{r.steps?.length || 0}</Tag> },
@@ -122,7 +122,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
       <ResizableTable dataSource={processes.map(p => ({ ...p, _key: p.name }))} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
 
       <Modal
-        title={isNew ? '新增流程' : `编辑流程 - ${editProcess.display_name || origName}`}
+        title={isNew ? '新增流程' : `编辑流程 - ${editProcess.title || origName}`}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         width={950}
@@ -137,7 +137,7 @@ export default function ProcessTable({ ontologyId, activeTab }: Props) {
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-text-muted text-xs mb-1 block">中文名称</label>
-            <Input value={editProcess.display_name || ''} onChange={e => setEditProcess(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程中文名称" />
+            <Input value={editProcess.title || ''} onChange={e => setEditProcess(p => ({...p, title: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" placeholder="流程中文名称" />
           </div>
           <div>
             <label className="text-text-muted text-xs mb-1 block">名称</label>

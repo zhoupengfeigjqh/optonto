@@ -9,12 +9,12 @@ ONTOLOGY_GENERATE_PROMPT_TEMPLATE = """你是一个本体建模专家。请根�
 
 要求：
 1. 严格遵循模板的YAML结构和字段顺序
-2. **命名规范**：概念名、关系名（概念关系与对象关系）、行为名、规则名使用大驼峰（PascalCase，如 PurchaseOrder / HasDetail / CreateOrder / OrderTypeValid）；函数名、属性名、参数名使用小驼峰（camelCase，如 sumRawNotArrivalQty / unitPrice）；display_name 使用中文；英文名只允许字母与数字，禁止下划线、连字符、空格、中文或拼音
+2. **命名规范**：概念名、关系名（概念关系与对象关系）、行为名、规则名使用大驼峰（PascalCase，如 PurchaseOrder / HasDetail / CreateOrder / OrderTypeValid）；函数名、属性名、参数名使用小驼峰（camelCase，如 sumRawNotArrivalQty / unitPrice）；title 使用中文；英文名只允许字母与数字，禁止下划线、连字符、空格、中文或拼音
 3. 属性类型只能为：string / number / integer / boolean / object / array 六选一；枚举值通过 constraint.enum 表达，不得把 enum 当作 type 使用
 4. 基数只能为：1:N / N:1 / N:M / '1:1'
 5. 行为操作类型（op_type）只能为：command（命令，写操作/增删改）/ query（查询，只读），二选一
 6. 规则不设类型字段：`rule_type` 已移除，禁止输出
-7. **模板与字段纪律**：严格以模板的结构、字段名与字段顺序为准——模板中的示例值必须**替换**为本体真实内容（模板是骨架，不是成品）；不得增删字段、不得改动字段名或顺序、不得添加注释；`params` 项的说明字段按模板固定：**行为用 `description`、函数用 `display_name`**，不得互换
+7. **模板与字段纪律**：严格以模板的结构、字段名与字段顺序为准——模板中的示例值必须**替换**为本体真实内容（模板是骨架，不是成品）；不得增删字段、不得改动字段名或顺序、不得添加注释；`params`（以及 `response`）项的中文名一律写入 **`title`**（行为与函数口径相同，不得互换或自行改字段名），`description` 只用于可选的补充说明
 8. 确保YAML格式正确，可以被yaml.safe_load解析
 9. 不得虚构补全：需求文档未涉及的概念/属性/关系/行为/函数/规则/流程，一律不要生成
 10.模板中未出现的字段一律不得输出（如行为不得带 method 等已移除字段）；所有取值必须落在上文各条给出的值域内
@@ -33,10 +33,10 @@ ONTOLOGY_GENERATE_PROMPT_TEMPLATE = """你是一个本体建模专家。请根�
 19.**行为**：关联概念为单一值（字段 `concept`，禁止数组）；command 行为必须填写 `from_status` / `to_status`，取值必须来自其关联概念 status 属性的 `constraint.enum`（创建类行为 `from_status` 留空）；query 行为两者留空。
 20.**规则**：绑定行为为单一值（字段 `behavior`，禁止数组）；规则的约束逻辑由 `related_functions`（关联函数列表）承载——只能引用本本体 `functions` 段已声明的函数名（或公共函数名）；其中**本体函数且 `type=VALIDATION` 者为判断函数**：其代码必须返回统一信封并在 data 内携带 `{{"pass": bool, "reason": str}}`（运行期规则闸据此真阻断主行为）；CALCULATION 等其他类型承担取数/计算；没有合适函数时留空数组。**禁止输出任何已废弃的历史字段**（旧条件树、独立裁决函数字段等一律不得生成；模板未定义的字段一律不得输出）；`data_supplements` 填规则判断需额外拉取的 query 行为名（可留空，前端按关联函数声明关联的概念自动推导）。
 21.**概念术语集与实例标签**：概念可填 `terms`（术语集数组，该概念的其他表述，可为空，建议每概念 0-5 个）——只能取需求文档第1条概念总表「术语集」列中的说法（列内多个术语以顿号「、」分隔，逐项拆成数组元素；列内为 `-` 表示无术语，留空或省略 `terms`），不得臆造、改写或在概念之间挪移；概念还可填 `instance_label`（实例标签，可选，用于实例视图的节点标签）——取值**必须是该概念已定义属性的英文名**，无合适属性则留空，不得编造不存在的属性名。
-22.**概念继承（subClassOf）**：仅当需求明确表达「A 是一种 B」且属性可由 B 继承时，才给 A 填 `sub_class_of: B`（单值，至多一个父概念，空/缺省 = 根概念）；禁止成环、禁止引用本本体不存在的概念。子概念**不得重复声明**父概念已有的属性；如需收窄只能写 `attribute_restrictions`（键 = 继承属性名），**取值来源只能是需求文档第1条的「继承属性收窄表」**，且只允许三个维度：`enum` 为父枚举的非空子集（只删不增）、`min`/`max` 不得超出父范围、`pattern` 可任意覆盖；收窄表中无对应条目时不得输出 `attribute_restrictions`。type / unique / required / display_name / description / example 一律由父概念决定，子概念禁止重定义。没有明确继承语义时**一律不输出这两个字段**。
-23.**概念关系（concept_relations）**：类级公理，与对象关系（relations）**分节输出、不得混淆**。字段为 name / display_name / relation_type / source / target / source_attr / target_attr / description，**没有 cardinality（基数）**。
+22.**概念继承（subClassOf）**：仅当需求明确表达「A 是一种 B」且属性可由 B 继承时，才给 A 填 `sub_class_of: B`（单值，至多一个父概念，空/缺省 = 根概念）；禁止成环、禁止引用本本体不存在的概念。子概念**不得重复声明**父概念已有的属性；如需收窄只能写 `attribute_restrictions`（键 = 继承属性名），**取值来源只能是需求文档第1条的「继承属性收窄表」**，且只允许三个维度：`enum` 为父枚举的非空子集（只删不增）、`min`/`max` 不得超出父范围、`pattern` 可任意覆盖；收窄表中无对应条目时不得输出 `attribute_restrictions`。type / unique / required / title / description / example 一律由父概念决定，子概念禁止重定义。没有明确继承语义时**一律不输出这两个字段**。
+23.**概念关系（concept_relations）**：类级公理，与对象关系（relations）**分节输出、不得混淆**。字段为 name / title / relation_type / source / target / source_attr / target_attr / description，**没有 cardinality（基数）**。
    - `relation_type` 单选：SubClassOf / EquivalentClass / DisjointWith。
-   - **SubClassOf**：成员关系以 `concepts[].sub_class_of` 为唯一权威。仅当需求给出明确连接键、需要登记关联概念属性时，才额外输出一条 SubClassOf 条目：name 固定为 `{子概念名}SubClassOf{父概念名}`，display_name 固定为 `{子概念中文名} 是一种 {父概念中文名}`，source 填子概念、target 填父概念；无连接键时不要输出该条。
+   - **SubClassOf**：成员关系以 `concepts[].sub_class_of` 为唯一权威。仅当需求给出明确连接键、需要登记关联概念属性时，才额外输出一条 SubClassOf 条目：name 固定为 `{子概念名}SubClassOf{父概念名}`，title 固定为 `{子概念中文名} 是一种 {父概念中文名}`，source 填子概念、target 填父概念；无连接键时不要输出该条。
    - **EquivalentClass / DisjointWith**：对称关系只输出一条（源概念英文名字典序小的在前），禁止反向重复；不得用于祖先-后代概念之间；等价双方不得同时存在继承关系。
    - 单纯继承的父子关系只写 `concepts[].sub_class_of`，**不得**写进 relations；需求未涉及等价/互斥且无连接键时，整节省略。
 

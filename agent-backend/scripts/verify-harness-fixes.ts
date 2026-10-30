@@ -71,10 +71,10 @@ class FakeFactory implements AgentFactoryPort {
 class FakeGateway implements OntologyGatewayPort {
   getBehaviorNames(_scenario: string, _ontology: string): string[] { return ['B']; }
   getBehaviorMeta(_scenario: string, _ontology: string, behavior: string): BehaviorMeta {
-    return { params: {}, preRules: [], postRules: [], concepts: [], isWrite: false, display_name: behavior };
+    return { params: {}, preRules: [], postRules: [], concepts: [], isWrite: false, title: behavior };
   }
-  getFunctionMeta(_scenario: string, _ontology: string, functionName: string): { display_name: string; description?: string } {
-    return { display_name: `函数-${functionName}`, description: '' };
+  getFunctionMeta(_scenario: string, _ontology: string, functionName: string): { title: string; description?: string } {
+    return { title: `函数-${functionName}`, description: '' };
   }
   getFunctionParams(_scenario: string, _ontology: string, _functionName: string): Record<string, any> | null {
     return null; // 共享函数，参数在工具 schema 可见

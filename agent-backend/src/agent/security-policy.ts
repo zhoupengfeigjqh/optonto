@@ -24,15 +24,15 @@ export function createSecurityGate(): SecurityGate {
 
 /** 子 Agent 安全上下文：工具层 disable 闸的输入（禁用集合 + run 级共享闸），由 buildSubtaskPolicy 派生并进 SubtaskPolicy */
 export interface ChildSecurityCtx {
-  /** 禁用行为集合：behavior_name → display_name（报错文案展示用）；子任务启动时从合法清单内筛 scope 含 disable 者 */
+  /** 禁用行为集合：behavior_name → title（报错文案展示用）；子任务启动时从合法清单内筛 scope 含 disable 者 */
   disabled: ReadonlyMap<string, string>;
   /** run 级共享安全闸（见上） */
   gate: SecurityGate;
 }
 
 /** disable 命中文案（工具层闸与结果侧共用，单一事实源） */
-export function buildDisableMessage(behaviorName: string, displayName?: string): string {
-  const label = displayName ? `${displayName}（${behaviorName}）` : behaviorName;
+export function buildDisableMessage(behaviorName: string, title?: string): string {
+  const label = title ? `${title}（${behaviorName}）` : behaviorName;
   return `🔒 行为已被禁用：${label} 的权限范围为 disable，已中断执行。如需启用，请在本体「安全」页签调整该行为的权限范围。`;
 }
 

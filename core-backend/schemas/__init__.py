@@ -64,7 +64,7 @@ class ConstraintItem(BaseModel):
 class AttributeItem(BaseModel):
     name: str = Field(..., description="属性名")
     type: str = Field(..., description="属性类型")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     description: str = Field("", description="属性描述，用于描述属性语义信息")
     example: str = Field("", description="示例")
     constraint: ConstraintItem | None = Field(None, description="约束")
@@ -97,7 +97,7 @@ class AttributeItem(BaseModel):
 class AttributeRestriction(BaseModel):
     """继承属性的收窄声明（spec 005，只能收窄不能放宽）。
 
-    三个维度之外的一切属性字段（type / unique / required / display_name /
+    三个维度之外的一切属性字段（type / unique / required / title /
     description / example）都由父概念的声明决定，不可在子概念修改。
     缺省（None / 空）表示该维度完全继承：
     - ``enum``：必须是父有效枚举的非空子集（只删不增）；
@@ -115,7 +115,7 @@ class ConceptItem(BaseModel):
     name: str = Field(..., description="概念名")
     description: str = Field("", description="概念描述")
     attributes: list[AttributeItem] = Field(default_factory=list, description="属性列表（仅本概念自有声明）")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     instance_label: str = Field("", description="实例标签：用于实例展示时作为节点标签，可选值为属性的英文名")
     terms: list[str] = Field(default_factory=list, description="术语集：该概念的其他表述（同义词/别名/简称等）")
     sub_class_of: str | None = Field(None, description="父概念名（OWL subClassOf，至多 1 个，空 = 根概念）")
@@ -206,7 +206,7 @@ class RelationItem(BaseModel):
     source_attr: str = Field("", description="关联概念属性-源端（源概念.属性）")
     target_attr: str = Field("", description="关联概念属性-目标端（目标概念.属性）")
     description: str = Field("", description="关系说明")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
 
     relation_type: list[str] = Field(
         default_factory=list,
@@ -249,7 +249,7 @@ class ConceptRelationItem(BaseModel):
     """
 
     name: str = Field(..., description="概念关系名（SubClassOf 由后端派生）")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     relation_type: str = Field("", description="概念关系类型：SubClassOf / EquivalentClass / DisjointWith")
     source: str = Field("", description="源概念（SubClassOf = 子概念）")
     target: str = Field("", description="目标概念（SubClassOf = 父概念）")
@@ -279,7 +279,7 @@ class BehaviorItem(BaseModel):
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="返回结构 (JSON)")
     concept: str = Field("", description="关联概念（唯一）")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     from_status: str = Field("", description="源状态：command 状态机跃迁起点（取自关联概念 status 枚举）")
     to_status: str = Field("", description="目标状态：command 状态机跃迁终点（取自关联概念 status 枚举）")
 
@@ -331,7 +331,7 @@ class RuleItem(BaseModel):
     description: str = Field("", description="规则描述")
     behavior: str = Field("", description="绑定行为（唯一）")
     related_functions: list[str] = Field(default_factory=list, description="关联函数（本体函数∪公共函数；本体且 type=VALIDATION 者为判断函数，返回 data.pass/reason 并参与真阻断）")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     position: str = Field("", description="介入位置（前置/后置）")
     data_supplements: list[str] = Field(default_factory=list, description="数据补充（可多选 query 行为；自动推导自关联函数声明的关联概念，可手工增减）")
 
@@ -381,7 +381,7 @@ class ProcessStep(BaseModel):
 
 class ProcessItem(BaseModel):
     name: str = Field(..., description="流程英文名称")
-    display_name: str = Field("", description="流程展示名称")
+    title: str = Field("", description="流程中文名")
     goal: str = Field("", description="流程目标")
     description: str = Field("", description="流程描述")
     steps: list[ProcessStep] = Field(default_factory=list, description="流程步骤列表")
@@ -390,7 +390,7 @@ class ProcessItem(BaseModel):
 class SecurityItem(BaseModel):
     """行为安全管控配置（独立存放于 securities.yaml，与安全页签列一一对应，六字段齐全）。
 
-    display_name/op_type 为反范式快照字段：保存时由后端从 behaviors + data_engines 重新推导
+    title/op_type 为反范式快照字段：保存时由后端从 behaviors + data_engines 重新推导
     覆盖写入（只读，API 传入值无效），保证与行为定义永不漂移。
     scope: 权限范围，恒为数组（类型稳定）：['everyone']=所有用户（默认）、['disable']=全部禁用、
     ['用户名', ...]=用户或组织白名单（后续用户表落地后使用）。旧标量形态（scope: everyone）加载时自动包成单元素数组。
@@ -400,7 +400,7 @@ class SecurityItem(BaseModel):
     ontology.yaml 旧 securities 段在 securities.yaml 缺失时读时回退，保存后彻底剥离。
     """
     action_name: str = Field(..., description="行为名称（选自行为列表）")
-    display_name: str = Field("", description="行为展示名称（保存时后端从行为定义刷新，只读快照）")
+    title: str = Field("", description="行为中文名（保存时后端从行为定义刷新，只读快照）")
     op_type: str = Field("", description="操作类型 command/query（保存时后端推导刷新，只读快照）")
     scope: list[str] = Field(default_factory=lambda: ["everyone"], description="权限范围（恒数组）：everyone=所有用户（默认）/disable=全部禁用/用户或组织白名单（后续）")
     confirm: bool = Field(True, description="人工确认：true=执行前弹窗确认，false=显式关闭")
@@ -434,7 +434,7 @@ class SecurityItem(BaseModel):
 
 class FunctionItem(BaseModel):
     name: str = Field(..., description="函数名称")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     description: str = Field("", description="描述/计算逻辑")
     related_concepts: list[str] = Field(default_factory=list, description="关联概念")
     params: dict = Field(default_factory=dict, description="输入参数")
@@ -468,7 +468,7 @@ class TargetApiConfig(BaseModel):
 class DataEngineItem(BaseModel):
     """数据引擎 — 本体行为与目标 MCP 工具映射（SQL/HTTP 型已删除，2026-09-07）"""
     name: str = Field(..., description="数据引擎名称")
-    display_name: str = Field("", description="展示名称")
+    title: str = Field("", description="中文名")
     behavior_name: str = Field(..., description="本体行为名称")
     target: TargetApiConfig = Field(default_factory=TargetApiConfig)
     input_mapping: dict = Field(default_factory=dict, description="输入映射 {ontology_param: target_param}")

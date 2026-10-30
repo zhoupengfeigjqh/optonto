@@ -32,7 +32,7 @@ export default function SubtaskBlock({ item }: { item: SubtaskChatItem }) {
         aria-expanded={open}
       >
         <span className="text-text-muted text-xs" aria-hidden>{open ? '▼' : '▶'}</span>
-        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.displayLabel || item.displayName || item.behavior}</span>
+        <span className="text-accent-blue text-xs font-semibold">子任务 {item.seq}: {item.title || item.behavior}</span>
         {item.status === 'running' && <span role="status" aria-label="执行中"><Spin size="small" /></span>}
         {item.status === 'done' && <span className="text-green-500 text-xs" aria-label="已完成">✓</span>}
         {item.status === 'failed' && <span className="text-red-500 text-xs" aria-label="已失败">✗</span>}

@@ -5,7 +5,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY data-engine-executor/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 
 COPY mcp-shared /app/
 COPY data-engine-executor/server.py data-engine-executor/behavior_index.py data-engine-executor/executor.py /app/

@@ -125,7 +125,7 @@ function inferNode(v: unknown): Record<string, unknown> {
 export function emptyEngine(behaviorName: string): DataEngine {
   return {
     name: behaviorName,
-    display_name: '',
+    title: '',
     behavior_name: behaviorName,
     target: { ...emptyTarget },
     input_mapping: {},

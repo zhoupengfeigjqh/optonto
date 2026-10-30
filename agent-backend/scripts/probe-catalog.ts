@@ -18,7 +18,7 @@ async function main() {
     .filter((t: any) => !PARENT_QUERY.includes(t.name) && t.name !== 'executeOntoBehavior')
     .map((t: any) => toMountableToolInfo({ name: t.name, description: t.description, parameters: (t as any).inputSchema }));
   for (const e of catalog) {
-    console.log(`  ${e.name.padEnd(30)} category=${e.category} displayName=${e.displayName ?? ''} params=${Object.keys(e.params)} scope=${JSON.stringify(e.scope ?? null)}`);
+    console.log(`  ${e.name.padEnd(30)} category=${e.category} title=${e.title ?? ''} params=${Object.keys(e.params)} scope=${JSON.stringify(e.scope ?? null)}`);
   }
   await client.close?.();
   process.exit(0);

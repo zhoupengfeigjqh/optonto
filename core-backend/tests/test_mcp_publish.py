@@ -27,12 +27,14 @@ def _entry(**over):
         "transport": store.TRANSPORT_STREAMABLE,
         "container_name": "optonto-mcp-publish-order-abc123",
         "token": "tok-123",
-        "tools": [{"name": "f1", "description": "d", "inputSchema": {
-            "type": "object",
-            "properties": {"ontology_id": {"type": "integer"}},
-            "required": ["ontology_id"],
-            "x-ontology-scope": {"ontology_id": 1, "scenario_name": "生产调度", "ontology_name": "原材料采购和库存"},
-        }}],
+        "tools": [{"name": "f1", "title": "函数一", "category": "本体函数",
+                   "ontologyScope": {"ontology_id": 1, "scenario_name": "生产调度",
+                                     "ontology_name": "原材料采购和库存"},
+                   "description": "d", "inputSchema": {
+                       "type": "object",
+                       "properties": {"ontology_id": {"type": "integer"}},
+                       "required": ["ontology_id"],
+                   }}],
     }
     base.update(over)
     return base
@@ -118,9 +120,9 @@ class ContainerSpecCase(unittest.TestCase):
         config = json.loads(env["PUBLISH_CONFIG_JSON"])
         self.assertEqual(config["name"], "order-svc")
         self.assertEqual(config["kind"], "ontology_function")
-        # 本体归属只存在于工具元数据（单一事实来源），配置不重复存 ontology_id
+        # 本体归属只存在于每个工具的 ontologyScope（单一事实来源），配置不重复存 ontology_id
         self.assertNotIn("ontology_id", config)
-        self.assertEqual(config["tools"][0]["inputSchema"]["x-ontology-scope"]["ontology_id"], 1)
+        self.assertEqual(config["tools"][0]["ontologyScope"]["ontology_id"], 1)
         self.assertNotIn("token", config)
         self.assertEqual(env["AUTH_TOKEN"], "tok-123")
         self.assertEqual(env["PORT"], str(store.CONTAINER_PORT))

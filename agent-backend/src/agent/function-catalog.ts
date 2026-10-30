@@ -29,8 +29,8 @@ import type { OntologyGatewayPort } from './agent-ports.js';
 
 /** 函数信息（单出口返回单元）。params 恒为对象：{} = 无声明可比对（校验自然零错误，等价跳过） */
 export interface FunctionInfo {
-  /** 中文显示名（发布方标记 / 文件 display_name），无则空串（上层用子任务描述兜底） */
-  displayName: string;
+  /** 中文显示名（发布方标记 / 文件 title），无则空串（上层用子任务描述兜底） */
+  title: string;
   description?: string;
   params: Record<string, any>;
   /** 编译 inputSchema 原文（已剥离 scope/ontology_id）：规划期参数校验（TypeBox）的数据源；文件兜底模式无 */
@@ -84,7 +84,7 @@ export class FunctionCatalog {
     const inOnto = (t: MountableToolInfo, scenario: string, ontology: string) =>
       t.scope?.scenario_name === scenario && t.scope?.ontology_name === ontology;
     const fromEntry = (t: MountableToolInfo): FunctionInfo => ({
-      displayName: t.displayName ?? '', description: t.description, params: t.params, schema: t.schema,
+      title: t.title ?? '', description: t.description, params: t.params, schema: t.schema,
     });
     return {
       functionNames: (scenario, ontology) => fileFallback
@@ -97,7 +97,7 @@ export class FunctionCatalog {
       functionInfo: (scenario, ontology, functionName) => {
         if (fileFallback) {
           const f = gateway.getFunctionInfo(scenario, ontology, functionName);
-          if (f) return { displayName: f.display_name, description: f.description, params: f.params };
+          if (f) return { title: f.title, description: f.description, params: f.params };
         } else {
           const entry = onto.find(t => t.name === functionName && inOnto(t, scenario, ontology))
             ?? common.find(t => t.name === functionName);

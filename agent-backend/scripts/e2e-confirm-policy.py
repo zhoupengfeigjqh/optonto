@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""E2E 验证规划确认收窄：单步无规划弹窗 / 写操作仍有安全确认 / 多步弹窗含中文 display_name"""
+"""E2E 验证规划确认收窄：单步无规划弹窗 / 写操作仍有安全确认 / 多步弹窗含中文 title"""
 import json
 import sys
 import time
@@ -71,14 +71,14 @@ def summarize(tag, events):
         subs = plan_received[-1]['plan']['subtasks']
         print(f'  plan_received 子任务数: {len(subs)}')
         for st in subs:
-            dn = st.get('display_name', '')
-            print(f'    - behavior={st["behavior"]}  display_name="{dn}"  desc="{st.get("description","")[:30]}"')
+            dn = st.get('title', '')
+            print(f'    - behavior={st["behavior"]}  title="{dn}"  desc="{st.get("description","")[:30]}"')
     if plan_confirm:
         subs = plan_confirm[-1]['plan']['subtasks']
         print(f'  plan_confirm 弹窗子任务:')
         for st in subs:
-            dn = st.get('display_name', '')
-            print(f'    - behavior={st["behavior"]}  display_name="{dn}"')
+            dn = st.get('title', '')
+            print(f'    - behavior={st["behavior"]}  title="{dn}"')
     if confirm:
         for c in confirm:
             print(f'  security_confirm: behavior={c.get("behavior")}')
@@ -101,7 +101,7 @@ def main():
     eventsB, tokensB = chat_events(tid, '请直接创建采购单：原材料 RM-001 高强度钢板，0.1 吨，供应商宝钢钢铁集团，到位时间 2026-08-20，信息已全部确认无需查询，直接创建。')
     pcB, scB, prB = summarize('场景B: 单步写(创建采购单)', eventsB)
 
-    # ── 场景 C：多步 → 预期有 plan_confirm 且 display_name 为中文 ──
+    # ── 场景 C：多步 → 预期有 plan_confirm 且 title 为中文 ──
     # 显式列出 3 步操作，提高 LLM 生成多步规划的概率；未生成则重试一次
     promptC = '请按顺序执行以下操作：1) 查询高强度钢板 RM-001 的当前库存；2) 创建 100 公斤高强度钢板的采购单，供应商宝钢钢铁集团，到位时间 2026-08-20；3) 到货后办理入库。'
     eventsC, tokensC = chat_events(tid, promptC)
@@ -131,11 +131,11 @@ def main():
     check('B: 无 plan_confirm 弹窗', len(pcB) == 0)
     check('B: 有 security_confirm 弹窗', len(scB) >= 1)
 
-    # 场景C：多步有规划弹窗 + display_name 中文
+    # 场景C：多步有规划弹窗 + title 中文
     check('C: 有 plan_confirm 弹窗', len(pcC) >= 1)
     if pcC:
-        dns = [st.get('display_name', '') for st in pcC[0]['plan']['subtasks']]
-        check('C: display_name 全部为非空中文', all(d and not d.isascii() for d in dns))
+        dns = [st.get('title', '') for st in pcC[0]['plan']['subtasks']]
+        check('C: title 全部为非空中文', all(d and not d.isascii() for d in dns))
 
     print(f'\n总体: {"✅ 全部通过" if ok else "❌ 有失败项"}')
     sys.exit(0 if ok else 1)

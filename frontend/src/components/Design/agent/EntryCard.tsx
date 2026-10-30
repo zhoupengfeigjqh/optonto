@@ -33,7 +33,7 @@ export default function EntryCard({ entry }: { entry: LogEntry }) {
         {entry.status === 'failed' && <span className="text-red-500 text-xs" aria-hidden>✗</span>}
         {entry.source === 'parent' && <span className="text-yellow-500 text-xs mr-1">父</span>}
         {entry.source === 'child' && <span className="text-blue-400 text-xs mr-1">子</span>}
-        <span className="text-accent-blue text-xs font-mono">{entry.displayName || entry.name}</span>
+        <span className="text-accent-blue text-xs font-mono">{entry.title ? `${entry.title}（${entry.name}）` : entry.name}</span>
         <span className="text-text-muted text-xs ml-auto">{entry.time}</span>
       </div>
       {entry.detail && <div className="text-text-muted text-xs mt-1">{entry.detail}</div>}

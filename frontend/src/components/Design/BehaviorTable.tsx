@@ -32,7 +32,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
   const isEditing = (record: Behavior) => record.name === editingKey;
   const isNewRow = (record: Behavior) => editingKey === '__new__' && record.name === '__new__';
-  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.title || c.name, value: c.name }));
 
   /**
    * 取某概念 status 属性的枚举值（生命周期状态全集）。
@@ -47,7 +47,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   };
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', op_type: '', params: '{}', response: '{}', concept: '', from_status: '', to_status: '' });
+    setEditData({ name: '', title: '', description: '', op_type: '', params: '{}', response: '{}', concept: '', from_status: '', to_status: '' });
     setEditingKey('__new__');
     goToRow(behaviors.length);
   };
@@ -55,13 +55,23 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const handleEdit = (b: Behavior) => {
     // Normalize old-format params ({key: "type"}) to new format ({key: {type, required}})
     const rawParams = b.params || {};
-    const normParams: Record<string, {type: string; required: boolean; description: string; example: string}> = {};
+    // 行为参数的中文名与函数参数同口径：一律落在 title；description 只保留补充说明。
+    // 归一化不得丢键（"进入编辑态再保存"会以归一化结果回写）。
+    const normParams: Record<string, Record<string, unknown>> = {};
     for (const [k, v] of Object.entries(rawParams)) {
-      if (typeof v === 'string') normParams[k] = { type: v, required: true, description: '', example: '' };
-      else if (typeof v === 'object' && v !== null) normParams[k] = { type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' };
-      else normParams[k] = { type: String(v), required: true, description: '', example: '' };
+      if (typeof v === 'string') { normParams[k] = { type: v, title: '', required: true, example: '' }; continue; }
+      if (typeof v === 'object' && v !== null) {
+        const src = v as Record<string, unknown>;
+        const spec: Record<string, unknown> = {
+          type: src.type || 'string', title: src.title || '', required: src.required !== false, example: src.example || '',
+        };
+        if (src.description) spec.description = src.description;
+        normParams[k] = spec;
+        continue;
+      }
+      normParams[k] = { type: String(v), title: '', required: true, example: '' };
     }
-    setEditData({ name: b.name, display_name: b.display_name || '', description: b.description, op_type: b.op_type || '', params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', concept: b.concept || '', from_status: b.from_status || '', to_status: b.to_status || '' });
+    setEditData({ name: b.name, title: b.title || '', description: b.description, op_type: b.op_type || '', params: JSON.stringify(normParams, null, 2) || '{}', response: JSON.stringify(b.response || {}, null, 2) || '{}', concept: b.concept || '', from_status: b.from_status || '', to_status: b.to_status || '' });
     setEditingKey(b.name);
   };
 
@@ -80,7 +90,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
 
     try {
       const data: Behavior = {
-        name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '',
+        name: editData.name.trim(), title: editData.title?.trim() || '', description: editData.description?.trim() || '',
         op_type: editData.op_type || '', params: parsedParams, response: parsedResponse,
         concept: editData.concept || '', from_status: editData.from_status || '', to_status: editData.to_status || '',
       };
@@ -113,7 +123,7 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     };
 
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={setF('name')} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={setF('display_name')} className="bg-dark-bg border-dark-border text-text-primary" />;
+    if (dataIndex === 'title') return <Input size="small" value={editData.title || ''} onChange={setF('title')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={setF('description')} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'params') return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
     if (dataIndex === 'response') return <Button size="small" icon={<CodeOutlined />} onClick={openResponseEditor}>编辑</Button>;
@@ -142,17 +152,17 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   };
 
   const dataSource = behaviors.map(b => ({ ...b, _key: b.name }));
-  if (editingKey === '__new__') dataSource.push({ name: '__new__', display_name: '', description: '', params: {}, response: {}, concept: '', from_status: '', to_status: '' } as any);
+  if (editingKey === '__new__') dataSource.push({ name: '__new__', title: '', description: '', params: {}, response: {}, concept: '', from_status: '', to_status: '' } as any);
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'name') },
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 80, render: (v: any, r: Behavior) => renderCell(v, r, 'title', (v2: string) => v2 || '-') },
     { title: '操作类型', dataIndex: 'op_type', key: 'op_type', width: 70, render: (v: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Select size="small" value={editData.op_type || ''} onChange={v => setEditData((p: any) => ({...p, op_type: v}))} options={[{label:'command（命令）',value:'command'},{label:'query（查询）',value:'query'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
       return v ? <Tag color={v === 'command' ? 'orange' : 'cyan'}>{v}</Tag> : '-';
     }},
     { title: '描述', dataIndex: 'description', key: 'description', width: 200, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'description') },
-    { title: '关联概念', dataIndex: 'concept', key: 'concept', width: 140, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'concept', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
+    { title: '关联概念', dataIndex: 'concept', key: 'concept', width: 140, ellipsis: true, render: (v: any, r: Behavior) => renderCell(v, r, 'concept', (v2: string) => concepts.find(c => c.name === v2)?.title || v2 || '-') },
     { title: '状态跃迁', key: 'status_transition', width: 190, ellipsis: true, render: (_: any, r: Behavior) => renderCell(null, r, 'status_transition', () => {
       if (r.op_type !== 'command') return <span className="text-text-muted">-</span>;
       if (!r.from_status && !r.to_status) return <span className="text-text-muted">未声明</span>;
@@ -161,15 +171,16 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     { title: '输入参数', key: 'params', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={openParamsEditor}>编辑</Button>;
       const raw = r.params || {};
-      const items: { name: string; type: string; required: boolean; description: string; example: string }[] = [];
+      const items: { name: string; type: string; required: boolean; title: string; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') items.push({ name: k, type: v, required: true, description: '', example: '' });
-        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' });
-        else items.push({ name: k, type: String(v), required: true, description: '', example: '' });
+        if (typeof v === 'string') items.push({ name: k, type: v, required: true, title: '', description: '', example: '' });
+        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, title: (v as any).title || '', description: (v as any).description || '', example: (v as any).example || '' });
+        else items.push({ name: k, type: String(v), required: true, title: '', description: '', example: '' });
       }
       return items.length > 0 ? items.map((p, i) => {
         const tip = [];
-        if (p.description) tip.push(`描述: ${p.description}`);
+        if (p.title) tip.push(`中文名: ${p.title}`);
+        if (p.description) tip.push(`说明: ${p.description}`);
         if (p.example) tip.push(`示例: ${p.example}`);
         const tag = (
           <Tag key={i} color={p.required ? 'blue' : 'default'} className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>
@@ -180,15 +191,16 @@ export default function BehaviorTable({ ontologyId, activeTab }: Props) {
     { title: '返回结构', key: 'response', width: 200, ellipsis: true, render: (_: any, r: Behavior) => {
       if (isEditing(r) || isNewRow(r)) return <Button size="small" icon={<CodeOutlined />} onClick={openResponseEditor}>编辑</Button>;
       const raw = r.response || {};
-      const items: { name: string; type: string; required: boolean; description: string; example: string }[] = [];
+      const items: { name: string; type: string; required: boolean; title: string; description: string; example: string }[] = [];
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') items.push({ name: k, type: v, required: true, description: '', example: '' });
-        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, description: (v as any).description || '', example: (v as any).example || '' });
-        else items.push({ name: k, type: String(v), required: true, description: '', example: '' });
+        if (typeof v === 'string') items.push({ name: k, type: v, required: true, title: '', description: '', example: '' });
+        else if (typeof v === 'object' && v !== null) items.push({ name: k, type: (v as any).type || 'string', required: (v as any).required !== false, title: (v as any).title || '', description: (v as any).description || '', example: (v as any).example || '' });
+        else items.push({ name: k, type: String(v), required: true, title: '', description: '', example: '' });
       }
       return items.length > 0 ? items.map((p, i) => {
         const tip = [];
-        if (p.description) tip.push(`描述: ${p.description}`);
+        if (p.title) tip.push(`中文名: ${p.title}`);
+        if (p.description) tip.push(`说明: ${p.description}`);
         if (p.example) tip.push(`示例: ${p.example}`);
         const tag = (
           <Tag key={i} color={p.required ? 'green' : 'default'} className="mb-0.5">{p.name}<span className="text-text-muted ml-1 text-xs">{p.type}</span></Tag>

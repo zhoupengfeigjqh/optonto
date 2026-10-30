@@ -166,7 +166,7 @@ _BEHAVIOR_ENVELOPE_NOTE = (
 
 
 def _description(item: dict, ontology_name: str, note: str) -> str:
-    parts = [p for p in (item.get("display_name"), item.get("description")) if p]
+    parts = [p for p in (item.get("title"), item.get("description")) if p]
     desc = "：".join(parts) if parts else str(item.get("name"))
     return f"{desc}（本体「{ontology_name}」）" + note
 
@@ -184,7 +184,7 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
     from services import load_ontology_data
     from services.mcp_contract_bridge import (
         CATEGORY_BEHAVIOR, CATEGORY_FUNCTION, behavior_concept_names,
-        params_to_input_schema, ready_behavior_names, related_concepts, with_ontology_scope,
+        params_to_input_schema, ready_behavior_names, related_concepts,
     )
 
     located = get_ontology_name_by_id(ontology_id)
@@ -230,14 +230,18 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
             item.get("params"), related_concepts(data, concepts_of(item)),
             require_ontology_id=True,
         )
-        input_schema = with_ontology_scope(
-            schema, scope, category, item.get("display_name", ""))
         # 注：2026-10-05 移除了旧的 `x-publish-service` 标记——它写进 inputSchema 但**无任何运行期消费者**
         # （消费端按 x-category 判定归属），属"写而不读"的死数据，留在工具契约里只会让契约多一个无意义键。
+        # 2026-10-30：工具级元数据一律存**工具级字段**，不混进参数 schema——
+        # `title`（中文名，源自本体 title）、`category`（归类）、`ontologyScope`（本体身份四元组）；
+        # 三个 `x-` 扩展键由发布容器启动时投影（`mcp_app.tool_kwargs()`），快照不存。
         tools.append({
             "name": name,
+            "title": str(item.get("title") or ""),
+            "category": category,
+            "ontologyScope": {k: v for k, v in scope.items() if v is not None},
             "description": _description(item, on_name, note),
-            "inputSchema": input_schema,
+            "inputSchema": schema,
         })
     return on_name, tools
 

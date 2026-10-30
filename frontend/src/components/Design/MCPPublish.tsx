@@ -168,10 +168,10 @@ export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
         const ready = readyBehaviorNames(engines);
         setOptions({
           ontology_function: fns.filter(f => f?.name).map(f => ({
-            name: f.name, label: f.display_name ? `${f.display_name}（${f.name}）` : f.name, ready: true,
+            name: f.name, label: f.title ? `${f.title}（${f.name}）` : f.name, ready: true,
           })),
           behavior: bhs.filter(b => b?.name).map(b => ({
-            name: b.name, label: b.display_name ? `${b.display_name}（${b.name}）` : b.name,
+            name: b.name, label: b.title ? `${b.title}（${b.name}）` : b.name,
             ready: ready.has(b.name),
             hint: ready.has(b.name) ? undefined : '未完成数据引擎映射，未就绪',
           })),

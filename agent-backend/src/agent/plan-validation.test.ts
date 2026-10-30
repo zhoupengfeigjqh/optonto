@@ -97,7 +97,7 @@ function fakeGateway(): OntologyGatewayPort {
     getReadyBehaviorNames: () => ['QueryPurchaseRecords', 'CreatePurchaseRecord'],
     getFunctionNames: () => ['sumRawNotArrivalQty', 'calcSafetyStock'],
     getBehaviorMeta: (_scenario, _ontology, behavior) => ({
-      display_name: '',
+      title: '',
       params: behavior === 'CreatePurchaseRecord' ? { rawMaterialId: { required: true, type: 'string' } } : {},
       preRules: [],
       postRules: [],
@@ -106,7 +106,7 @@ function fakeGateway(): OntologyGatewayPort {
     }),
     getFunctionInfo: (_scenario, _ontology, fn) =>
       fn === 'sumRawNotArrivalQty'
-        ? { display_name: '', params: { purchaseRecordSet: { required: true, type: 'array' } } }
+        ? { title: '', params: { purchaseRecordSet: { required: true, type: 'array' } } }
         : null,
   };
 }

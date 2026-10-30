@@ -72,8 +72,8 @@ function makeDeps(over: Partial<Record<keyof AppDeps, any>> = {}): AppDeps {
   return {
     threadStore: over.threadStore ?? fakeStore(),
     skillLoader: over.skillLoader ?? {
-      listAllSkills: vi.fn(() => [{ name: 'skill-a', display_name: '技能A' }]),
-      listSkills: vi.fn(() => [{ name: 'skill-b', display_name: '技能B' }]),
+      listAllSkills: vi.fn(() => [{ name: 'skill-a', title: '技能A' }]),
+      listSkills: vi.fn(() => [{ name: 'skill-b', title: '技能B' }]),
     },
     mcpConfigStore: over.mcpConfigStore ?? { getConfig: vi.fn(() => ({ servers: [] })), saveConfig: vi.fn() },
     orchestrator: over.orchestrator ?? {

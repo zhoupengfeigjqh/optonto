@@ -116,7 +116,7 @@ describe('契约 §3 操作类型推导（isWrite）——2026-09-07 起引擎�
 describe('契约 §6 字段契约与旧格式迁移（spec 003）', () => {
   it('M1：行为旧 related_concepts 数组 → 标量 concept 参与概念解析', () => {
     writeOntology({
-      concepts: [{ name: 'C1', display_name: '概念一', attributes: [{ name: 'a', type: 'string' }] }],
+      concepts: [{ name: 'C1', title: '概念一', attributes: [{ name: 'a', type: 'string' }] }],
       behaviors: [{ name: 'B1', related_concepts: ['C1'] }],
     });
     expect(gateway.getBehaviorMeta(SC, ON, 'B1').concepts.map(c => c.name)).toEqual(['C1']);
@@ -125,8 +125,8 @@ describe('契约 §6 字段契约与旧格式迁移（spec 003）', () => {
   it('M2：行为新 concept 标量优先，旧数组被忽略', () => {
     writeOntology({
       concepts: [
-        { name: 'New', display_name: '新', attributes: [] },
-        { name: 'Old', display_name: '旧', attributes: [] },
+        { name: 'New', title: '新', attributes: [] },
+        { name: 'Old', title: '旧', attributes: [] },
       ],
       behaviors: [{ name: 'B1', concept: 'New', related_concepts: ['Old'] }],
     });
@@ -264,7 +264,7 @@ describe('契约 §7 判断函数解析（口径 B：类型即角色）', () => 
   });
 
   it('J3：getFunctionInfo 返回本体函数 type；公共函数 type 恒空串（不可能成为判断函数）', () => {
-    writeOntology({ functions: [{ name: 'checkU', type: 'VALIDATION', display_name: '单位校验' }] });
+    writeOntology({ functions: [{ name: 'checkU', type: 'VALIDATION', title: '单位校验' }] });
     expect(gateway.getFunctionInfo(SC, ON, 'checkU')?.type).toBe('VALIDATION');
     expect(gateway.getFunctionInfo(SC, ON, 'getCurrentDate')?.type).toBe('');
   });
@@ -339,8 +339,8 @@ describe('fail-closed：元数据不可用（unavailable）', () => {
     expect(meta.isWrite).toBe(true);
   });
 
-  it('F4：unavailable 时 display_name 兜底为行为名（执行记录不显示成空）', () => {
-    expect(gateway.getBehaviorMeta(SC, ON, 'CreatePurchaseRecord').display_name).toBe('CreatePurchaseRecord');
+  it('F4：unavailable 时 title 兜底为行为名（执行记录不显示成空）', () => {
+    expect(gateway.getBehaviorMeta(SC, ON, 'CreatePurchaseRecord').title).toBe('CreatePurchaseRecord');
   });
 
   it('F5：元数据可用 → 不置 unavailable（防误伤：正常本体行为完全不受影响）', () => {

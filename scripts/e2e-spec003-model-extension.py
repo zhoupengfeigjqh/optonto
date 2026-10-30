@@ -60,7 +60,7 @@ def main():
     # ── 批次 A ───────────────────────────────────────────────────────────
     print("\n== 1. 概念 + 术语集 + 生命周期状态属性 ==")
     s, _ = req("POST", f"{CORE}/ontologies/{oid}/concepts",
-               {"name": "PurchaseRecord", "display_name": "采购单", "description": "采购单",
+               {"name": "PurchaseRecord", "title": "采购单", "description": "采购单",
                 "terms": ["采购订单", "PO", "采购订单", " 采购单 "]})
     check("创建概念（术语集含重复/空白）", s in (200, 201), s)
     s, concepts = req("GET", f"{CORE}/ontologies/{oid}/concepts")
@@ -113,14 +113,14 @@ def main():
     print("\n== 3. 函数类型（英文码 + 值域归一） ==")
     fn = f"e2eCheckUnit_{ts}"
     s, f1 = req("POST", f"{CORE}/ontologies/{oid}/functions",
-                {"name": fn, "display_name": "单位校验", "description": "e2e",
+                {"name": fn, "title": "单位校验", "description": "e2e",
                  "related_concepts": ["PurchaseRecord"], "params": {"x": {"type": "string"}},
                  "response": {"pass": {"type": "boolean"}, "reason": {"type": "string"}}, "code_file": f"functions/{fn}.py",
                  "type": "VALIDATION"})
     check("创建函数（type=VALIDATION）", s in (200, 201) and f1.get("type") == "VALIDATION", (s, f1))
 
     s, f2 = req("POST", f"{CORE}/ontologies/{oid}/functions",
-                {"name": fn + "_b", "display_name": "非法类型", "description": "e2e",
+                {"name": fn + "_b", "title": "非法类型", "description": "e2e",
                  "related_concepts": [], "params": {}, "response": {},
                  "code_file": "", "type": "格式转换"})
     check("函数类型非法值归一为空串", s in (200, 201) and f2.get("type") == "", (s, f2))
@@ -128,7 +128,7 @@ def main():
     # ── 批次 B ───────────────────────────────────────────────────────────
     print("\n== 4. 行为状态跃迁（强耦合校验） ==")
     s, b1 = req("POST", f"{CORE}/ontologies/{oid}/behaviors",
-                {"name": "ReceiveRawMaterial", "display_name": "入库", "description": "入库",
+                {"name": "ReceiveRawMaterial", "title": "入库", "description": "入库",
                  "op_type": "command", "concept": "PurchaseRecord",
                  "from_status": "待入库", "to_status": "已入库",
                  "params": {}, "response": {}})
@@ -149,17 +149,17 @@ def main():
     check("声明状态但无关联概念 → 400", s == 400, (s, d))
 
     s, b2 = req("POST", f"{CORE}/ontologies/{oid}/behaviors",
-                {"name": "QueryPurchaseRecords", "display_name": "查采购单", "op_type": "query",
+                {"name": "QueryPurchaseRecords", "title": "查采购单", "op_type": "query",
                  "concept": "PurchaseRecord", "params": {"id": {"type": "string", "required": True}},
                  "response": {}})
     check("创建 query 行为（不填状态）", s in (200, 201) and b2.get("from_status") == "", (s, b2))
 
     print("\n== 5. 规则：绑定行为 + 关联函数（判断函数） ==")
     # 规则字段白名单：任何已废弃/遗留的字段都不允许出现（比逐字段断言更严）
-    allowed_rule_keys = {"name", "description", "display_name", "position",
+    allowed_rule_keys = {"name", "description", "title", "position",
                          "behavior", "related_functions", "data_supplements"}
     s, r1 = req("POST", f"{CORE}/ontologies/{oid}/rules",
-                {"name": "V01_UnitCheck", "display_name": "单位一致性校验", "description": "e2e",
+                {"name": "V01_UnitCheck", "title": "单位一致性校验", "description": "e2e",
                  "behavior": "ReceiveRawMaterial", "related_functions": [fn], "position": "前置"})
     check("创建规则（行为标量 + 关联函数）", s in (200, 201) and r1.get("behavior") == "ReceiveRawMaterial", (s, r1))
     check("规则字段无遗留键（仅白名单字段）", set(r1) <= allowed_rule_keys, sorted(r1))

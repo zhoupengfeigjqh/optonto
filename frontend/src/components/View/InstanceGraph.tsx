@@ -184,15 +184,15 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
             }
             if (value === undefined || value === null || value === '') continue;
 
-            const relLabel = rel.display_name || rel.name;
+            const relLabel = rel.title || rel.name;
             const all = queryBehaviorsOf(neighborConcept, false);
             const usable = queryBehaviorsOf(neighborConcept, true);
             if (all.length === 0) {
-              addReason(reasons, `概念「${conceptMap.get(neighborConcept)?.display_name || neighborConcept}」无可用查询行为，未展开`);
+              addReason(reasons, `概念「${conceptMap.get(neighborConcept)?.title || neighborConcept}」无可用查询行为，未展开`);
               continue;
             }
             if (usable.length === 0) {
-              addReason(reasons, `概念「${conceptMap.get(neighborConcept)?.display_name || neighborConcept}」的查询行为无权限，未展开`);
+              addReason(reasons, `概念「${conceptMap.get(neighborConcept)?.title || neighborConcept}」的查询行为无权限，未展开`);
               continue;
             }
             const behavior = usable.find(b => joinAttr in (b.params ?? {}));
@@ -219,7 +219,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
           if (!edges.has(edgeKey)) {
             edges.set(edgeKey, {
               source: s, target: t, relation: rel.name,
-              label: { show: true, formatter: rel.display_name || rel.name, color: '#c084fc', fontSize: 11 },
+              label: { show: true, formatter: rel.title || rel.name, color: '#c084fc', fontSize: 11 },
               lineStyle: { color: '#8b5cf6', width: 2, curveness: 0.2 },
             });
           }
@@ -233,7 +233,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
         const nextFrontier: Instance[] = [];
         results.forEach((res, i) => {
           const t = tasks[i];
-          const relLabel = t.relation.display_name || t.relation.name;
+          const relLabel = t.relation.title || t.relation.name;
           if (res.status === 'rejected') {
             addReason(reasons, `关系「${relLabel}」查询失败：${res.reason?.message ?? '未知错误'}`);
             return;
@@ -243,7 +243,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
             if (!key) continue; // 空行丢弃
             const conceptCount = [...nodes.values()].filter(n => n.concept === t.neighborConcept).length;
             if (!nodes.has(key) && conceptCount >= MAX_PER_CONCEPT) {
-              addReason(reasons, `概念「${conceptMap.get(t.neighborConcept)?.display_name || t.neighborConcept}」节点超过 ${MAX_PER_CONCEPT}，截断`);
+              addReason(reasons, `概念「${conceptMap.get(t.neighborConcept)?.title || t.neighborConcept}」节点超过 ${MAX_PER_CONCEPT}，截断`);
               continue;
             }
             if (!nodes.has(key)) {
@@ -319,7 +319,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
     const conceptList = [...new Set([...nodesRef.current.values()].map(n => n.concept))];
     const catIndex = new Map(conceptList.map((c, i) => [c, i]));
     const categories = conceptList.map((c, i) => ({
-      name: conceptMap.get(c)?.display_name || c,
+      name: conceptMap.get(c)?.title || c,
       itemStyle: { color: CONCEPT_COLORS[i % CONCEPT_COLORS.length] },
     }));
     const nodes = [...nodesRef.current.values()].map(n => ({
@@ -369,7 +369,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
           placeholder="选择概念"
           value={conceptName}
           onChange={v => { setConceptName(v); setBehaviorName(null); setParamValues({}); setResultRows(null); setSelectedKeys([]); }}
-          options={startConcepts.map(c => ({ value: c.name, label: c.display_name || c.name }))}
+          options={startConcepts.map(c => ({ value: c.name, label: c.title || c.name }))}
         />
         <Select
           style={{ width: 200 }}
@@ -377,13 +377,13 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
           value={behaviorName}
           disabled={!conceptName}
           onChange={v => { setBehaviorName(v); setParamValues({}); }}
-          options={usableBehaviors.map(b => ({ value: b.name, label: b.display_name || b.name }))}
+          options={usableBehaviors.map(b => ({ value: b.name, label: b.title || b.name }))}
         />
         {currentBehavior && Object.entries(currentBehavior.params ?? {}).map(([pName, spec]: [string, any]) => (
           spec?.type === 'number' ? (
             <InputNumber
               key={pName}
-              placeholder={spec?.display_name || pName}
+              placeholder={spec?.title || pName}
               value={paramValues[pName]}
               onChange={v => setParamValues(prev => ({ ...prev, [pName]: v }))}
               style={{ width: 150 }}
@@ -391,7 +391,7 @@ export default memo(function InstanceGraph({ ontologyId }: Props) {
           ) : (
             <Input
               key={pName}
-              placeholder={spec?.display_name || pName}
+              placeholder={spec?.title || pName}
               value={paramValues[pName]}
               onChange={e => setParamValues(prev => ({ ...prev, [pName]: e.target.value }))}
               style={{ width: 150 }}

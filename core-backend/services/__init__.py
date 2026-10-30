@@ -69,7 +69,7 @@ def _get_securities_path(scenario_name: str, ontology_name: str) -> Path:
 
     安全管控（权限范围/人工确认）是运行面治理配置，与本体语义模型职责不同、
     变更频率不同，单独存放；文件为全花名册（每行为一条六字段记录），保存时
-    自动同步行为增删并刷新 display_name/op_type 快照；ontology.yaml 中的
+    自动同步行为增删并刷新 title/op_type 快照；ontology.yaml 中的
     securities 段仅作迁移前的读时兼容回退，保存后固定清空（单一权威来源）。
     """
     return get_ontology_dir(scenario_name, ontology_name) / "securities.yaml"
@@ -138,7 +138,7 @@ def _resolve_op_type(behavior) -> str:
 def _sync_securities_roster(data: OntologyData) -> list[SecurityItem]:
     """全花名册同步：每个行为恒定一条记录。
 
-    已有条目保留 scope/confirm/confirm_content 配置，display_name/op_type 快照强制刷新；
+    已有条目保留 scope/confirm/confirm_content 配置，title/op_type 快照强制刷新；
     新行为补默认条目（scope=everyone，confirm=command?True:False）；已删行为的条目移除。
     """
     existing = {s.action_name: s for s in data.securities}
@@ -148,7 +148,8 @@ def _sync_securities_roster(data: OntologyData) -> list[SecurityItem]:
         sec = existing.get(b.name)
         if sec is None:
             sec = SecurityItem(action_name=b.name, scope=["everyone"], confirm=(op == "command"), confirm_content="")
-        sec.display_name = b.display_name or b.name
+        # 中文名快照只取行为 title：空就是空，绝不把英文 name 写进"中文名"字段
+        sec.title = b.title
         sec.op_type = op
         roster.append(sec)
     return roster
@@ -230,13 +231,21 @@ def _stamp_identity_metadata(data: OntologyData, scenario_name: str, ontology_na
 
 
 def _compact_concept_relations(ontology_dict: dict) -> None:
-    """概念关系条目去掉空串字段（SubClassOf 锚点只保留两端属性，避免与派生值重复落盘）。"""
+    """概念关系条目去掉空串字段（SubClassOf 锚点只保留两端属性，避免与派生值重复落盘）。
+
+    SubClassOf 的 ``title`` / ``description`` 由概念设计**读时派生**（见
+    ``services.concept_relations.derived_sub_class_rows``），落盘值永不回读，
+    故无论空非空一律不写——否则就是"写而不读"的死数据。
+    """
     rows = ontology_dict.get("concept_relations")
     if not rows:
         return
     for row in rows:
         if not isinstance(row, dict):
             continue
+        if row.get("relation_type") == "SubClassOf":
+            row.pop("title", None)
+            row.pop("description", None)
         for key in [k for k, v in row.items() if v == ""]:
             row.pop(key)
 
@@ -249,7 +258,7 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     _stamp_identity_metadata(data, scenario_name, ontology_name)
 
     # 数据引擎/安全管控拆写到独立文件；ontology.yaml 彻底不含这两个键（唯一权威来源 = 独立文件）。
-    # 安全管控先做全花名册同步（补新行为默认条目、刷新 display_name/op_type 快照、移除已删行为），
+    # 安全管控先做全花名册同步（补新行为默认条目、刷新 title/op_type 快照、移除已删行为），
     # 并回写 data.securities 让调用方在同一请求内读到同步后的结果。
     # 用 model_copy 避免改动调用方对象的其他部分（路由在 save 后仍可能读取 data.data_engines）。
     engines = data.data_engines

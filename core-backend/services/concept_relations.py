@@ -64,12 +64,12 @@ def derived_sub_class_rows(data: OntologyData) -> list[ConceptRelationItem]:
             continue
         parent = _concept_of(data, parent_name)
         stored = links.get((c.name, parent_name))
-        child_display = c.display_name or c.name
-        parent_display = (parent.display_name if parent else "") or parent_name
+        child_display = c.title or c.name
+        parent_display = (parent.title if parent else "") or parent_name
         rows.append(
             ConceptRelationItem(
                 name=sub_class_name(c.name, parent_name),
-                display_name=sub_class_display(child_display, parent_display),
+                title=sub_class_display(child_display, parent_display),
                 relation_type=SUB_CLASS_OF,
                 source=c.name,
                 target=parent_name,

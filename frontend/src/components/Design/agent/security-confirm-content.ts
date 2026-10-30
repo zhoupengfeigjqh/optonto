@@ -14,7 +14,7 @@ export interface ConfirmRow {
 
 /**
  * 从行为 params 构建参数行。
- * - 值为对象时视为参数声明（取 value/description/required），否则按标量展示
+ * - 值为对象时视为参数声明（取 value/title/required），中文名**只认 title**（description 是补充说明）
  * - 对象值序列化为 JSON 字符串，避免渲染出 [object Object]
  */
 export function buildConfirmRows(params: Record<string, any> | null | undefined): ConfirmRow[] {
@@ -24,7 +24,7 @@ export function buildConfirmRows(params: Record<string, any> | null | undefined)
     const value = typeof raw === 'object' ? JSON.stringify(raw) : raw;
     return {
       key,
-      name: spec?.description || key,
+      name: spec?.title || key,
       value,
       required: !!(spec && spec.required),
       empty: value === '' || value === null || value === undefined,

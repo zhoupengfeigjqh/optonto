@@ -16,6 +16,7 @@ from starlette.testclient import TestClient
 
 from mcp_app import (
     TRANSPORT_BOTH, TRANSPORT_NONE, TRANSPORT_SSE, TRANSPORT_STREAMABLE, build_mcp_app,
+    tool_kwargs,
 )
 
 _SERVER = Server("test-mcp")
@@ -120,3 +121,61 @@ def test_health与鉴权发现端点放行():
     assert client.get("/health").status_code == 200
     assert client.get("/.well-known/oauth-authorization-server").status_code == 200
     assert client.post("/register").status_code == 200
+
+
+# ─── 工具级字段 → 协议字段 + 扩展键投影（2026-10-30 反转）──────────────────────
+
+def test_工具级字段投影成协议title与扩展键():
+    """一个值两种落点：``Tool.title`` 给外部客户端，``x-`` 扩展键给平台自己。"""
+    scope = {"ontology_id": 1, "scenario_id": 1, "scenario_name": "生产调度", "ontology_name": None}
+    kw = tool_kwargs({"type": "object", "properties": {}}, title="计算订单金额",
+                     category="本体函数", scope=scope)
+    assert kw["title"] == "计算订单金额"
+    assert kw["inputSchema"]["x-title"] == "计算订单金额"
+    assert kw["inputSchema"]["x-category"] == "本体函数"
+    assert kw["inputSchema"]["x-ontology-scope"] == \
+        {"ontology_id": 1, "scenario_id": 1, "scenario_name": "生产调度"}   # 缺省键省略
+    assert kw["inputSchema"]["properties"] == {}                            # 参数面不被污染
+
+
+def test_只给类别时也投影():
+    kw = tool_kwargs({"type": "object"}, title="查询场景清单", category="本体查询")
+    assert kw["inputSchema"]["x-category"] == "本体查询"
+    assert "x-ontology-scope" not in kw["inputSchema"]
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_无中文名时协议字段与投影都不产出(blank):
+    """不写空串、不拿英文名兜底；老快照残留的 x-title 也要清掉（单一写入点说了算）。"""
+    kw = tool_kwargs({"type": "object", "x-title": "旧值"}, title=blank)
+    assert "title" not in kw
+    assert "x-title" not in kw["inputSchema"]
+
+
+def test_无类别无归属时清掉残留扩展键():
+    kw = tool_kwargs({"type": "object", "x-category": "旧", "x-ontology-scope": {"ontology_id": 1}})
+    assert "x-category" not in kw["inputSchema"]
+    assert "x-ontology-scope" not in kw["inputSchema"]
+
+
+def test_sdk不支持title时只丢协议字段_内部投影照旧(monkeypatch):
+    """外部兼容问题不传染内部：老 SDK 上平台仍能读到中文名。"""
+    monkeypatch.setattr("mcp_app._SUPPORTS_TOOL_TITLE", False)
+    kw = tool_kwargs({"type": "object"}, title="查询场景清单", category="本体查询")
+    assert "title" not in kw
+    assert kw["inputSchema"]["x-title"] == "查询场景清单"
+    assert kw["inputSchema"]["x-category"] == "本体查询"
+
+
+def test_运维工具清单回显title():
+    """/tools 是运维自检口，须回显客户端能看到的同一份 title。"""
+    tools = [Tool(name="ping", title="探活", description="探活工具",
+                  inputSchema={"type": "object", "properties": {}})]
+    app = build_mcp_app(_SERVER, lambda: _async_list(tools), "test-mcp", transport=TRANSPORT_NONE)
+    listing = TestClient(app).get("/tools").json()
+    assert listing[0]["title"] == "探活"
+    assert _client(TRANSPORT_NONE).get("/tools").json()[0]["title"] is None  # 未设则 null
+
+
+async def _async_list(tools):
+    return list(tools)

@@ -9,30 +9,30 @@ concepts:
   attributes:
   - name: 订单编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 订单名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 订单批次号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 订单缓冲周期
     type: int
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 订单类型
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 订单
+  title: 订单
   instance_label: ''
   terms: []
 - name: OrderDetail
@@ -40,40 +40,40 @@ concepts:
   attributes:
   - name: 订单编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 货品编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 货品名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 起排日期
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 截止日期
     type: date
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 交付数量
     type: int
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 优先级
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 订单明细
+  title: 订单明细
   instance_label: ''
   terms: []
 - name: Product
@@ -81,60 +81,60 @@ concepts:
   attributes:
   - name: 货品编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 货品名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 货品大类
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 物料类型
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 主单位
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 副单位
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 主副单位换算比
     type: float
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 管理部门
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 生产部门
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 预设仓库
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 规格
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 货品
+  title: 货品
   instance_label: ''
   terms: []
 - name: BOMInfo
@@ -142,30 +142,30 @@ concepts:
   attributes:
   - name: BOM编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: BOM名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 货品编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 货品名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: BOM版本
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: BOM基本信息
+  title: BOM基本信息
   instance_label: ''
   terms: []
 - name: SchedTask
@@ -173,40 +173,40 @@ concepts:
   attributes:
   - name: 订单编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 订单名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产任务编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产任务名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产任务描述
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产场景
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 任务状态
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 排产任务
+  title: 排产任务
   instance_label: ''
   terms: []
 - name: SchedResult
@@ -214,70 +214,70 @@ concepts:
   attributes:
   - name: 排产任务编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产任务名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产场景
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 方案名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 方案状态
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 总产品数量
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 总工序数量
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 平均生产周期
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 延期工件数量
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 延期率
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 总加工成本
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 总利润
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 设备平均利用率
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 排产结果
+  title: 排产结果
   instance_label: ''
   terms: []
 - name: ShortageDetail
@@ -285,30 +285,30 @@ concepts:
   attributes:
   - name: 排产任务编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产任务名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产场景
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 原材料编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 原材料名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 欠料明细
+  title: 欠料明细
   instance_label: ''
   terms: []
 - name: AlgoParams
@@ -316,45 +316,45 @@ concepts:
   attributes:
   - name: 排产任务编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产任务名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 排产方式
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 设备利用率目标
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 订单交期目标
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 加工成本最低
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 使用剩余产能
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 附件转换率最低
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 算法参数
+  title: 算法参数
   instance_label: ''
   terms: []
 relations:
@@ -365,7 +365,7 @@ relations:
   source_attr: 订单编号
   target_attr: 订单编号
   description: 1个订单含多个明细项
-  display_name: 包含明细
+  title: 包含明细
   relation_type:
   - inverse_functional
 - name: hasProduct
@@ -375,7 +375,7 @@ relations:
   source_attr: 货品编号
   target_attr: 货品编号
   description: 1个订单明细只包含1个货品
-  display_name: 关联货品
+  title: 关联货品
   relation_type:
   - functional
 - name: hasBOM
@@ -385,7 +385,7 @@ relations:
   source_attr: 货品编号
   target_attr: 货品编号
   description: 1个货品有1个BOM
-  display_name: 包含BOM
+  title: 包含BOM
   relation_type:
   - functional
   - inverse_functional
@@ -396,7 +396,7 @@ relations:
   source_attr: 订单编号
   target_attr: 订单编号
   description: 1个订单可以产生多个排产任务
-  display_name: 驱动排产
+  title: 驱动排产
   relation_type:
   - inverse_functional
 - name: producesPlan
@@ -406,7 +406,7 @@ relations:
   source_attr: 排产任务编号
   target_attr: 排产任务编号
   description: 1个排产任务产出1个排产结果
-  display_name: 产出结果
+  title: 产出结果
   relation_type:
   - functional
   - inverse_functional
@@ -417,7 +417,7 @@ relations:
   source_attr: 排产任务编号
   target_attr: 排产任务编号
   description: 1个排产结果对应多个原料欠料明细
-  display_name: 包含欠料
+  title: 包含欠料
   relation_type:
   - inverse_functional
 - name: hasScheduleParams
@@ -427,7 +427,7 @@ relations:
   source_attr: 排产任务编号
   target_attr: 排产任务编号
   description: 1个排产任务有1组算法参数
-  display_name: 包含参数
+  title: 包含参数
   relation_type:
   - functional
   - inverse_functional
@@ -438,7 +438,7 @@ relations:
   source_attr: 排产任务编号
   target_attr: 排产任务编号
   description: 排产任务的版本派生关系
-  display_name: 版本派生
+  title: 版本派生
   relation_type:
   - asymmetric
   - transitive
@@ -451,23 +451,23 @@ behaviors:
   params:
     orderName:
       type: string
+      title: 订单名称
       required: true
-      description: ''
     orderBatch:
       type: string
+      title: 订单批次号
       required: true
-      description: ''
     orderType:
       type: string
+      title: 订单类型
       required: true
-      description: ''
     orderDetails:
       type: array
+      title: 订单明细
       required: true
-      description: ''
   response: {}
   concept: Order
-  display_name: 创建订单
+  title: 创建订单
   from_status: ''
   to_status: ''
 - name: UpdateOrder
@@ -476,13 +476,13 @@ behaviors:
   params:
     orderId:
       type: string
-      description: ''
+      title: 订单编号
     orderName:
       type: string
-      description: ''
+      title: 订单名称
   response: {}
   concept: Order
-  display_name: 更新订单
+  title: 更新订单
   from_status: ''
   to_status: ''
 - name: DeleteOrder
@@ -491,10 +491,10 @@ behaviors:
   params:
     orderId:
       type: string
-      description: ''
+      title: 订单编号
   response: {}
   concept: Order
-  display_name: 删除订单
+  title: 删除订单
   from_status: ''
   to_status: ''
 - name: QueryOrder
@@ -503,13 +503,13 @@ behaviors:
   params:
     orderId:
       type: string
-      description: ''
+      title: 订单编号
     orderName:
       type: string
-      description: ''
+      title: 订单名称
   response: {}
   concept: Order
-  display_name: 查询订单
+  title: 查询订单
   from_status: ''
   to_status: ''
 - name: CreateSchedTask
@@ -518,10 +518,10 @@ behaviors:
   params:
     orderId:
       type: string
-      description: ''
+      title: 订单编号
   response: {}
   concept: Order
-  display_name: 创建排产任务
+  title: 创建排产任务
   from_status: ''
   to_status: ''
 - name: AddSchedTask
@@ -530,13 +530,13 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
     scenario:
       type: string
-      description: ''
+      title: 排产场景
   response: {}
   concept: SchedTask
-  display_name: 新增排产任务
+  title: 新增排产任务
   from_status: ''
   to_status: ''
 - name: CreateAlgoParams
@@ -545,10 +545,10 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
   response: {}
   concept: SchedTask
-  display_name: 创建算法参数
+  title: 创建算法参数
   from_status: ''
   to_status: ''
 - name: StartSchedTask
@@ -557,10 +557,10 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
   response: {}
   concept: SchedTask
-  display_name: 启动排产任务
+  title: 启动排产任务
   from_status: ''
   to_status: ''
 - name: QuerySchedTask
@@ -569,13 +569,13 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
     orderId:
       type: string
-      description: ''
+      title: 订单编号
   response: {}
   concept: SchedTask
-  display_name: 查询排产任务
+  title: 查询排产任务
   from_status: ''
   to_status: ''
 - name: QuerySchedResult
@@ -584,13 +584,13 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
     orderId:
       type: string
-      description: ''
+      title: 订单编号
   response: {}
   concept: SchedResult
-  display_name: 查询排产结果
+  title: 查询排产结果
   from_status: ''
   to_status: ''
 - name: DeploySchedResult
@@ -599,10 +599,10 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
   response: {}
   concept: SchedTask
-  display_name: 排产结果下发
+  title: 排产结果下发
   from_status: ''
   to_status: ''
 - name: RecallSchedResult
@@ -611,10 +611,10 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
   response: {}
   concept: SchedTask
-  display_name: 排产结果撤回
+  title: 排产结果撤回
   from_status: ''
   to_status: ''
 - name: QueryShortage
@@ -623,13 +623,13 @@ behaviors:
   params:
     scheduleId:
       type: string
-      description: ''
+      title: 排产任务编号
     orderId:
       type: string
-      description: ''
+      title: 订单编号
   response: {}
   concept: ShortageDetail
-  display_name: 查询欠料明细
+  title: 查询欠料明细
   from_status: ''
   to_status: ''
 - name: StartPollingTask
@@ -638,19 +638,19 @@ behaviors:
   params:
     scheduleId:
       type: string
+      title: 排产任务编号
       required: true
-      description: ''
     intervalMinutes:
       type: number
+      title: 轮询间隔（分钟）
       required: true
-      description: ''
     checkCnt:
       type: number
+      title: 轮询次数
       required: true
-      description: ''
   response: {}
   concept: SchedTask
-  display_name: 启动定时查询
+  title: 启动定时查询
   from_status: ''
   to_status: ''
 rules:
@@ -658,105 +658,105 @@ rules:
   description: 订单明细.类型 只能是询单或销售二选一
   behavior: CreateOrder
   related_functions: []
-  display_name: 订单类型校验
+  title: 订单类型校验
   position: 前置
   data_supplements: []
 - name: ProductExistsValid
   description: 订单明细.货品编号和货品名称 必须存在于 货品
   behavior: CreateOrder
   related_functions: []
-  display_name: 货品存在性校验
+  title: 货品存在性校验
   position: ''
   data_supplements: []
 - name: DueDateValid
   description: 订单明细.截止日期 > 订单明细.起排日期
   behavior: CreateOrder
   related_functions: []
-  display_name: 截止日期约束
+  title: 截止日期约束
   position: ''
   data_supplements: []
 - name: QtyValid
   description: 订单明细.交付数量 > 0
   behavior: CreateOrder
   related_functions: []
-  display_name: 交付数量约束
+  title: 交付数量约束
   position: ''
   data_supplements: []
 - name: PriorityValid
   description: 订单明细.优先级 只能是按期交付或可延期交付
   behavior: CreateOrder
   related_functions: []
-  display_name: 优先级约束
+  title: 优先级约束
   position: ''
   data_supplements: []
 - name: NoSchedOnUpdate
   description: 订单更新时，该订单必须未创建排产任务，否则拒绝
   behavior: UpdateOrder
   related_functions: []
-  display_name: 未排产约束（更新）
+  title: 未排产约束（更新）
   position: ''
   data_supplements: []
 - name: NoSchedOnDelete
   description: 订单删除时，该订单必须未创建排产任务，否则拒绝
   behavior: DeleteOrder
   related_functions: []
-  display_name: 未排产约束（删除）
+  title: 未排产约束（删除）
   position: ''
   data_supplements: []
 - name: SchedUniqueValid
   description: 创建排产任务时，该订单只能创建一次排产任务
   behavior: CreateSchedTask
   related_functions: []
-  display_name: 排产唯一性约束
+  title: 排产唯一性约束
   position: ''
   data_supplements: []
 - name: AddSchedStateValid
   description: 新增排产任务时，排产任务状态需为已排产
   behavior: AddSchedTask
   related_functions: []
-  display_name: 新增任务状态约束
+  title: 新增任务状态约束
   position: ''
   data_supplements: []
 - name: StartSchedStateValid
   description: 启动排产任务时，该任务还未开启过排产
   behavior: StartSchedTask
   related_functions: []
-  display_name: 启动任务状态约束
+  title: 启动任务状态约束
   position: ''
   data_supplements: []
 - name: DeployStateValid
   description: 排产结果下发时，排产任务为已排产，方案状态为未锁定
   behavior: DeploySchedResult
   related_functions: []
-  display_name: 下发状态约束
+  title: 下发状态约束
   position: ''
   data_supplements: []
 - name: RecallStateValid
   description: 排产结果撤回时，方案状态为已下发
   behavior: RecallSchedResult
   related_functions: []
-  display_name: 撤回状态约束
+  title: 撤回状态约束
   position: ''
   data_supplements: []
 - name: CanAddAfterSched
   description: 排产任务.任务状态=已排产 -> 可新增场景任务
   behavior: QuerySchedTask
   related_functions: []
-  display_name: 已排产可新增任务
+  title: 已排产可新增任务
   position: ''
   data_supplements: []
 - name: PromptSchedAfterOrder
   description: 订单创建成功 -> 提示可对该订单创建排产任务
   behavior: CreateOrder
   related_functions: []
-  display_name: 创建后提示排产
+  title: 创建后提示排产
   position: ''
   data_supplements: []
 - name: PromptWaitAfterStart
   description: 排产任务启动 -> 提示等待结果
   behavior: StartSchedTask
   related_functions: []
-  display_name: 启动后提示等待
+  title: 启动后提示等待
   position: ''
   data_supplements: []
 processes: []

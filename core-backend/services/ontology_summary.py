@@ -46,12 +46,12 @@ def build(data) -> str:
     # 有效属性 = 自有 ∪ 继承（spec 005）：继承项标注来源，避免 LLM 误以为可通过行为直接写入
     effective = effective_map(data.concepts)
     for c in data.concepts:
-        lines.append(f"  - {c.name}（{c.display_name or ''}）: {c.description or ''}")
+        lines.append(f"  - {c.name}（{c.title or ''}）: {c.description or ''}")
         for ra in effective.get(c.name, []):
             a = ra.attribute
             origin = "自有" if ra.inherited_from == c.name else f"继承自 {ra.inherited_from}"
             lines.append(
-                f"    属性: {a.name} ({a.type}) 展示名={a.display_name or '-'} "
+                f"    属性: {a.name} ({a.type}) 中文名={a.title or '-'} "
                 f"约束={format_constraint(a.constraint)}（{origin}）"
             )
     lines.append(f"\n关系（{len(data.relations)}个）:")
@@ -59,15 +59,15 @@ def build(data) -> str:
         link = f", 关联: {r.source}.{r.source_attr} = {r.target}.{r.target_attr}" if r.source_attr and r.target_attr else ""
         rtypes = "、".join(RELATION_TYPE_LABELS.get(t, t) for t in (r.relation_type or []))
         type_txt = f", 类型: {rtypes}" if rtypes else ""
-        lines.append(f"  - {r.name}（{r.display_name or ''}）: {r.source} -> {r.target} ({r.cardinality}{link}{type_txt}) {r.description or ''}")
+        lines.append(f"  - {r.name}（{r.title or ''}）: {r.source} -> {r.target} ({r.cardinality}{link}{type_txt}) {r.description or ''}")
     lines.append(f"\n行为（{len(data.behaviors)}个）:")
     for b in data.behaviors:
-        lines.append(f"  - {b.name}（{b.display_name or ''}）: {b.description or ''}")
+        lines.append(f"  - {b.name}（{b.title or ''}）: {b.description or ''}")
         lines.append(f"    params: {json.dumps(b.params, ensure_ascii=False, default=str)}")
         lines.append(f"    response: {json.dumps(b.response, ensure_ascii=False, default=str)}")
     lines.append(f"\n流程（{len(data.processes)}个）:")
     for p in data.processes:
-        lines.append(f"  - {p.name}（{p.display_name or ''}）: {p.goal or ''}")
+        lines.append(f"  - {p.name}（{p.title or ''}）: {p.goal or ''}")
         for step in (p.steps or []):
             lines.append(f"    step: {step.current_action}（{step.description or ''}）衔接={step.connection_type}")
     return "\n".join(lines)

@@ -5,7 +5,7 @@ import { config } from '../config.js';
 /** 公共函数定义（.data/common_functions/functions.json 单条，含参数声明 inputSchema）。 */
 export interface CommonFunction {
   name: string;
-  display_name?: string;
+  title?: string;
   description?: string;
   /** 标准 JSON Schema：{type, properties, required:[数组]}，与本体函数"内联 required:boolean"的源形式不同 */
   inputSchema?: { type: string; properties?: Record<string, any>; required?: string[] };
@@ -29,6 +29,8 @@ export function schemaToDeclaredParams(schema: any): Record<string, any> {
   for (const [k, v] of Object.entries(props)) {
     if (!v || typeof v !== 'object') continue;
     const spec: Record<string, any> = { type: v.type };
+    // 中文名落在 JSON Schema 的 title 上（spec 006），必须透传，否则目录/表单只能显示英文参数名
+    if (typeof v.title === 'string' && v.title) spec.title = v.title;
     if (typeof v.description === 'string' && v.description) spec.description = v.description;
     if (v.example !== undefined && v.example !== '') spec.example = v.example;
     if (v.type === 'array' && v.items && typeof v.items === 'object') {
@@ -93,11 +95,11 @@ export function getCommonFunctionNames(): string[] {
  * FunctionCatalog 文件兜底模式的②数据源；meta/params 单点取数，不再两次查找。
  * params 恒为对象：{} = 无声明（等价旧 getCommonFunctionParams 对无 inputSchema 返回空声明放行的语义）。
  */
-export function getCommonFunctionInfo(functionName: string): { display_name: string; description?: string; params: Record<string, any> } | null {
+export function getCommonFunctionInfo(functionName: string): { title: string; description?: string; params: Record<string, any> } | null {
   const fn = loadCommonFunctions().find(f => f.name === functionName);
   if (!fn) return null;
   return {
-    display_name: fn.display_name || fn.description || '',
+    title: fn.title || '',
     description: fn.description,
     params: (fn.inputSchema && typeof fn.inputSchema === 'object') ? schemaToDeclaredParams(fn.inputSchema) : {},
   };

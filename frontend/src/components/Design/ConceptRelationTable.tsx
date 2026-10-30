@@ -52,17 +52,17 @@ export default function ConceptRelationTable({ ontologyId, activeTab }: Props) {
   useEffect(() => { if (activeTab === 'relations') load(); }, [ontologyId, activeTab]);
 
   const isEditing = (record: ConceptRelation) => record.name === editingKey;
-  const conceptOptions = concepts.map(c => ({ label: c.display_name || c.name, value: c.name }));
+  const conceptOptions = concepts.map(c => ({ label: c.title || c.name, value: c.name }));
 
   const attrOptions = (conceptName?: string) =>
     effectiveAttributes(concepts.find(c => c.name === conceptName))
-      .map(a => ({ label: `${a.display_name || a.name}（${a.type}）`, value: a.name }));
+      .map(a => ({ label: `${a.title || a.name}（${a.type}）`, value: a.name }));
   const attrType = (conceptName?: string, attrName?: string) =>
     effectiveAttributes(concepts.find(c => c.name === conceptName)).find(a => a.name === attrName)?.type;
 
   const handleAdd = () => {
     setEditData({
-      name: '', display_name: '', relation_type: 'EquivalentClass',
+      name: '', title: '', relation_type: 'EquivalentClass',
       source: undefined, target: undefined,
       source_attr: undefined, target_attr: undefined, description: '',
     });
@@ -71,7 +71,7 @@ export default function ConceptRelationTable({ ontologyId, activeTab }: Props) {
   };
   const handleEdit = (r: ConceptRelation) => {
     setEditData({
-      name: r.name, display_name: r.display_name || '', relation_type: r.relation_type,
+      name: r.name, title: r.title || '', relation_type: r.relation_type,
       source: r.source, target: r.target,
       source_attr: r.source_attr || undefined, target_attr: r.target_attr || undefined,
       description: r.description || '',
@@ -122,7 +122,7 @@ export default function ConceptRelationTable({ ontologyId, activeTab }: Props) {
     const payload: ConceptRelation = {
       // SubClassOf 的名称/端点/类型由后端派生，这里原样回传仅作占位
       name: derived ? record.name : (editData.name || '').trim(),
-      display_name: derived ? (record.display_name || '') : (editData.display_name?.trim() || ''),
+      title: derived ? (record.title || '') : (editData.title?.trim() || ''),
       relation_type: (derived ? 'SubClassOf' : editData.relation_type) as ConceptRelationType,
       source: editData.source,
       target: editData.target,
@@ -154,10 +154,10 @@ export default function ConceptRelationTable({ ontologyId, activeTab }: Props) {
 
   const linkAttrText = (r: ConceptRelation) => {
     if (!r.source_attr || !r.target_attr) return '-';
-    const conceptName = (n: string) => concepts.find(c => c.name === n)?.display_name || n;
+    const conceptName = (n: string) => concepts.find(c => c.name === n)?.title || n;
     const attrName = (cn: string, an: string) => {
       const a = effectiveAttributes(concepts.find(c => c.name === cn)).find(x => x.name === an);
-      return a?.display_name || an;
+      return a?.title || an;
     };
     return `${conceptName(r.source)}.${attrName(r.source, r.source_attr)} = ${conceptName(r.target)}.${attrName(r.target, r.target_attr)}`;
   };
@@ -172,7 +172,7 @@ export default function ConceptRelationTable({ ontologyId, activeTab }: Props) {
     if (!editing && !isNew) return render ? render(val) : (val || '-');
 
     if (dataIndex === 'name') return <Input size="small" placeholder="如 DraftOrderDisjointWithSubmittedOrder" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
+    if (dataIndex === 'title') return <Input size="small" value={editData.title || ''} onChange={e => setEditData(p => ({...p, title: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'source') return <Select size="small" placeholder="选择" options={conceptOptions} value={editData.source} onChange={v => setEditData(p => ({...p, source: v, source_attr: undefined}))} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'target') return <Select size="small" placeholder="选择" options={conceptOptions} value={editData.target} onChange={v => setEditData(p => ({...p, target: v, target_attr: undefined}))} style={{width:"100%"}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'relation_type') {
@@ -194,16 +194,16 @@ export default function ConceptRelationTable({ ontologyId, activeTab }: Props) {
   if (editingKey === '__new__') {
     dataSource.push({
       _key: '__new__',
-      name: '__new__', display_name: '', relation_type: 'EquivalentClass',
+      name: '__new__', title: '', relation_type: 'EquivalentClass',
       source: '', target: '', source_attr: '', target_attr: '', description: '',
     } as any);
   }
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 200, ellipsis: true, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'name') },
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120, ellipsis: true, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
-    { title: '源概念', dataIndex: 'source', key: 'source', width: 110, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'source', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
-    { title: '目标概念', dataIndex: 'target', key: 'target', width: 110, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'target', (v2: string) => concepts.find(c => c.name === v2)?.display_name || v2 || '-') },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 120, ellipsis: true, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'title', (v2: string) => v2 || '-') },
+    { title: '源概念', dataIndex: 'source', key: 'source', width: 110, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'source', (v2: string) => concepts.find(c => c.name === v2)?.title || v2 || '-') },
+    { title: '目标概念', dataIndex: 'target', key: 'target', width: 110, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'target', (v2: string) => concepts.find(c => c.name === v2)?.title || v2 || '-') },
     { title: '关系类型', dataIndex: 'relation_type', key: 'relation_type', width: 140, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'relation_type', (v2: string) => TYPE_LABELS[v2] || v2 || '-') },
     { title: '关联概念属性', dataIndex: 'link_attr', key: 'link_attr', width: 220, ellipsis: true, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'link_attr', () => linkAttrText(r)) },
     { title: '描述', dataIndex: 'description', key: 'description', width: 220, ellipsis: true, render: (v: any, r: ConceptRelation) => renderCell(v, r, 'description') },

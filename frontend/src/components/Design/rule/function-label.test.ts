@@ -6,28 +6,28 @@ import { functionLabel, functionLabelParts } from './function-label';
 
 describe('functionLabel — 关联函数展示口径', () => {
   it('本体函数显示「中文名-预设类型」', () => {
-    expect(functionLabel({ name: 'checkRawMaterialUnit', display_name: '校验采购原材料单位一致性', type: 'VALIDATION' }, 'checkRawMaterialUnit'))
+    expect(functionLabel({ name: 'checkRawMaterialUnit', title: '校验采购原材料单位一致性', type: 'VALIDATION' }, 'checkRawMaterialUnit'))
       .toBe('校验采购原材料单位一致性-逻辑验证');
-    expect(functionLabel({ name: 'sumRawNotArrivalQty', display_name: '原材料未到位数', type: 'CALCULATION' }, 'sumRawNotArrivalQty'))
+    expect(functionLabel({ name: 'sumRawNotArrivalQty', title: '原材料未到位数', type: 'CALCULATION' }, 'sumRawNotArrivalQty'))
       .toBe('原材料未到位数-指标计算');
   });
 
   it('公共函数类型恒为「公共」', () => {
-    expect(functionLabel({ name: 'getCurrentDate', display_name: '当前日期', origin: 'common' }, 'getCurrentDate'))
+    expect(functionLabel({ name: 'getCurrentDate', title: '当前日期', origin: 'common' }, 'getCurrentDate'))
       .toBe('当前日期-公共');
   });
 
   it('公共函数即便带 type 也不按本体类型展示', () => {
-    expect(functionLabelParts({ name: 'f', display_name: '示例', type: 'VALIDATION', origin: 'common' }, 'f').typeLabel).toBe('公共');
+    expect(functionLabelParts({ name: 'f', title: '示例', type: 'VALIDATION', origin: 'common' }, 'f').typeLabel).toBe('公共');
   });
 
-  it('display_name 缺失时回退函数名', () => {
+  it('title 缺失时回退函数名', () => {
     expect(functionLabel({ name: 'inferPurchasePurpose', type: 'CALCULATION' }, 'inferPurchasePurpose'))
       .toBe('inferPurchasePurpose-指标计算');
   });
 
   it('本体函数未标注类型回退「未分类」（不产出空类型尾巴）', () => {
-    expect(functionLabel({ name: 'f', display_name: '无类型函数' }, 'f')).toBe('无类型函数-未分类');
+    expect(functionLabel({ name: 'f', title: '无类型函数' }, 'f')).toBe('无类型函数-未分类');
     expect(functionLabel(undefined, 'unknown')).toBe('unknown-未分类');
   });
 

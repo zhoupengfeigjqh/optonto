@@ -25,7 +25,7 @@ function mkSub(seq: number, over?: Partial<SubTask>): SubTask {
 function mkGateway(): OntologyGatewayPort {
   return {
     getBehaviorMeta: (_s: string, _o: string, b: string): BehaviorMeta => ({
-      display_name: `${b}中文名`, params: {}, preRules: [], postRules: [], concepts: [],
+      title: `${b}中文名`, params: {}, preRules: [], postRules: [], concepts: [],
       isWrite: b === 'Behavior2',
     }),
   } as unknown as OntologyGatewayPort;

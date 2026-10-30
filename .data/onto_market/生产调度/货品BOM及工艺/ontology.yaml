@@ -9,34 +9,34 @@ concepts:
   attributes:
   - name: cc
     type: string
-    display_name: ccc
+    title: ccc
     description: ''
     example: ''
-  display_name: 货品
+  title: 货品
   instance_label: ''
   terms: []
 - name: ProductInv
   description: 货品当前的待入库、可用库存和累计库存
   attributes: []
-  display_name: 货品库存
+  title: 货品库存
   instance_label: ''
   terms: []
 - name: BOMInfo
   description: 物料清单基本信息
   attributes: []
-  display_name: BOM基本信息
+  title: BOM基本信息
   instance_label: ''
   terms: []
 - name: BOMDetail
   description: BOM的组成项，记录子货品、用量及对应工艺路径
   attributes: []
-  display_name: BOM明细
+  title: BOM明细
   instance_label: ''
   terms: []
 - name: BOMMaterialReq
   description: BOM对每种原料总需求量
   attributes: []
-  display_name: BOM原料需求
+  title: BOM原料需求
   instance_label: ''
   terms: []
 - name: BOMEquipReq
@@ -44,20 +44,20 @@ concepts:
   attributes:
   - name: BOM编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 设备组编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 设备组名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: BOM设备组需求
+  title: BOM设备组需求
   instance_label: ''
   terms: []
 - name: BOMPersonReq
@@ -65,20 +65,20 @@ concepts:
   attributes:
   - name: BOM编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 人员组编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 人员组名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: BOM人员组需求
+  title: BOM人员组需求
   instance_label: ''
   terms: []
 - name: ProcessRoute
@@ -86,25 +86,25 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 工艺路径名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 类型
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 工艺版本号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 工艺路径
+  title: 工艺路径
   instance_label: ''
   terms: []
 - name: RouteMaterialReq
@@ -112,25 +112,25 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 原料名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 原料编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 需求量
     type: number
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 工艺原料需求
+  title: 工艺原料需求
   instance_label: ''
   terms: []
 - name: RouteEquipReq
@@ -138,20 +138,20 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 设备组编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 设备组名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 工艺设备组需求
+  title: 工艺设备组需求
   instance_label: ''
   terms: []
 - name: RoutePersonReq
@@ -159,20 +159,20 @@ concepts:
   attributes:
   - name: 工艺路径编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 人员组编号
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
   - name: 人员组名称
     type: string
-    display_name: ''
+    title: ''
     description: ''
     example: ''
-  display_name: 工艺人员组需求
+  title: 工艺人员组需求
   instance_label: ''
   terms: []
 relations:
@@ -183,7 +183,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 每个货品对应一条库存快照
-  display_name: 关联库存
+  title: 关联库存
   relation_type:
   - functional
   - inverse_functional
@@ -194,7 +194,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个货品有1个BOM
-  display_name: 包含BOM
+  title: 包含BOM
   relation_type:
   - functional
   - inverse_functional
@@ -205,7 +205,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个BOM含多个BOM明细项
-  display_name: 包含明细
+  title: 包含明细
   relation_type:
   - inverse_functional
 - name: refersToProduct
@@ -215,7 +215,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个BOM明细项有1个货品
-  display_name: 指向货品
+  title: 指向货品
   relation_type:
   - functional
 - name: hasRoute
@@ -225,7 +225,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个BOM明细项对应1条工艺路径
-  display_name: 关联工艺
+  title: 关联工艺
   relation_type:
   - functional
 - name: requiresMaterial
@@ -235,7 +235,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个BOM可包含多个原料需求
-  display_name: 需要原料
+  title: 需要原料
   relation_type:
   - inverse_functional
 - name: requiresEquipGroup
@@ -245,7 +245,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个BOM可包含多个设备组需求
-  display_name: 需要设备组
+  title: 需要设备组
   relation_type:
   - inverse_functional
 - name: requiresPersonGroup
@@ -255,7 +255,7 @@ relations:
   source_attr: ''
   target_attr: ''
   description: 1个BOM可包含多个人组需求
-  display_name: 需要人员组
+  title: 需要人员组
   relation_type:
   - inverse_functional
 - name: routeRequiresMat
@@ -265,7 +265,7 @@ relations:
   source_attr: 工艺路径编号
   target_attr: 工艺路径编号
   description: 1条工艺路径可关联多个原料需求
-  display_name: 需要原料
+  title: 需要原料
   relation_type:
   - inverse_functional
 - name: routeRequiresEquip
@@ -275,7 +275,7 @@ relations:
   source_attr: 工艺路径编号
   target_attr: 工艺路径编号
   description: 1条工艺路径可关联多个设备组需求
-  display_name: 需要设备组
+  title: 需要设备组
   relation_type:
   - inverse_functional
 - name: routeRequiresPerson
@@ -285,7 +285,7 @@ relations:
   source_attr: 工艺路径编号
   target_attr: 工艺路径编号
   description: 1条工艺路径可关联多个人组需求
-  display_name: 需要人员组
+  title: 需要人员组
   relation_type:
   - inverse_functional
 functions: []
@@ -296,15 +296,15 @@ behaviors:
   params:
     productId:
       type: string
+      title: 货品编号
       required: true
-      description: ''
     productName:
       type: string
+      title: 货品名称
       required: true
-      description: ''
   response: {}
   concept: Product
-  display_name: 查询货品信息
+  title: 查询货品信息
   from_status: ''
   to_status: ''
 - name: QueryProductInv
@@ -313,13 +313,13 @@ behaviors:
   params:
     productId:
       type: string
-      description: ''
+      title: 货品编号
     productName:
       type: string
-      description: ''
+      title: 货品名称
   response: {}
   concept: ProductInv
-  display_name: 查询货品库存
+  title: 查询货品库存
   from_status: ''
   to_status: ''
 - name: QueryBOMInfo
@@ -328,13 +328,13 @@ behaviors:
   params:
     bomId:
       type: string
-      description: ''
+      title: BOM编号
     productId:
       type: string
-      description: ''
+      title: 货品编号
   response: {}
   concept: BOMInfo
-  display_name: 查询BOM信息
+  title: 查询BOM信息
   from_status: ''
   to_status: ''
 - name: QueryBOMMaterialReq
@@ -343,10 +343,10 @@ behaviors:
   params:
     bomId:
       type: string
-      description: ''
+      title: BOM编号
   response: {}
   concept: BOMMaterialReq
-  display_name: 查询BOM原料需求
+  title: 查询BOM原料需求
   from_status: ''
   to_status: ''
 - name: QueryBOMEquipReq
@@ -355,10 +355,10 @@ behaviors:
   params:
     bomId:
       type: string
-      description: ''
+      title: BOM编号
   response: {}
   concept: BOMEquipReq
-  display_name: 查询BOM设备需求
+  title: 查询BOM设备需求
   from_status: ''
   to_status: ''
 - name: QueryBOMPersonReq
@@ -367,10 +367,10 @@ behaviors:
   params:
     bomId:
       type: string
-      description: ''
+      title: BOM编号
   response: {}
   concept: BOMPersonReq
-  display_name: 查询BOM人员需求
+  title: 查询BOM人员需求
   from_status: ''
   to_status: ''
 - name: QueryBOMDetail
@@ -379,10 +379,10 @@ behaviors:
   params:
     bomId:
       type: string
-      description: ''
+      title: BOM编号
   response: {}
   concept: BOMDetail
-  display_name: 查询BOM明细
+  title: 查询BOM明细
   from_status: ''
   to_status: ''
 - name: QueryProcessRoute
@@ -391,13 +391,13 @@ behaviors:
   params:
     routeId:
       type: string
-      description: ''
+      title: 工艺路径编号
     routeName:
       type: string
-      description: ''
+      title: 工艺路径名称
   response: {}
   concept: ProcessRoute
-  display_name: 查询工艺路径
+  title: 查询工艺路径
   from_status: ''
   to_status: ''
 - name: QueryRouteMatReq
@@ -406,10 +406,10 @@ behaviors:
   params:
     routeId:
       type: string
-      description: ''
+      title: 工艺路径编号
   response: {}
   concept: RouteMaterialReq
-  display_name: 查询工艺原料需求
+  title: 查询工艺原料需求
   from_status: ''
   to_status: ''
 - name: QueryRouteEquipReq
@@ -418,10 +418,10 @@ behaviors:
   params:
     routeId:
       type: string
-      description: ''
+      title: 工艺路径编号
   response: {}
   concept: RouteEquipReq
-  display_name: 查询工艺设备需求
+  title: 查询工艺设备需求
   from_status: ''
   to_status: ''
 - name: QueryRoutePersonReq
@@ -430,10 +430,10 @@ behaviors:
   params:
     routeId:
       type: string
-      description: ''
+      title: 工艺路径编号
   response: {}
   concept: RoutePersonReq
-  display_name: 查询工艺人员需求
+  title: 查询工艺人员需求
   from_status: ''
   to_status: ''
 rules:
@@ -441,14 +441,14 @@ rules:
   description: 查询BOM基本信息后，提示可进一步查询原料/设备组/人员组需求
   behavior: QueryBOMInfo
   related_functions: []
-  display_name: 查询BOM后引导
+  title: 查询BOM后引导
   position: 后置
   data_supplements: []
 - name: PromptAfterBOMDetailQuery
   description: 查询BOM明细后，提示可查询对应工艺路径的资源需求
   behavior: QueryBOMDetail
   related_functions: []
-  display_name: 查询BOM明细后引导
+  title: 查询BOM明细后引导
   position: 后置
   data_supplements: []
 processes: []

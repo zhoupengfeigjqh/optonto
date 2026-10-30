@@ -11,7 +11,7 @@
 import { functionTypeLabel } from '../function-type-labels';
 
 export interface FunctionLabelParts {
-  /** 中文名（display_name 缺失时回退函数名） */
+  /** 中文名（title 缺失时回退函数名） */
   base: string;
   /** 类型标签：`公共` / 本体类型中文标签 / `未分类` */
   typeLabel: string;
@@ -24,7 +24,7 @@ export type FunctionOrigin = 'ontology' | 'common';
 
 interface LabelableFunction {
   name: string;
-  display_name?: string;
+  title?: string;
   type?: string;
   /**
    * 来源标记：`common` = 公共函数（其余视为本体函数）。
@@ -42,7 +42,7 @@ interface LabelableFunction {
 export function functionLabelParts(fn: LabelableFunction | undefined, name: string): FunctionLabelParts {
   const isCommon = fn?.origin === 'common';
   return {
-    base: fn?.display_name || name,
+    base: fn?.title || name,
     typeLabel: isCommon ? '公共' : (fn?.type ? functionTypeLabel(fn.type) : '未分类'),
     isJudge: !isCommon && fn?.type === 'VALIDATION',
   };

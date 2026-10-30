@@ -94,11 +94,11 @@ export class OntologyGateway {
       .filter((c: any) => relatedNames.includes(c.name))
       .map((c: any) => ({
         name: c.name,
-        display_name: c.display_name || c.name,
+        title: c.title || c.name,
         attributes: effectiveAttributes(all, c.name).map((a: any) => ({
           name: a.name,
           type: a.type || 'string',
-          display_name: a.display_name || a.name,
+          title: a.title || a.name,
           constraint: a.constraint ?? null,
         })),
       }));
@@ -115,7 +115,7 @@ export class OntologyGateway {
       // 漏判也不会跳过安全确认；SubtaskRunner 见 unavailable 会直接拒绝执行，真实工具零调用。
       // 历史行为是静默返回 isWrite=false，导致**写操作在配置读取失败时零确认直接落库**。
       return {
-        display_name: behaviorName, // 兜底用行为名，避免展示成空
+        title: behaviorName, // 兜底用行为名，避免展示成空
         params: {}, preRules: [], postRules: [], concepts: [],
         isWrite: true,
         unavailable: true,
@@ -129,7 +129,7 @@ export class OntologyGateway {
       // 正常路径下 PlanGate 的行为名校验（getReadyBehaviorNames）会先拦下，这里是纵深防御：
       // 覆盖「规划确认弹窗停留期间本体被改」的时间窗。
       return {
-        display_name: behaviorName,
+        title: behaviorName,
         params: {}, preRules: [], postRules: [], concepts: [],
         isWrite: true,
         unavailable: true,
@@ -190,7 +190,7 @@ export class OntologyGateway {
     const isWrite = opType === 'command';
 
     return {
-      display_name: behavior?.display_name || behavior?.name || '',
+      title: behavior?.title || behavior?.name || '',
       params: behavior?.params || {},
       // 每条规则只保留自己声明的 data_supplements（过滤私有 _ 前缀接口），不做跨规则并集
       preRules: preRules.map(r => ({ ...r, data_supplements: (r.data_supplements || []).filter(a => !a.startsWith('_')) })),
@@ -231,7 +231,7 @@ export class OntologyGateway {
     const fn = (data?.functions || []).find((f: any) => f.name === functionName);
     if (fn) {
       return {
-        display_name: fn?.display_name || fn?.description || '',
+        title: fn?.title || '',
         description: fn?.description,
         params: fn?.params || {},
         type: fn?.type || '',
@@ -239,6 +239,6 @@ export class OntologyGateway {
     }
     const common = getCommonFunctionInfo(functionName);
     // 公共函数无本体类型 → type 恒空串（不可能成为判断函数）
-    return common ? { display_name: common.display_name, description: common.description, params: common.params, type: '' } : null;
+    return common ? { title: common.title, description: common.description, params: common.params, type: '' } : null;
   }
 }

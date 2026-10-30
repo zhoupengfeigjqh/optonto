@@ -17,7 +17,7 @@ export interface AttributeConstraint {
 export interface Attribute {
   name: string;
   type: string;
-  display_name?: string;
+  title?: string;
   description?: string;
   example?: string;
   constraint?: AttributeConstraint | null;
@@ -51,7 +51,7 @@ export interface Concept {
   description: string;
   /** 仅本概念自有的属性声明（继承项不落盘） */
   attributes?: Attribute[];
-  display_name?: string;
+  title?: string;
   instance_label?: string;
   /** 术语集：该概念的其他表述（同义词/别名/简称等）；与 instance_label 平级 */
   terms?: string[];
@@ -105,7 +105,7 @@ export interface Relation {
   source_attr?: string;
   target_attr?: string;
   description: string;
-  display_name?: string;
+  title?: string;
 }
 
 export const getRelations = (ontologyId: number) =>
@@ -130,7 +130,7 @@ export type ConceptRelationType = 'SubClassOf' | 'EquivalentClass' | 'DisjointWi
  */
 export interface ConceptRelation {
   name: string;
-  display_name?: string;
+  title?: string;
   relation_type: ConceptRelationType;
   /** SubClassOf：源 = 子概念 */
   source: string;
@@ -157,7 +157,7 @@ export const deleteConceptRelation = (ontologyId: number, name: string) =>
 
 export interface Function {
   name: string;
-  display_name?: string;
+  title?: string;
   description?: string;
   related_concepts: string[];
   params?: Record<string, unknown>;
@@ -205,7 +205,7 @@ export interface Behavior {
   response?: Record<string, unknown>;
   /** 关联概念（唯一）：行为只关联一个概念，其 status 属性枚举即状态机取值来源 */
   concept: string;
-  display_name?: string;
+  title?: string;
   /** 源状态：command 行为的状态机跃迁起点（取自关联概念 status 属性的枚举） */
   from_status?: string;
   /** 目标状态：command 行为的状态机跃迁终点 */
@@ -235,7 +235,7 @@ export interface Rule {
   related_functions: string[];
   /** 数据补充（可多选 query 行为；按关联函数声明的关联概念自动推导，可手工增减） */
   data_supplements?: string[];
-  display_name?: string;
+  title?: string;
   position?: string;
 }
 
@@ -264,7 +264,7 @@ export interface ProcessStep {
 
 export interface Process {
   name: string;
-  display_name?: string;
+  title?: string;
   goal?: string;
   description?: string;
   steps?: ProcessStep[];
@@ -287,7 +287,7 @@ export const updateProcess = (ontologyId: number, name: string, data: Process) =
 export interface Security {
   action_name: string;
   /** 行为展示名称（后端保存时从行为定义刷新，只读快照） */
-  display_name?: string;
+  title?: string;
   /** 操作类型 command/query（后端保存时推导刷新，只读快照） */
   op_type?: string;
   /** 权限范围（恒数组，类型稳定）：['everyone']=所有用户（默认）/['disable']=全部禁用/用户或组织白名单（后续） */

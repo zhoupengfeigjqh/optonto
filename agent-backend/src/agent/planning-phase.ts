@@ -125,19 +125,19 @@ export async function runPlanningPhase(deps: PlanningDeps, args: PlanningArgs): 
       const label = PARENT_TOOL_LABELS[event.toolName];
       if (!label) return;
       parentToolCalls.hold(event.toolCallId, event.args);
-      emit.entry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'parent', toolCallId: event.toolCallId, displayName: `${label}（${event.toolName}）`, displayLabel: label });
+      emit.entry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'parent', toolCallId: event.toolCallId, title: label });
       return;
     }
     if (event.type === 'tool_execution_end') {
       const held = parentToolCalls.take(event.toolCallId);
       if (event.toolName === 'load_skill') {
         const skillName = held?.skill_name ?? '';
-        emit.entry({ type: 'tool_call', name: 'load_skill', status: 'done', source: 'parent', toolCallId: event.toolCallId, displayName: '加载技能知识（load_skill）', displayLabel: '加载技能知识', detail: `已加载技能：${skillName}` });
+        emit.entry({ type: 'tool_call', name: 'load_skill', status: 'done', source: 'parent', toolCallId: event.toolCallId, title: '加载技能知识', detail: `已加载技能：${skillName}` });
         return;
       }
       const label = PARENT_TOOL_LABELS[event.toolName];
       if (!label) return;
-      emit.entry({ type: 'tool_call', name: event.toolName, status: 'done', params: held, result: toolResultToText(event.result?.content), source: 'parent', toolCallId: event.toolCallId, displayName: `${label}（${event.toolName}）`, displayLabel: label });
+      emit.entry({ type: 'tool_call', name: event.toolName, status: 'done', params: held, result: toolResultToText(event.result?.content), source: 'parent', toolCallId: event.toolCallId, title: label });
       return;
     }
     if (event.type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta') {

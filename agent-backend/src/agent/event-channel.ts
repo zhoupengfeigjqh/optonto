@@ -43,17 +43,16 @@ export class ToolCallBridge {
 }
 
 /**
- * 子任务展示信息三元组（单源）：
- *  - displayName：中文（英文），执行记录侧面板用，如 创建采购记录（CreatePurchaseRecord）
- *  - displayLabel：纯中文（行为/函数 display_name，空则回退子任务描述），聊天区用
+ * 子任务展示信息（单源）：
+ *  - title：纯中文名（行为/函数 title）——全平台"中文名"的唯一字段名；**无中文名就留空**，
+ *    绝不回退子任务描述（否则标题行与副行会显示同一句话，且 title 语义被稀释）
  *  - description：子任务描述（父 Agent 生成），聊天区标题副行用
+ * 「中文（英文）」组合串属渲染层职责，由前端按 title / name 拼接，不再作为字段下发。
  * 行为子任务与函数子任务共用同一规则（orchestrator 入口记录与 SubtaskRunner 内部记录不再各自内联）。
  */
-export function entryDisplay(label: string | undefined, name: string, description?: string) {
-  const displayLabel = label || description || '';
+export function entryDisplay(label: string | undefined, description?: string) {
   return {
-    displayName: `${displayLabel}（${name}）`,
-    displayLabel,
+    title: label || '',
     description,
   };
 }

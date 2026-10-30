@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 vi.mock('./SubtaskBlock', () => ({
-  default: ({ item }: any) => <div data-testid="subtask-block">{item.displayName}</div>,
+  default: ({ item }: any) => <div data-testid="subtask-block">{item.title}</div>,
 }));
 vi.mock('./NarrativeBlock', () => ({
   default: ({ item }: any) => <div data-testid="narrative">{item.content}</div>,
@@ -55,7 +55,7 @@ describe('MessageList — 属性传递', () => {
   });
 
   it('subtask 消息交给子任务块渲染（保持无头像对齐）', () => {
-    setup([{ role: 'subtask', seq: 1, displayName: '查库存', details: [] } as unknown as ChatMessage]);
+    setup([{ role: 'subtask', seq: 1, title: '查库存', details: [] } as unknown as ChatMessage]);
     expect(screen.getByTestId('subtask-block')).toHaveTextContent('查库存');
     expect(document.querySelectorAll('.anticon-user').length).toBe(0);
     expect(document.querySelectorAll('.anticon-robot').length).toBe(0);

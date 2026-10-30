@@ -66,7 +66,7 @@ describe('子任务组统计与标题', () => {
   });
 
   it('属性传递：标题带子任务显示名；无 start 事件时回退为序号', () => {
-    expect(subtaskTitle([{ ...child(1, 'subtask_start'), displayName: '查库存' }], 1)).toBe('子任务 1: 查库存');
+    expect(subtaskTitle([{ ...child(1, 'subtask_start'), title: '查库存' }], 1)).toBe('子任务 1: 查库存');
     expect(subtaskTitle([], 2)).toBe('子任务 2');
   });
 });
@@ -130,8 +130,8 @@ describe('mergeExecEntry — running/done 配对（2026-10-05 C5）', () => {
     // subtask_start/subtask_done 是【独立事件】而非 running→done 配对：归组靠 groupExecutionLog，
     // 状态靠 subtaskStatus 取 done 优先。配对只适用于 tool_call（有 toolCallId 或同 type 前后两条）
     let log: LogEntry[] = [];
-    log = mergeExecEntry(log, { ...child(1, 'subtask_start'), displayName: '查询库存' });
-    log = mergeExecEntry(log, { ...child(1, 'subtask_done'), displayName: '查询库存' });
+    log = mergeExecEntry(log, { ...child(1, 'subtask_start'), title: '查询库存' });
+    log = mergeExecEntry(log, { ...child(1, 'subtask_done'), title: '查询库存' });
     expect(log).toHaveLength(2);
     expect(log.map(e => e.status)).toEqual(['running', 'done']);
   });
@@ -147,11 +147,11 @@ describe('mergeExecEntry — running/done 配对（2026-10-05 C5）', () => {
     expect(log[1].source).toBe('child');
   });
 
-  it('属性传递：done 携带的展示字段补齐（displayLabel/description 曾被丢弃 → 死键）', () => {
+  it('属性传递：done 携带的展示字段补齐（title/description 曾被丢弃 → 死键）', () => {
     let log: LogEntry[] = [];
-    log = mergeExecEntry(log, { ...child(1, 'subtask_start'), displayLabel: '查询库存', description: '查当前库存' });
-    log = mergeExecEntry(log, { ...child(1, 'subtask_done'), displayLabel: '查询库存', description: '查当前库存' });
-    expect(log[0].displayLabel).toBe('查询库存');
+    log = mergeExecEntry(log, { ...child(1, 'subtask_start'), title: '查询库存', description: '查当前库存' });
+    log = mergeExecEntry(log, { ...child(1, 'subtask_done'), title: '查询库存', description: '查当前库存' });
+    expect(log[0].title).toBe('查询库存');
     expect(log[0].description).toBe('查当前库存');
   });
 });

@@ -59,7 +59,7 @@ def load_behavior_index(force: bool = False) -> dict[str, dict]:
                 unready_raw.append({
                     "ontology_id": oid, "ontology_name": on_name,
                     "scenario_id": onto.get("scenario_id"), "scenario_name": sc_name,
-                    "name": name, "display_name": behavior.get("display_name"),
+                    "name": name, "title": behavior.get("title"),
                 })
                 continue
             entries_raw.append({
@@ -68,7 +68,7 @@ def load_behavior_index(force: bool = False) -> dict[str, dict]:
                 "scenario_id": onto.get("scenario_id"),
                 "scenario_name": sc_name,
                 "name": name,
-                "display_name": behavior.get("display_name"),
+                "title": behavior.get("title"),
                 "description": behavior.get("description"),
                 "op_type": behavior.get("op_type"),
             })

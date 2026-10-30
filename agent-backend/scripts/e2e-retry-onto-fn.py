@@ -55,7 +55,7 @@ for e in events:
     if e['type'] in ('plan_received', 'plan_confirm'):
         for st in e['plan']['subtasks']:
             kind = 'function=' + st['function'] if st.get('function') else 'behavior=' + st.get('behavior', '')
-            print(f'  [{e["type"]}] {kind}  display_name="{st.get("display_name","")}"')
+            print(f'  [{e["type"]}] {kind}  title="{st.get("title","")}"')
             if st.get('function'):
                 fn_subs.append(st)
 for e in events:
@@ -67,4 +67,4 @@ errors = [e.get('message', '') for e in events if e['type'] == 'error']
 print('errors:', errors[:2] if errors else '无')
 print('done:', any(e['type'] == 'done' for e in events))
 hit = [s for s in fn_subs if s['function'] == 'sumRawNotArrivalQty']
-print(f'\n断言: 函数子任务命中={bool(hit)}  display_name含"原材料未到位"={any("原材料未到位" in (s.get("display_name") or "") for s in hit)}')
+print(f'\n断言: 函数子任务命中={bool(hit)}  title含"原材料未到位"={any("原材料未到位" in (s.get("title") or "") for s in hit)}')

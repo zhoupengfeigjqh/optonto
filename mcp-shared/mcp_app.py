@@ -29,6 +29,10 @@ import hmac
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.types import Tool
+from tool_contract import (
+    CATEGORY_KEY, SCOPE_KEY, TITLE_KEY, with_category, with_ontology_scope,
+)
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
 from starlette.middleware import Middleware
@@ -50,6 +54,50 @@ DEFAULT_AUTH_HEADER = "X-MCP-Token"
 
 # 鉴权放行路径：探活 + MCP 客户端鉴权发现（不带令牌也必须可达，见模块 docstring）
 _OPEN_PREFIXES = ("/.well-known/", "/register", "/health")
+
+# 协议级显示名（Tool.title，MCP 2025-06-18 引入）：能力由 SDK 字段存在性判定，
+# 不靠版本号猜——老 SDK 上自动退化为不产出，服务照常发布。
+_SUPPORTS_TOOL_TITLE = "title" in getattr(Tool, "model_fields", {})
+
+
+def tool_kwargs(input_schema: dict | None, *, title: str | None = None,
+                category: str | None = None, scope: dict | None = None) -> dict:
+    """``Tool(...)`` 工具级元数据的**唯一投影点**：快照的工具级字段 → 协议字段 + 扩展键。
+
+    方向（2026-10-30 反转，用户拍板）：**工具级字段是权威值**，``inputSchema`` 上的 ``x-title`` /
+    ``x-category`` / ``x-ontology-scope`` 都是**运行时投影**——
+
+    - 权威来源：发布快照 ``tools[] = {name, title, category, ontologyScope, description, inputSchema}``
+      （core 编译时取自本体函数/行为）；查询服务取工具表 ``label`` + 固定类别；公共函数取 manifest ``title``；
+      **编译侧只产参数 schema**，三个 ``x-`` 键一个都不写；
+    - 投影：本函数把工具级字段写回 ``inputSchema`` 供**平台自身**消费（``tool-catalog.ts`` 读分类/归属/中文名）：
+      ``x-category`` 决定路由与挂载，``x-ontology-scope`` 决定归属校验，``x-title`` 只做中文展示；
+    - 协议字段：只有 ``title`` 有标准落点（MCP 2025-06-18 ``Tool.title``），只服务**外部客户端**，
+      平台**不消费**它；``category`` / ``scope`` 协议里没有对应字段（``annotations`` 只有四个行为提示），
+      故仍以扩展键表达；
+    - 单一事实：字段为空时**连投影一起清掉**（含老快照残留），不写空串、不拿英文名兜底。
+
+    SDK 不支持 ``Tool.title``（老版本）时**只丢协议字段**：三个 ``x-`` 投影照旧，平台内部不受影响
+    ——外部兼容问题不传染内部消费。
+    """
+    schema = dict(input_schema or {"type": "object", "properties": {}})
+    if category and scope:
+        schema = with_ontology_scope(schema, scope, category)
+    elif category:
+        schema = with_category(schema, category)
+    else:
+        for key in (CATEGORY_KEY, SCOPE_KEY):
+            schema.pop(key, None)
+
+    kwargs: dict = {"inputSchema": schema}
+    name = str(title or "").strip()
+    if not name:
+        schema.pop(TITLE_KEY, None)
+        return kwargs
+    schema[TITLE_KEY] = name
+    if _SUPPORTS_TOOL_TITLE:
+        kwargs["title"] = name
+    return kwargs
 
 
 def _is_open_path(path: str) -> bool:
@@ -143,7 +191,8 @@ def build_mcp_app(
     async def handle_tools(request):
         tools = await list_tools()
         return JSONResponse([
-            {"name": t.name, "description": t.description, "inputSchema": t.inputSchema,
+            {"name": t.name, "title": getattr(t, "title", None),
+             "description": t.description, "inputSchema": t.inputSchema,
              "outputSchema": getattr(t, "outputSchema", None)}
             for t in tools
         ])

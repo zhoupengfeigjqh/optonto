@@ -53,8 +53,8 @@ from starlette.routing import Route
 
 import data_store
 from function_runner import run_function_code
-from mcp_app import build_mcp_app
-from tool_contract import CATEGORY_COMMON, strip_system_params, with_category
+from mcp_app import build_mcp_app, tool_kwargs
+from tool_contract import CATEGORY_COMMON, strip_system_params
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,9 @@ def _load_common_tools() -> tuple[list[Tool], set[str]]:
         tools.append(Tool(
             name=name,
             description=description,
-            inputSchema=with_category(
-                entry.get("inputSchema") or {"type": "object", "properties": {}},
-                CATEGORY_COMMON, entry.get("display_name", "")),
+            # 工具级字段（manifest 的 title + 固定类别）→ 启动时投影成 title / x-title / x-category
+            **tool_kwargs(entry.get("inputSchema") or {"type": "object", "properties": {}},
+                          title=entry.get("title", ""), category=CATEGORY_COMMON),
         ))
     _COMMON_CACHE.update(
         fingerprint=fingerprint, tools=tools, names={t.name for t in tools})
@@ -156,7 +156,7 @@ async def _handle_list_functions(request: Request) -> JSONResponse:
         "functions": [
             {
                 "name": e.get("name"),
-                "display_name": e.get("display_name", ""),
+                "title": e.get("title", ""),
                 "description": e.get("description", ""),
                 "code_exists": data_store.common_function_code_path(e.get("name") or "").exists(),
             }

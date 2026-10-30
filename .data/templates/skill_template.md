@@ -66,8 +66,8 @@ description: 技能描述
 - **输入参数**:
 ```json
 {
-  "supplierName": {"type": "string", "required": false, "example": "宝钢钢铁集团", "description": "供应商名称，模糊匹配"},
-  "rawMaterialName": {"type": "string", "required": false, "example": "钢板008", "description": "原材料名称"}
+  "supplierName": {"type": "string", "required": false, "title": "供应商名称", "description": "模糊匹配", "example": "宝钢钢铁集团"},
+  "rawMaterialName": {"type": "string", "required": false, "title": "原材料名称", "example": "钢板008"}
 }
 ```
 - **输出结构**:
@@ -79,11 +79,11 @@ description: 技能描述
     "items": {
       "type": "object",
       "properties": {
-        "supplierId": {"type": "string", "display_name": "供应商编号", "example": "SUP-001"},
-        "supplierName": {"type": "string", "display_name": "供应商名称", "example": "宝钢钢铁集团"},
-        "address": {"type": "string", "display_name": "地址", "example": "上海市宝山区富锦路888号"},
-        "contactPerson": {"type": "string", "display_name": "联系人", "example": "张经理"},
-        "contactPhone": {"type": "string", "display_name": "联系电话", "example": "13800131001"}
+        "supplierId": {"type": "string", "title": "供应商编号", "example": "SUP-001"},
+        "supplierName": {"type": "string", "title": "供应商名称", "example": "宝钢钢铁集团"},
+        "address": {"type": "string", "title": "地址", "example": "上海市宝山区富锦路888号"},
+        "contactPerson": {"type": "string", "title": "联系人", "example": "张经理"},
+        "contactPhone": {"type": "string", "title": "联系电话", "example": "13800131001"}
       }
     }
   }

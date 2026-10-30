@@ -322,11 +322,11 @@ describe('validateParamsAgainstSchema · 约束校验', () => {
 // ─── renderParamStructure · 中继结构 sketch 渲染 ─────────────────────
 
 describe('renderParamStructure', () => {
-  it('array 套 object：展开数组项结构，含必填/描述/示例', () => {
+  it('array 套 object：展开数组项结构，含必填/中文名/示例', () => {
     const lines = renderParamStructure('purchaseRecordSet', {
-      type: 'array', required: true, description: '采购记录集',
+      type: 'array', required: true, title: '采购记录集',
       items: { type: 'object', properties: {
-        arrivalTime: { type: 'string', required: true, description: '到位时间', example: '2026-09-01' },
+        arrivalTime: { type: 'string', required: true, title: '到位时间', example: '2026-09-01' },
         rawMaterialName: { type: 'string', required: true },
         arrivalQuantity: { type: 'number', required: true },
       } },
@@ -348,6 +348,15 @@ describe('renderParamStructure', () => {
       'detail: object，已填，字段结构：',
       '  · weight: number（必填）',
     ]);
+  });
+
+  it('中文名只认 title：description 是补充说明，不参与中文名取数', () => {
+    expect(renderParamStructure('rawMaterialId', {
+      type: 'string', required: true, title: '原材料ID', description: '模糊匹配',
+    })).toEqual(['rawMaterialId: string（必填） — 原材料ID']);
+    expect(renderParamStructure('supplierName', {
+      type: 'string', required: true, description: '供应商名称',
+    })).toEqual(['supplierName: string（必填）']);
   });
 
   it('无内部声明的 array：单行不展开', () => {

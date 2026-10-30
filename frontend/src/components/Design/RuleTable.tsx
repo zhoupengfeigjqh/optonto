@@ -41,7 +41,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   useEffect(() => { if (activeTab === 'rules') load(); }, [ontologyId, activeTab]);
 
   const isEditing = (record: Rule) => record.name === editingKey;
-  const behaviorOptions = behaviors.map(b => ({ label: b.display_name || b.name, value: b.name }));
+  const behaviorOptions = behaviors.map(b => ({ label: b.title || b.name, value: b.name }));
   // 关联函数展示口径（2026-09-30 统一）：`中文名-类型`（口径与单测见 rule/function-label.ts）
   const funcLabel = (name: string) => functionLabelParts(funcs.find(x => x.name === name) as any, name);
   const functionOptions = funcs.map(f => ({ label: functionLabel(f as any, f.name), value: f.name }));
@@ -59,10 +59,10 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     setEditData(p => ({ ...p, data_supplements: derived }));
   }, [editingKey, editData.behavior, editData.related_functions, editData.data_supplements, funcs, behaviors]);
 
-  const emptyEdit = { name: '', display_name: '', description: '', position: '', behavior: '', related_functions: [], data_supplements: [] };
+  const emptyEdit = { name: '', title: '', description: '', position: '', behavior: '', related_functions: [], data_supplements: [] };
   const handleAdd = () => { setEditData({ ...emptyEdit }); setEditingKey('__new__'); goToRow(rules.length); };
   const handleEdit = (r: Rule) => {
-    setEditData({ name: r.name, display_name: r.display_name || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: r.data_supplements || [] });
+    setEditData({ name: r.name, title: r.title || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: r.data_supplements || [] });
     setEditingKey(r.name);
   };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
@@ -71,7 +71,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (!editData.name?.trim()) { message.warning('请输入规则名称'); return; }
     try {
       const data: any = {
-        name: editData.name.trim(), display_name: editData.display_name?.trim() || '', description: editData.description?.trim() || '',
+        name: editData.name.trim(), title: editData.title?.trim() || '', description: editData.description?.trim() || '',
         position: editData.position || '',
         behavior: editData.behavior || '', related_functions: editData.related_functions || [],
         data_supplements: editData.data_supplements || [],
@@ -102,7 +102,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     try {
       const result = await generateRule(ontologyId, {
         rule_name: editData.name.trim(),
-        rule_display_name: editData.display_name?.trim() || '',
+        rule_title: editData.title?.trim() || '',
         rule_description: editData.description?.trim() || '',
         behavior: editData.behavior || '',
       });
@@ -117,7 +117,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     const isNew = editingKey === '__new__' && record.name === '__new__';
     if (!editing && !isNew) return render ? render(val) : (val || '-');
     if (dataIndex === 'name') return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
-    if (dataIndex === 'display_name') return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
+    if (dataIndex === 'title') return <Input size="small" value={editData.title || ''} onChange={e => setEditData(p => ({...p, title: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'position') return <Select size="small" allowClear placeholder="选择" value={editData.position || undefined} onChange={v => setEditData(p => ({...p, position: v || ''}))} options={[{label:'前置',value:'前置'},{label:'后置',value:'后置'}]} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'description') return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     if (dataIndex === 'behavior') return <Select size="small" allowClear placeholder="选择" value={editData.behavior || undefined} onChange={v => setEditData(p => ({...p, behavior: v || ''}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
@@ -144,7 +144,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       // 数据补充：编辑态自动推导（见上方 useEffect），用户可在此手工增减
       const queryBehaviorOptions = behaviors
         .filter(b => resolveOpType(b).type === 'query')
-        .map(b => ({ label: b.display_name || b.name, value: b.name }));
+        .map(b => ({ label: b.title || b.name, value: b.name }));
       return (
         <div className="flex items-center gap-1">
           <Select
@@ -189,10 +189,10 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         </Tooltip>
       );
     }},
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 90, render: (v: any, r: Rule) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 90, render: (v: any, r: Rule) => renderCell(v, r, 'title', (v2: string) => v2 || '-') },
     { title: '介入位置', dataIndex: 'position', key: 'position', width: 55, render: (v: any, r: Rule) => renderCell(v, r, 'position', (v2: string) => v2 || '-') },
     { title: '描述', dataIndex: 'description', key: 'description', width: 180, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'description') },
-    { title: '绑定行为', dataIndex: 'behavior', key: 'behavior', width: 120, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'behavior', (v2: string) => behaviors.find(b => b.name === v2)?.display_name || v2 || '-') },
+    { title: '绑定行为', dataIndex: 'behavior', key: 'behavior', width: 120, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'behavior', (v2: string) => behaviors.find(b => b.name === v2)?.title || v2 || '-') },
     { title: '关联函数', dataIndex: 'related_functions', key: 'related_functions', width: 220, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'related_functions', (list: string[]) => {
       if (!list || list.length === 0) return '-';
       return list.map(name => {
@@ -204,7 +204,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         return <span key={name} className="mr-1">{text}</span>;
       });
     }) },
-    { title: '数据补充', dataIndex: 'data_supplements', key: 'data_supplements', width: 140, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'data_supplements', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.display_name || name).join(', ') || '-') },
+    { title: '数据补充', dataIndex: 'data_supplements', key: 'data_supplements', width: 140, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'data_supplements', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.title || name).join(', ') || '-') },
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, record: Rule) => {

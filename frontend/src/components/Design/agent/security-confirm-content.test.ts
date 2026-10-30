@@ -7,13 +7,22 @@ import { describe, it, expect } from 'vitest';
 import { buildConfirmRows, parseConfirmContent } from './security-confirm-content';
 
 describe('buildConfirmRows — 参数行构建', () => {
-  it('属性传递：对象声明取 description 作为中文名、value 作为值、required 作为必填', () => {
+  it('属性传递：对象声明取 title 作为中文名、value 作为值、required 作为必填', () => {
     const rows = buildConfirmRows({
-      rawMaterialId: { value: 'RM-001', description: '原材料ID', required: true },
+      rawMaterialId: { value: 'RM-001', title: '原材料ID', required: true },
     });
     expect(rows).toEqual([
       { key: 'rawMaterialId', name: '原材料ID', value: 'RM-001', required: true, empty: false },
     ]);
+  });
+
+  it('属性传递：description 是补充说明，不参与中文名取数', () => {
+    const rows = buildConfirmRows({
+      rawMaterialId: { value: 'RM-001', title: '原材料ID', description: '模糊匹配' },
+      count: { value: 42, description: '数量' },
+    });
+    expect(rows[0].name).toBe('原材料ID');
+    expect(rows[1].name).toBe('count');
   });
 
   it('标量参数：中文名回退为 key，值转为字符串，非必填', () => {
@@ -39,7 +48,7 @@ describe('buildConfirmRows — 参数行构建', () => {
     expect(buildConfirmRows({})).toEqual([]);
   });
 
-  it('属性传递：对象声明缺少 description 时中文名回退为 key', () => {
+  it('属性传递：对象声明缺少 title 时中文名回退为 key', () => {
     const rows = buildConfirmRows({ unit: { value: '吨' } });
     expect(rows[0].name).toBe('unit');
     expect(rows[0].required).toBe(false);

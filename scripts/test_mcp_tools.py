@@ -91,7 +91,7 @@ async def test_all():
         if isinstance(data, list):
             ok(f"本体1 有 {len(data)} 个行为")
             for b in data[:5]:
-                print(f"     {b.get('name', '?')} → {b.get('display_name', '')}")
+                print(f"     {b.get('name', '?')} → {b.get('title', '')}")
         else:
             print(f"     返回: {json.dumps(data, ensure_ascii=False)[:200]}")
 
@@ -102,7 +102,7 @@ async def test_all():
         if isinstance(data_concepts, list):
             ok(f"本体1 有 {len(data_concepts)} 个概念")
             for c in data_concepts[:5]:
-                print(f"     {c.get('name', '?')} — {c.get('display_name', c.get('description', ''))}")
+                print(f"     {c.get('name', '?')} — {c.get('title', c.get('description', ''))}")
         else:
             fail("返回格式异常", data_concepts)
             data_concepts = []  # 防止后面报错
@@ -160,7 +160,7 @@ async def test_all():
         if isinstance(data, list):
             ok(f"本体1 有 {len(data)} 个函数")
             for f in data[:4]:
-                print(f"     {f.get('name', '?')} — {f.get('display_name', '')}")
+                print(f"     {f.get('name', '?')} — {f.get('title', '')}")
         else:
             print(f"     返回: {json.dumps(data, ensure_ascii=False)[:200]}")
 
@@ -225,7 +225,7 @@ async def test_all():
         if isinstance(data, list):
             ok(f"搜索到 {len(data)} 个概念")
             for c in data:
-                print(f"     {c.get('name', '?')} — {c.get('display_name', '')}")
+                print(f"     {c.get('name', '?')} — {c.get('title', '')}")
         elif isinstance(data, dict) and "message" in data:
             ok(f"概念搜索无匹配（预期行为）: {data['message']}")
         else:

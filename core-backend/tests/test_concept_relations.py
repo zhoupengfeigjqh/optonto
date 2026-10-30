@@ -24,19 +24,19 @@ def _data() -> OntologyData:
     return OntologyData(
         concepts=[
             ConceptItem(
-                name="Document", display_name="单据",
+                name="Document", title="单据",
                 attributes=[AttributeItem(name="docNo", type="string")],
             ),
             ConceptItem(
-                name="PurchaseOrder", display_name="采购单", sub_class_of="Document",
+                name="PurchaseOrder", title="采购单", sub_class_of="Document",
                 attributes=[AttributeItem(name="poId", type="string")],
             ),
             ConceptItem(
-                name="SalesOrder", display_name="销售单", sub_class_of="Document",
+                name="SalesOrder", title="销售单", sub_class_of="Document",
                 attributes=[AttributeItem(name="soId", type="number")],
             ),
             ConceptItem(
-                name="DraftOrder", display_name="草稿订单",
+                name="DraftOrder", title="草稿订单",
                 attributes=[AttributeItem(name="docNo", type="string")],
             ),
         ]
@@ -74,7 +74,7 @@ class TestSubClassDerivation(unittest.TestCase):
         self.assertEqual([(r.source, r.target) for r in rows], [("PurchaseOrder", "Document"), ("SalesOrder", "Document")])
         first = rows[0]
         self.assertEqual(first.name, "PurchaseOrderSubClassOfDocument")
-        self.assertEqual(first.display_name, "采购单 是一种 单据")
+        self.assertEqual(first.title, "采购单 是一种 单据")
         self.assertEqual(first.relation_type, "SubClassOf")
         self.assertEqual(first.source_attr, "")
         self.assertIn("自动同步", first.description)
@@ -268,6 +268,24 @@ class TestSaveCompaction(unittest.TestCase):
         doc = {"concept_relations": [{"name": "r", "source_attr": "", "description": "", "relation_type": "SubClassOf"}]}
         services._compact_concept_relations(doc)
         self.assertEqual(doc["concept_relations"][0], {"name": "r", "relation_type": "SubClassOf"})
+
+    def test_SubClassOf的派生标题与描述即使非空也不落盘(self) -> None:
+        # title/description 由概念设计读时派生，落盘值永不回读 → 一律不写（写而不读即死数据）
+        doc = {"concept_relations": [{
+            "name": "r", "relation_type": "SubClassOf",
+            "title": "子概念 是一种 父概念", "description": "由概念设计自动同步",
+        }]}
+        services._compact_concept_relations(doc)
+        self.assertEqual(doc["concept_relations"][0], {"name": "r", "relation_type": "SubClassOf"})
+
+    def test_等价互斥的标题保留(self) -> None:
+        doc = {"concept_relations": [{
+            "name": "r", "relation_type": "EquivalentClass",
+            "title": "采购订单与采购单等价", "description": "同一业务对象的不同叫法",
+        }]}
+        services._compact_concept_relations(doc)
+        self.assertEqual(doc["concept_relations"][0]["title"], "采购订单与采购单等价")
+        self.assertEqual(doc["concept_relations"][0]["description"], "同一业务对象的不同叫法")
 
 
 if __name__ == "__main__":

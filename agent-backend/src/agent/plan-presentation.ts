@@ -62,7 +62,7 @@ export function buildRelayStructureHint(
 }
 
 /**
- * 给规划补展示字段：每个子任务附加行为中文名 display_name，供前端弹窗可读展示。
+ * 给规划补展示字段：每个子任务附加行为中文名 title，供前端弹窗可读展示。
  *
  * 纯展示用途，不参与结构校验；行为/函数名已在确认前经 validateTaskBehaviorNames /
  * validateTaskFunctionNames 校验存在，getBehaviorMeta 不会抛错。
@@ -76,9 +76,9 @@ export function enrichPlanDisplay(
     ...plan,
     subtasks: plan.subtasks.map(st => ({
       ...st,
-      display_name: st.function
-        ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.displayName ?? '')
-        : (gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).display_name || ''),
+      title: st.function
+        ? (catalog.functionInfo(st.scenario_name, st.ontology_name, st.function)?.title ?? '')
+        : (gateway.getBehaviorMeta(st.scenario_name, st.ontology_name, st.behavior).title || ''),
     })),
   };
 }

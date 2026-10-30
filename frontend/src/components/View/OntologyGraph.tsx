@@ -16,20 +16,20 @@ interface Props {
   ontologyId: number;
 }
 
-// ─── 属性展示名：优先中文 display_name，缺失回退英文属性名 ──────────────────
+// ─── 属性展示名：优先中文 title，缺失回退英文属性名 ──────────────────
 
-const attrLabel = (a: { name: string; display_name?: string }): string =>
-  a.display_name || a.name;
+const attrLabel = (a: { name: string; title?: string }): string =>
+  a.title || a.name;
 
 interface GraphNode {
   id: string;
   name: string;
-  displayName: string;
+  title: string;
   category: number;
   symbolSize: number;
   itemStyle?: any;
   description?: string;
-  attributes?: { name: string; type: string; display_name?: string }[];
+  attributes?: { name: string; type: string; title?: string }[];
 }
 
 interface GraphEdge {
@@ -72,8 +72,8 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
     }
   }, [loading, data]);
 
-  const getDisplayName = (item: { name: string; display_name?: string }): string =>
-    item.display_name || item.name;
+  const getTitle = (item: { name: string; title?: string }): string =>
+    item.title || item.name;
 
   const buildGraph = useCallback(() => {
     if (!data) return { nodes: [], edges: [], categories: [] };
@@ -96,7 +96,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       nodes.push({
         id: `concept:${c.name}`,
         name: c.name,
-        displayName: getDisplayName(c),
+        title: getTitle(c),
         category: 0,
         symbolSize: 55,
         description: c.description,
@@ -110,7 +110,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       nodes.push({
         id: `behavior:${b.name}`,
         name: b.name,
-        displayName: getDisplayName(b),
+        title: getTitle(b),
         category: 1,
         symbolSize: 40,
         description: b.description,
@@ -135,7 +135,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       nodes.push({
         id: `rule:${r.name}`,
         name: r.name,
-        displayName: getDisplayName(r),
+        title: getTitle(r),
         category: 2,
         symbolSize: 35,
         description: r.description,
@@ -161,7 +161,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       nodes.push({
         id: `function:${f.name}`,
         name: f.name,
-        displayName: getDisplayName(f),
+        title: getTitle(f),
         category: 3,
         symbolSize: 40,
         description: f.description,
@@ -181,7 +181,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       });
     });
 
-    // Relation edges (between concepts) — with display_name
+    // Relation edges (between concepts) — with title
     data.relations.forEach(r => {
       const sourceId = `concept:${r.source}`;
       const targetId = `concept:${r.target}`;
@@ -191,7 +191,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
           target: targetId,
           label: {
             show: true,
-            formatter: getDisplayName(r),
+            formatter: getTitle(r),
             color: '#c084fc',
             fontSize: 12,
             fontWeight: 'bold',
@@ -226,8 +226,8 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
             const node = params.data as GraphNode;
             const typeLabels = ['概念', '行为', '规则', '函数', '关系'];
             let html = `<div style="font-size:13px;color:#e2e8f0">`;
-            html += `<strong style="font-size:14px">${node.displayName}</strong>`;
-            if (node.displayName !== node.name) {
+            html += `<strong style="font-size:14px">${node.title}</strong>`;
+            if (node.title !== node.name) {
               html += `<br/><span style="color:#64748b;font-size:11px">${node.name}</span>`;
             }
             html += `<br/><span style="color:#94a3b8">${typeLabels[node.category] || ''}</span>`;
@@ -275,7 +275,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
             ...n,
             label: {
               show: true,
-              formatter: n.displayName,
+              formatter: n.title,
               color: '#e2e8f0',
               fontSize: 12,
               fontWeight: 'bold' as const,
@@ -339,7 +339,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
       </div>
 
       <Modal
-        title={`概念详情 - ${selectedConcept?.displayName || ''}`}
+        title={`概念详情 - ${selectedConcept?.title || ''}`}
         open={!!selectedConcept}
         onCancel={() => setSelectedConcept(null)}
         footer={null}
@@ -378,7 +378,7 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
                     .filter(r => r.source === selectedConcept.name || r.target === selectedConcept.name)
                     .map((r, idx) => (
                       <div key={idx} className="flex items-center gap-2 text-sm">
-                        <Tag color="purple">{r.display_name || r.name}</Tag>
+                        <Tag color="purple">{r.title || r.name}</Tag>
                         <span className="text-text-secondary">
                           {r.source} → {r.target} ({r.cardinality})
                         </span>

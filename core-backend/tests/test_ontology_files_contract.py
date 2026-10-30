@@ -183,5 +183,20 @@ class TestOpType(ContractCase):
         self.assertEqual(self.resolve(b, []), "query")
 
 
+class TestSecurityRosterTitle(ContractCase):
+    """安全管控花名册的 title 快照：只取行为中文名，不回落英文 name。"""
+
+    def test_行为有中文名时快照刷新(self) -> None:
+        self.write_ontology([{"name": "B1", "title": "创建订单"}])
+        roster = services._sync_securities_roster(self.load())
+        self.assertEqual(roster[0].title, "创建订单")
+
+    def test_行为无中文名时快照为空串而不是英文名(self) -> None:
+        # 英文 name 写进"中文名"字段 = 语义污染，宁可留空由前端显示 '-'
+        self.write_ontology([{"name": "B1"}])
+        roster = services._sync_securities_roster(self.load())
+        self.assertEqual(roster[0].title, "")
+
+
 if __name__ == "__main__":
     unittest.main()

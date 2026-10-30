@@ -61,8 +61,8 @@ export class SubtaskRunner {
    */
   async run(subTask: SubTask, meta: BehaviorMeta | null, emit: EventChannel): Promise<SubTaskResult> {
     if (subTask.function) return this.runFunctionEntry(subTask, emit);
-    // 展示三元组（中文（英文）/纯中文/描述）与执行记录同源于 entryDisplay
-    const display = entryDisplay(meta?.display_name, subTask.behavior, subTask.description);
+    // 中文名 + 描述与执行记录同源于 entryDisplay（组合串由前端拼接）
+    const display = entryDisplay(meta?.title, subTask.description);
     const baseEntry = { name: subTask.behavior, detail: `${subTask.behavior}｜子任务 ${subTask.seq}`, params: subTask.params, source: 'child' as const, seq: subTask.seq, ...display };
 
     // ── 【fail-closed 闸】本体元数据不可用 → 拒绝执行（2026-10-05，见 BehaviorMeta.unavailable）──
@@ -98,8 +98,8 @@ export class SubtaskRunner {
   private async runFunctionEntry(subTask: SubTask, emit: EventChannel): Promise<SubTaskResult> {
     const functionName = subTask.function!;
     // 中文名走元数据查询口（三源含其他MCP工具），无则空串由 entryDisplay 兜底子任务描述
-    const fnDisplay = this.deps.info.functionDisplayName(subTask.scenario_name, subTask.ontology_name, functionName);
-    const display = entryDisplay(fnDisplay, functionName, subTask.description);
+    const fnDisplay = this.deps.info.functionTitle(subTask.scenario_name, subTask.ontology_name, functionName);
+    const display = entryDisplay(fnDisplay, subTask.description);
 
     // 直连执行前深展开计划期 {type/required/description/value} 包装为纯值（真实 LLM 中继会把包装递归嵌套进数组项）
     const args = unwrapParamValues(subTask.params || {});
@@ -172,15 +172,13 @@ export class SubtaskRunner {
         if (event.type === 'tool_execution_start') {
           // 行为/函数都是一等工具：参数即 event.args（不再有 behavior_name 包装层）
           toolCallParams.hold(event.toolCallId, event.args);
-          // 行为/函数调用都显示被调对象的中文（英文）；其它工具保留原名（无中文映射 → undefined，前端用工具原名兜底）
+          // 行为/函数调用带上被调对象的中文名；其它工具无中文映射 → title 为空，前端用工具原名兜底
           const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
-          const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child', seq: subTask.seq, toolCallId: event.toolCallId, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'running', params: event.args, source: 'child', seq: subTask.seq, toolCallId: event.toolCallId, title: called.display || undefined, description: subTask.description });
         } else if (event.type === 'tool_execution_end') {
           const text = toolResultToText(event.result?.content);
           const called = this.resolveCalledDisplay(subTask, event.toolName, policy.legalCalls);
-          const calledDisplay = called.display ? `${called.display}（${called.name}）` : undefined;
-          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.take(event.toolCallId), result: text, source: 'child', seq: subTask.seq, toolCallId: event.toolCallId, displayName: calledDisplay, displayLabel: called.display || undefined, description: subTask.description });
+          pushEntry({ type: 'tool_call', name: event.toolName, status: 'done', params: toolCallParams.take(event.toolCallId), result: text, source: 'child', seq: subTask.seq, toolCallId: event.toolCallId, title: called.display || undefined, description: subTask.description });
         }
       });
 
@@ -298,7 +296,8 @@ export class SubtaskRunner {
       keys.forEach(k => {
         const p = rawParams[k];
         const spec = p !== null && typeof p === 'object' ? p : null;
-        const name = spec?.description || k;
+        // 参数中文名只认 title（spec 006 FR-016）；description 是补充说明，不参与中文名取数
+        const name = spec?.title || k;
         const val = spec ? (spec.value ?? '') : String(p ?? '');
         lines.push(`  - ${name}（${k}）: ${val === '' ? '（待补充）' : val}`);
       });
@@ -308,21 +307,21 @@ export class SubtaskRunner {
 
   /**
    * 解析被调对象的中文名（工具调用展示用）：
-   *  行为工具（工具名即行为名）→ 被调行为的中文 display_name；
-   *  本体函数（工具名=函数名）→ 函数中文 display_name；其它工具无中文映射 → 返回空（前端用工具原名兜底）。
+   *  行为工具（工具名即行为名）→ 被调行为的中文 title；
+   *  本体函数（工具名=函数名）→ 函数中文 title；其它工具无中文映射 → 返回空（前端用工具原名兜底）。
    */
   private resolveCalledDisplay(subTask: SubTask, toolName: string, legal: LegalCalls): { name: string; display: string } {
     if (legal.behaviors.includes(toolName)) {
       return {
         name: toolName,
-        display: this.deps.info.behaviorDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
+        display: this.deps.info.behaviorTitle(subTask.scenario_name, subTask.ontology_name, toolName),
       };
     }
     // 本体函数是一等工具（函数名即工具名），用合法函数名判定是函数而非公共函数/新增 MCP
     if (legal.functions.includes(toolName)) {
       return {
         name: toolName,
-        display: this.deps.info.functionDisplayName(subTask.scenario_name, subTask.ontology_name, toolName),
+        display: this.deps.info.functionTitle(subTask.scenario_name, subTask.ontology_name, toolName),
       };
     }
     return { name: '', display: '' };
@@ -408,7 +407,7 @@ export class SubtaskRunner {
     if (meta.concepts.length > 0 && (meta.preRules.length > 0 || meta.postRules.length > 0)) {
       text += `\n### 关联概念属性\n`;
       meta.concepts.forEach(c => {
-        text += `  ${c.name} (${c.display_name}): ${c.attributes.map(a => a.name).join(', ')}\n`;
+        text += `  ${c.name} (${c.title}): ${c.attributes.map(a => a.name).join(', ')}\n`;
       });
     }
 

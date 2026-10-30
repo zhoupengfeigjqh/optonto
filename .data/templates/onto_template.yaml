@@ -12,16 +12,16 @@ concepts:
   attributes:
   - name: attrName
     type: string
-    display_name: 属性展示名称
+    title: 属性展示名称
     description: 属性详细描述
     example: 示例值
     constraint:
       unique: true
       required: true
-      pattern: '^[A-Za-z0-9_-]+$'
+      pattern: ^[A-Za-z0-9_-]+$
   - name: enumAttrName
     type: string
-    display_name: 枚举属性示例
+    title: 枚举属性示例
     description: 取值受限于固定集合时用 constraint.enum 表达（status 属性必须如此）
     example: 有效
     constraint:
@@ -31,13 +31,13 @@ concepts:
       required: true
   - name: numericAttrName
     type: number
-    display_name: 数值属性示例
+    title: 数值属性示例
     description: number/integer 类型属性可在 constraint 中填写取值范围（min/max 可只填其一）
     example: 50
     constraint:
       min: 0
       max: 100
-  display_name: 概念展示名称
+  title: 概念展示名称
   instance_label: attrName
   terms:
   - 采购记录
@@ -48,21 +48,19 @@ concepts:
       - 有效
 concept_relations:
 - name: ChildConceptSubClassOfParentConcept
-  display_name: 子概念 是一种 父概念
   relation_type: SubClassOf
   source: ChildConcept
   target: ParentConcept
   source_attr: attrName
   target_attr: attrName
-  description: 由概念设计父子关系自动同步，仅关联概念属性可修改
 - name: ProcurementOrderEquivalentClassPurchaseOrder
-  display_name: 采购订单与采购单等价
+  title: 采购订单与采购单等价
   relation_type: EquivalentClass
   source: ProcurementOrder
   target: PurchaseOrder
   description: 同一业务对象的不同叫法，内涵与外延一致
 - name: DraftOrderDisjointWithSubmittedOrder
-  display_name: 草稿订单与已提交订单互斥
+  title: 草稿订单与已提交订单互斥
   relation_type: DisjointWith
   source: DraftOrder
   target: SubmittedOrder
@@ -77,54 +75,54 @@ relations:
   source_attr: attrName
   target_attr: attrName
   description: 关系描述
-  display_name: 关系展示名称
+  title: 关系展示名称
 functions:
 - name: sumRawNotArrivalQty
-  display_name: 原材料未到位数
+  title: 原材料未到位数
   description: 根据传入的数据包指定的原材料，过滤掉到位时间小于当前时间的部分，对剩余部分的到位数arrivalQuantity求和。
   related_concepts:
   - PurchaseRecord
   params:
     filterRawMaterialName:
       type: string
-      display_name: 原材料名称
+      title: 原材料名称
       example: 高强度钢板
       required: true
     currentDate:
       type: string
-      display_name: 日期
+      title: 日期
       example: '2026-01-01'
       required: true
     purchaseRecordSet:
       type: array
-      display_name: 采购记录集
+      title: 采购记录集
       items:
         type: object
         properties:
           arrivalTime:
             type: string
-            display_name: 到位时间
+            title: 到位时间
             example: '2026-09-01'
             required: true
           rawMaterialName:
             type: string
-            display_name: 原材料名称
+            title: 原材料名称
             example: 高强度钢板
             required: true
           arrivalQuantity:
             type: number
-            display_name: 计划的到位数量
+            title: 计划的到位数量
             example: 100
             required: true
       required: true
   response:
     rawMaterialName:
       type: string
-      display_name: 原材料名称
+      title: 原材料名称
       example: 高强度钢板
     sumNotArrivalQty:
       type: number
-      display_name: 未到位总量
+      title: 未到位总量
       example: 100
   code_file: functions/sumRawNotArrivalQty.py
   type: CALCULATION
@@ -135,86 +133,86 @@ behaviors:
   params:
     tradeId:
       type: string
-      description: 交易编号
+      title: 交易编号
       required: true
       example: TRD001
     status:
       type: string
-      description: 状态
+      title: 状态
       required: true
       example: active
     user:
       type: object
-      description: 用户信息
+      title: 用户信息
       required: true
       properties:
         id:
           type: string
-          description: 用户ID
+          title: 用户ID
           required: true
           example: USR001
         name:
           type: string
-          description: 用户名称
+          title: 用户名称
           required: true
           example: 张三
     tags:
       type: array
-      description: 标签列表
+      title: 标签列表
       required: false
       items:
         type: string
         example: 加急
     products:
       type: array
-      description: 产品列表
+      title: 产品列表
       required: true
       items:
         type: object
         properties:
           sku:
             type: string
-            description: SKU
+            title: SKU
             required: true
             example: SKU-001
           quantity:
             type: number
-            description: 数量
+            title: 数量
             required: true
             example: 10
   response:
     code:
       type: number
-      display_name: 状态码
+      title: 状态码
       example: 0
     data:
       type: object
-      display_name: 返回数据
+      title: 返回数据
       properties:
         orderId:
           type: string
-          display_name: 订单编号
+          title: 订单编号
           example: ORD001
         total:
           type: number
-          display_name: 订单总额
+          title: 订单总额
           example: 1500.5
   concept: ConceptName
   from_status: 原状态（command 行为填写，取自关联概念 status 属性的枚举；query 行为留空）
   to_status: 新状态（command 行为填写，同上；query 行为留空）
-  display_name: 行为展示名称
+  title: 行为展示名称
 - name: QueryOrderSQL
   description: 根据订单状态查询订单明细
   op_type: query
   params:
     status:
       type: string
-      description: 订单状态
+      title: 订单状态
       required: true
       example: active
     orderDate:
       type: string
-      description: 订单日期
+      title: 订单日期
       required: false
       example: '2026-01-01'
   response:
@@ -233,20 +231,20 @@ behaviors:
             type: number
             example: 1500
   concept: ConceptName
-  display_name: SQL查询订单
+  title: SQL查询订单
 rules:
 - name: OrderTypeValid
   description: 规则描述，详细的规则逻辑
   behavior: CreateOrder
   related_functions:
   - sumRawNotArrivalQty
-  display_name: 规则展示名称
+  title: 规则展示名称
   position: 前置/后置
   data_supplements:
   - QueryOrderSQL
 processes:
 - name: OrderFulfillment
-  display_name: 流程展示名称
+  title: 流程展示名称
   goal: 流程目标
   description: 流程描述
   steps:

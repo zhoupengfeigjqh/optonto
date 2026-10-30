@@ -14,7 +14,7 @@ const child = (seq: number, type: LogEntry['type'], name = 'QueryInventory'): Lo
   ({ time: '10:00:01', type, name, status: type === 'subtask_done' ? 'done' : 'running', source: 'child', seq });
 
 const subtaskGroup = [
-  { ...child(1, 'subtask_start'), displayName: '查库存' },
+  { ...child(1, 'subtask_start'), title: '查库存' },
   child(1, 'tool_call'),
   // 'security_confirm' 是后端真实类型名；此前误写 'security'（后端从不发该值），
   // 因 LogEntry.type 曾是 string 而无法暴露（2026-10-05 收紧类型后修正，审查 H5）
@@ -44,7 +44,7 @@ describe('ExecutionLogDrawer — 属性传递', () => {
 
   it('失败态标题显示 ✗ 并标红背景（状态取首个 subtask_done）', () => {
     setup([
-      { ...child(1, 'subtask_start'), displayName: '查库存' },
+      { ...child(1, 'subtask_start'), title: '查库存' },
       { ...child(1, 'subtask_done'), status: 'failed' },
     ]);
     expect(screen.getByText('✗')).toBeInTheDocument();

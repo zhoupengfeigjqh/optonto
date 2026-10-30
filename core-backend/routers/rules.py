@@ -83,7 +83,7 @@ async def generate_rule(ontology_id: int, body: dict):
     data = load_ontology_data(sc_name, on_name)
 
     rule_name = body.get("rule_name", "")
-    rule_display_name = body.get("rule_display_name", "")
+    rule_title = body.get("rule_title", "")
     rule_description = body.get("rule_description", "")
     behavior_name = body.get("behavior", "")
 
@@ -98,8 +98,8 @@ async def generate_rule(ontology_id: int, body: dict):
             for ra in effective.get(c.name, []):
                 a = ra.attribute
                 origin = "" if ra.inherited_from == c.name else f"，继承自 {ra.inherited_from}"
-                attrs.append(f"  {c.name}.{a.name} ({a.type}) — {a.display_name or a.description or ''}{origin}")
-        behavior_info += f"行为：{beh.name} ({beh.display_name or ''})\n"
+                attrs.append(f"  {c.name}.{a.name} ({a.type}) — {a.title or a.description or ''}{origin}")
+        behavior_info += f"行为：{beh.name} ({beh.title or ''})\n"
         behavior_info += f"描述：{beh.description}\n"
         if beh.concept:
             behavior_info += f"主体概念：{beh.concept}\n"
@@ -112,14 +112,14 @@ async def generate_rule(ontology_id: int, body: dict):
     # 2. Collect the full available function catalog（本体函数 ∪ 公共函数，供 LLM 选择）
     function_info = ""
     for fn in data.functions:
-        function_info += f"函数：{fn.name} ({fn.display_name or ''}) [本体函数，类型 {fn.type or '未标注'}]\n"
+        function_info += f"函数：{fn.name} ({fn.title or ''}) [本体函数，类型 {fn.type or '未标注'}]\n"
         function_info += f"描述：{fn.description}\n"
         function_info += f"输入参数：{json.dumps(fn.params, ensure_ascii=False, default=str)}\n"
         function_info += f"返回结构：{json.dumps(fn.response, ensure_ascii=False, default=str)}\n\n"
     for cf in read_common_functions():
         if not isinstance(cf, dict) or not cf.get("name"):
             continue
-        function_info += f"函数：{cf['name']} ({cf.get('display_name', '')}) [公共函数]\n"
+        function_info += f"函数：{cf['name']} ({cf.get('title', '')}) [公共函数]\n"
         function_info += f"描述：{cf.get('description', '')}\n"
         function_info += f"返回结构：{json.dumps(cf.get('response', {}), ensure_ascii=False, default=str)}\n\n"
 
@@ -128,7 +128,7 @@ async def generate_rule(ontology_id: int, body: dict):
 
     prompt = RULE_GENERATE_PROMPT.format(
         rule_name=rule_name,
-        rule_display_name=rule_display_name,
+        rule_title=rule_title,
         rule_description=rule_description,
         behavior_info=behavior_info or "（未关联行为）",
         function_info=function_info or "（无可用函数）",

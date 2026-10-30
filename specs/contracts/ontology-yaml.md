@@ -140,15 +140,16 @@
 | concepts[] | `sub_class_of` | `string \| null` | 父概念（OWL `subClassOf`）**至多 1 个**；空/缺省 = 根概念；读时兼容 camelCase `subClassOf` 别名 |
 | concepts[] | `attribute_restrictions` | `{属性名: {enum?, min?, max?, pattern?}}` | 对**继承属性**的收窄声明；空对象不落盘 |
 | concept_relations[] | `relation_type` | `string` | **概念关系**类型单选：`SubClassOf` / `EquivalentClass` / `DisjointWith`；值域外归一为空串（业务层 400） |
-| concept_relations[] | `name` / `display_name` / `source` / `target` / `source_attr` / `target_attr` / `description` | `string` | 概念关系字段 = 对象关系去掉 `cardinality`；关联概念属性**选填**（两端同填同空、类型一致） |
+| concept_relations[] | `name` / `title` / `source` / `target` / `source_attr` / `target_attr` / `description` | `string` | 概念关系字段 = 对象关系去掉 `cardinality`；关联概念属性**选填**（两端同填同空、类型一致） |
 
 **概念关系口径（2026-10-19）**：
 
-- `SubClassOf` 的成员关系**唯一权威是 `concepts[].sub_class_of`**：`concept_relations` 中的同类型条目只作「关联概念属性」持久化锚点，读取时由后端按概念图派生（`name` = `{子概念}SubClassOf{父概念}`、`display_name` = `{子中文} 是一种 {父中文}`），失配锚点自动剪枝。API 只允许对 SubClassOf 行更新两端属性，禁止新增/删除。
+- `SubClassOf` 的成员关系**唯一权威是 `concepts[].sub_class_of`**：`concept_relations` 中的同类型条目只作「关联概念属性」持久化锚点，读取时由后端按概念图派生（`name` = `{子概念}SubClassOf{父概念}`、`title` = `{子中文} 是一种 {父中文}`），失配锚点自动剪枝。API 只允许对 SubClassOf 行更新两端属性，禁止新增/删除。
+- **SubClassOf 锚点的落盘字段只有 `name` / `relation_type` / `source` / `target` / `source_attr` / `target_attr`**：`title` 与 `description` 恒为读时派生值，落盘永不回读，故写盘时一律剔除（空非空都剔除，`_compact_concept_relations`）。
 - `EquivalentClass` / `DisjointWith` 由 `concept_relations` 落盘；二者对称，同一无序概念对只登记一条（反向重复 → 400）；不得用于祖先-后代概念。
 - 概念关系与对象关系（`relations`）分属两个一级节，互不混用；部署合并、生成范围勾选均按一级节独立处理。
 
-**`params` 说明字段口径（两端一致）**：`behaviors[].params` 项的说明字段为 **`description`**，`functions[].params` 项为 **`display_name`**，两者不互换（`mcp-shared/tool_contract.param_spec_to_schema` 以 `display_name or description` 做读取兜底，但**写入**须按各自口径）。
+**`params` 中文字段口径（两端一致）**：`functions[].params` 与 `behaviors[].params` 项的中文字段名统一为 **`title`**，`description` 降级为**可选的补充说明**（不再承担中文名）。编译器 `mcp-shared/tool_contract.param_spec_to_schema` 以 `title or description` 读取（兜底仅面向外部 MCP 工具与历史快照），产物写 JSON Schema 的 `title`。
 
 **迁移规则（读时兼容，两端一致）**：
 
@@ -221,6 +222,49 @@
 > 镜像用例：`core-backend/tests/test_concept_inheritance.py`（39 例）与
 > `agent-backend/src/services/ontology-gateway.test.ts`（I1-I3）；前端纯函数见
 > `frontend/src/components/Design/concept-inheritance.test.ts`。
+
+## 6. 中文名字段（`title`）口径（2026-10-29，spec 006 · 硬切）
+
+**单一表达**：平台内"中文名"的字段名统一为 **`title`**；`display_name` 已从代码与全部存量文件中移除，
+**不留读时兼容、不留别名、不双写**。任何一端读到的旧键 `display_name` 一律视为不存在（Pydantic 对未知键静默忽略）。
+
+覆盖实体（落盘字段）：`concepts[]` / `concepts[].attributes[]` / `relations[]` / `concept_relations[]` /
+`functions[]` / `behaviors[]` / `rules[]` / `processes[]` / `securities[]`（`action_name` 之外的展示名快照）/
+`data_engines[]`（引擎自身），以及 `functions[]` 与 `data_engines[]` 的 `params` / `response` 内每一层的
+字段声明（含 `items.properties` 深层）。
+
+**参数/返回字段口径（2026-10-29 起统一）**：
+
+| 位置 | 中文字段 | 说明 |
+| :-- | :-- | :-- |
+| `functions[].params[*]` / `functions[].response[*]` | `title` | 首次统一 |
+| `behaviors[].params[*]` / `behaviors[].response[*]` | `title` | 由 `description` 迁移（spec 006 D-2） |
+| `data_engines[].target.params[*]` / `target.response[*]` | `title` | 首次统一 |
+
+`description` 在参数节点上只剩"补充说明"语义；空值不落盘，**不参与中文名取数，任何一端都不再从它兜底**。
+
+**`concept_relations[].title` 的语义（2026-10-30 判定：不另设字段名）**：它同样是"该实体的中文名"，只是概念关系本身是**断言**，其名字天然是句式（`采购订单与采购单等价` / `子概念 是一种 父概念`），而概念/属性的名字是名词短语。形态差异来自实体类型，不是字段语义分叉——改名为 `label` / `statement` 只会给"中文名"制造第二个名字，与 spec 006 的收口目标相反。
+
+**编译产物（`mcp-shared/tool_contract.py`）**：
+
+参数节点三个键各承一义，编译产物与源数据同形（`param_spec_to_schema`）：
+
+| JSON Schema 键 | 语义 | 源数据来源 |
+| :-- | :-- | :-- |
+| `properties[k].title` | 中文名 | `params[k].title` |
+| `properties[k].description` | 补充说明 | `params[k].description` |
+| `properties[k].example` | 示例值 | `params[k].example` |
+
+- 中文名**只认 `title`**：无 `title` 就不产出 `title`，不回落 `description`；
+- 工具级中文名 → **工具级 `title`**（发布快照 `tools[].title`；协议 `Tool.title`）。`inputSchema` 顶层扩展键
+  **`x-title`** 是它在平台内的**运行期投影**（2026-10-30 反转，编译侧不再产出）。**不是** `inputSchema.title`——
+  后者是 JSON Schema 描述 schema 自身的键。
+
+**存量迁移**：`.data` 下全部本体文件、版本存档、`data_engines.yaml`、`securities.yaml`、`common_functions/functions.json`、
+`mcp_publishes/publishes.json`、模板与技能文档均已一次性改写；迁移脚本走 YAML/JSON 解析改键（禁止文本正则），
+并有「迁移前后非空中文名键路径→值集合相等」的校验。
+
+---
 
 ## 7. 统一返回信封与规则判断函数（2026-09-30）
 

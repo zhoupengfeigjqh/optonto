@@ -90,7 +90,7 @@ agent 网关 `getBehaviorMeta().concepts[].attributes` 三者内容一致（收�
 
 ## 关键实体
 
-- **概念（Concept）**：`name / display_name / description / terms / instance_label / sub_class_of / attributes / attribute_restrictions`。
+- **概念（Concept）**：`name / title / description / terms / instance_label / sub_class_of / attributes / attribute_restrictions`。
 - **继承属性视图（InheritedAttribute）**：属性字段 + `inherited_from`（实际声明概念）+ `restricted`（是否被本概念收窄）。
 
 ## 边界与不做

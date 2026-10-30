@@ -22,7 +22,7 @@ async function main() {
     console.log(`== ${server.name}: ${tools.length} tools`);
     for (const t of tools as any[]) {
       const e = toMountableToolInfo({ name: t.name, description: t.description, parameters: t.inputSchema });
-      console.log(`  ${e.name.padEnd(28)} category=${e.category} displayName=${e.displayName ?? ''} scope=${JSON.stringify(e.scope ?? null)}`);
+      console.log(`  ${e.name.padEnd(28)} category=${e.category} title=${e.title ?? ''} scope=${JSON.stringify(e.scope ?? null)}`);
     }
     await client.close?.();
   }

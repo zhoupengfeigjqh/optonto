@@ -56,21 +56,32 @@ class FunctionCompileCase(unittest.TestCase):
         self.assertNotIn("const", prop)                 # 不再是发布绑定值
         self.assertIn("ontology_id", schema["required"])  # LLM 必须填写
         self.assertIn("必填", prop["description"])
+        self.assertEqual(prop["title"], "本体ID")        # 注入参数自带中文名（2026-10-30）
+
+    def test_工具中文名存放在tool级title而非x_title(self):
+        """2026-10-30 反转：快照只存协议字段同名键 ``title``，``x-title`` 由容器启动时投影。"""
+        _, tools = store.compile_tools(
+            1, store.KIND_ONTOLOGY_FUNCTION, ["sumRawNotArrivalQty"])
+        tool = tools[0]
+        self.assertEqual(tool["title"], "原材料未到位数")     # 源自本体 functions[].title
+        self.assertNotIn("x-title", tool["inputSchema"])     # 编译侧不再写私有键
 
     def test_ontology_scope_metadata_and_category_present(self):
+        """2026-10-30：归类与本体归属存**工具级字段**，不混进参数 schema（容器启动时投影成 x- 键）。"""
         oid, on_name, fname = self.picked
         _, tools = store.compile_tools(oid, store.KIND_ONTOLOGY_FUNCTION, [fname])
-        schema = tools[0]["inputSchema"]
-        self.assertEqual(schema["x-category"], CATEGORY_FUNCTION)
-        scope = schema["x-ontology-scope"]
+        tool = tools[0]
+        schema = tool["inputSchema"]
+        self.assertEqual(tool["category"], CATEGORY_FUNCTION)
+        scope = tool["ontologyScope"]
         self.assertEqual(scope["ontology_id"], oid)
         self.assertEqual(scope["ontology_name"], on_name)
+        # 快照里的参数 schema 只有参数：三个 x- 键一个都不留（由发布容器启动时投影）
+        for key in ("x-category", "x-ontology-scope", "x-title", "x-publish-service"):
+            self.assertNotIn(key, schema)
         # 元数据不是参数：不进 properties，也不含冗余 name（工具名即裸名）
         self.assertNotIn("scope", schema["properties"])
-        self.assertNotIn("x-ontology-scope", schema["properties"])
         self.assertNotIn("name", scope)
-        # 2026-10-05：旧的 x-publish-service 标记已删除（写而不读的死数据，消费端只看 x-category）
-        self.assertNotIn("x-publish-service", schema)
 
     def test_required_contains_ontology_id_only_as_system_param(self):
         oid, _, fname = self.picked
@@ -102,9 +113,10 @@ class BehaviorCompileCase(unittest.TestCase):
         oid, on_name, bname = picked
         ontology_name, tools = store.compile_tools(oid, store.KIND_BEHAVIOR, [bname])
         self.assertEqual(ontology_name, on_name)
-        schema = tools[0]["inputSchema"]
-        self.assertEqual(schema["x-category"], CATEGORY_BEHAVIOR)
-        self.assertEqual(schema["x-ontology-scope"]["ontology_id"], oid)
+        tool = tools[0]
+        schema = tool["inputSchema"]
+        self.assertEqual(tool["category"], CATEGORY_BEHAVIOR)
+        self.assertEqual(tool["ontologyScope"]["ontology_id"], oid)
         self.assertIn("ontology_id", schema["required"])
 
     def test_unready_behavior_rejected(self):
@@ -154,11 +166,11 @@ class BuildEntryCase(unittest.TestCase):
         self.assertEqual(entry["items"], [picked[1]])
         self.assertTrue(entry["container_name"].startswith(store.CONTAINER_PREFIX))
         self.assertGreaterEqual(len(entry["token"]), 16)
-        # 容器配置只带工具（本体归属在工具元数据里），不重复存 ontology_id
+        # 容器配置只带工具（本体归属在每个工具的 ontologyScope 里），不重复存 ontology_id
         config = store.build_publish_config(entry)
         self.assertNotIn("ontology_id", config)
-        self.assertEqual(config["tools"][0]["inputSchema"]["x-ontology-scope"]["ontology_id"],
-                         entry["ontology_id"])
+        self.assertEqual(config["tools"][0]["ontologyScope"]["ontology_id"], entry["ontology_id"])
+        self.assertEqual(config["tools"][0]["category"], CATEGORY_FUNCTION)
 
     def test_ontology_id_must_be_positive_int(self):
         with self.assertRaises(InvalidInputError):

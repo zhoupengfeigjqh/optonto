@@ -308,7 +308,7 @@ export function useAgentStream(args: UseAgentStreamArgs): UseAgentStream {
                 if (entry.type === 'subtask_start') {
                   updated.push({
                     role: 'subtask', runId, seq, behavior: entry.name,
-                    displayName: entry.displayName, displayLabel: entry.displayLabel,
+                    title: entry.title,
                     description: entry.description, status: entry.status, details: [entry],
                   });
                 }
@@ -317,8 +317,7 @@ export function useAgentStream(args: UseAgentStreamArgs): UseAgentStream {
               const it = updated[idx] as SubtaskChatItem;
               if (entry.type === 'subtask_start') {
                 updated[idx] = {
-                  ...it, status: entry.status, displayName: entry.displayName,
-                  displayLabel: entry.displayLabel ?? it.displayLabel,
+                  ...it, status: entry.status, title: entry.title ?? it.title,
                   description: entry.description ?? it.description,
                   details: [...it.details, entry],
                 };

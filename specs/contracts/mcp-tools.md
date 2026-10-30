@@ -43,10 +43,44 @@
 对应地，执行服务停机时自建发布会不可用（错误文案指名依赖服务），这是保留「单一执行来源」的代价。
 ## 2. 分类标记（单一来源）
 
-载体是 **JSON Schema 顶层扩展键**（协议透传，不进入 `properties`，因而不污染参数面）：
+载体是 **JSON Schema 顶层扩展键**（协议透传，不进入 `properties`，因而不污染参数面）。
+**三个键一律是运行期投影**（2026-10-30 反转）：权威值在**工具级字段**，编译侧只产参数 schema。
 
-- `x-category`：工具类别，取下表五值之一
-- `x-display_name`：发布方权威中文名
+- `x-category` ← `tools[].category`：工具类别，取下表五值之一
+- `x-title` ← `tools[].title`：工具中文名（协议字段 `Tool.title` 的同源投影）
+- `x-ontology-scope` ← `tools[].ontologyScope`：本体上下文（仅本体执行类，见 §3）
+
+写入点唯一：`mcp-shared/mcp_app.py::tool_kwargs()`（容器启动时投影；字段为空则连投影一起清掉）。
+
+**参数节点**（2026-10-30 收口）三键各承一义，与本体源数据同形：
+`properties[k].title` = 中文名、`properties[k].description` = 补充说明、`properties[k].example` = 示例值。
+中文名**只认 `title`**（不从 `description` 兜底）；`description` 不再兼作中文名、也不再塞 `示例:` 串。
+**唯一例外——编译器注入的系统参数 `ontology_id`**（本体执行类 + 本体查询类）：源数据里没有这个参数，
+没有可搬运的中文名，故中文名由编译器声明为 `title: 本体ID`（2026-10-30 补齐）。这是该参数的**声明本身**，
+不是从 `description` 兜底；用户定义参数仍严格遵循"无 `title` 就不产出 `title`"。
+**不要把工具中文名写进 `inputSchema.title`**——那是描述 schema 自身的键。
+
+**工具级中文名（2026-10-30 反转：协议字段为准，`x-title` 为投影）**
+
+一个值，两个落点，**权威值是工具级 `title`**：
+
+```
+本体 functions/behaviors[].title               ← 人的输入（唯一语义源）
+   ↓ core 编译（发布快照只存工具级字段）
+tools[] = { name, title, category, ontologyScope, description, inputSchema }
+   ↓ 容器启动（唯一写入点 mcp_app.tool_kwargs()）
+Tool(title = tools[].title)                    ← 协议字段（MCP 2025-06-18，仅外部客户端可见）
+inputSchema["x-title"] = 同一个 title           ← 平台内投影（agent 读它）
+```
+
+- **快照只存工具级字段**，`inputSchema` 里三个 `x-` 键一个都没有；编译侧（`with_category` / `with_ontology_scope`）
+  只在**投影时**被调用，本身不再产出这些键。`title` 为空时连投影一起清掉（不写空串、不拿英文 `name` 兜底）。
+- 三个发布端的权威来源：自建发布 = 快照 `tools[].title`（源自本体函数/行为 `title`）；本体查询 = 工具表 `label`；
+  公共函数 = manifest `title`。
+- **平台自身消费 `x-title`，不消费 `Tool.title`**（2026-10-30 用户决策）：agent 读 `inputSchema["x-title"]`、前端工具列表
+  用 `name`/`description`；`Tool.title` 只服务**外部 MCP 客户端**（Inspector / IDE / 第三方宿主），规范定位是"给人看的
+  显示名"，**不参与调用/路由/鉴权**。
+- **SDK 降级隔离**：老 SDK 无 `Tool.title` 时**只丢协议字段**，`x-title` 投影照旧——外部兼容问题不传染平台内部中文名。
 
 | `x-category` | 归位 | 性质 | 发布端 |
 |---|---|---|---|
@@ -63,17 +97,18 @@
 
 **仅「本体执行类」（`本体行为` / `本体函数`）携带**，表示"该工具属于某本体"。
 
-- **载位**：schema 顶层扩展键（与 `x-category` 同级），**不进 `properties`**——对 LLM / 客户端而言
-  它不是参数，看不到也填不了（要求 2）；
+- **载位**：**权威值是工具级字段 `tools[].ontologyScope`**（发布快照里与业务参数完全分离）；
+  运行期由 `tool_kwargs()` 投影成 `inputSchema["x-ontology-scope"]`（渲染给消费端），**不进 `properties`**
+  ——对 LLM / 客户端而言它不是参数，看不到也填不了（要求 2）；
 - **内容**：只含本体身份——`ontology_id` / `scenario_id` / `scenario_name` / `ontology_name`
   （元数据缺失时该键缺席）；**不含** `name`（工具名即行为/函数裸名，重复存储只会产生第二个真相）
   与分类标记（不与 §2 重复表达）；
-- **生成**：发布时由 `with_ontology_scope()` 按本体 `ontology.yaml` 的 `metadata` 写入，发布即冻结；
+- **生成**：发布时按本体 `ontology.yaml` 的 `metadata` 编译成 `ontologyScope`（2026-10-30 起不再直接写进 schema），发布即冻结；
 - 处理链：
 
 | 阶段 | 处理 |
 |---|---|
-| 发布 | `with_ontology_scope()` 写入 schema 顶层（不进 `properties`） |
+| 发布 | 编译成 `tools[].ontologyScope`；容器启动时投影到 `inputSchema["x-ontology-scope"]`（不进 `properties`） |
 | 自建发布门面 | 按被调工具取元数据，随转发载荷 `scope` 带给执行底座（门面不做判断） |
 | 父 / 子 Agent | 发现期 `readOntologyScope` 提升为工具字段 `ontologyScope`；交给 LLM 的 schema 由 `stripOntologyScope` 剥掉 |
 | 执行底座 | 校验 `scope.ontology_id` == 调用方传入的 `ontology_id`（契约 ④-1） |
@@ -130,7 +165,7 @@
 
 ## 7. 消费侧行为（摘要）
 
-- **父 Agent** 挂载全部 `本体查询` 类工具（按 `x-category` 判定，不再硬编码名单）；执行记录展示名取自 `PARENT_TOOL_LABELS`（与发布端 `x-display_name` 同文案）。
+- **父 Agent** 挂载全部 `本体查询` 类工具（按 `x-category` 判定，不再硬编码名单）；执行记录展示名取自 `PARENT_TOOL_LABELS`（与发布端 `x-title` 同文案）。
 - **子 Agent** 只挂执行类：本体行为按工具名（即行为裸名）匹配合法行为集合，本体函数 / 公共函数 / 外部工具按工具名匹配 `legalCalls.functions`；**本体查询类一律不挂**。
 - **可规划清单**（`listPlannableFunctions`）剔除本体行为与本体查询：只列可下放的函数/外部工具。
 - **行为可规划判据 = 实际挂载目录**（2026-10-19）：`FunctionCatalogView.behaviorNames()` 从本次会话真实发现的
@@ -187,7 +222,7 @@
 自建发布**绑定单一本体**，工具面如下：
 
 - `ontology_id`：**必填参数**，由调用方（LLM）填写当前操作的本体；门面原样转发，底座用发布声明校验
-  （填错即 400，且报错给出"应填哪个 id"）；
+  （填错即 400，且报错给出"应填哪个 id"）；参数节点带 `title: 本体ID`（编译器注入，2026-10-30）；
 - `x-ontology-scope`：发布时固化的本体身份元数据（默认值取本体 `metadata`），**不进 `properties`**，
   故 LLM 看不到、也填不了；门面转发时把它作为 `scope` 带给底座；
 - `x-category`：取真实归位（`本体函数` / `本体行为`），agent 侧零适配即可挂载。
@@ -265,9 +300,14 @@
 
 ### 9.4 发布即冻结
 
-`tools` 是**发布时编译的快照**（含约束）。改了本体函数/行为的参数后需重新发布
+`tools` 是**发布时编译的快照**（含约束）。改了本体函数/行为的参数或 `title` 后需重新发布
 （删除再创建）才会反映到已发布容器——刻意不做热加载，避免"容器内实际注册的清单"与
 "页面看到的清单"不一致，工具清单的可信度是发布面的核心承诺。
+
+快照条目字段（2026-10-30）：`{ name, title, category, ontologyScope, description, inputSchema }`
+——工具级元数据全部在**工具级字段**，`inputSchema` 只含参数（`type` / `properties` / `required`），
+三个 `x-` 键由容器启动时投影（见 §2）。老快照（元数据埋在 `inputSchema` 里）已由两批一次性迁移
+提升为 `title` / `category` / `ontologyScope`。
 
 **查看工具走快照、不探测容器**（2026-10-19）：自建发布卡片上的「查看工具」由
 `GET /api/mcp/published/{name}/tools` 读注册表条目（`name` / `kind` / `ontology_name` / `tools`），

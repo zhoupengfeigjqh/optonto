@@ -244,15 +244,15 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
 
   const getBehaviorDisplay = (behaviorName: string) => {
     const b = behaviors.find(be => be.name === behaviorName);
-    return b ? (b.display_name || b.name) : behaviorName;
+    return b ? (b.title || b.name) : behaviorName;
   };
 
   const getParamDisplay = (behaviorName: string, paramKey: string) => {
     const b = behaviors.find(be => be.name === behaviorName);
     if (!b) return paramKey;
     const paramDef = (b.params as Record<string, any>)?.[paramKey];
-    if (paramDef && typeof paramDef === 'object' && paramDef.display_name) {
-      return paramDef.display_name;
+    if (paramDef && typeof paramDef === 'object' && paramDef.title) {
+      return paramDef.title;
     }
     return paramKey;
   };
@@ -296,7 +296,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
   const columns = [
     { title: '本体行为', dataIndex: 'behavior_name', key: 'behavior_name', width: 160, render: (_: any, r: any) => {
       const b = r._behavior as Behavior;
-      return <span className="cursor-pointer hover:text-accent-blue transition-colors" {...clickableProps(() => openBehaviorEdit(b.name), '编辑行为')}>{b.display_name || b.name}</span>;
+      return <span className="cursor-pointer hover:text-accent-blue transition-colors" {...clickableProps(() => openBehaviorEdit(b.name), '编辑行为')}>{b.title || b.name}</span>;
     }},
     { title: '目标接口设置', key: 'target', width: 100, render: (_: any, r: any) => {
       const de = getEngine(r._behavior.name);
@@ -409,7 +409,7 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
       {/* ─── Behavior Params/Response Edit Modal ────────────────────────── */}
       <BehaviorEditModal
         open={behaviorEditOpen}
-        title={`编辑行为参数 - ${behaviors.find(b => b.name === behaviorEditName)?.display_name || behaviorEditName}`}
+        title={`编辑行为参数 - ${behaviors.find(b => b.name === behaviorEditName)?.title || behaviorEditName}`}
         paramsStr={behaviorParamsStr}
         responseStr={behaviorResponseStr}
         loading={behaviorEditLoading}

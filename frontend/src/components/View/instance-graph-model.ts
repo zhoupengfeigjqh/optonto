@@ -86,7 +86,7 @@ export function extractRows(payload: any): Record<string, any>[] {
 
 export function nodeLabel(concept: Concept | undefined, row: Record<string, any>, _key: string): string {
   const instanceLabelField = concept?.instance_label;
-  const prefix = concept?.display_name || concept?.name || '';
+  const prefix = concept?.title || concept?.name || '';
   // 使用 instance_label 指定的属性作为节点标签
   if (instanceLabelField && row[instanceLabelField] !== undefined && row[instanceLabelField] !== null && row[instanceLabelField] !== '') {
     return `${prefix}:${String(row[instanceLabelField])}`;
@@ -114,7 +114,7 @@ export function buildResultColumns(
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   });
   return keys.slice(0, 8).map(k => ({
-    title: attrs.find(a => a.name === k)?.display_name || k,
+    title: attrs.find(a => a.name === k)?.title || k,
     dataIndex: k,
     key: k,
     ellipsis: true,
@@ -140,9 +140,9 @@ export function buildChartOption(graph: GraphData, conceptMap: Map<string, Conce
           const concept = conceptMap.get(node.concept);
           const conceptAttrs = effectiveAttributes(concept);
           const attrLabel = (k: string) =>
-            conceptAttrs.find(a => a.name === k)?.display_name || k;
+            conceptAttrs.find(a => a.name === k)?.title || k;
           let html = `<div style="font-size:13px;color:#e2e8f0;max-width:320px">`;
-          html += `<strong style="font-size:14px">${concept?.display_name || node.concept}</strong>`;
+          html += `<strong style="font-size:14px">${concept?.title || node.concept}</strong>`;
           html += `<br/><span style="color:#64748b;font-size:11px">${node.concept}</span>`;
           for (const [k, v] of Object.entries(node.row)) {
             const val = typeof v === 'object' ? JSON.stringify(v) : String(v);

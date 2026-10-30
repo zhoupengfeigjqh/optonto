@@ -22,7 +22,7 @@ const DEPLOYED_YAML = `metadata:
   deployed_version: v1.2
 concepts:
 - name: PurchaseOrder
-  display_name: 采购单
+  title: 采购单
 `;
 
 beforeEach(() => {

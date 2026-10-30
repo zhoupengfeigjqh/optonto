@@ -13,7 +13,7 @@ RULE_GENERATE_PROMPT = """根据以下信息为规则选择关联函数（relate
 
 【规则基本信息】
 规则名称：{rule_name}
-规则展示名称：{rule_display_name}
+规则展示名称：{rule_title}
 规则描述：{rule_description}
 
 【绑定行为与概念属性】

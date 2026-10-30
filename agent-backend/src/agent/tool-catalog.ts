@@ -2,7 +2,7 @@
  * 工具目录装配 —— MCP 工具 → 可挂载目录条目的转形知识单点（深 module 的装配侧）。
  *
  * 与发布端的契约（单一权威在 mcp-shared/tool_contract.py 模块 docstring，本文件是其消费实现）：
- *  - **分类标记**：顶层扩展键 `x-category`（五类）+ `x-display_name`（发布方权威中文名）。
+ *  - **分类标记**：顶层扩展键 `x-category`（五类）+ `x-title`（发布方权威中文名）。
  *    category 不再从 scope 内读取——同一语义只允许一种表达。
  *  - **本体上下文** `x-ontology-scope`：仅「本体执行类」（本体行为 / 本体函数）携带，是
  *    **发布时固化的工具元数据**（ontology_id + 场景/本体真实值），不是参数。它只给平台内部
@@ -44,7 +44,7 @@ export type ToolCategory = (typeof CATEGORY)[keyof typeof CATEGORY];
 
 /** 分类标记键（JSON Schema 扩展键，协议透传） */
 export const CATEGORY_KEY = 'x-category';
-export const DISPLAY_NAME_KEY = 'x-display_name';
+export const TITLE_KEY = 'x-title';
 
 /** 本体执行类：工具归属某个本体（本体上下文 + ontology_id 必填参数） */
 export function isOntologyExec(category: string | undefined): boolean {
@@ -112,8 +112,8 @@ export interface MountableToolInfo {
   name: string;
   category: ToolCategory;
   description: string;
-  /** 中文显示名（发布方权威标记 x-display_name），无则由上层兜底 */
-  displayName?: string;
+  /** 中文显示名（发布方权威标记 x-title），无则由上层兜底 */
+  title?: string;
   /** 参数声明结构（inputSchema 经 schemaToDeclaredParams 转形，已剥离本体元数据；ontology_id 是
    *  本体执行类的必填参数，保留），与子任务 params 填法同形 */
   params: Record<string, any>;
@@ -127,7 +127,7 @@ export interface MountableToolInfo {
 /**
  * 父 Agent 查询工具的**展示名映射**（执行记录用"中文（英文）"格式）。
  * 仅展示用途：成员资格由发布端 x-category=本体查询 决定（见 isQueryTool），
- * 文案与发布端 x-display_name 保持一致。
+ * 文案与发布端 x-title 保持一致。
  */
 export const PARENT_TOOL_LABELS: Record<string, string> = {
   listScenarios: '查询场景清单',
@@ -162,7 +162,7 @@ export function toMountableToolInfo(tool: {
     name: tool.name,
     category,
     description: tool.description || tool.label || '',
-    displayName: raw[DISPLAY_NAME_KEY] ?? undefined,
+    title: raw[TITLE_KEY] ?? undefined,
     // 完整参数结构：类型/必填/描述（本体工具示例拼在描述里，公共函数有 example 字段）
     params: schemaToDeclaredParams(visibleSchema),
     // 编译 inputSchema 原文：规划期参数校验（TypeBox）的数据源

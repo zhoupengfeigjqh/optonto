@@ -46,14 +46,14 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "rawMaterialId": {"type": "string", "required": true, "description": "", "example": "RM-001", "display_name": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": true, "description": "", "example": "高强度钢板", "display_name": "原材料名称"},
-  "arrivalQuantity": {"type": "number", "required": true, "description": "", "example": 50, "display_name": "到位数量"},
-  "supplierName": {"type": "string", "required": true, "description": "", "example": "XX钢铁集团", "display_name": "供应商名称"},
-  "arrivalTime": {"type": "string", "required": true, "description": "", "example": "2023-11-10", "display_name": "到位时间"},
-  "relatedOrderId": {"type": "string", "required": false, "description": "", "example": "SO-20231025-001", "display_name": "关联订单编号"},
-  "relatedOrderName": {"type": "string", "required": false, "description": "", "example": "客户A-项目X订单", "display_name": "关联订单名称"},
-  "unit": {"type": "string", "required": true, "description": "", "example": "吨", "display_name": "单位"}
+  "rawMaterialId": {"type": "string", "required": true, "description": "", "example": "RM-001", "title": "原材料编号"},
+  "rawMaterialName": {"type": "string", "required": true, "description": "", "example": "高强度钢板", "title": "原材料名称"},
+  "arrivalQuantity": {"type": "number", "required": true, "description": "", "example": 50, "title": "到位数量"},
+  "supplierName": {"type": "string", "required": true, "description": "", "example": "XX钢铁集团", "title": "供应商名称"},
+  "arrivalTime": {"type": "string", "required": true, "description": "", "example": "2023-11-10", "title": "到位时间"},
+  "relatedOrderId": {"type": "string", "required": false, "description": "", "example": "SO-20231025-001", "title": "关联订单编号"},
+  "relatedOrderName": {"type": "string", "required": false, "description": "", "example": "客户A-项目X订单", "title": "关联订单名称"},
+  "unit": {"type": "string", "required": true, "description": "", "example": "吨", "title": "单位"}
 }
 ```
 - **输出结构**:
@@ -63,18 +63,18 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
   "data": {
     "type": "object",
     "properties": {
-      "purchaseRecordId": {"type": "string", "display_name": "采购单号", "example": "PO-20231027-001"},
-      "rawMaterialId": {"type": "string", "display_name": "原材料编号", "example": "RM-001"},
-      "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"},
-      "purchaseTime": {"type": "string", "display_name": "采购时间", "example": "2023-10-27"},
-      "arrivalTime": {"type": "string", "display_name": "到位时间", "example": "2023-11-10"},
-      "arrivalQuantity": {"type": "number", "display_name": "到位数量", "example": 50},
-      "unit": {"type": "string", "display_name": "单位", "example": "吨"},
-      "supplierName": {"type": "string", "display_name": "供应商名称", "example": "XX钢铁集团"},
-      "relatedOrderId": {"type": "string", "display_name": "关联订单编号", "example": "SO-20231025-001"},
-      "relatedOrderName": {"type": "string", "display_name": "关联订单名称", "example": "客户A-项目X订单"},
-      "leadTime": {"type": "number", "display_name": "等待周期", "example": 14},
-      "status": {"type": "string", "display_name": "状态", "example": "待入库"}
+      "purchaseRecordId": {"type": "string", "title": "采购单号", "example": "PO-20231027-001"},
+      "rawMaterialId": {"type": "string", "title": "原材料编号", "example": "RM-001"},
+      "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"},
+      "purchaseTime": {"type": "string", "title": "采购时间", "example": "2023-10-27"},
+      "arrivalTime": {"type": "string", "title": "到位时间", "example": "2023-11-10"},
+      "arrivalQuantity": {"type": "number", "title": "到位数量", "example": 50},
+      "unit": {"type": "string", "title": "单位", "example": "吨"},
+      "supplierName": {"type": "string", "title": "供应商名称", "example": "XX钢铁集团"},
+      "relatedOrderId": {"type": "string", "title": "关联订单编号", "example": "SO-20231025-001"},
+      "relatedOrderName": {"type": "string", "title": "关联订单名称", "example": "客户A-项目X订单"},
+      "leadTime": {"type": "number", "title": "等待周期", "example": 14},
+      "status": {"type": "string", "title": "状态", "example": "待入库"}
     }
   }
 }
@@ -88,7 +88,7 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "purchaseRecordId": {"type": "string", "required": true, "description": "", "example": "PO-20231027-001", "display_name": "采购单号"}
+  "purchaseRecordId": {"type": "string", "required": true, "description": "", "example": "PO-20231027-001", "title": "采购单号"}
 }
 ```
 - **输出结构**:
@@ -98,9 +98,9 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
   "data": {
     "type": "object",
     "properties": {
-      "purchaseRecordId": {"type": "string", "display_name": "采购单号", "example": "PO-20231027-001"},
-      "rawMaterialId": {"type": "string", "display_name": "原材料ID", "example": "CRX001"},
-      "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"}
+      "purchaseRecordId": {"type": "string", "title": "采购单号", "example": "PO-20231027-001"},
+      "rawMaterialId": {"type": "string", "title": "原材料ID", "example": "CRX001"},
+      "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"}
     }
   }
 }
@@ -114,7 +114,7 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "purchaseRecordId": {"type": "string", "required": true, "description": "", "example": "PO-20231027-001", "display_name": "采购单号"}
+  "purchaseRecordId": {"type": "string", "required": true, "description": "", "example": "PO-20231027-001", "title": "采购单号"}
 }
 ```
 - **输出结构**:
@@ -124,9 +124,9 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
   "data": {
     "type": "object",
     "properties": {
-      "purchaseRecordId": {"type": "string", "display_name": "采购单号", "example": "PO-20231027-001"},
-      "rawMaterialId": {"type": "string", "display_name": "原材料ID", "example": "CRX001"},
-      "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"}
+      "purchaseRecordId": {"type": "string", "title": "采购单号", "example": "PO-20231027-001"},
+      "rawMaterialId": {"type": "string", "title": "原材料ID", "example": "CRX001"},
+      "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"}
     }
   }
 }
@@ -140,8 +140,8 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "display_name": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "display_name": "原材料名称"}
+  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "title": "原材料编号"},
+  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "title": "原材料名称"}
 }
 ```
 - **输出结构**:
@@ -153,14 +153,14 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
     "items": {
       "type": "object",
       "properties": {
-        "inventoryId": {"type": "string", "display_name": "库存编号", "example": "INV-RM-001"},
-        "rawMaterialId": {"type": "string", "display_name": "原材料编号", "example": "RM-001"},
-        "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"},
-        "materialType": {"type": "string", "display_name": "材料类型", "example": "原材料"},
-        "pendingReceiptQuantity": {"type": "number", "display_name": "待入库量", "example": 50},
-        "cumulativeStockQuantity": {"type": "number", "display_name": "累计库存量", "example": 200},
-        "availableStock": {"type": "number", "display_name": "可用库存", "example": 150},
-        "unit": {"type": "string", "display_name": "单位", "example": "吨"}
+        "inventoryId": {"type": "string", "title": "库存编号", "example": "INV-RM-001"},
+        "rawMaterialId": {"type": "string", "title": "原材料编号", "example": "RM-001"},
+        "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"},
+        "materialType": {"type": "string", "title": "材料类型", "example": "原材料"},
+        "pendingReceiptQuantity": {"type": "number", "title": "待入库量", "example": 50},
+        "cumulativeStockQuantity": {"type": "number", "title": "累计库存量", "example": 200},
+        "availableStock": {"type": "number", "title": "可用库存", "example": 150},
+        "unit": {"type": "string", "title": "单位", "example": "吨"}
       }
     }
   }
@@ -175,9 +175,9 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "purchaseRecordId": {"type": "string", "required": false, "description": "", "example": "PO-20231027-001", "display_name": "采购单号"},
-  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "display_name": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "display_name": "原材料名称"}
+  "purchaseRecordId": {"type": "string", "required": false, "description": "", "example": "PO-20231027-001", "title": "采购单号"},
+  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "title": "原材料编号"},
+  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "title": "原材料名称"}
 }
 ```
 - **输出结构**:
@@ -189,17 +189,17 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
     "items": {
       "type": "object",
       "properties": {
-        "purchaseRecordId": {"type": "string", "display_name": "采购单号", "example": "PO-20231027-001"},
-        "rawMaterialId": {"type": "string", "display_name": "原材料编号", "example": "RM-001"},
-        "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"},
-        "purchaseTime": {"type": "string", "display_name": "采购时间", "example": "2023-10-27"},
-        "arrivalTime": {"type": "string", "display_name": "到位时间", "example": "2023-11-10"},
-        "arrivalQuantity": {"type": "number", "display_name": "到位数量", "example": 50},
-        "unit": {"type": "string", "display_name": "单位", "example": "吨"},
-        "supplierName": {"type": "string", "display_name": "供应商名称", "example": "XX钢铁集团"},
-        "relatedOrderId": {"type": "string", "display_name": "关联订单编号", "example": "SO-20231025-001"},
-        "relatedOrderName": {"type": "string", "display_name": "关联订单名称", "example": "客户A-项目X订单"},
-        "leadTime": {"type": "number", "display_name": "等待周期", "example": 14}
+        "purchaseRecordId": {"type": "string", "title": "采购单号", "example": "PO-20231027-001"},
+        "rawMaterialId": {"type": "string", "title": "原材料编号", "example": "RM-001"},
+        "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"},
+        "purchaseTime": {"type": "string", "title": "采购时间", "example": "2023-10-27"},
+        "arrivalTime": {"type": "string", "title": "到位时间", "example": "2023-11-10"},
+        "arrivalQuantity": {"type": "number", "title": "到位数量", "example": 50},
+        "unit": {"type": "string", "title": "单位", "example": "吨"},
+        "supplierName": {"type": "string", "title": "供应商名称", "example": "XX钢铁集团"},
+        "relatedOrderId": {"type": "string", "title": "关联订单编号", "example": "SO-20231025-001"},
+        "relatedOrderName": {"type": "string", "title": "关联订单名称", "example": "客户A-项目X订单"},
+        "leadTime": {"type": "number", "title": "等待周期", "example": 14}
       }
     }
   }
@@ -214,8 +214,8 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "display_name": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "display_name": "原材料名称"}
+  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "title": "原材料编号"},
+  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "title": "原材料名称"}
 }
 ```
 - **输出结构**:
@@ -227,10 +227,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
     "items": {
       "type": "object",
       "properties": {
-        "rawMaterialId": {"type": "string", "display_name": "原材料编号", "example": "RM-001"},
-        "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"},
-        "unit": {"type": "string", "display_name": "单位", "example": "吨"},
-        "safetyStock": {"type": "number", "display_name": "安全库存", "example": 100}
+        "rawMaterialId": {"type": "string", "title": "原材料编号", "example": "RM-001"},
+        "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"},
+        "unit": {"type": "string", "title": "单位", "example": "吨"},
+        "safetyStock": {"type": "number", "title": "安全库存", "example": 100}
       }
     }
   }
@@ -245,8 +245,8 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "supplierName": {"type": "string", "required": false, "description": "", "example": "宝钢钢铁集团", "display_name": "供应商名称，模糊匹配"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "钢板008", "display_name": "原材料名称"}
+  "supplierName": {"type": "string", "required": false, "description": "", "example": "宝钢钢铁集团", "title": "供应商名称，模糊匹配"},
+  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "钢板008", "title": "原材料名称"}
 }
 ```
 - **输出结构**:
@@ -258,11 +258,11 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
     "items": {
       "type": "object",
       "properties": {
-        "supplierId": {"type": "string", "display_name": "供应商编号", "example": "SUP-001"},
-        "supplierName": {"type": "string", "display_name": "供应商名称", "example": "宝钢钢铁集团"},
-        "address": {"type": "string", "display_name": "地址", "example": "上海市宝山区富锦路888号"},
-        "contactPerson": {"type": "string", "display_name": "联系人", "example": "张经理"},
-        "contactPhone": {"type": "string", "display_name": "联系电话", "example": "13800131001"}
+        "supplierId": {"type": "string", "title": "供应商编号", "example": "SUP-001"},
+        "supplierName": {"type": "string", "title": "供应商名称", "example": "宝钢钢铁集团"},
+        "address": {"type": "string", "title": "地址", "example": "上海市宝山区富锦路888号"},
+        "contactPerson": {"type": "string", "title": "联系人", "example": "张经理"},
+        "contactPhone": {"type": "string", "title": "联系电话", "example": "13800131001"}
       }
     }
   }
@@ -277,8 +277,8 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 - **输入参数**:
 ```json
 {
-  "supplierName": {"type": "string", "required": false, "description": "", "example": "宝钢钢铁集团", "display_name": "供应商名称"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "钢板008", "display_name": "原材料名称"}
+  "supplierName": {"type": "string", "required": false, "description": "", "example": "宝钢钢铁集团", "title": "供应商名称"},
+  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "钢板008", "title": "原材料名称"}
 }
 ```
 - **输出结构**:
@@ -290,10 +290,10 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
     "items": {
       "type": "object",
       "properties": {
-        "supplierName": {"type": "string", "display_name": "供应商名称", "example": "宝钢钢铁集团"},
-        "rawMaterialId": {"type": "string", "display_name": "原材料ID", "example": "RM-001"},
-        "rawMaterialName": {"type": "string", "display_name": "原材料名称", "example": "高强度钢板"},
-        "leadTime": {"type": "number", "display_name": "交货周期", "example": 100}
+        "supplierName": {"type": "string", "title": "供应商名称", "example": "宝钢钢铁集团"},
+        "rawMaterialId": {"type": "string", "title": "原材料ID", "example": "RM-001"},
+        "rawMaterialName": {"type": "string", "title": "原材料名称", "example": "高强度钢板"},
+        "leadTime": {"type": "number", "title": "交货周期", "example": 100}
       }
     }
   }

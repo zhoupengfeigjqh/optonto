@@ -30,10 +30,8 @@ export interface SubtaskChatItem {
   runId: number;
   seq: number;
   behavior: string;
-  /** 展示名：中文（英文），如 创建采购记录（CreatePurchaseRecord） */
-  displayName?: string;
-  /** 纯中文展示名（行为中文名或子任务描述），聊天区标题用 */
-  displayLabel?: string;
+  /** 中文名（行为中文名或子任务描述），聊天区标题用；「中文（英文）」由渲染层拼 */
+  title?: string;
   /** 子任务描述（父 Agent 生成），标题副行用 */
   description?: string;
   status: 'running' | 'done' | 'failed';

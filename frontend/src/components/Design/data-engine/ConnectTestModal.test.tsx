@@ -10,13 +10,13 @@ import ConnectTestModal from './ConnectTestModal';
 import type { DataEngine } from '@/api/client';
 
 const mcpEngine = {
-  name: 'QueryInventory', behavior_name: 'QueryInventory', display_name: '',
+  name: 'QueryInventory', behavior_name: 'QueryInventory', title: '',
   target: { server_url: 'http://biz:8004/mcp', tool_name: 'query_inventories', params: {}, response: {} },
   input_mapping: {}, output_mapping: {},
 } as unknown as DataEngine;
 
 const legacyEngine = {
-  name: 'Old', behavior_name: 'Old', display_name: '',
+  name: 'Old', behavior_name: 'Old', title: '',
   target: { method: 'POST', url: 'http://legacy/api', params: {}, response: {} },
   input_mapping: {}, output_mapping: {},
 } as unknown as DataEngine;

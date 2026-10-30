@@ -3,7 +3,7 @@
 运行：cd mcp-shared && python -m pytest tests -q
 
 口径（2026-10-19 工具发布契约统一）：
-- 分类标记单一来源 = JSON Schema 扩展键 x-category / x-display_name（不放 scope 内）；
+- 分类标记单一来源 = JSON Schema 扩展键 x-category / x-title（不放 scope 内）；
 - 本体上下文 x-ontology-scope 是**工具元数据**（schema 顶层，不进 properties），不是参数；
 - ontology_id 在自建发布的工具面是**必填参数**（LLM 填写），执行底座据 scope 校验一致性；
 - 系统参数（只有 ontology_id 路由键）执行前统一剥离，三类发布端共用 strip_system_params。
@@ -16,7 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tool_contract import (  # noqa: E402
-    CATEGORY_BEHAVIOR, CATEGORY_COMMON, CATEGORY_QUERY, CATEGORY_KEY, DISPLAY_NAME_KEY,
+    CATEGORY_BEHAVIOR, CATEGORY_COMMON, CATEGORY_QUERY, CATEGORY_KEY, TITLE_KEY,
     SCOPE_KEY, SYSTEM_PARAMS, build_query_schema, is_engine_ready, owner_label,
     params_to_input_schema, ready_behavior_names, require_ontology_id, require_ontology_match,
     require_scope_match, strip_ontology_scope, strip_system_params, with_category,
@@ -68,17 +68,51 @@ def test_剥离本体元数据():
 
 # ─── 分类标记（单一来源）───────────────────────────────────────────────────────
 
-def test_分类标记注入():
-    marked = with_category({"type": "object", "properties": {}}, CATEGORY_COMMON, "当前日期")
+def test_分类标记只注入类别():
+    marked = with_category({"type": "object", "properties": {}}, CATEGORY_COMMON)
     assert marked[CATEGORY_KEY] == CATEGORY_COMMON
-    assert marked[DISPLAY_NAME_KEY] == "当前日期"
     assert marked["properties"] == {}  # 参数面不被污染
 
 
-def test_分类标记无中文名时只注入类别():
-    marked = with_category({"type": "object"}, CATEGORY_QUERY)
-    assert marked[CATEGORY_KEY] == CATEGORY_QUERY
-    assert DISPLAY_NAME_KEY not in marked
+def test_分类标记不写中文名():
+    """2026-10-30 反转：中文名权威值是工具级 title，``x-title`` 由容器启动时投影，编译侧不产出。
+
+    单一写入点 = ``mcp_app.titled_tool_kwargs()``；编译期再写一份就是两个写入点。
+    """
+    for category in (CATEGORY_COMMON, CATEGORY_QUERY):
+        marked = with_category({"type": "object"}, category)
+        assert TITLE_KEY not in marked
+
+
+# ─── 参数节点三键：title=中文名 / description=补充说明 / example=示例值 ──────────────
+
+def test_参数三键各承一义且与源数据同形():
+    schema, _ = params_to_input_schema(
+        {"filterName": {"type": "string", "title": "原材料名称",
+                        "description": "模糊匹配", "example": "高强度钢板", "required": True}},
+        [], require_ontology_id=False)
+    node = schema["properties"]["filterName"]
+    assert node["title"] == "原材料名称"
+    assert node["description"] == "模糊匹配"
+    assert node["example"] == "高强度钢板"
+    assert "required" not in node  # required 由父级数组聚合，不写进节点
+    assert schema["required"] == ["filterName"]
+
+
+def test_参数中文名不从description兜底():
+    # 无 title → 就不产出 title；description 保持补充说明语义，不被提升为中文名
+    schema, _ = params_to_input_schema(
+        {"purchaseOrderId": {"type": "string", "description": "采购单号"}},
+        [], require_ontology_id=False)
+    node = schema["properties"]["purchaseOrderId"]
+    assert "title" not in node
+    assert node["description"] == "采购单号"
+
+
+def test_参数无中文名时只留类型():
+    schema, _ = params_to_input_schema(
+        {"qty": {"type": "integer"}}, [], require_ontology_id=False)
+    assert schema["properties"]["qty"] == {"type": "integer"}
 
 
 # ─── 查询工具 schema ──────────────────────────────────────────────────────────
@@ -87,6 +121,8 @@ def test_查询工具schema_ontology_id必填():
     schema = build_query_schema({"keyword": {"type": "string"}})
     assert schema["required"] == ["ontology_id"]
     assert list(schema["properties"]) == ["ontology_id", "keyword"]
+    # 注入参数自带中文名（源数据里没有这个参数，无从搬运）
+    assert schema["properties"]["ontology_id"]["title"] == "本体ID"
 
 
 def test_全局花名册无ontology_id():
@@ -103,9 +139,9 @@ def test_本体上下文写入顶层元数据且不污染参数面():
     schema = with_ontology_scope(
         {"type": "object", "properties": {"currentStock": {"type": "number"}},
          "required": ["ontology_id"]},
-        scope, CATEGORY_BEHAVIOR, "计算安全库存")
+        scope, CATEGORY_BEHAVIOR)
     assert schema[CATEGORY_KEY] == CATEGORY_BEHAVIOR
-    assert schema[DISPLAY_NAME_KEY] == "计算安全库存"
+    assert TITLE_KEY not in schema                       # 中文名不在此编译（见上）
     assert schema[SCOPE_KEY] == scope
     assert "scope" not in schema["properties"]          # 不是参数
     assert SCOPE_KEY not in schema["properties"]        # 元数据也不混进 properties
@@ -129,6 +165,14 @@ def test_必填形态_ontology_id进required且带填写说明():
     assert schema["required"] == ["ontology_id", "qty"]  # 本体 id 置首，业务必填其后
     assert "必填" in schema["properties"]["ontology_id"]["description"]
     assert conflicts == []
+
+
+def test_注入参数ontology_id自带中文名():
+    # 与用户定义参数不同：它不在源数据 params 里，中文名由编译器声明（不是从 description 兜底）
+    schema, _ = params_to_input_schema({"qty": {"type": "integer"}}, require_ontology_id=True)
+    assert schema["properties"]["ontology_id"]["title"] == "本体ID"
+    # 只给系统参数补；业务参数没写 title 就仍然没有
+    assert "title" not in schema["properties"]["qty"]
 
 
 def test_无本体归属形态不出现ontology_id():

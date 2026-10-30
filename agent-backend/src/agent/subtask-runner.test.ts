@@ -33,7 +33,7 @@ const subTask: SubTask = {
 };
 
 const meta: BehaviorMeta = {
-  display_name: '创建采购记录',
+  title: '创建采购记录',
   params: { supplier_id: { required: true }, item_id: { required: true }, quantity: { required: true } },
   preRules: [],
   postRules: [],
@@ -49,8 +49,8 @@ function makeDeps(createChildAgent: SubtaskRunnerDeps['createChildAgent']): Subt
     createChildAgent,
     childAgents: new Set(),
     info: {
-      behaviorDisplayName: () => '',
-      functionDisplayName: () => '计算安全库存',
+      behaviorTitle: () => '',
+      functionTitle: () => '计算安全库存',
       behaviorScope: () => ['everyone'],
     },
     securityGate: createSecurityGate(),
@@ -77,7 +77,7 @@ afterEach(() => { vi.clearAllMocks(); });
  */
 describe('SubtaskRunner · 元数据不可用（fail-closed）', () => {
   const unavailableMeta: BehaviorMeta = {
-    display_name: 'CreatePurchaseRecord',
+    title: 'CreatePurchaseRecord',
     params: {}, preRules: [], postRules: [], concepts: [],
     isWrite: true,      // 兜底双重保险：即便调用方漏判 unavailable，也仍按写操作对待
     unavailable: true,
@@ -323,11 +323,11 @@ describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名�
   it('可调用范围段：只声明"已挂载工具"事实，不再列合法名单（挂载过滤即白名单，文案-机制同源）', async () => {
     let instruction = '';
     const metaNoRules: BehaviorMeta = {
-      display_name: '取消采购记录',
+      title: '取消采购记录',
       params: { purchaseRecordId: { required: true } },
       preRules: [],
       postRules: [],
-      concepts: [{ name: 'PurchaseRecord', display_name: '采购记录', attributes: [{ name: 'purchaseRecordId', type: 'string', display_name: '采购单号' }] }],
+      concepts: [{ name: 'PurchaseRecord', title: '采购记录', attributes: [{ name: 'purchaseRecordId', type: 'string', title: '采购单号' }] }],
       isWrite: true,
     };
     const deps = makeDeps(async () => ({
@@ -354,7 +354,7 @@ describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名�
   it('有前置/后置规则时：需要接口行指向同名工具（参数以其 schema 为准），关联概念属性渲染', async () => {
     let instruction = '';
     const metaWithRules: BehaviorMeta = {
-      display_name: '创建采购记录',
+      title: '创建采购记录',
       params: {},
       preRules: [
         { name: 'V01', description: '单位一致性', position: '前置', behavior: 'CreatePurchaseRecord', data_supplements: ['QueryRawMaterials'], related_functions: [] },
@@ -362,7 +362,7 @@ describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名�
       postRules: [
         { name: 'I02', description: '超期预警', position: '后置', behavior: 'CreatePurchaseRecord', data_supplements: [], related_functions: ['getCurrentDate', 'calcSafetyStock'] },
       ],
-      concepts: [{ name: 'PurchaseRecord', display_name: '采购记录', attributes: [{ name: 'purchaseRecordId', type: 'string', display_name: '采购单号' }] }],
+      concepts: [{ name: 'PurchaseRecord', title: '采购记录', attributes: [{ name: 'purchaseRecordId', type: 'string', title: '采购单号' }] }],
       isWrite: true,
     };
     const deps = makeDeps(async () => ({
@@ -386,7 +386,7 @@ describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名�
   it('口径 B：判断函数（本体 VALIDATION）在关联函数列表标注「判断函数」，并附判断硬闸说明', async () => {
     let instruction = '';
     const metaWithJudge: BehaviorMeta = {
-      display_name: '创建采购记录',
+      title: '创建采购记录',
       params: {},
       preRules: [
         {
@@ -418,7 +418,7 @@ describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名�
     let captured: SubtaskPolicy | undefined;
     const subTaskWithFuncs: SubTask = { ...subTask, related_functions: ['sumRawNotArrivalQty'] };
     const metaWithRules: BehaviorMeta = {
-      display_name: '创建采购记录',
+      title: '创建采购记录',
       params: {},
       preRules: [],
       postRules: [
@@ -448,7 +448,7 @@ describe('SubtaskRunner · 指令组装（行为工具化后：挂载即白名�
 });
 
 describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
-  it('合法清单内行为 scope 含 disable → 禁用集合（带 display_name）随策略注入 createChildAgent', async () => {
+  it('合法清单内行为 scope 含 disable → 禁用集合（带 title）随策略注入 createChildAgent', async () => {
     let captured: SubtaskPolicy | undefined;
     const deps = makeDeps(async (_ctx, policy) => {
       captured = policy;
@@ -460,7 +460,7 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
       } satisfies AgentPort;
     });
     deps.info.behaviorScope = (_s, _o, bn) => bn === 'CreatePurchaseRecord' ? ['disable'] : ['everyone'];
-    deps.info.behaviorDisplayName = () => '创建采购记录';
+    deps.info.behaviorTitle = () => '创建采购记录';
 
     const runner = new SubtaskRunner(deps);
     // 闸在工具层（guardExecution）：runner 不拦截，正常装配并跑通
@@ -491,7 +491,7 @@ describe('SubtaskRunner · 工具层 disable 闸（scope disable）', () => {
       } satisfies AgentPort;
     });
     deps.info.behaviorScope = (_s, _o, bn) => bn === 'QueryRawMaterials' ? ['disable'] : ['everyone'];
-    deps.info.behaviorDisplayName = (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '';
+    deps.info.behaviorTitle = (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '';
 
     const runner = new SubtaskRunner(deps);
     const result = await runner.run(subTask, metaWithRules, noopChannel);
@@ -581,7 +581,7 @@ describe('SubtaskRunner · 函数子任务（统一入口的直连路径）', ()
     expect(result.aborted).toBeUndefined();
   });
 
-  it('函数中文名走 info.functionDisplayName（执行记录展示三元组同源）', async () => {
+  it('函数中文名走 info.functionTitle（填入 title，组合串由前端拼）', async () => {
     const events: any[] = [];
     const channel = createEventChannel(e => events.push(e));
     const deps = makeDeps(vi.fn());
@@ -589,14 +589,14 @@ describe('SubtaskRunner · 函数子任务（统一入口的直连路径）', ()
     await runner.run(fnTask, null, channel);
 
     const start = events.find(e => e.type === 'exec_entry' && e.entry.type === 'subtask_start');
-    expect(start.entry.displayName).toBe('计算安全库存（calcSafetyStock）');
+    expect(start.entry.title).toBe('计算安全库存');
   });
 });
 
 describe('SubtaskRunner · 后置规则留痕闸（成功收尾前核查后置规则函数已执行）', () => {
   /** 主行为挂后置规则 I02（关联函数 getCurrentDate）；无前置规则、无安全确认 */
   const metaPostRule: BehaviorMeta = {
-    display_name: '查询采购记录',
+    title: '查询采购记录',
     params: {},
     preRules: [],
     postRules: [

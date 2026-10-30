@@ -193,7 +193,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
       closeAll: vi.fn().mockResolvedValue(undefined),
     };
     const gateway = {
-      getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
+      getBehaviorMeta: () => ({ title: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
       getBehaviorNames: () => ['Behavior1', 'Behavior2'],
       getReadyBehaviorNames: () => ['Behavior1', 'Behavior2'],
       getFunctionNames: () => [],
@@ -220,7 +220,7 @@ describe('Orchestrator · securityBlocked（工具层 disable 闸命中 → 中�
 
 describe('Orchestrator · 言行不一闸（假提交声明 → 立即拦截，不 nudge、不转发原文）', () => {
   const claimGateway = {
-    getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
+    getBehaviorMeta: () => ({ title: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
     getBehaviorNames: () => ['Behavior1'],
     getReadyBehaviorNames: () => ['Behavior1'],
     getFunctionNames: () => [],
@@ -366,8 +366,8 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
 
     const calls = toolEntries(events).filter(en => en.name === 'listOntoBehaviors');
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toMatchObject({ status: 'running', params: { ontology_id: 1 }, source: 'parent', displayName: '查询行为清单（listOntoBehaviors）', displayLabel: '查询行为清单' });
-    expect(calls[1]).toMatchObject({ status: 'done', params: { ontology_id: 1 }, result: '行为A\n行为B', source: 'parent', displayName: '查询行为清单（listOntoBehaviors）' });
+    expect(calls[0]).toMatchObject({ status: 'running', params: { ontology_id: 1 }, source: 'parent', title: '查询行为清单' });
+    expect(calls[1]).toMatchObject({ status: 'done', params: { ontology_id: 1 }, result: '行为A\n行为B', source: 'parent', title: '查询行为清单' });
   });
 
   it('load_skill：仅完成时推一条，只记技能名，不带 SKILL 全文', async () => {
@@ -381,7 +381,7 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
 
     const calls = toolEntries(events).filter(en => en.name === 'load_skill');
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ status: 'done', source: 'parent', displayName: '加载技能知识（load_skill）', displayLabel: '加载技能知识', detail: '已加载技能：raw-material-inventory' });
+    expect(calls[0]).toMatchObject({ status: 'done', source: 'parent', title: '加载技能知识', detail: '已加载技能：raw-material-inventory' });
     expect(calls[0].result).toBeUndefined();
   });
 
@@ -404,7 +404,7 @@ describe('Orchestrator · 父Agent 工具调用留痕', () => {
 
 describe('Orchestrator · 规划确认/重规划循环', () => {
   const loopGateway = {
-    getBehaviorMeta: () => ({ display_name: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
+    getBehaviorMeta: () => ({ title: '', params: {}, preRules: [], postRules: [], concepts: [], isWrite: false }),
     getBehaviorNames: () => ['Behavior1', 'Behavior2', 'Behavior3'],
     getReadyBehaviorNames: () => ['Behavior1', 'Behavior2', 'Behavior3'],
     getFunctionNames: () => [],

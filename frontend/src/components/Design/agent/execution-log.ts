@@ -30,8 +30,8 @@ export interface LogEntry {
    */
   toolCallId?: string;
   seq?: number;
-  displayName?: string;
-  displayLabel?: string;
+  /** 中文名（行为/函数 title，空则回退子任务描述）；「中文（英文）」由渲染层拼 */
+  title?: string;
 }
 
 /** 渲染节点：顶层条目，或一个子任务组 */
@@ -92,7 +92,7 @@ export function subtaskStatus(entries: LogEntry[]): string {
 /** 子任务组标题（`子任务 {seq}: {显示名}`） */
 export function subtaskTitle(entries: LogEntry[], seq: number): string {
   const start = entries.find(e => e.type === 'subtask_start');
-  return start ? `子任务 ${seq}: ${start.displayName || start.name}` : `子任务 ${seq}`;
+  return start ? `子任务 ${seq}: ${start.title || start.name}` : `子任务 ${seq}`;
 }
 
 /**
@@ -132,8 +132,7 @@ export function mergeExecEntry(prev: LogEntry[], entry: LogEntry): LogEntry[] {
     source: entry.source ?? next[idx].source,
     toolCallId: entry.toolCallId ?? next[idx].toolCallId,
     seq: entry.seq ?? next[idx].seq,
-    displayName: entry.displayName ?? next[idx].displayName,
-    displayLabel: entry.displayLabel ?? next[idx].displayLabel,
+    title: entry.title ?? next[idx].title,
     description: entry.description ?? next[idx].description,
   };
   return next;

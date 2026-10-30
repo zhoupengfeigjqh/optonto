@@ -121,10 +121,10 @@ export class Orchestrator {
       childAgents: session.childAgents,
       // 子任务元数据查询口：策略派生（禁用集合）与工具调用展示（中文名）的全部投影，一次性接线
       info: {
-        behaviorDisplayName: (scenario, ontology, behaviorName) =>
-          this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).display_name || '',
-        functionDisplayName: (scenario, ontology, functionName) =>
-          session.catalogView?.functionInfo(scenario, ontology, functionName)?.displayName ?? '',
+        behaviorTitle: (scenario, ontology, behaviorName) =>
+          this.ontologyGateway.getBehaviorMeta(scenario, ontology, behaviorName).title || '',
+        functionTitle: (scenario, ontology, functionName) =>
+          session.catalogView?.functionInfo(scenario, ontology, functionName)?.title ?? '',
         // 工具层 disable 闸数据源：securities 登记的 scope（恒数组）；无登记（旧本体回退）视为 everyone 放行。
         // 【可观测化 2026-10-05】无登记即"该行为的 disable 权限设置不生效"——属兜底放行而非显式配置，
         // 一旦有人误以为已禁用（登记 action_name 拼错 / 漏登记）会静默失效，故每次 run 提示一次。

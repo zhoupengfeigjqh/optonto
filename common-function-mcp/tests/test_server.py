@@ -59,6 +59,15 @@ def test_工具schema透传manifest且带分类标记():
         assert tool.inputSchema["x-category"] == "公共函数", entry["name"]
 
 
+def test_中文名同时投影到协议title():
+    """协议级显示名（Tool.title）只服务外部 MCP 客户端；平台自身仍读 inputSchema["x-title"]。"""
+    entries = {e["name"]: e for e in _entries()}
+    if not entries:
+        pytest.skip(".data 中无公共函数（DATA_DIR 不可见时不适用）")
+    for name, tool in _tools().items():
+        assert tool.title == tool.inputSchema["x-title"] == entries[name].get("title"), name
+
+
 def test_工具schema不带scope与ontology_id():
     """公共函数是平台级的：**没有本体归属**，故不得出现本体执行类专属的上下文块与路由参数。"""
     for name, tool in _tools().items():
@@ -146,7 +155,7 @@ def test_manifest变更后清单自动刷新(monkeypatch):
     if not _entries():
         pytest.skip(".data 中无公共函数")
     server._load_common_tools()  # 先建立缓存
-    fake = [{"name": "brandNew", "display_name": "新函数", "description": "d", "inputSchema": {"type": "object", "properties": {}}}]
+    fake = [{"name": "brandNew", "title": "新函数", "description": "d", "inputSchema": {"type": "object", "properties": {}}}]
     monkeypatch.setattr(server.data_store, "common_manifest_mtime", lambda: -999)
     monkeypatch.setattr(server.data_store, "load_common_function_entries", lambda: fake)
     assert "brandNew" in _tools()

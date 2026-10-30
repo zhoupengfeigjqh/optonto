@@ -41,14 +41,14 @@ vi.mock('../services/mcp-config-store.js', () => ({
 
 /**
  * 发布形态 schema 构造（与 mcp-shared/tool_contract.py 契约一致）：
- * 分类标记 = 顶层 x-category / x-display_name；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
+ * 分类标记 = 顶层 x-category / x-title；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
  * ontology_id 是必填业务参数（由 LLM 填写）。
  */
-export function ontoTool(category: string, _bareName: string, displayName: string, ontologyId: number,
+export function ontoTool(category: string, _bareName: string, title: string, ontologyId: number,
                 ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,
-    'x-display_name': displayName,
+    'x-title': title,
     'x-ontology-scope': {
       ontology_id: ontologyId, scenario_id: 1,
       scenario_name: '生产调度', ontology_name: ontologyName,
@@ -61,10 +61,10 @@ export function ontoTool(category: string, _bareName: string, displayName: strin
 }
 
 /** 元数据查询工具（父 Agent 专用；x-category=本体查询） */
-export function queryTool(displayName: string, props: Record<string, any> = {}) {
+export function queryTool(title: string, props: Record<string, any> = {}) {
   return { type: 'object',
     'x-category': '本体查询',
-    'x-display_name': displayName,
+    'x-title': title,
     properties: { ontology_id: { type: 'integer' }, ...props },
     required: ['ontology_id'] };
 }
@@ -100,7 +100,7 @@ vi.mock('../services/mcp-client.js', () => ({
           inputSchema: queryTool('查询函数清单', { keyword: { type: 'string' } }) },
         { name: 'listOntoProcesses', description: '列出本体业务流程', inputSchema: queryTool('查询流程清单') },
         // 公共函数（x-category 扩展键标记）
-        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-display_name': '当前日期' } },
+        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-title': '当前日期' } },
         // 外部 MCP 工具（无标记，排除法归类）
         { name: 'weatherQuery', description: '外部天气查询', inputSchema: { type: 'object', properties: { city: { type: 'string' } } } },
       ] };

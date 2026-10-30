@@ -43,14 +43,14 @@ vi.mock('../services/mcp-config-store.js', () => ({
 
 /**
  * 发布形态 schema 构造（与 mcp-shared/tool_contract.py 契约一致）：
- * 分类标记 = 顶层 x-category / x-display_name；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
+ * 分类标记 = 顶层 x-category / x-title；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
  * ontology_id 是必填业务参数（由 LLM 填写）。
  */
-function ontoTool(category: string, _bareName: string, displayName: string, ontologyId: number,
+function ontoTool(category: string, _bareName: string, title: string, ontologyId: number,
                 ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,
-    'x-display_name': displayName,
+    'x-title': title,
     'x-ontology-scope': {
       ontology_id: ontologyId, scenario_id: 1,
       scenario_name: '生产调度', ontology_name: ontologyName,
@@ -63,10 +63,10 @@ function ontoTool(category: string, _bareName: string, displayName: string, onto
 }
 
 /** 元数据查询工具（父 Agent 专用；x-category=本体查询） */
-function queryTool(displayName: string, props: Record<string, any> = {}) {
+function queryTool(title: string, props: Record<string, any> = {}) {
   return { type: 'object',
     'x-category': '本体查询',
-    'x-display_name': displayName,
+    'x-title': title,
     properties: { ontology_id: { type: 'integer' }, ...props },
     required: ['ontology_id'] };
 }
@@ -102,7 +102,7 @@ vi.mock('../services/mcp-client.js', () => ({
           inputSchema: queryTool('查询函数清单', { keyword: { type: 'string' } }) },
         { name: 'listOntoProcesses', description: '列出本体业务流程', inputSchema: queryTool('查询流程清单') },
         // 公共函数（x-category 扩展键标记）
-        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-display_name': '当前日期' } },
+        { name: 'getCurrentDate', description: '当前日期', inputSchema: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-title': '当前日期' } },
         // 外部 MCP 工具（无标记，排除法归类）
         { name: 'weatherQuery', description: '外部天气查询', inputSchema: { type: 'object', properties: { city: { type: 'string' } } } },
       ] };
@@ -722,14 +722,14 @@ describe('toMountableToolInfo 标记分类', () => {
       parameters: {
         type: 'object',
         'x-category': '本体函数',
-        'x-display_name': '计算安全库存',
+        'x-title': '计算安全库存',
         'x-ontology-scope': NEW_SCOPE,
         properties: { ontology_id: { type: 'integer' }, currentStock: { type: 'number' } },
         required: ['ontology_id'],
       },
     });
     expect(info.category).toBe('本体函数');
-    expect(info.displayName).toBe('计算安全库存');
+    expect(info.title).toBe('计算安全库存');
     // ontology_id 是调用方必填参数（不再被剥掉）；scope 元数据不是参数
     expect(info.params.ontology_id).toMatchObject({ type: 'integer', required: true });
     expect(info.params.currentStock).toEqual({ type: 'number', required: false });
@@ -749,7 +749,7 @@ describe('toMountableToolInfo 标记分类', () => {
       parameters: {
         type: 'object',
         'x-category': '本体行为',
-        'x-display_name': '创建采购记录',
+        'x-title': '创建采购记录',
         'x-ontology-scope': NEW_SCOPE,
         properties: { ontology_id: { type: 'integer' }, qty: { type: 'integer', minimum: 1, maximum: 100 } },
         required: ['ontology_id'],
@@ -773,13 +773,13 @@ describe('toMountableToolInfo 标记分类', () => {
     expect(lifted.params.ontology_id).toBeTruthy(); // ontology_id 是参数，保留
   });
 
-  it('公共函数：x-category 标记 → 归公共函数，x-display_name 进 displayName', () => {
+  it('公共函数：x-category 标记 → 归公共函数，x-title 进 title', () => {
     const info = toMountableToolInfo({
       name: 'getCurrentDate', description: '当前日期',
-      parameters: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-display_name': '当前日期' },
+      parameters: { type: 'object', properties: {}, 'x-category': '公共函数', 'x-title': '当前日期' },
     });
     expect(info.category).toBe('公共函数');
-    expect(info.displayName).toBe('当前日期');
+    expect(info.title).toBe('当前日期');
     expect(info.scope).toBeUndefined();
   });
 
@@ -789,7 +789,7 @@ describe('toMountableToolInfo 标记分类', () => {
       parameters: { type: 'object', properties: { city: { type: 'string' } } },
     });
     expect(info.category).toBe('其他MCP工具');
-    expect(info.displayName).toBeUndefined();
+    expect(info.title).toBeUndefined();
   });
 
   it('本体查询类：ontology_id 是父 Agent 真实填写的参数 → 保留在 required', () => {

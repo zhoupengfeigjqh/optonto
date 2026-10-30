@@ -135,7 +135,7 @@ export default function ConceptAttributeModal({ open, concept, parentAttrs, onto
     }
     // 收敛 constraint：清不适用项、数字枚举解析、全缺省置 null（不落盘）
     const payload = attributes.map(a => {
-      const base = { name: a.name.trim(), type: a.type, display_name: a.display_name?.trim() || '', description: a.description?.trim() || '', example: a.example?.trim() || '' };
+      const base = { name: a.name.trim(), type: a.type, title: a.title?.trim() || '', description: a.description?.trim() || '', example: a.example?.trim() || '' };
       const c = a.constraint;
       if (!c) return { ...base, constraint: null };
       const out: AttributeConstraint = {};
@@ -166,7 +166,7 @@ export default function ConceptAttributeModal({ open, concept, parentAttrs, onto
   ];
 
   return (
-    <Modal title={`管理属性 - ${concept?.display_name || concept?.name || ''}`} open={open} onCancel={onClose} width={1600}
+    <Modal title={`管理属性 - ${concept?.title || concept?.name || ''}`} open={open} onCancel={onClose} width={1600}
       footer={
         <div className="flex justify-start gap-2">
           <Button onClick={onClose}>取消</Button>
@@ -203,7 +203,7 @@ export default function ConceptAttributeModal({ open, concept, parentAttrs, onto
             <Input size="small" value={r.name} disabled={r._kind === 'inherited'} onChange={e => updateAttr(r._idx, { name: e.target.value })} placeholder="英文名称" className="bg-dark-bg border-dark-border text-text-primary" />
           )},
           { title: '中文名称', width: 110, render: (_: any, r: AttrRow) => (
-            <Input size="small" value={r.display_name || ''} disabled={r._kind === 'inherited'} onChange={e => updateAttr(r._idx, { display_name: e.target.value })} placeholder="中文名称" className="bg-dark-bg border-dark-border text-text-primary" />
+            <Input size="small" value={r.title || ''} disabled={r._kind === 'inherited'} onChange={e => updateAttr(r._idx, { title: e.target.value })} placeholder="中文名称" className="bg-dark-bg border-dark-border text-text-primary" />
           )},
           { title: '描述', width: 160, render: (_: any, r: AttrRow) => (
             <Input size="small" value={r.description || ''} disabled={r._kind === 'inherited'} onChange={e => updateAttr(r._idx, { description: e.target.value })} placeholder="属性语义描述" className="bg-dark-bg border-dark-border text-text-primary" />

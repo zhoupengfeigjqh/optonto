@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies (use Tsinghua mirror for China)
+# Copy and install Python dependencies (use Aliyun mirror for China)
 COPY core-backend/requirements.txt .
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 
 # Copy backend source (container 内仍保持 /app/backend 结构，PYTHONPATH/config.py 路径不变)
 COPY core-backend/ ./backend/

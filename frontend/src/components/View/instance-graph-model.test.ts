@@ -38,7 +38,7 @@ describe('extractRows — API 信封行提取', () => {
 });
 
 describe('nodeLabel — 节点标签', () => {
-  const concept: Concept = { name: 'RawMaterial', display_name: '原材料', description: '', instance_label: 'materialName' };
+  const concept: Concept = { name: 'RawMaterial', title: '原材料', description: '', instance_label: 'materialName' };
 
   it('属性传递：配置 instance_label 时拼接「概念:标签值」', () => {
     expect(nodeLabel(concept, { materialName: '钢板' }, 'k')).toBe('原材料:钢板');
@@ -55,15 +55,15 @@ describe('nodeLabel — 节点标签', () => {
   });
 
   it('边界：展示名优先于技术名', () => {
-    expect(nodeLabel({ name: 'RawMaterial', display_name: '原材料', description: '' }, {}, 'k')).toBe('原材料');
+    expect(nodeLabel({ name: 'RawMaterial', title: '原材料', description: '' }, {}, 'k')).toBe('原材料');
   });
 });
 
 describe('buildResultColumns — 结果列构建', () => {
   const conceptMap = new Map<string, Concept>([
     ['RawMaterial', {
-      name: 'RawMaterial', display_name: '原材料', description: '',
-      attributes: [{ name: 'b', type: 'string' }, { name: 'a', type: 'string', display_name: '甲字段' }],
+      name: 'RawMaterial', title: '原材料', description: '',
+      attributes: [{ name: 'b', type: 'string' }, { name: 'a', type: 'string', title: '甲字段' }],
     }],
   ]);
 

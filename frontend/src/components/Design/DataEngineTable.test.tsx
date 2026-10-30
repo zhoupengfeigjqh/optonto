@@ -41,13 +41,13 @@ import * as agentApi from '@/api/agent-client';
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
 const behaviors = [
-  { name: 'QueryInventory', display_name: '查询库存', params: { 原材料编号: { type: 'string', display_name: '原材料编号' } }, response: {} },
-  { name: 'CreatePurchaseRecord', display_name: '', params: {}, response: {} },
+  { name: 'QueryInventory', title: '查询库存', params: { 原材料编号: { type: 'string', title: '原材料编号' } }, response: {} },
+  { name: 'CreatePurchaseRecord', title: '', params: {}, response: {} },
 ];
 
 const engines = [
   {
-    name: 'QueryInventory', behavior_name: 'QueryInventory', display_name: '',
+    name: 'QueryInventory', behavior_name: 'QueryInventory', title: '',
     target: { server_url: 'http://biz:8004/mcp', tool_name: 'query_inventories', params: { q: { type: 'string' } }, response: {} },
     input_mapping: { 原材料编号: 'rawMaterialId', 数量: 'qty' },
     output_mapping: {},

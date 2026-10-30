@@ -40,7 +40,7 @@ const CHART = 'http://chart:9000/mcp';
 /**
  * 本体行为工具的完整形态：x-category + 本体上下文 x-ontology-scope（否则 assertToolProtocol 会判版本错配）。
  *
- * 注意 `x-category` / `x-display_name` / `x-ontology-scope` 位于 **inputSchema 内**——都是 JSON Schema
+ * 注意 `x-category` / `x-title` / `x-ontology-scope` 位于 **inputSchema 内**——都是 JSON Schema
  * 的扩展键（发布端 `mcp-shared/tool_contract.py` 注入的就是 input_schema），
  * 消费端 `tool-catalog.publishedCategory/readOntologyScope` 也从 schema 顶层读，两端口径一致。
  */
@@ -55,7 +55,7 @@ const BEHAVIOR_TOOL = {
     },
     required: ['ontology_id', 'keyword'],
     'x-category': '本体行为',
-    'x-display_name': '查询库存',
+    'x-title': '查询库存',
     'x-ontology-scope': {
       ontology_id: 1, scenario_id: 1,
       scenario_name: '生产调度', ontology_name: '原材料采购和库存',

@@ -2,7 +2,7 @@
  * FunctionCatalog 单元测试 —— 三源合一 join 经 view() 接口测试（interface 即测试面）。
  * 覆盖两种模式：
  *  正常模式（MCP 目录为准）：①本体函数按 scope 过滤 / ②公共函数全局 / ③其他MCP工具全局，
- *   functionInfo 按 ①→②→③ 取源，displayName 取发布方标记；
+ *   functionInfo 按 ①→②→③ 取源，title 取发布方标记；
  *  文件兜底模式（目录缺①②）：①②回落 gateway 文件声明，③仍走目录，console.warn 告警。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -22,22 +22,22 @@ function fakeGateway(): OntologyGatewayPort {
     getFunctionNames: () => ['sumRawNotArrivalQty', 'calcSafetyStock'], // 文件两源（yaml∪json）
     getFunctionInfo: (_scenario, _ontology, fn) =>
       fn === 'sumRawNotArrivalQty'
-        ? { display_name: '原料未到货量汇总', params: { purchaseRecordSet: { required: true, type: 'array' } }, concepts: [] }
+        ? { title: '原料未到货量汇总', params: { purchaseRecordSet: { required: true, type: 'array' } }, concepts: [] }
         : null,
   };
 }
 
 /** 本体函数目录项（带 scope 供本体过滤） */
-function ontoTool(name: string, scenario: string, ontology: string, params: Record<string, any> = {}, displayName = ''): MountableToolInfo {
-  return { name, category: '本体函数', description: '', params, displayName, scope: { ontology_id: 1, scenario_name: scenario, ontology_name: ontology } };
+function ontoTool(name: string, scenario: string, ontology: string, params: Record<string, any> = {}, title = ''): MountableToolInfo {
+  return { name, category: '本体函数', description: '', params, title, scope: { ontology_id: 1, scenario_name: scenario, ontology_name: ontology } };
 }
 
-function commonTool(name: string, params: Record<string, any> = {}, displayName = ''): MountableToolInfo {
-  return { name, category: '公共函数', description: '', params, displayName };
+function commonTool(name: string, params: Record<string, any> = {}, title = ''): MountableToolInfo {
+  return { name, category: '公共函数', description: '', params, title };
 }
 
-function otherTool(name: string, params: Record<string, any> = {}, displayName = ''): MountableToolInfo {
-  return { name, category: '其他MCP工具', description: '', params, displayName };
+function otherTool(name: string, params: Record<string, any> = {}, title = ''): MountableToolInfo {
+  return { name, category: '其他MCP工具', description: '', params, title };
 }
 
 const SC = '生产调度';
@@ -77,10 +77,10 @@ describe('正常模式 — functionNames', () => {
 });
 
 describe('正常模式 — functionInfo', () => {
-  it('①本体函数：本体匹配 → 取目录声明（含 displayName 标记）', async () => {
+  it('①本体函数：本体匹配 → 取目录声明（含 title 标记）', async () => {
     const view = await new FunctionCatalog(fakeGateway(), async () => normalCatalog()).view();
     expect(view.functionInfo(SC, ON, 'sumRawNotArrivalQty')).toEqual({
-      displayName: '原料未到货量汇总',
+      title: '原料未到货量汇总',
       description: '',
       params: { purchaseRecordSet: { required: true, type: 'array' } },
     });
@@ -94,14 +94,14 @@ describe('正常模式 — functionInfo', () => {
   it('②公共函数全局可取', async () => {
     const view = await new FunctionCatalog(fakeGateway(), async () => normalCatalog()).view();
     expect(view.functionInfo(SC, ON, 'getCurrentDate')).toEqual({
-      displayName: '获取当前日期', description: '', params: {},
+      title: '获取当前日期', description: '', params: {},
     });
   });
 
   it('③其他MCP工具全局可取', async () => {
     const view = await new FunctionCatalog(fakeGateway(), async () => normalCatalog()).view();
     expect(view.functionInfo(SC, ON, 'generate_line_chart')).toEqual({
-      displayName: '折线图生成', description: '', params: { data: { required: true, type: 'array' } },
+      title: '折线图生成', description: '', params: { data: { required: true, type: 'array' } },
     });
   });
 
@@ -111,9 +111,9 @@ describe('正常模式 — functionInfo', () => {
       commonTool('fn', { from: { type: 'common' } }, '公共版'),
       otherTool('fn', { from: { type: 'other' } }, '外部版'),
     ]).view();
-    expect(view.functionInfo(SC, ON, 'fn')?.displayName).toBe('本体版');
+    expect(view.functionInfo(SC, ON, 'fn')?.title).toBe('本体版');
     // 本体不匹配时①出局，轮到②
-    expect(view.functionInfo('其他场景', '其他本体', 'fn')?.displayName).toBe('公共版');
+    expect(view.functionInfo('其他场景', '其他本体', 'fn')?.title).toBe('公共版');
   });
 
   it('三源都无 → null（校验跳过，合法性由 functionNames 名单先行拦截）', async () => {
@@ -163,12 +163,12 @@ describe('文件兜底模式（目录缺①②）', () => {
     expect(names).toContain('weatherQuery');        // 目录③
   });
 
-  it('functionInfo：①②取 gateway 文件声明（display_name 来自文件）', async () => {
+  it('functionInfo：①②取 gateway 文件声明（title 来自文件）', async () => {
     const view = await new FunctionCatalog(fakeGateway(), async () => [
       otherTool('weatherQuery'),
     ]).view();
     expect(view.functionInfo(SC, ON, 'sumRawNotArrivalQty')).toEqual({
-      displayName: '原料未到货量汇总',
+      title: '原料未到货量汇总',
       description: undefined,
       params: { purchaseRecordSet: { required: true, type: 'array' } },
     });

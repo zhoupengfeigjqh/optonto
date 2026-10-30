@@ -35,7 +35,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const isEditing = (record: Concept) => record.name === editingKey;
 
   const handleAdd = () => {
-    setEditData({ name: '', display_name: '', description: '', instance_label: '', terms: [], sub_class_of: undefined });
+    setEditData({ name: '', title: '', description: '', instance_label: '', terms: [], sub_class_of: undefined });
     setEditingKey('__new__');
     goToRow(concepts.length);
   };
@@ -43,7 +43,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const handleEdit = (record: Concept) => {
     setEditData({
       name: record.name,
-      display_name: record.display_name || '',
+      title: record.title || '',
       description: record.description,
       instance_label: record.instance_label || '',
       terms: record.terms || [],
@@ -65,7 +65,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     const isNew = editingKey === '__new__';
     const data: Concept = {
       name: editData.name.trim(),
-      display_name: editData.display_name?.trim() || '',
+      title: editData.title?.trim() || '',
       description: editData.description?.trim() || '',
       instance_label: editData.instance_label || '',
       terms: editData.terms || [],
@@ -149,8 +149,8 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'name') {
       return <Input size="small" value={editData.name || ''} onChange={e => setEditData(p => ({...p, name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     }
-    if (dataIndex === 'display_name') {
-      return <Input size="small" value={editData.display_name || ''} onChange={e => setEditData(p => ({...p, display_name: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
+    if (dataIndex === 'title') {
+      return <Input size="small" value={editData.title || ''} onChange={e => setEditData(p => ({...p, title: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
     }
     if (dataIndex === 'description') {
       return <Input size="small" value={editData.description || ''} onChange={e => setEditData(p => ({...p, description: e.target.value}))} className="bg-dark-bg border-dark-border text-text-primary" />;
@@ -160,7 +160,7 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
       const currentName = editingKey === '__new__' ? undefined : editingKey;
       const options = parentCandidates(concepts, currentName).map(c => ({
         value: c.name,
-        label: c.display_name ? `${c.display_name}（${c.name}）` : c.name,
+        label: c.title ? `${c.title}（${c.name}）` : c.name,
       }));
       return (
         <Select size="small" value={editData.sub_class_of || undefined} onChange={v => setEditData(p => ({...p, sub_class_of: v}))}
@@ -187,21 +187,21 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
 
   const dataSource = concepts.map(c => ({ ...c, _key: c.name }));
   if (editingKey === '__new__') {
-    dataSource.push({ name: '__new__', description: '', display_name: '', instance_label: '', terms: [], attributes: [], sub_class_of: null } as any);
+    dataSource.push({ name: '__new__', description: '', title: '', instance_label: '', terms: [], attributes: [], sub_class_of: null } as any);
   }
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 120,
       render: (v: any, r: Concept) => renderCell(v, r, 'name') },
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 120,
-      render: (v: any, r: Concept) => renderCell(v, r, 'display_name', (v2: string) => v2 || '-') },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 120,
+      render: (v: any, r: Concept) => renderCell(v, r, 'title', (v2: string) => v2 || '-') },
     { title: '父概念', dataIndex: 'sub_class_of', key: 'sub_class_of', width: 140,
       render: (v: any, r: Concept) => {
         if (isEditing(r) || (editingKey === '__new__' && r.name === '__new__')) {
           return renderCell(v, r, 'sub_class_of');
         }
         return v
-          ? <Tag color="cyan">{concepts.find(c => c.name === v)?.display_name || v}</Tag>
+          ? <Tag color="cyan">{concepts.find(c => c.name === v)?.title || v}</Tag>
           : <span className="text-text-muted">-</span>;
       } },
     { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true,

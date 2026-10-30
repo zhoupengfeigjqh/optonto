@@ -3,7 +3,7 @@
 - 不经过 OntologyData 全量 dump（避免重写整个 ontology.yaml 引入格式 diff），
   只文本剥离 securities 段 + 新生成 securities.yaml。
 - 花名册：每个行为一条；旧段已有配置（scope/confirm/confirm_content）保留，
-  display_name/op_type 按行为定义+数据引擎推导生成；无旧配置的行为用默认值。
+  title/op_type 按行为定义+数据引擎推导生成；无旧配置的行为用默认值。
 """
 import pathlib
 import re
@@ -47,7 +47,7 @@ def migrate(ont_dir: pathlib.Path) -> None:
             scope = [scope]
         roster.append({
             "action_name": name,
-            "display_name": b.get("display_name") or name,
+            "title": b.get("title") or name,
             "op_type": op,
             "scope": scope,
             "confirm": old.get("confirm", op == "command"),

@@ -1,6 +1,6 @@
 /**
  * buildSubtaskPolicy 单元测试 —— 子任务执行策略的单一派生点。
- * 验证三件套一次派生：合法清单（子 Agent 挂载过滤依据）/ 禁用集合（scope 含 disable，值带 display_name）/
+ * 验证三件套一次派生：合法清单（子 Agent 挂载过滤依据）/ 禁用集合（scope 含 disable，值带 title）/
  * 报错预算（每子任务一份新实例），以及 run 级安全闸按引用透传（所有子任务共享同一道闸）。
  * （2026-09 行为工具化：requiredParamsMap 已退役——参数合法性由工具 inputSchema 在 harness 层校验。）
  */
@@ -22,7 +22,7 @@ const subTask: SubTask = {
 };
 
 const meta: BehaviorMeta = {
-  display_name: '创建采购记录',
+  title: '创建采购记录',
   params: { rawMaterialId: { required: true }, note: { required: false } },
   preRules: [
     { name: 'V01', description: '单位一致性', position: '前置', behavior: '', data_supplements: ['QueryRawMaterials'], related_functions: [] },
@@ -36,8 +36,8 @@ const meta: BehaviorMeta = {
 
 function mkInfo(over?: Partial<SubtaskInfoPort>): SubtaskInfoPort {
   return {
-    behaviorDisplayName: (_s, _o, bn) => `${bn}中文名`,
-    functionDisplayName: () => '',
+    behaviorTitle: (_s, _o, bn) => `${bn}中文名`,
+    functionTitle: () => '',
     behaviorScope: () => ['everyone'],
     ...over,
   };
@@ -52,15 +52,15 @@ describe('buildSubtaskPolicy — 子任务执行策略单一派生点', () => {
     expect(policy.legalCalls.functions).toEqual(['getCurrentDate', 'sumRawNotArrivalQty']);
   });
 
-  it('禁用集合：scope 含 disable 的合法行为入集，主行为 display_name 取 meta、补充行为走 info 口', () => {
+  it('禁用集合：scope 含 disable 的合法行为入集，主行为 title 取 meta、补充行为走 info 口', () => {
     const info = mkInfo({
       behaviorScope: (_s, _o, bn) => bn === 'QueryRawMaterials' ? ['disable'] : ['everyone'],
-      behaviorDisplayName: (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '',
+      behaviorTitle: (_s, _o, bn) => bn === 'QueryRawMaterials' ? '查询原材料' : '',
     });
     const policy = buildSubtaskPolicy(subTask, meta, info, createSecurityGate());
     expect([...policy.security.disabled.entries()]).toEqual([['QueryRawMaterials', '查询原材料']]);
 
-    // 主行为被禁：display_name 取 meta（不走 info 口）
+    // 主行为被禁：title 取 meta（不走 info 口）
     const info2 = mkInfo({ behaviorScope: () => ['disable'] });
     const policy2 = buildSubtaskPolicy(subTask, meta, info2, createSecurityGate());
     expect(policy2.security.disabled.get('CreatePurchaseRecord')).toBe('创建采购记录');

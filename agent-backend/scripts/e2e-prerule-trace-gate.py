@@ -57,18 +57,18 @@ def main():
     # ── 1. 建函数元数据（幂等：已存在则跳过） ──
     s, d = req('POST', f'{CORE}/ontologies/{OID}/functions', {
         'name': FN,
-        'display_name': '校验采购原材料单位一致性',
+        'title': '校验采购原材料单位一致性',
         'description': '校验采购单的 rawMaterialId 存在于原材料主数据，且 unit 与原材料定义单位一致。服务于前置规则 V01。',
         'related_concepts': ['PurchaseRecord', 'RawMaterial'],
         'params': {
-            'rawMaterialId': {'type': 'string', 'display_name': '原材料ID', 'example': 'RM-001', 'required': True},
-            'unit': {'type': 'string', 'display_name': '计量单位', 'example': '吨', 'required': True},
-            'rawMaterialSet': {'type': 'array', 'display_name': '原材料主数据集', 'required': True, 'items': {'type': 'object', 'properties': {
-                'rawMaterialId': {'type': 'string', 'display_name': '原材料ID', 'required': True},
-                'unit': {'type': 'string', 'display_name': '单位', 'required': True},
+            'rawMaterialId': {'type': 'string', 'title': '原材料ID', 'example': 'RM-001', 'required': True},
+            'unit': {'type': 'string', 'title': '计量单位', 'example': '吨', 'required': True},
+            'rawMaterialSet': {'type': 'array', 'title': '原材料主数据集', 'required': True, 'items': {'type': 'object', 'properties': {
+                'rawMaterialId': {'type': 'string', 'title': '原材料ID', 'required': True},
+                'unit': {'type': 'string', 'title': '单位', 'required': True},
             }}},
         },
-        'response': {'pass': {'type': 'boolean', 'display_name': '裁决是否通过'}, 'reason': {'type': 'string', 'display_name': '裁决说明'}},
+        'response': {'pass': {'type': 'boolean', 'title': '裁决是否通过'}, 'reason': {'type': 'string', 'title': '裁决说明'}},
         'code_file': f'functions/{FN}.py',
     })
     print('1. 建函数:', s, '' if s in (200, 201) else d)

@@ -108,7 +108,7 @@ export default function SecurityTable({ ontologyId, activeTab }: Props) {
 
   const columns = [
     { title: '英文名称', dataIndex: 'name', key: 'name', width: 180, render: (v: any) => v || '-' },
-    { title: '中文名称', dataIndex: 'display_name', key: 'display_name', width: 150, render: (v: any) => v || '-' },
+    { title: '中文名称', dataIndex: 'title', key: 'title', width: 150, render: (v: any) => v || '-' },
     { title: '操作类型', key: 'op_type', width: 110, render: (_: any, r: Behavior) => {
       const { type, derived } = resolveOpType(r);
       return (

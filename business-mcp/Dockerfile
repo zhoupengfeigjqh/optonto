@@ -6,7 +6,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY business-mcp/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
 
 COPY mcp-shared /app/
 COPY business-mcp/server.py business-mcp/decls.py /app/

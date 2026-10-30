@@ -20,7 +20,7 @@ export interface TargetApiConfig {
 
 export interface DataEngine {
   name: string;
-  display_name?: string;
+  title?: string;
   behavior_name: string;
   target: TargetApiConfig;
   input_mapping: Record<string, string>;

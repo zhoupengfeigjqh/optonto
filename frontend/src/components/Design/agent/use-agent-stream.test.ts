@@ -332,7 +332,7 @@ describe('useAgentStream — 弹窗与执行记录', () => {
 
   it('子任务条目（source=child 且有 seq）→ 聊天区出现子任务块', async () => {
     agentChatStream.mockResolvedValue(sseResponse(frames([
-      { type: 'exec_entry', entry: { time: 't', type: 'subtask_start', name: 'B1', displayName: '行为一（B1）', status: 'running', source: 'child', seq: 1 } },
+      { type: 'exec_entry', entry: { time: 't', type: 'subtask_start', name: 'B1', title: '行为一', status: 'running', source: 'child', seq: 1 } },
     ])));
     const { result, spies } = setup();
     await act(async () => { await result.current.send('hi'); });

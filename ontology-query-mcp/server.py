@@ -31,11 +31,11 @@ from mcp.server import Server
 from mcp.types import TextContent, Tool
 
 import data_store
-from mcp_app import build_mcp_app
+from mcp_app import build_mcp_app, tool_kwargs
 from publish_registry import published_behavior_names
 from tool_contract import (
     CATEGORY_QUERY, build_query_schema, ready_behavior_names,
-    require_ontology_id, with_category,
+    require_ontology_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,28 +58,28 @@ _QUERY_TOOL_SPECS: list[tuple[str, str, dict, str, bool]] = [
      {"keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配本体名称或场景名称"}},
      "查询本体清单", False),
     ("listOntoBehaviors",
-     "列出指定本体的**已就绪行为**（已完成数据引擎映射、可实际执行；未就绪的行为不在此列，需在设计器中完成映射）。返回行为的 name、display_name、description、params（输入参数结构）、response（返回结构）、rules（该行为关联的规则：name、display_name、position 介入位置、description）。",
+     "列出指定本体的**已就绪行为**（已完成数据引擎映射、可实际执行；未就绪的行为不在此列，需在设计器中完成映射）。返回行为的 name、title、description、params（输入参数结构）、response（返回结构）、rules（该行为关联的规则：name、title、position 介入位置、description）。",
      {"keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配行为名称或展示名称"}},
      "查询行为清单", True),
     ("listOntoConcepts",
-     "列出指定本体的概念。返回概念的 name、display_name、description、attributes（属性列表）。传入 concept_name 则直接返回该概念的属性列表。",
+     "列出指定本体的概念。返回概念的 name、title、description、attributes（属性列表）。传入 concept_name 则直接返回该概念的属性列表。",
      {"keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配概念名称"},
       "concept_name": {"type": "string", "description": "概念名称（可选），精确查找指定概念的属性"}},
      "查询概念清单", True),
     ("listOntoRelations",
-     "列出指定本体的关系。返回关系的 name、source（源概念）、target（目标概念）、cardinality（基数）、description、display_name。传入 concept_name 则只返回该概念直接关联的关系。",
+     "列出指定本体的关系。返回关系的 name、source（源概念）、target（目标概念）、cardinality（基数）、description、title。传入 concept_name 则只返回该概念直接关联的关系。",
      {"concept_name": {"type": "string", "description": "概念名称（可选），仅返回与该概念相关的关系"}},
      "查询关系清单", True),
     ("listOntoFunctions",
-     "列出指定本体的函数以及对应的输入输出结构。返回函数的 name、display_name、description、params（输入）、response（返回的）。",
+     "列出指定本体的函数以及对应的输入输出结构。返回函数的 name、title、description、params（输入）、response（返回的）。",
      {"keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配函数名称或展示名称"}},
      "查询函数清单", True),
     ("listOntoSecurities",
-     "列出指定本体的行为安全管控配置（全行为花名册）。返回每行为的 action_name（行为名称）、display_name（展示名称）、op_type（操作类型 command/query）、scope（权限范围：everyone 所有用户 / disable 全部禁用 / 用户或组织列表）、confirm（执行前是否需人工确认）、confirm_content（确认弹窗提示文案）。",
+     "列出指定本体的行为安全管控配置（全行为花名册）。返回每行为的 action_name（行为名称）、title（中文名）、op_type（操作类型 command/query）、scope（权限范围：everyone 所有用户 / disable 全部禁用 / 用户或组织列表）、confirm（执行前是否需人工确认）、confirm_content（确认弹窗提示文案）。",
      {},
      "查询安全清单", True),
     ("listOntoProcesses",
-     "列出指定本体的业务流程。返回流程的 name、display_name、goal（流程目标）、description、steps（流程步骤：current_action 当前动作、previous_action 上一动作、description 步骤描述、connection_type 衔接类型）。",
+     "列出指定本体的业务流程。返回流程的 name、title、goal（流程目标）、description、steps（流程步骤：current_action 当前动作、previous_action 上一动作、description 步骤描述、connection_type 衔接类型）。",
      {"keyword": {"type": "string", "description": "搜索关键词（可选），模糊匹配流程名称或展示名称"}},
      "查询流程清单", True),
 ]
@@ -88,8 +88,9 @@ _QUERY_TOOLS = [
     Tool(
         name=name,
         description=desc,
-        inputSchema=with_category(
-            build_query_schema(extra, requires_ontology=needs_ontology), CATEGORY_QUERY, label),
+        # 工具级字段（label=中文名 / 固定类别）→ 启动时投影成 title 与 x-title、x-category（唯一写入点）
+        **tool_kwargs(build_query_schema(extra, requires_ontology=needs_ontology),
+                      title=label, category=CATEGORY_QUERY),
     )
     for name, desc, extra, label, needs_ontology in _QUERY_TOOL_SPECS
 ]
@@ -173,12 +174,12 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         rules = data.get("rules") or []
         for b in behaviors:
             b["rules"] = [
-                {"name": r.get("name"), "display_name": r.get("display_name"),
+                {"name": r.get("name"), "title": r.get("title"),
                  "position": r.get("position"), "description": r.get("description")}
                 for r in rules
                 if isinstance(r, dict) and _rule_behavior(r) == b.get("name")
             ]
-        result = _filter_list(behaviors, arguments.get("keyword"), ["name", "display_name"])
+        result = _filter_list(behaviors, arguments.get("keyword"), ["name", "title"])
 
     elif name == "listOntoConcepts":
         data = _ontology_of(name, arguments)
@@ -191,7 +192,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             else:
                 result = _not_found(f"概念 '{cname}' 不存在")
         else:
-            result = _filter_list(concepts, arguments.get("keyword"), ["name", "display_name"])
+            result = _filter_list(concepts, arguments.get("keyword"), ["name", "title"])
 
     elif name == "listOntoRelations":
         data = _ontology_of(name, arguments)
@@ -211,7 +212,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "listOntoFunctions":
         data = _ontology_of(name, arguments)
-        result = _filter_list(data.get("functions") or [], arguments.get("keyword"), ["name", "display_name"])
+        result = _filter_list(data.get("functions") or [], arguments.get("keyword"), ["name", "title"])
 
     elif name == "listOntoSecurities":
         data = _ontology_of(name, arguments)
@@ -219,7 +220,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "listOntoProcesses":
         data = _ontology_of(name, arguments)
-        result = _filter_list(data.get("processes") or [], arguments.get("keyword"), ["name", "display_name"])
+        result = _filter_list(data.get("processes") or [], arguments.get("keyword"), ["name", "title"])
 
     if result is None:
         raise ValueError(f"未知工具: {name}")

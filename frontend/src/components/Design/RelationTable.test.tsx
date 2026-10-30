@@ -25,19 +25,19 @@ import RelationTable from './RelationTable';
 import * as api from '@/api/client';
 
 const concepts = [
-  { name: 'Document', display_name: '单据', description: '', attributes: [{ name: 'docNo', type: 'string' }] },
-  { name: 'PurchaseOrder', display_name: '采购单', description: '', sub_class_of: 'Document', attributes: [{ name: 'poId', type: 'string' }] },
-  { name: 'DraftOrder', display_name: '草稿订单', description: '', attributes: [{ name: 'docNo', type: 'string' }] },
+  { name: 'Document', title: '单据', description: '', attributes: [{ name: 'docNo', type: 'string' }] },
+  { name: 'PurchaseOrder', title: '采购单', description: '', sub_class_of: 'Document', attributes: [{ name: 'poId', type: 'string' }] },
+  { name: 'DraftOrder', title: '草稿订单', description: '', attributes: [{ name: 'docNo', type: 'string' }] },
 ];
 
 const conceptRelations = [
   {
-    name: 'PurchaseOrderSubClassOfDocument', display_name: '采购单 是一种 单据',
+    name: 'PurchaseOrderSubClassOfDocument', title: '采购单 是一种 单据',
     relation_type: 'SubClassOf', source: 'PurchaseOrder', target: 'Document',
     source_attr: 'poId', target_attr: 'docNo', description: '由概念设计自动同步',
   },
   {
-    name: 'DraftOrderDisjointWithPurchaseOrder', display_name: '草稿订单与采购单互斥',
+    name: 'DraftOrderDisjointWithPurchaseOrder', title: '草稿订单与采购单互斥',
     relation_type: 'DisjointWith', source: 'DraftOrder', target: 'PurchaseOrder',
     source_attr: '', target_attr: '', description: '互斥',
   },
@@ -101,7 +101,7 @@ describe('RelationTable', () => {
 
   it('对象关系每页只展示 5 行，超出出现分页；新增行自动跳到所在页', async () => {
     const many = Array.from({ length: 12 }, (_, i) => ({
-      name: `Rel${i + 1}`, display_name: `关系${i + 1}`, source: 'Document', target: 'DraftOrder',
+      name: `Rel${i + 1}`, title: `关系${i + 1}`, source: 'Document', target: 'DraftOrder',
       cardinality: '1:N', relation_type: [], source_attr: 'docNo', target_attr: 'docNo', description: '',
     }));
     vi.mocked(api.getRelations).mockResolvedValue(many as any);
@@ -120,7 +120,7 @@ describe('RelationTable', () => {
 
   it('概念关系每页只展示 5 行，超出出现分页', async () => {
     const many = Array.from({ length: 12 }, (_, i) => ({
-      name: `Pair${i + 1}DisjointWithOther${i + 1}`, display_name: `互斥${i + 1}`,
+      name: `Pair${i + 1}DisjointWithOther${i + 1}`, title: `互斥${i + 1}`,
       relation_type: 'DisjointWith', source: 'DraftOrder', target: 'PurchaseOrder',
       source_attr: '', target_attr: '', description: '',
     }));

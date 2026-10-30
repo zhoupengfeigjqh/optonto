@@ -85,7 +85,7 @@ describe('schemaToDeclaredParams（JSON Schema → 本体函数 params 同形声
 describe('getCommonFunctionInfo（真实 functions.json 合一查询）', () => {
   it('dateAdd → 中文显示名 + 描述 + {date, days} 必填声明（带 example）', () => {
     const info = getCommonFunctionInfo('dateAdd')!;
-    expect(info.display_name).toBe('日期加减');
+    expect(info.title).toBe('日期加减');
     expect(info.description).toContain('日期加减指定天数');
     expect(info.params).toMatchObject({
       date: { type: 'string', required: true, example: '2026-08-01' },

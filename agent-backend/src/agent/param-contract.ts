@@ -35,7 +35,7 @@ export interface ParamSpec {
   type?: string;
   required?: boolean;
   description?: string;
-  display_name?: string;
+  title?: string;
   example?: unknown;
   value?: unknown;
   /** array 参数的项结构声明（项为 object 时带 properties） */
@@ -217,7 +217,8 @@ export function validateParamsAgainstSchema(schema: any, provided: Record<string
  */
 export function renderParamStructure(key: string, spec: ParamSpec, opts: { filled?: boolean } = {}, indent = '', depth = 0): string[] {
   const reqMark = spec.required ? '（必填）' : '';
-  const label = spec.description || spec.display_name || '';
+  // 中文名只认 title（spec 006 FR-016）；description 是补充说明，不参与中文名取数
+  const label = spec.title || '';
   const desc = label ? ` — ${label}` : '';
   const example = spec.example !== undefined && spec.example !== '' ? `，示例 ${spec.example}` : '';
   const filled = opts.filled === undefined ? '' : opts.filled ? '，已填' : '，当前未填';

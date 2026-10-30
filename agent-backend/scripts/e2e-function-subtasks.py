@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """E2E 验证函数子任务链路（标记分类重构后）：
-场景D：本体函数 sumRawNotArrivalQty 作为函数子任务 → display_name 应取发布方标记"原材料未到位数"
+场景D：本体函数 sumRawNotArrivalQty 作为函数子任务 → title 应取发布方标记"原材料未到位数"
 场景E：③其他MCP工具 generate_line_chart 作为函数子任务 → 可规划、可执行
-断言：plan 中 function 字段命中、display_name 中文、无 error 事件。
+断言：plan 中 function 字段命中、title 中文、无 error 事件。
 """
 import json
 import sys
@@ -70,7 +70,7 @@ def summarize(tag, events):
         for st in e['plan']['subtasks']:
             if st.get('function'):
                 fn_subs.append(st)
-                print(f'  函数子任务: function={st["function"]}  display_name="{st.get("display_name","")}"  desc="{st.get("description","")[:40]}"')
+                print(f'  函数子任务: function={st["function"]}  title="{st.get("title","")}"  desc="{st.get("description","")[:40]}"')
     errors = [e.get('message', '') for e in events if e['type'] == 'error']
     if errors:
         print(f'  ERROR: {errors[-1][:200]}')
@@ -104,7 +104,7 @@ def main():
 
     check('D: 规划出函数子任务 sumRawNotArrivalQty', any(s['function'] == 'sumRawNotArrivalQty' for s in fnD))
     if fnD:
-        check('D: display_name 为发布方标记"原材料未到位数"', any('原材料未到位' in (s.get('display_name') or '') for s in fnD))
+        check('D: title 为发布方标记"原材料未到位数"', any('原材料未到位' in (s.get('title') or '') for s in fnD))
     check('D: 无 error 事件', not errD)
     check('D: 正常完成', doneD)
 
