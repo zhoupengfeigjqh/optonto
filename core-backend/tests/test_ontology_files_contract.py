@@ -23,11 +23,12 @@ SC = "SC"
 ON = "ON"
 
 
-def http_engine(behavior: str, method: str) -> dict:
+def mcp_engine(behavior: str, tool: str) -> dict:
+    """MCP 型引擎夹具：引擎唯一形态为 MCP（url/method 属已删除的 HTTP 型，2026-10-31 移除）。"""
     return {
-        "name": f"e-{behavior}-{method}",
+        "name": f"e-{behavior}-{tool}",
         "behavior_name": behavior,
-        "target": {"method": method, "url": "http://x"},
+        "target": {"server_url": "http://x/mcp", "tool_name": tool},
     }
 
 
@@ -66,16 +67,16 @@ class TestOverlay(ContractCase):
     """契约 §2 Overlay 回退"""
 
     def test_O1_独立文件覆盖旧段_engines(self) -> None:
-        self.write_ontology([{"name": "B1"}], data_engines=[http_engine("B1", "GET")])
-        self.write_overlay("data_engines.yaml", "data_engines", [http_engine("B1", "POST")], wrap=True)
+        self.write_ontology([{"name": "B1"}], data_engines=[mcp_engine("B1", "query_a")])
+        self.write_overlay("data_engines.yaml", "data_engines", [mcp_engine("B1", "query_b")], wrap=True)
         data = self.load()
-        self.assertEqual(data.data_engines[0].target.method, "POST")
+        self.assertEqual(data.data_engines[0].target.tool_name, "query_b")
 
     def test_O2_独立文件缺失回退旧段(self) -> None:
-        self.write_ontology([{"name": "B1"}], data_engines=[http_engine("B1", "POST")])
+        self.write_ontology([{"name": "B1"}], data_engines=[mcp_engine("B1", "query_b")])
         data = self.load()
         self.assertEqual(len(data.data_engines), 1)
-        self.assertEqual(data.data_engines[0].target.method, "POST")
+        self.assertEqual(data.data_engines[0].target.tool_name, "query_b")
 
     def test_O3_独立文件覆盖旧段_securities(self) -> None:
         self.write_ontology(
@@ -89,13 +90,13 @@ class TestOverlay(ContractCase):
 
     def test_O4_裸列表形态等价接受(self) -> None:
         self.write_ontology([{"name": "B1"}])
-        self.write_overlay("data_engines.yaml", "data_engines", [http_engine("B1", "POST")], wrap=False)
+        self.write_overlay("data_engines.yaml", "data_engines", [mcp_engine("B1", "query_b")], wrap=False)
         data = self.load()
         self.assertEqual(len(data.data_engines), 1)
 
     def test_O5_映射包裹形态等价接受(self) -> None:
         self.write_ontology([{"name": "B1"}])
-        self.write_overlay("data_engines.yaml", "data_engines", [http_engine("B1", "POST")], wrap=True)
+        self.write_overlay("data_engines.yaml", "data_engines", [mcp_engine("B1", "query_b")], wrap=True)
         data = self.load()
         self.assertEqual(len(data.data_engines), 1)
 
@@ -168,19 +169,49 @@ class TestOpType(ContractCase):
 
     def test_T1_显式command优先(self) -> None:
         b = BehaviorItem(name="B1", op_type="command")
-        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "GET"))), "command")
+        self.assertEqual(self.resolve(b, self.engines(mcp_engine("B1", "query_tool"))), "command")
 
     def test_T2_显式query优先(self) -> None:
         b = BehaviorItem(name="B1", op_type="query")
-        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "POST"))), "query")
+        self.assertEqual(self.resolve(b, self.engines(mcp_engine("B1", "query_tool"))), "query")
 
     def test_T3_空op_type有引擎判query(self) -> None:
         b = BehaviorItem(name="B1")
-        self.assertEqual(self.resolve(b, self.engines(http_engine("B1", "POST"))), "query")
+        self.assertEqual(self.resolve(b, self.engines(mcp_engine("B1", "query_tool"))), "query")
 
     def test_T4_空op_type无引擎判query(self) -> None:
         b = BehaviorItem(name="B1")
         self.assertEqual(self.resolve(b, []), "query")
+
+
+class TestEngineTitle(ContractCase):
+    """数据引擎 title = 所属行为的中文名（2026-10-31：写盘前快照同步，单一权威源 = 行为 title）"""
+
+    def test_引擎标题以行为中文名为准(self) -> None:
+        self.write_ontology([{"name": "B1", "title": "创建订单"}])
+        data = self.load()
+        data.data_engines = [DataEngineItem(name="e1", title="手工乱填", behavior_name="B1")]
+        services.save_ontology_data(SC, ON, data)
+        self.assertEqual(self.load().data_engines[0].title, "创建订单")
+
+    def test_行为改中文名后引擎标题跟随(self) -> None:
+        self.write_ontology([{"name": "B1", "title": "创建订单"}])
+        data = self.load()
+        data.data_engines = [DataEngineItem(name="e1", behavior_name="B1")]
+        services.save_ontology_data(SC, ON, data)
+        # 模拟行为更新接口：改中文名后再次保存（save 出口统一同步）
+        data = self.load()
+        data.behaviors[0].title = "新建订单"
+        services.save_ontology_data(SC, ON, data)
+        self.assertEqual(self.load().data_engines[0].title, "新建订单")
+
+    def test_行为无中文名时引擎标题为空串(self) -> None:
+        # 与安全管控同口径：英文 name 不得写进"中文名"字段
+        self.write_ontology([{"name": "B1"}])
+        data = self.load()
+        data.data_engines = [DataEngineItem(name="e1", title="残留旧名", behavior_name="B1")]
+        services.save_ontology_data(SC, ON, data)
+        self.assertEqual(self.load().data_engines[0].title, "")
 
 
 class TestSecurityRosterTitle(ContractCase):

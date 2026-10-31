@@ -130,15 +130,6 @@ describe('TargetConfigModal — 属性传递', () => {
     });
   });
 
-  it('旧 HTTP 配置（有 url 无 server_url）显示迁移告警', () => {
-    setup({ initialTarget: { ...emptyTarget, url: 'http://legacy/api', method: 'POST' } });
-    expect(screen.getByText(/仍是旧 HTTP 直连配置/)).toBeInTheDocument();
-  });
-
-  it('已是 MCP 配置时不显示迁移告警', () => {
-    setup({ initialTarget: { ...emptyTarget, server_url: 'http://biz:8004/mcp', tool_name: 'query_inventories' } });
-    expect(screen.queryByText(/仍是旧 HTTP 直连配置/)).not.toBeInTheDocument();
-  });
 });
 
 describe('TargetConfigModal — 事件触发', () => {
@@ -176,7 +167,7 @@ describe('TargetConfigModal — 事件触发', () => {
     expect(values).toContain('query_inventories');
   });
 
-  it('保存时组装 MCP 形态的 target（清空 url/method、带上 headers 快照）', async () => {
+  it('保存时组装 MCP 形态的 target（server_url + tool_name + headers 快照）', async () => {
     const props = setup();
     await pickServerAndTool();
     fireEvent.click(screen.getByRole('button', { name: '保 存' }));
@@ -185,8 +176,6 @@ describe('TargetConfigModal — 事件触发', () => {
     expect(target).toMatchObject({
       server_url: 'http://biz:8004/mcp',
       tool_name: 'query_inventories',
-      url: '',
-      method: '',
       headers: { Authorization: 'Bearer x' },
     });
     expect(server).toMatchObject({ name: '业务系统' });

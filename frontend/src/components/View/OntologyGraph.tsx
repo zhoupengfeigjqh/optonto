@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback, memo } from 'react';
+import { useEffect, useState, useRef, useMemo, memo } from 'react';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
 import { TooltipComponent, TitleComponent } from 'echarts/components';
@@ -8,35 +8,13 @@ import { GraphChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import { message, Spin, Empty, Modal, Tag, Button } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
-import { getConcepts, getOntologyData, effectiveAttributes, Concept, OntologyData } from '@/api/client';
+import { getConcepts, getOntologyData, Concept, OntologyData } from '@/api/client';
+import { attrLabel, buildOntologyGraph, CATEGORY_LABELS, type GraphNode } from './ontology-graph-model';
 
 echarts.use([TooltipComponent, TitleComponent, GraphChart, CanvasRenderer]);
 
 interface Props {
   ontologyId: number;
-}
-
-// ─── 属性展示名：优先中文 title，缺失回退英文属性名 ──────────────────
-
-const attrLabel = (a: { name: string; title?: string }): string =>
-  a.title || a.name;
-
-interface GraphNode {
-  id: string;
-  name: string;
-  title: string;
-  category: number;
-  symbolSize: number;
-  itemStyle?: any;
-  description?: string;
-  attributes?: { name: string; type: string; title?: string }[];
-}
-
-interface GraphEdge {
-  source: string;
-  target: string;
-  label?: { show: boolean; formatter: string; color?: string; fontSize?: number; fontWeight?: string };
-  lineStyle?: any;
 }
 
 export default memo(function OntologyGraph({ ontologyId }: Props) {
@@ -72,146 +50,13 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
     }
   }, [loading, data]);
 
-  const getTitle = (item: { name: string; title?: string }): string =>
-    item.title || item.name;
-
-  const buildGraph = useCallback(() => {
-    if (!data) return { nodes: [], edges: [], categories: [] };
-
-    const categories = [
-      { name: '概念', itemStyle: { color: '#3b82f6' } },
-      { name: '行为', itemStyle: { color: '#10b981' } },
-      { name: '规则', itemStyle: { color: '#f59e0b' } },
-      { name: '函数', itemStyle: { color: '#a855f7' } },
-      { name: '关系', itemStyle: { color: '#8b5cf6' } },
-    ];
-
-    const nodes: GraphNode[] = [];
-    const nodeIds = new Set<string>();
-    const edges: GraphEdge[] = [];
-
-    // Concept nodes（属性取有效属性：自有 ∪ 继承，spec 005）
-    const conceptMap = new Map(concepts.map(c => [c.name, c]));
-    data.concepts.forEach(c => {
-      nodes.push({
-        id: `concept:${c.name}`,
-        name: c.name,
-        title: getTitle(c),
-        category: 0,
-        symbolSize: 55,
-        description: c.description,
-        attributes: effectiveAttributes(conceptMap.get(c.name) || c),
-      });
-      nodeIds.add(`concept:${c.name}`);
-    });
-
-    // Behavior nodes
-    data.behaviors.forEach(b => {
-      nodes.push({
-        id: `behavior:${b.name}`,
-        name: b.name,
-        title: getTitle(b),
-        category: 1,
-        symbolSize: 40,
-        description: b.description,
-      });
-      nodeIds.add(`behavior:${b.name}`);
-
-      // 行为关联概念唯一（标量）
-      if (b.concept) {
-        const targetId = `concept:${b.concept}`;
-        if (nodeIds.has(targetId)) {
-          edges.push({
-            source: `behavior:${b.name}`,
-            target: targetId,
-            lineStyle: { color: '#10b981', width: 1.5, type: 'dashed' as const },
-          });
-        }
-      }
-    });
-
-    // Rule nodes
-    data.rules.forEach(r => {
-      nodes.push({
-        id: `rule:${r.name}`,
-        name: r.name,
-        title: getTitle(r),
-        category: 2,
-        symbolSize: 35,
-        description: r.description,
-      });
-      nodeIds.add(`rule:${r.name}`);
-
-      // 规则绑定行为唯一（标量）
-      if (r.behavior) {
-        const targetId = `behavior:${r.behavior}`;
-        if (nodeIds.has(targetId)) {
-          edges.push({
-            source: `rule:${r.name}`,
-            target: targetId,
-            lineStyle: { color: '#f59e0b', width: 1.5, type: 'dotted' as const },
-          });
-        }
-      }
-
-    });
-
-    // Function nodes
-    data.functions?.forEach(f => {
-      nodes.push({
-        id: `function:${f.name}`,
-        name: f.name,
-        title: getTitle(f),
-        category: 3,
-        symbolSize: 40,
-        description: f.description,
-      });
-      nodeIds.add(`function:${f.name}`);
-
-      // related_concepts：函数 → 概念 虚线边（与行为的关联概念口径一致）
-      (f.related_concepts || []).forEach((conceptName: string) => {
-        const targetId = `concept:${conceptName}`;
-        if (nodeIds.has(targetId)) {
-          edges.push({
-            source: `function:${f.name}`,
-            target: targetId,
-            lineStyle: { color: '#8b5cf6', width: 1.5, type: 'dashed' as const },
-          });
-        }
-      });
-    });
-
-    // Relation edges (between concepts) — with title
-    data.relations.forEach(r => {
-      const sourceId = `concept:${r.source}`;
-      const targetId = `concept:${r.target}`;
-      if (nodeIds.has(sourceId) && nodeIds.has(targetId)) {
-        edges.push({
-          source: sourceId,
-          target: targetId,
-          label: {
-            show: true,
-            formatter: getTitle(r),
-            color: '#c084fc',
-            fontSize: 12,
-            fontWeight: 'bold',
-          },
-          lineStyle: {
-            color: '#8b5cf6',
-            width: 2.5,
-            curveness: 0.2,
-            type: r.cardinality === 'N:M' ? 'solid' as const : 'dashed' as const,
-          },
-        });
-      }
-    });
-
-    return { nodes, edges, categories };
-  }, [data, concepts]);
+  // 图数据口径见 ontology-graph-model.ts（规则→关联函数连线，函数不再连概念）
+  const { nodes, edges, categories } = useMemo(
+    () => buildOntologyGraph(data, concepts),
+    [data, concepts],
+  );
 
   const getOption = () => {
-    const { nodes, edges, categories } = buildGraph();
-
     return {
       title: {
         text: '本体视图',
@@ -224,13 +69,12 @@ export default memo(function OntologyGraph({ ontologyId }: Props) {
         formatter: (params: any) => {
           if (params.dataType === 'node') {
             const node = params.data as GraphNode;
-            const typeLabels = ['概念', '行为', '规则', '函数', '关系'];
             let html = `<div style="font-size:13px;color:#e2e8f0">`;
             html += `<strong style="font-size:14px">${node.title}</strong>`;
             if (node.title !== node.name) {
               html += `<br/><span style="color:#64748b;font-size:11px">${node.name}</span>`;
             }
-            html += `<br/><span style="color:#94a3b8">${typeLabels[node.category] || ''}</span>`;
+            html += `<br/><span style="color:#94a3b8">${CATEGORY_LABELS[node.category] || ''}</span>`;
             if (node.description) {
               html += `<br/><span style="color:#94a3b8">${node.description}</span>`;
             }

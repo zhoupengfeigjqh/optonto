@@ -81,6 +81,16 @@
 
 此为有意分歧，不属于漂移；改任一端姿态需重新评估另一端。
 
+### 数据引擎 target 形态与 title（2026-10-31）
+
+- `data_engines[].target` **只有 MCP 形态**：`server_url`（下游 MCP 的 Streamable HTTP 端点）+ `tool_name`（工具名），
+  辅以 `data_source_name` / `api_name` / `params` / `response` / `output_fields` / `headers`。
+  旧 HTTP 型的 `url` / `method` 已从 schema 与前端类型中**删除**：旧文件里的残留键按 Pydantic 默认
+  `extra='ignore'` 读时静默丢弃，下次保存即物理消失（不留读时兼容分支，也不回填）。
+- `data_engines[].title` 恒等于所属行为的中文名（`behaviors[].title` 的**派生快照**，唯一权威源是行为）：
+  `save_ontology_data` / `save_ontology_version` 写盘前经 `services._sync_engine_titles` 统一刷新，
+  行为改中文名后引擎标题自动跟随；无中文名的行为不回落英文 `name`（与 `securities[].title` 同口径）。
+
 ## 3. 操作类型推导（op_type / isWrite，三端一致）
 
 用于：core 花名册同步（`_sync_securities_roster`）、agent 运行面写操作判定（`isWrite` → 安全确认/串行调度）、frontend 花名册展示。
@@ -96,8 +106,27 @@
 ## 4. 缓存语义
 
 - agent-backend：按 (scenario, ontology) 缓存，**三文件 mtime**（ontology.yaml + data_engines.yaml + securities.yaml）任一变化即失效重读；不存在的文件 mtime 记 0。
-- core-backend：`load_ontology_data` 有自身缓存（见实现），失效语义同样以文件 mtime 为准，无 TTL 陈旧窗口。
+- core-backend：`load_ontology_data` 有自身缓存（见实现），失效语义同样以文件 mtime 为准，无 TTL 陈旧窗口；
+  `repositories.metadata._read_ontology_yaml_metadata` 另按 `(mtime_ns, size)` 缓存**仅 metadata 段**（2026-10-31，
+  见下节测量），不缓存整份文件、不做身份兜底，返回对象只读。
 - mcp_server_sse：仅函数清单缓存，指纹 = (ontology.yaml/meta.json 文件数, 最大 mtime_ns)。
+
+### 身份查询性能（2026-10-31）
+
+按本体操作的路由前置是 `ontology_id → (场景, 本体)`，其身份只认 `ontology.yaml.metadata`。此前每次请求都完整
+解析**全部**本体的 YAML（容器内 bind mount 实测 30KB 单文件 ≈ 55ms，本场景 4 个本体 ≈ 250ms），构成「本体明细」
+切页签 280–450ms 的主因（单次加载还要叠加 `load_ontology_data` 的深拷贝）。
+
+| 端点（`/api/ontologies/{id}/…`） | 优化前 | 优化后（稳态） |
+| :-- | --: | --: |
+| `concepts` | 451ms | 49–52ms（冷启动首请求 132ms，含本体首次解析） |
+| `behaviors` | 373ms | 51ms |
+| `functions` | 281ms | 53ms |
+| `rules` | 279ms | 43ms |
+
+口径：`docker exec` 内 `time.perf_counter()` 分段测量（注册表扫盘 / 单文件解析 / 深拷贝）+ 宿主机 `Measure-Command`
+请求三次取稳态；环境为 Windows + Docker Desktop bind mount。正确性用例见
+`tests/test_metadata_identity.py::test_metadata_段缓存按文件指纹失效` 与 `::test_metadata_文件缺失返回空字典`。
 
 ## 5. 契约用例表（双端测试镜像）
 
@@ -105,8 +134,8 @@
 
 | # | 场景 | 期望 |
 | :-: | :-- | :-- |
-| O1 | data_engines.yaml 存在（POST 引擎），ontology.yaml 旧段为 GET 引擎 | 采用独立文件 |
-| O2 | data_engines.yaml 不存在，ontology.yaml 旧段为 POST 引擎 | 回退旧段 |
+| O1 | data_engines.yaml 存在（tool_name=query_b），ontology.yaml 旧段为 tool_name=query_a | 采用独立文件 |
+| O2 | data_engines.yaml 不存在，ontology.yaml 旧段为 tool_name=query_b | 回退旧段 |
 | O3 | securities.yaml 存在（scope=everyone），ontology.yaml 旧段 scope=disable | 采用独立文件（everyone） |
 | O4 | 独立文件为裸列表形态 | 等价接受 |
 | O5 | 独立文件为映射包裹形态（`data_engines:` / `securities:` 键） | 等价接受 |
@@ -134,6 +163,7 @@
 | behaviors[] | `from_status` / `to_status` | `string` | command 行为的状态机跃迁；取值必须落在关联概念 status 属性的枚举内 |
 | rules[] | `behavior` | `string` | **绑定行为唯一（标量）**；取代旧 `related_behaviors` 数组 |
 | rules[] | `related_functions` | `string[]` | **关联函数（2026-09-30 口径 B）**：本体函数 ∪ 公共函数，必须存在否则 400；其中本体且 `type=VALIDATION` 者为**判断函数** |
+| rules[] | `rule_design` | `object \| null` | **规则设计（2026-10-31，spec 007）**：`{combine, groups[], pass_message, fail_message}`；设计期表达，**运行期不消费**；全空归一为 `null` 不落盘（详见「规则设计」节） |
 | concepts[] | `instance_label` | `string` | 实例标签（可选）：实例视图节点标签所用的**属性英文名**，须是该概念已定义的属性 |
 | concepts[].attributes[] | `constraint` | `{unique, required, enum, pattern, min, max}` | 属性约束对象：布尔 / 字符串数组 / 正则（仅 string）/ 数值范围（仅 number、integer）；**全缺省视为无约束，保存时不落盘**；`unique=true` 隐式要求 `required=true` |
 | rules[] | `data_supplements` | `string[]` | 规则取数接口（query 行为名）；前端按关联函数声明的关联概念自动推导，可手工增减 |
@@ -223,6 +253,75 @@
 > `agent-backend/src/services/ontology-gateway.test.ts`（I1-I3）；前端纯函数见
 > `frontend/src/components/Design/concept-inheritance.test.ts`。
 
+### 规则设计（`rule_design`，2026-10-31，spec 007）
+
+**定位**：规则的**设计期**条件表达，把 `related_functions` 的判断组合成可读逻辑。
+**运行期（agent 规则闸 / MCP 编译 / 部署）一律不消费**——闸门仍只认 `related_functions`；
+这也意味着它不是「旧条件树」的复活（旧字段已退役且不读时兼容，本字段是全新键）。
+
+```yaml
+rule_design:
+  combine: and                  # 组间组合：and | or（缺省 = and，非法归一为空串由写侧 400）
+  groups:                       # 1..5 组
+  - combine: and                # 组内组合：and | or
+    conditions:                 # 每组 1..5 条
+    - function: checkRawMaterialUnit   # 必须 ∈ 本规则 related_functions
+      field: pass                      # 相对统一信封 data 的路径，支持 a.b / items[].c
+      operator: eq                     # 见下方运算符表
+      values: ["true"]                 # 字符串数组；个数由运算符决定
+  pass_message: 原材料存在且单位一致，允许创建采购单      # ≤30 字
+  fail_message: 原材料不存在或单位不一致，拒绝创建采购单  # ≤30 字
+```
+
+**取值个数与适用字段类型**（`schemas.RULE_OPERATOR_ARITY` / `RULE_OPERATOR_FIELD_TYPES`，
+前端 `rule/rule-design.ts::OPERATOR_META` 同源）：
+
+| 运算符 | 文案 | 取值个数 | 适用类型 |
+| :-- | :-- | :-: | :-- |
+| `eq` / `ne` | 等于 / 不等于 | 1 | 全部 |
+| `gt` / `gte` / `lt` / `lte` | 大于 / 大于等于 / 小于 / 小于等于 | 1 | number, integer |
+| `between` | 介于（含两端） | 2 | number, integer |
+| `contains` / `not_contains` | 包含 / 不包含 | 1 | string, array |
+| `starts_with` / `ends_with` | 开头是 / 结尾是 | 1 | string |
+| `matches` | 匹配正则 | 1 | string |
+| `in` / `not_in` | 属于 / 不属于 | ≥1 | string, number, integer |
+| `empty` / `not_empty` | 为空 / 非空 | 0 | 全部 |
+
+**写侧校验（core，业务层 → 400）**：`validate_rule_design`（`services/validators.py`）
+
+| 校验 | 报错 |
+| :-- | :-- |
+| 条件函数 ∈ 本规则 `related_functions` | `规则设计第 N 组第 M 条：函数 X 不在该规则的关联函数中` |
+| 函数存在（本体 ∪ 公共） | `…函数不存在: X` |
+| `field` 能在该函数 `response` 中逐层解析 | `…函数 X 未声明返回字段: p` |
+| 运算符合法且适配字段类型 | `…运算符非法` / `…不支持运算符 op` |
+| `values` 个数符合运算符要求（内容允许空白） | `…需要 1 个取值` / `需要 2 个取值` / `至少需要 1 个取值` |
+| 组 1..5、每组 1..5 条 | `规则设计最多 5 个条件组` / `…最多 5 条条件` / `…没有条件` |
+| 文案 ≤30 字（**业务层校验，不用 Pydantic `max_length`**，否则变 422） | `条件成立的结果说明不能超过 30 字` |
+
+**空设计口径**：`rule_design` 缺省、`{}`、空组且无文案 → 归一为 `None`，`model_dump(exclude_none=True)` 不落键；
+有文案无组保留原样并由写侧 400（不静默丢文案）。
+
+**返回结构两种形态**（`services/rule_design.py::response_properties` 唯一实现）：
+本体函数 `response` 直接是属性映射；公共函数是 JSON Schema `{type: object, properties}` → 先解包；
+数组层用 `items[].x` 表达（`type=array` 且 `items.properties` 才下钻）。
+
+| # | 场景 | 期望 |
+| :-: | :-- | :-- |
+| D1 | 合法设计（1 组 1 条，`pass eq true`） | 保存成功，yaml 结构如示例 |
+| D2 | 条件函数不在 `related_functions` | 400 |
+| D3 | `field` 不在函数 `response` 声明内 | 400 |
+| D4 | `gt` 用在 string 字段 | 400 |
+| D5 | 6 组 / 每组 6 条 / 文案 31 字 | 400 |
+| D6 | `rule_design` 为空对象或仅空组 | 不落键（`None`） |
+
+> 镜像实现：`core-backend/tests/test_rule_design.py`（36 例，含 D1-D6 与落盘往返）与
+> `frontend/src/components/Design/rule/rule-design.test.ts` + `RuleDesignModal.test.tsx`。
+> 前端交互：规则表「规则设计」列点笔头 → 表单弹窗（**已退役 `rules/generate`，不再提供 AI 选函数**）。
+> AI 草稿（spec 008）：弹窗内「智能生成」调 `POST /rules/design/generate`，产出的 `rule_design`
+> 与手工填写**同构**、同样遵守本节全部口径；草稿不落盘，覆盖已有设计须二次确认。
+> 端点契约见 [rule-design-generate.md](./rule-design-generate.md)。
+
 ## 6. 中文名字段（`title`）口径（2026-10-29，spec 006 · 硬切）
 
 **单一表达**：平台内"中文名"的字段名统一为 **`title`**；`display_name` 已从代码与全部存量文件中移除，
@@ -230,7 +329,7 @@
 
 覆盖实体（落盘字段）：`concepts[]` / `concepts[].attributes[]` / `relations[]` / `concept_relations[]` /
 `functions[]` / `behaviors[]` / `rules[]` / `processes[]` / `securities[]`（`action_name` 之外的展示名快照）/
-`data_engines[]`（引擎自身），以及 `functions[]` 与 `data_engines[]` 的 `params` / `response` 内每一层的
+`data_engines[]`（引擎自身，恒等于所属行为中文名的派生快照），以及 `functions[]` 与 `data_engines[]` 的 `params` / `response` 内每一层的
 字段声明（含 `items.properties` 深层）。
 
 **参数/返回字段口径（2026-10-29 起统一）**：

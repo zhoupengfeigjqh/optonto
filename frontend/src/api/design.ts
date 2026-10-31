@@ -237,13 +237,74 @@ export interface Rule {
   data_supplements?: string[];
   title?: string;
   position?: string;
+  /** 规则设计（设计期表达：条件组合 + 结果说明；运行期不消费，缺省 = 未设计） */
+  rule_design?: RuleDesign | null;
+}
+
+/** 规则设计运算符（与后端 `RULE_OPERATOR_ARITY` 同口径；全类型覆盖） */
+export type RuleOperator =
+  | 'eq' | 'ne'
+  | 'gt' | 'gte' | 'lt' | 'lte' | 'between'
+  | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'matches'
+  | 'in' | 'not_in'
+  | 'empty' | 'not_empty';
+
+/** 一条判断条件：函数返回字段 与 字面值 的比较（`field` 相对统一信封 data） */
+export interface RuleCondition {
+  /** 关联函数名（必须在该规则的 related_functions 内） */
+  function: string;
+  /** 返回字段路径（`a.b` / `items[].c`） */
+  field: string;
+  operator: RuleOperator | '';
+  /** 取值（字符串；个数由运算符决定） */
+  values: string[];
+}
+
+/** 条件组（组内 and/or） */
+export interface RuleConditionGroup {
+  combine: 'and' | 'or' | '';
+  conditions: RuleCondition[];
+}
+
+/** 规则设计（spec 007）：设计期表达，运行期不消费 */
+export interface RuleDesign {
+  /** 组间组合 */
+  combine: 'and' | 'or' | '';
+  groups: RuleConditionGroup[];
+  /** 条件成立的结果说明（≤30 字） */
+  pass_message: string;
+  /** 条件不成立的结果说明（≤30 字） */
+  fail_message: string;
+}
+
+/** 智能生成规则设计的输入（spec 008）：上下文 = 规则描述 + 该规则的**全部**关联函数 */
+export interface RuleDesignGeneratePayload {
+  rule_name: string;
+  title?: string;
+  description?: string;
+  position?: string;
+  behavior?: string;
+  related_functions: string[];
+}
+
+/** 智能生成结果：仅草稿，不落盘（由人工确认后随规则保存） */
+export interface RuleDesignGenerateResult {
+  rule_design: RuleDesign;
+  /** 被修边/忽略项的说明 */
+  warnings: string[];
+  dropped_conditions: number;
+  model: string;
+  elapsed_ms: number;
 }
 
 export const getRules = (ontologyId: number) =>
   request<Rule[]>(`/api/ontologies/${ontologyId}/rules`);
 
-export const generateRule = (ontologyId: number, data: any) =>
-  request<{ related_functions: string[]; reasoning: string }>(`/api/ontologies/${ontologyId}/rules/generate`, { method: 'POST', body: JSON.stringify(data) });
+export const generateRuleDesign = (ontologyId: number, data: RuleDesignGeneratePayload) =>
+  request<RuleDesignGenerateResult>(`/api/ontologies/${ontologyId}/rules/design/generate`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+
 export const createRule = (ontologyId: number, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules`, { method: 'POST', body: JSON.stringify(data) });
 

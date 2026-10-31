@@ -192,11 +192,34 @@ def _ontology_yaml_path(scenario_name: str, ontology_name: str) -> Path:
     return ONTO_MARKET_DIR / scenario_name / ontology_name / "ontology.yaml"
 
 
+# ontology.yaml 的 metadata 段缓存：path → ((mtime_ns, size), metadata)。
+# 只缓存 metadata 段（不缓存整个文件、不做身份兜底）：身份读取是**每个按本体操作的路由前置**
+# 的热路径，而完整解析 30KB YAML 实测约 50ms（容器内 bind mount + 纯 Python 解析）——
+# 不缓存时每次点页签都要重解析全量本体（4 个本体 ≈ 250ms），这是"切页签转圈"的主因。
+# 失效靠文件 (mtime_ns, size)：进程内写盘与进程外手动改文件都会改动其一。
+_YAML_META_CACHE: dict[Path, tuple[tuple[int, int], dict]] = {}
+
+
 def _read_ontology_yaml_metadata(ontology_dir: Path) -> dict:
-    """读 `<本体>/ontology.yaml` 的 metadata 段（缺失/损坏/非 dict → 空 dict）。"""
-    raw = fs_store.read_yaml(ontology_dir / "ontology.yaml")
+    """读 `<本体>/ontology.yaml` 的 metadata 段（缺失/损坏/非 dict → 空 dict）。
+
+    返回**只读**对象（调用方只 get，不得 mutate）；缓存命中不含重新解析成本。
+    """
+    path = ontology_dir / "ontology.yaml"
+    try:
+        st = path.stat()
+    except OSError:
+        _YAML_META_CACHE.pop(path, None)
+        return {}
+    fingerprint = (st.st_mtime_ns, st.st_size)
+    hit = _YAML_META_CACHE.get(path)
+    if hit and hit[0] == fingerprint:
+        return hit[1]
+    raw = fs_store.read_yaml(path)
     md = raw.get("metadata") if isinstance(raw, dict) else None
-    return md if isinstance(md, dict) else {}
+    md = md if isinstance(md, dict) else {}
+    _YAML_META_CACHE[path] = (fingerprint, md)
+    return md
 
 
 def read_ontology_identity(ontology_dir: Path, *, scenario_dir_name: str,

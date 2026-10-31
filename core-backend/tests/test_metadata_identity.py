@@ -173,6 +173,26 @@ class IdentityCase(unittest.TestCase):
         self.assertEqual(metadata.registry_ids("s", "a"), (5, 9))     # 名字取目录/入参，id 取注册表
         self.assertEqual(metadata.registry_ids("s", "不存在"), (5, None))
 
+    # ─── metadata 段缓存（切页签性能：只缓存 metadata 段，文件改动必须失效）────────────
+    def test_metadata_段缓存按文件指纹失效(self) -> None:
+        d = self.write_ontology("s", "a", oid=7)
+        first = metadata._read_ontology_yaml_metadata(d)
+        self.assertEqual(first["ontology_id"], 7)
+        # 文件未改动 → 命中缓存（同一对象，不再解析整份 YAML）
+        self.assertIs(metadata._read_ontology_yaml_metadata(d), first)
+        # 改写文件 → (mtime_ns, size) 变化 → 重新解析
+        (d / "ontology.yaml").write_text(yaml.safe_dump(
+            {"metadata": {"scenario_name": "s", "scenario_id": 1, "ontology_name": "a",
+                          "ontology_id": 8, "deployed_version": "v2.0-final"}},
+            allow_unicode=True, sort_keys=False), encoding="utf-8")
+        self.assertEqual(metadata._read_ontology_yaml_metadata(d)["ontology_id"], 8)
+
+    def test_metadata_文件缺失返回空字典(self) -> None:
+        d = self.write_ontology("s", "a", oid=7)
+        self.assertEqual(metadata._read_ontology_yaml_metadata(d)["ontology_id"], 7)
+        (d / "ontology.yaml").unlink()
+        self.assertEqual(metadata._read_ontology_yaml_metadata(d), {})
+
 
 if __name__ == "__main__":
     unittest.main()

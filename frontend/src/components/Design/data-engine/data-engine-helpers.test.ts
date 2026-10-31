@@ -136,17 +136,22 @@ describe('emptyEngine — 空白引擎', () => {
     expect(engine.target).toEqual(emptyTarget);
   });
 
+  it('中文名：title 取行为中文名，缺省为空串（不回落英文名）', () => {
+    expect(emptyEngine('QueryInventory', '查询原材料库存信息').title).toBe('查询原材料库存信息');
+    expect(emptyEngine('QueryInventory').title).toBe('');
+  });
+
   it('边界：target 为深一层副本，修改互不影响', () => {
     const a = emptyEngine('A');
-    a.target.method = 'GET';
-    expect(emptyEngine('B').target.method).toBe('');
-    expect(emptyTarget.method).toBe('');
+    a.target.params = { x: 1 };
+    expect(emptyEngine('B').target.params).toEqual({});
+    expect(emptyTarget.params).toEqual({});
   });
 });
 
 describe('表格判据 — hasTargetEndpoint / hasTargetSchema / countMappedFields', () => {
   it('属性传递：任一目标标识字段存在即视为已设置', () => {
-    for (const field of ['server_url', 'tool_name', 'url', 'api_name', 'data_source_name'] as const) {
+    for (const field of ['server_url', 'tool_name', 'api_name', 'data_source_name'] as const) {
       expect(hasTargetEndpoint({ ...emptyTarget, [field]: 'x' })).toBe(true);
     }
     expect(hasTargetEndpoint({ ...emptyTarget })).toBe(false);

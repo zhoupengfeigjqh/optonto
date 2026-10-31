@@ -297,7 +297,7 @@ SQL 路径：Agent → data-engine-executor SQL 行为 → 占位替换 → 只�
    - 三卡面板：ontology/data-engine 可启停（停止弹确认：中断行为调用/Agent 瘫痪文案），business-mcp 只读状态 + "请在 Docker 手动启停"提示
    - 验证：tsc 净、vitest 291/291、pytest 21/21、E2E 五脚本全绿；端点实测（business status、/mcp-data-engine/tools、tools 8 条含 outputSchema、call-tool 成功+错误穿透）
 5. **阶段五**：存量 HTTP 型引擎手工改绑（URL→工具对应只有人知道，不自动迁移）→ HTTP 型正式删除 ✅ 已落地（2026-09-07）
-   - 本仓库存量 8 条 API 引擎的 URL↔工具对应明确（business-mcp 即这些端点的适配器），用一次性脚本 `scripts/migrate-http-engines-to-mcp.py`（dry-run 默认 + `--apply` + 自动备份 .p5bak）改绑：engine_type→MCP、落 server_url/tool_name、清 url/method；输出映射路径重写——查询类 `data[*].x→result[*].x`、变更类 `data.x→x`，code/data 信封壳条目丢弃（新形态无壳）；input_mapping/params/response 不动
+   - 本仓库存量 8 条 API 引擎的 URL↔工具对应明确（business-mcp 即这些端点的适配器），用一次性脚本 `scripts/migrate-http-engines-to-mcp.py`（dry-run 默认 + `--apply` + 自动备份 .p5bak）改绑：engine_type→MCP、落 server_url/tool_name、清 url/method；输出映射路径重写——查询类 `data[*].x→result[*].x`、变更类 `data.x→x`，code/data 信封壳条目丢弃（新形态无壳）；input_mapping/params/response 不动（该脚本已于 2026-10-31 随 `target.url`/`method` 字段移除一并删除——迁移已完成，不再保留第二套 URL→工具映射；引擎 title 同时改为所属行为中文名的派生快照）
    - HTTP 执行路径删除：executor `_call_engine` 改为兜底报错（"请在映射页重新选择 MCP 服务与工具"）；mcp-shared `http_call`/`_substitute_path_params`/`_is_json` 与 httpx 依赖移除；core schema engine_type 默认 MCP、描述改 "SQL/MCP"
    - 验证：改绑后设计期调用逐条实测（QueryInventory 白名单换名、QuerySuppliers、SQL 引擎不受影响），E2E 五脚本全绿（facade 写路径 CreatePurchaseRecord 走 MCP 建单成功）、pytest 21/21、vitest 291/291、tsc 前后端净
 

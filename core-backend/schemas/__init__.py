@@ -312,6 +312,111 @@ class BehaviorItem(BaseModel):
         return v
 
 
+# ─── 规则设计（rule_design，spec 007）────────────────────────────────────────
+# 设计期表达：把关联函数的判断条件组合成可读逻辑，运行期（agent）**不消费**。
+# 运算符 → 取值个数（-1 = 至少 1 个；0 = 无取值；其余为精确个数）
+RULE_OPERATOR_ARITY = {
+    'eq': 1, 'ne': 1,
+    'gt': 1, 'gte': 1, 'lt': 1, 'lte': 1, 'between': 2,
+    'contains': 1, 'not_contains': 1, 'starts_with': 1, 'ends_with': 1, 'matches': 1,
+    'in': -1, 'not_in': -1,
+    'empty': 0, 'not_empty': 0,
+}
+# 运算符 → 适用字段类型（None = 不限；字段未声明 type 时同样不限）
+RULE_OPERATOR_FIELD_TYPES = {
+    'gt': ('number', 'integer'), 'gte': ('number', 'integer'),
+    'lt': ('number', 'integer'), 'lte': ('number', 'integer'),
+    'between': ('number', 'integer'),
+    'contains': ('string', 'array'), 'not_contains': ('string', 'array'),
+    'starts_with': ('string',), 'ends_with': ('string',), 'matches': ('string',),
+    'in': ('string', 'number', 'integer'), 'not_in': ('string', 'number', 'integer'),
+}
+# 组间 / 组内组合方式
+RULE_COMBINE_VALUES = ('and', 'or')
+
+
+class RuleConditionItem(BaseModel):
+    """规则设计中的一条判断条件（设计期表达）。
+
+    强耦合校验（函数必须在该规则的关联函数中、字段必须由该函数声明、
+    运算符与取值个数匹配）在业务层 ``services.validators.validate_rule_design``，
+    本层只做值域归一（非法 → 空串，由业务层 400 拦截）。
+    """
+
+    function: str = Field("", description="关联函数名（必须在该规则的 related_functions 内）")
+    field: str = Field("", description="函数返回字段路径（相对统一信封 data；支持 a.b 与 items[].c）")
+    operator: str = Field("eq", description="比较运算符（RULE_OPERATOR_ARITY 的键）")
+    values: list[str] = Field(default_factory=list, description="取值（字符串；个数由运算符决定）")
+
+    @field_validator('operator', mode='before')
+    @classmethod
+    def coerce_operator(cls, v: any) -> str:
+        s = str(v).strip().lower() if v is not None else ""
+        return s if s in RULE_OPERATOR_ARITY else ""
+
+    @field_validator('values', mode='before')
+    @classmethod
+    def coerce_values(cls, v: any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, (list, tuple)):
+            return [str(x) for x in v if x is not None]
+        return [str(v)]
+
+
+class RuleConditionGroupItem(BaseModel):
+    """规则设计的一个条件组（组内 AND/OR）。"""
+
+    combine: str = Field("and", description="组内组合方式（and/or）")
+    conditions: list[RuleConditionItem] = Field(default_factory=list, description="条件列表")
+
+    @field_validator('combine', mode='before')
+    @classmethod
+    def coerce_combine(cls, v: any) -> str:
+        s = str(v).strip().lower() if v is not None else ""
+        return s if s in RULE_COMBINE_VALUES else ""
+
+
+class RuleDesignItem(BaseModel):
+    """规则设计：组间 AND/OR + 若干条件组 + 两段结果说明（≤30 字）。"""
+
+    combine: str = Field("and", description="组间组合方式（and/or）")
+    groups: list[RuleConditionGroupItem] = Field(default_factory=list, description="条件组")
+    pass_message: str = Field("", description="条件成立的结果说明（≤30 字）")
+    fail_message: str = Field("", description="条件不成立的结果说明（≤30 字）")
+
+    @field_validator('combine', mode='before')
+    @classmethod
+    def coerce_combine(cls, v: any) -> str:
+        s = str(v).strip().lower() if v is not None else ""
+        return s if s in RULE_COMBINE_VALUES else ""
+
+
+class RuleDesignGenerateRequest(BaseModel):
+    """规则设计智能生成的输入（spec 008）：上下文 = 规则描述 + 该规则的**全部**关联函数。
+
+    字段名与 `RuleItem` 对齐，避免两套语义；`related_functions` 由前端传当前草稿的全部函数，
+    后端校验其存在性后作为白名单，LLM 不得引入其它函数。
+    """
+
+    rule_name: str = Field("", description="规则英文名（可为空，仅用于上下文）")
+    title: str = Field("", description="规则中文名")
+    description: str = Field("", description="规则描述（生成的主要依据）")
+    position: str = Field("", description="介入位置（前置/后置）")
+    behavior: str = Field("", description="绑定行为（唯一）")
+    related_functions: list[str] = Field(default_factory=list, description="该规则的全部关联函数")
+
+
+class RuleDesignGenerateResponse(BaseModel):
+    """智能生成结果：仅草稿，不落盘（由人工确认后随规则保存）。"""
+
+    rule_design: RuleDesignItem
+    warnings: list[str] = Field(default_factory=list, description="被修边/忽略项的说明")
+    dropped_conditions: int = Field(0, description="被丢弃的条件条数")
+    model: str = Field("", description="实际使用的模型名")
+    elapsed_ms: int = Field(0, description="生成耗时（毫秒）")
+
+
 class RuleItem(BaseModel):
     """本体规则：附着于行为的约束逻辑。
 
@@ -324,6 +429,8 @@ class RuleItem(BaseModel):
     - ``data_supplements``：按关联函数声明关联的概念（``related_concepts``）推出对应 query 行为（前端自动推导，可手工增减）。
     - 旧条件树字段已退役（字段移除，不再读时兼容）；旧 ``check_functions`` 读时并入
       ``related_functions``（口径 B 取消独立裁决函数字段——角色由函数类型承载）。
+    - ``rule_design``（2026-10-31，spec 007）：组间/组内 AND-OR 的条件组合 + 两段结果说明，
+      属**设计期表达**，运行期（agent 规则闸 / MCP 编译）**不消费**——闸门仍只认 ``related_functions``。
     - 绑定行为唯一（``behavior`` 标量）口径不变。
     """
 
@@ -334,6 +441,26 @@ class RuleItem(BaseModel):
     title: str = Field("", description="中文名")
     position: str = Field("", description="介入位置（前置/后置）")
     data_supplements: list[str] = Field(default_factory=list, description="数据补充（可多选 query 行为；自动推导自关联函数声明的关联概念，可手工增减）")
+    rule_design: RuleDesignItem | None = Field(None, description="规则设计（设计期表达：条件组合 + 结果说明；运行期不消费）")
+
+    @field_validator('rule_design', mode='before')
+    @classmethod
+    def coerce_rule_design(cls, v: any) -> any:
+        # 存量/外部写入的字符串形态视为无设计（与 constraint 的自由文本口径一致）
+        if v is None or isinstance(v, str):
+            return None
+        return v
+
+    @field_validator('rule_design')
+    @classmethod
+    def compact_rule_design(cls, v: RuleDesignItem | None) -> RuleDesignItem | None:
+        """空条件组剔除；整段无内容（无组、无文案）→ None，避免 YAML 落一串空结构噪音。"""
+        if v is None:
+            return None
+        v.groups = [g for g in v.groups if g.conditions]
+        if not v.groups and not (v.pass_message or '').strip() and not (v.fail_message or '').strip():
+            return None
+        return v
 
     @model_validator(mode='before')
     @classmethod
@@ -451,11 +578,9 @@ class FunctionItem(BaseModel):
 
 
 class TargetApiConfig(BaseModel):
-    """目标系统 API 配置"""
+    """目标 MCP 工具配置（引擎唯一形态 = MCP；url/method 属已删除的 HTTP 型，2026-10-31 移除）"""
     data_source_name: str = Field("", description="数据源名称")
     api_name: str = Field("", description="接口名称")
-    url: str = Field("", description="API接口地址")
-    method: str = Field("POST", description="请求方式 (GET/POST/PATCH/DELETE)")
     params: dict = Field(default_factory=dict, description="输入参数")
     response: dict = Field(default_factory=dict, description="输出结构")
     # 下游 MCP 服务与工具（落盘自包含，不引用外部注册表；引擎唯一形态=MCP）
@@ -468,7 +593,7 @@ class TargetApiConfig(BaseModel):
 class DataEngineItem(BaseModel):
     """数据引擎 — 本体行为与目标 MCP 工具映射（SQL/HTTP 型已删除，2026-09-07）"""
     name: str = Field(..., description="数据引擎名称")
-    title: str = Field("", description="中文名")
+    title: str = Field("", description="中文名（= 所属行为的中文名；保存时按 behavior_name 同步）")
     behavior_name: str = Field(..., description="本体行为名称")
     target: TargetApiConfig = Field(default_factory=TargetApiConfig)
     input_mapping: dict = Field(default_factory=dict, description="输入映射 {ontology_param: target_param}")

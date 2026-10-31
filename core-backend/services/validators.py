@@ -11,6 +11,8 @@
 from errors import InvalidInputError
 from schemas import (
     CONCEPT_RELATION_TYPES,
+    RULE_OPERATOR_ARITY,
+    RULE_OPERATOR_FIELD_TYPES,
     STATUS_ATTR_NAME,
     AttributeRestriction,
     BehaviorItem,
@@ -23,7 +25,14 @@ from schemas import (
     RuleItem,
 )
 from services.concept_relations import DISJOINT_WITH, EQUIVALENT_CLASS, is_ancestor
+from services.function_catalog import read_common_functions
 from services.inheritance import ENUM_TYPES, PATTERN_TYPES, RANGE_TYPES, effective_map
+from services.rule_design import (
+    MAX_CONDITIONS_PER_GROUP,
+    MAX_GROUPS,
+    MAX_MESSAGE_LEN,
+    resolve_field,
+)
 
 
 def status_enum_of(data: OntologyData, concept_name: str) -> list:
@@ -176,6 +185,86 @@ def validate_related_functions(rule: RuleItem, data: OntologyData, extra_availab
     for fn in rule.related_functions or []:
         if fn and fn not in names:
             raise InvalidInputError(f"规则关联函数不存在: {fn}")
+
+
+def validate_rule_design(rule: RuleItem, data: OntologyData) -> None:
+    """规则设计（``rule_design``）强耦合校验（spec 007）。
+
+    设计期表达，运行期不消费：这里只保证「设计自洽 + 可读」，不做执行级校验。
+    校验项：组数/条数上限、组合方式合法、条件函数 ∈ 该规则 ``related_functions``、
+    字段由该函数返回结构声明、运算符适配字段类型、取值个数匹配。
+
+    文案长度必须在此拦截（≤30 字）——Pydantic ``max_length`` 会返回 422，
+    破坏项目 400/422 契约。
+    """
+    design = rule.rule_design
+    if design is None:
+        return
+
+    related = {f for f in (rule.related_functions or []) if f}
+    catalog: dict[str, object] = {f.name: f.response for f in data.functions if f.name}
+    for cf in read_common_functions():
+        if not isinstance(cf, dict):
+            continue
+        name = cf.get('name')
+        if name and str(name) not in catalog:
+            catalog[str(name)] = cf.get('response')
+
+    if not design.groups:
+        raise InvalidInputError("规则设计没有任何条件组")
+    if len(design.groups) > MAX_GROUPS:
+        raise InvalidInputError(f"规则设计最多 {MAX_GROUPS} 个条件组")
+    if not design.combine:
+        raise InvalidInputError("规则设计的组间组合方式非法（仅支持 and / or）")
+
+    for gi, group in enumerate(design.groups, 1):
+        if not group.conditions:
+            raise InvalidInputError(f"规则设计第 {gi} 个条件组没有条件")
+        if len(group.conditions) > MAX_CONDITIONS_PER_GROUP:
+            raise InvalidInputError(f"规则设计第 {gi} 个条件组最多 {MAX_CONDITIONS_PER_GROUP} 条条件")
+        if not group.combine:
+            raise InvalidInputError(f"规则设计第 {gi} 个条件组的组内组合方式非法（仅支持 and / or）")
+
+        for ci, cond in enumerate(group.conditions, 1):
+            where = f"规则设计第 {gi} 组第 {ci} 条"
+            if cond.function not in related:
+                raise InvalidInputError(
+                    f"{where}：函数 {cond.function or '（空）'} 不在该规则的关联函数中"
+                )
+            if cond.function not in catalog:
+                raise InvalidInputError(f"{where}：函数不存在: {cond.function}")
+
+            node = resolve_field(catalog[cond.function], cond.field)
+            if node is None:
+                raise InvalidInputError(
+                    f"{where}：函数 {cond.function} 未声明返回字段: {cond.field or '（空）'}"
+                )
+
+            arity = RULE_OPERATOR_ARITY.get(cond.operator)
+            if arity is None:
+                raise InvalidInputError(f"{where}：运算符非法: {cond.operator or '（空）'}")
+
+            field_type = str(node.get('type') or '')
+            allowed = RULE_OPERATOR_FIELD_TYPES.get(cond.operator)
+            if allowed and field_type and field_type not in allowed:
+                raise InvalidInputError(
+                    f"{where}：函数 {cond.function} 字段 {cond.field}（{field_type}）"
+                    f"不支持运算符 {cond.operator}"
+                )
+
+            values = list(cond.values or [])
+            if arity == 0 and values:
+                raise InvalidInputError(f"{where}：运算符 {cond.operator} 不接受取值")
+            if arity == 1 and len(values) != 1:
+                raise InvalidInputError(f"{where}：运算符 {cond.operator} 需要 1 个取值")
+            if arity == 2 and len(values) != 2:
+                raise InvalidInputError(f"{where}：运算符 {cond.operator} 需要 2 个取值")
+            if arity == -1 and not values:
+                raise InvalidInputError(f"{where}：运算符 {cond.operator} 至少需要 1 个取值")
+
+    for label, text in (("条件成立", design.pass_message), ("条件不成立", design.fail_message)):
+        if len(text or '') > MAX_MESSAGE_LEN:
+            raise InvalidInputError(f"{label}的结果说明不能超过 {MAX_MESSAGE_LEN} 字")
 
 
 def validate_function_code(code: str) -> str | None:

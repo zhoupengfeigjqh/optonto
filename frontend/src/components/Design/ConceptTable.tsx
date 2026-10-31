@@ -247,9 +247,9 @@ export default function ConceptTable({ ontologyId, activeTab }: Props) {
         }
         return (
           <Space>
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
             <Button type="link" size="small" icon={<SettingOutlined />} onClick={() => setAttrConcept(record)}>属性</Button>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.name)} />
+            <Button type="link" size="small" icon={<EditOutlined />} aria-label="编辑" title="编辑" onClick={() => handleEdit(record)} />
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} aria-label="删除" title="删除" onClick={() => handleDelete(record.name)} />
           </Space>
         );
       },

@@ -155,6 +155,22 @@ def _sync_securities_roster(data: OntologyData) -> list[SecurityItem]:
     return roster
 
 
+def _sync_engine_titles(data: OntologyData) -> None:
+    """数据引擎 title = 所属行为的中文名（写盘前强制刷新快照，2026-10-31）。
+
+    与 ``_sync_securities_roster`` 同款：title 是**派生的中文名快照**，唯一权威源是
+    ``BehaviorItem.title``，引擎侧不保留可独立编辑的值——否则行为改名/改中文名后
+    引擎标题会陈旧，同一行为在页面上出现两个中文名。
+
+    悬空引擎（``behavior_name`` 无对应行为）保留原值：不静默清空历史数据；
+    正常路径由行为删除的级联清理兜底（见 routers/behaviors.delete_behavior）。
+    """
+    titles = {b.name: b.title for b in data.behaviors}
+    for de in data.data_engines:
+        if de.behavior_name in titles:
+            de.title = titles[de.behavior_name]
+
+
 def _load_ontology_data_uncached(scenario_name: str, ontology_name: str) -> OntologyData:
     """读盘 + 解析（load_ontology_data 的缓存未命中路径）。"""
     yaml_path = get_yaml_path(scenario_name, ontology_name)
@@ -262,6 +278,7 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     # 并回写 data.securities 让调用方在同一请求内读到同步后的结果。
     # 用 model_copy 避免改动调用方对象的其他部分（路由在 save 后仍可能读取 data.data_engines）。
     engines = data.data_engines
+    _sync_engine_titles(data)
     data.securities = _sync_securities_roster(data)
     ontology_data = data.model_copy(update={"data_engines": [], "securities": []})
     ontology_dict = ontology_data.model_dump(exclude_none=True)
@@ -324,6 +341,7 @@ def save_ontology_version(scenario_name: str, ontology_name: str, version: str, 
 
     # 数据引擎/安全管控拆写
     engines = data.data_engines
+    _sync_engine_titles(data)
     data.securities = _sync_securities_roster(data)
     ontology_data = data.model_copy(update={"data_engines": [], "securities": []})
     ontology_dict = ontology_data.model_dump(exclude_none=True)

@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>规则设计（rule_design）· 静态原型</title>
+<style>
+  :root{
+    --bg:#0a0a0f; --card:#111118; --hover:#1a1a2a; --border:#1e1e2a;
+    --text:#e2e8f0; --text2:#94a3b8; --muted:#64748b;
+    --blue:#3b82f6; --blue-soft:rgba(59,130,246,.14); --red:#ef4444; --green:#10b981;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Microsoft YaHei',sans-serif}
+  .wrap{max-width:1320px;margin:0 auto;padding:24px}
+  .page-title{font-size:18px;font-weight:600;margin:0 0 4px}
+  .page-sub{color:var(--muted);font-size:12px;margin:0 0 14px}
+  .notice{border:1px dashed #2b3a55;background:rgba(59,130,246,.06);color:#9dc0f5;
+    border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:16px}
+  .notice b{color:#cfe1ff}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .panel-head h3{margin:0;font-size:15px;font-weight:600}
+  .panel-hint{color:var(--muted);font-size:12px;margin:0 0 12px}
+  .btn{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;
+    padding:4px 12px;font-size:13px;cursor:pointer;transition:.15s;font-family:inherit}
+  .btn:hover{border-color:var(--blue);color:var(--blue)}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  .btn.primary:hover{filter:brightness(1.1);color:#fff}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--text2);padding:2px 6px}
+  .btn.ghost:hover{background:var(--hover);color:var(--blue)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn:disabled:hover{border-color:var(--border);color:var(--text)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{background:var(--card);color:var(--text);font-weight:500;text-align:left;
+    padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:middle}
+  tbody tr:hover td{background:var(--hover)}
+  .name{color:var(--text);font-family:Consolas,Menlo,monospace;font-size:12px}
+  .warn-dot{color:#f59e0b;margin-right:4px}
+  .muted{color:var(--muted)}
+  .tag{display:inline-block;background:#1e293b;border:1px solid #243447;color:#93c5fd;
+    border-radius:4px;padding:0 6px;font-size:12px;line-height:18px;margin:1px 4px 1px 0}
+  .tag.judge{background:rgba(16,185,129,.12);border-color:#1d4b3f;color:#6ee7b7}
+  .cell-fn{max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .design-cell{display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .design-empty{color:var(--muted)}
+  .design-filled{color:var(--text);cursor:default}
+  .pencil{width:24px;height:24px;border-radius:4px;border:1px solid transparent;background:transparent;
+    color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0}
+  .pencil:hover{background:var(--hover);color:var(--blue);border-color:var(--border)}
+
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.66);display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .mask.open{display:flex}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:8px;width:880px;max-width:100%;
+    max-height:90vh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.6)}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+    padding:16px 20px 12px;border-bottom:1px solid var(--border)}
+  .modal-title{font-size:15px;font-weight:600}
+  .modal-title small{display:block;font-size:12px;font-weight:400;color:var(--muted);margin-top:4px;font-family:Consolas,Menlo,monospace}
+  .modal-close{background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;line-height:1;padding:2px 6px;border-radius:4px}
+  .modal-close:hover{background:var(--hover);color:var(--text)}
+  .modal-body{padding:14px 20px;overflow:auto}
+  .modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--border)}
+  .meta-row{display:flex;flex-wrap:wrap;gap:18px;color:var(--muted);font-size:12px;margin-bottom:12px}
+  .meta-row b{color:var(--text2);font-weight:500}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:14px}
+  .chips-label{color:var(--muted);font-size:12px;margin-right:2px}
+
+  .section{border:1px solid var(--border);border-radius:6px;background:#0c0c13;margin-bottom:14px}
+  .section-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border)}
+  .section-title{font-size:13px;color:var(--text);font-weight:500}
+  .section-body{padding:12px}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+  .seg button{background:transparent;border:none;color:var(--text2);font-size:12px;padding:2px 12px;cursor:pointer;font-family:inherit}
+  .seg button+button{border-left:1px solid var(--border)}
+  .seg button.on{background:var(--blue-soft);color:#7db3ff}
+  .seg-label{color:var(--muted);font-size:12px;margin-right:6px}
+
+  .group{border:1px solid var(--border);border-radius:6px;background:var(--card);margin-bottom:10px}
+  .group-head{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border)}
+  .group-index{color:var(--text2);font-size:12px}
+  .group-head .spacer{flex:1}
+  .cond{display:grid;grid-template-columns:minmax(180px,1.5fr) minmax(170px,1.2fr) 122px minmax(150px,1fr) 26px;
+    gap:8px;align-items:center;padding:8px 10px;border-bottom:1px dashed #191926}
+  .cond:last-of-type{border-bottom:none}
+  .cond-err{grid-column:1/-1;color:var(--red);font-size:12px;padding-left:2px}
+  .cond.invalid select,.cond.invalid input{border-color:var(--red)!important}
+  .group-foot{padding:8px 10px}
+  .link-btn{background:transparent;border:none;color:#7db3ff;font-size:12px;cursor:pointer;padding:2px 4px;font-family:inherit}
+  .link-btn:hover{text-decoration:underline}
+  .link-btn.danger{color:#f87171}
+
+  select,input,textarea{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);
+    font-size:12px;padding:5px 8px;width:100%;font-family:inherit;outline:none}
+  select:focus,input:focus,textarea:focus{border-color:var(--blue)}
+  select{cursor:pointer}
+  input[type=number]{-moz-appearance:textfield}
+  .pair{display:flex;align-items:center;gap:6px}
+  .pair span{color:var(--muted);font-size:12px;white-space:nowrap}
+  .novalue{color:var(--muted);font-size:12px;padding-left:2px}
+
+  .result-row{display:grid;grid-template-columns:74px 1fr auto;gap:10px;align-items:flex-start;margin-bottom:10px}
+  .result-row:last-child{margin-bottom:0}
+  .result-label{color:var(--text2);font-size:12px;padding-top:6px}
+  .counter{color:var(--muted);font-size:11px;padding-top:7px;min-width:44px;text-align:right}
+  .counter.full{color:#f59e0b}
+  textarea{resize:vertical;min-height:34px;line-height:1.5}
+  .foot-hint{color:var(--muted);font-size:12px;margin-right:auto}
+
+  .empty-box{border:1px dashed var(--border);border-radius:6px;padding:28px 20px;text-align:center;color:var(--text2)}
+  .empty-box .big{font-size:14px;color:var(--text);margin-bottom:6px}
+  .empty-box .small{font-size:12px;color:var(--muted);max-width:460px;margin:0 auto}
+
+  .toast{position:fixed;top:18px;right:20px;background:var(--card);border:1px solid var(--border);
+    border-left:3px solid var(--blue);color:var(--text);padding:8px 14px;border-radius:4px;font-size:13px;
+    opacity:0;transform:translateY(-8px);transition:.2s;z-index:99;pointer-events:none}
+  .toast.show{opacity:1;transform:none}
+  .toast.err{border-left-color:var(--red)}
+  .tooltip-wrap{position:relative;display:inline-block}
+  .tooltip-wrap:hover .tip{display:block}
+  .tip{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:10;background:#161621;border:1px solid var(--border);
+    border-radius:4px;padding:6px 10px;white-space:nowrap;font-size:12px;color:var(--text2);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 class="page-title">OPTONTO · 本体明细 / 规则</h2>
+  <p class="page-sub">静态原型（specs/007-rule-design/prototype.html）· 无后端、无构建，直接双击打开即可交互</p>
+
+  <div class="notice">
+    <b>原型说明</b>：本页只演示「规则设计（rule_design）」的交互与落盘结构，数据取自存量本体
+    <code>原材料采购和库存</code>，个别规则补了函数用于演示<strong>嵌套返回字段</strong>；
+    <b>V05</b> 预置了一条<strong>悬空条件</strong>（函数已不在关联函数中），用于演示校验红框。
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>规则管理</h3>
+      <button class="btn primary" onclick="toast('原型不演示新增规则')">+ 新增规则</button>
+    </div>
+    <p class="panel-hint">
+      配置行为执行前后的约束规则（规则绑定唯一行为；约束逻辑由「关联函数」承载；
+      新增「规则设计」列用于把关联函数的判断组合成可读逻辑，<b>仅设计期表达，运行期不消费</b>）
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:190px">名称</th>
+          <th style="width:150px">中文名称</th>
+          <th style="width:60px">介入位置</th>
+          <th style="width:230px">描述</th>
+          <th style="width:150px">绑定行为</th>
+          <th style="width:240px">关联函数</th>
+          <th style="width:120px">数据补充</th>
+          <th style="width:130px">规则设计</th>
+          <th style="width:70px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="规则设计">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle">规则设计</div>
+      <button class="modal-close" onclick="closeModal()" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ───────────────────────── 函数目录（response 两种形态） ───────────────────────── */
+const FUNCS = {
+  checkRawMaterialUnit: {
+    title: '校验采购原材料单位一致性', type: 'CALCULATION',
+    response: { pass: { type: 'boolean', title: '判断结果' }, reason: { type: 'string', title: '判断说明' } }
+  },
+  sumRawNotArrivalQty: {
+    title: '原材料未到位数', type: 'CALCULATION',
+    response: {
+      rawMaterialName: { type: 'string', title: '原材料名称' },
+      sumNotArrivalQty: { type: 'number', title: '未到位总量' },
+      items: {
+        type: 'array', title: '明细',
+        items: { type: 'object', properties: {
+          rawMaterialName: { type: 'string', title: '原材料名称' },
+          arrivalQuantity: { type: 'number', title: '计划的到位数量' }
+        } }
+      }
+    }
+  },
+  checkArrivalTimeValidity: {
+    title: '校验到位时间合理性', type: 'VALIDATION',
+    response: { pass: { type: 'boolean', title: '判断结果' }, reason: { type: 'string', title: '判断说明' } }
+  },
+  getCurrentDate: {
+    title: '当前日期', type: '',
+    // 公共函数形态：JSON Schema 包裹
+    response: { type: 'object', properties: { date: { type: 'string', title: '当前日期' } } }
+  },
+  checkSupplierExistence: {
+    title: '校验供应商存在性', type: 'VALIDATION',
+    response: { pass: { type: 'boolean', title: '判断结果' }, reason: { type: 'string', title: '判断说明' } }
+  },
+  inferPurchasePurpose: {
+    title: '推断采购用途', type: 'CALCULATION',
+    response: {
+      purchasePurpose: { type: 'string', title: '采购用途' },
+      confidence: { type: 'number', title: '置信度' },
+      reason: { type: 'string', title: '判断说明' }
+    }
+  }
+};
+
+/* ───────────────────────── 运算符全集 ───────────────────────── */
+const OPS = [
+  { code: 'eq',           label: '等于',       arity: 1,  types: 'ALL' },
+  { code: 'ne',           label: '不等于',     arity: 1,  types: 'ALL' },
+  { code: 'gt',           label: '大于',       arity: 1,  types: ['number', 'integer'] },
+  { code: 'gte',          label: '大于等于',   arity: 1,  types: ['number', 'integer'] },
+  { code: 'lt',           label: '小于',       arity: 1,  types: ['number', 'integer'] },
+  { code: 'lte',          label: '小于等于',   arity: 1,  types: ['number', 'integer'] },
+  { code: 'between',      label: '介于',       arity: 2,  types: ['number', 'integer'] },
+  { code: 'contains',     label: '包含',       arity: 1,  types: ['string', 'array'] },
+  { code: 'not_contains', label: '不包含',     arity: 1,  types: ['string', 'array'] },
+  { code: 'starts_with',  label: '开头是',     arity: 1,  types: ['string'] },
+  { code: 'ends_with',    label: '结尾是',     arity: 1,  types: ['string'] },
+  { code: 'matches',      label: '匹配正则',   arity: 1,  types: ['string'] },
+  { code: 'in',           label: '属于',       arity: -1, types: ['string', 'number', 'integer'] },
+  { code: 'not_in',       label: '不属于',     arity: -1, types: ['string', 'number', 'integer'] },
+  { code: 'empty',        label: '为空',       arity: 0,  types: 'ALL' },
+  { code: 'not_empty',    label: '非空',       arity: 0,  types: 'ALL' }
+];
+const opByCode = c => OPS.find(o => o.code === c);
+const opsForType = t => OPS.filter(o => o.types === 'ALL' || !t || o.types.includes(t));
+
+/* ───────────────────────── 示例数据 ───────────────────────── */
+let rules = [
+  {
+    name: 'V01_UnitConsistency_Purchase', title: '采购-原料存在且单位一致', position: '前置',
+    desc: '创建采购单时，原材料ID必须存在，且单位与原材料定义一致。', behavior: 'CreatePurchaseRecord',
+    fns: ['checkRawMaterialUnit', 'sumRawNotArrivalQty'],
+    supplements: ['QueryPurchaseRecords', 'QueryRawMaterials'],
+    design: {
+      combine: 'and',
+      groups: [ { combine: 'and', conditions: [ { function: 'checkRawMaterialUnit', field: 'pass', operator: 'eq', values: ['true'] } ] } ],
+      pass_message: '原材料存在且单位一致，允许创建采购单',
+      fail_message: '原材料不存在或单位不一致，拒绝创建'
+    }
+  },
+  {
+    name: 'V03_ArrivalTimeValidity', title: '采购-到位时间合理性', position: '前置',
+    desc: '到位时间必须晚于采购发生日（以当前日期为准）。', behavior: 'CreatePurchaseRecord',
+    fns: ['checkArrivalTimeValidity', 'getCurrentDate', 'sumRawNotArrivalQty'],
+    supplements: ['QueryPurchaseRecords'],
+    design: {
+      combine: 'and',
+      groups: [
+        { combine: 'and', conditions: [
+          { function: 'checkArrivalTimeValidity', field: 'pass', operator: 'eq', values: ['true'] },
+          { function: 'sumRawNotArrivalQty', field: 'sumNotArrivalQty', operator: 'lt', values: ['100'] }
+        ] },
+        { combine: 'or', conditions: [
+          { function: 'sumRawNotArrivalQty', field: 'items[].arrivalQuantity', operator: 'gte', values: ['10'] }
+        ] }
+      ],
+      pass_message: '到位时间与未到位量与预期一致',
+      fail_message: '到位时间或未到位量不满足要求'
+    }
+  },
+  {
+    name: 'V05_SupplierExistence', title: '采购-供应商名称一致', position: '前置',
+    desc: '供应商名称必须存在于供应商主数据中。', behavior: 'CreatePurchaseRecord',
+    fns: ['checkSupplierExistence'], supplements: ['QueryPurchaseRecords', 'QuerySuppliers'],
+    // 故意预置悬空条件：checkRawMaterialUnit 不在 fns 中
+    design: {
+      combine: 'and',
+      groups: [ { combine: 'and', conditions: [
+        { function: 'checkSupplierExistence', field: 'pass', operator: 'eq', values: ['true'] },
+        { function: 'checkRawMaterialUnit', field: 'pass', operator: 'eq', values: ['true'] }
+      ] } ],
+      pass_message: '供应商与原材料均存在，允许创建',
+      fail_message: '供应商或原材料不存在，拒绝创建'
+    }
+  },
+  {
+    name: 'I01_SafetyStockAlert', title: '安全库存预警', position: '后置',
+    desc: '可用库存低于安全库存时推送预警，建议创建采购单。', behavior: 'QueryInventory',
+    fns: [], supplements: [], design: null
+  },
+  {
+    name: 'I02_ArrivalOverdueAlert', title: '采购-到期未入库提醒', position: '后置',
+    desc: '当前日期已过到位时间时，提示是否启动入库操作。', behavior: 'QueryPurchaseRecords',
+    fns: ['inferPurchasePurpose'], supplements: [], design: null
+  }
+];
+
+/* ───────────────────────── 工具函数 ───────────────────────── */
+function fieldsOf(fnName, list) {
+  const fn = FUNCS[fnName];
+  if (!fn) return [];
+  const r = fn.response || {};
+  const props = (r.type === 'object' && r.properties) ? r.properties : r;
+  const out = [];
+  (function walk(map, prefix, depth) {
+    Object.keys(map || {}).forEach(k => {
+      const node = map[k] || {};
+      const path = prefix ? prefix + '.' + k : k;
+      const isArrObj = node.type === 'array' && node.items && node.items.properties;
+      out.push({ path, label: node.title || k, type: node.type || '', depth, isGroup: isArrObj });
+      if (node.properties) walk(node.properties, path, depth + 1);
+      if (isArrObj) walk(node.items.properties, path + '[]', depth + 1);
+    });
+  })(props, '', 0);
+  return out;
+}
+
+function fieldMeta(fnName, path) {
+  return fieldsOf(fnName).find(f => f.path === path) || null;
+}
+
+function opLabelOf(c) {
+  const o = opByCode(c.operator);
+  if (!o) return '?';
+  if (o.arity === 0) return o.label;
+  return o.label + ' ' + (c.values || []).join(o.code === 'between' ? ' ~ ' : ',');
+}
+
+function condText(c) {
+  const f = fieldMeta(c.function, c.field);
+  return (f ? f.label : c.field || '?') + ' ' + opLabelOf(c);
+}
+
+function exprText(d) {
+  if (!d || !d.groups || !d.groups.length) return '未设计';
+  return d.groups.map(g => '(' + (g.conditions || []).map(condText).join(' ' + g.combine.toUpperCase() + ' ') + ')')
+    .join(' ' + (d.combine || 'and').toUpperCase() + ' ');
+}
+
+function summary(d) {
+  if (!d || !d.groups || !d.groups.length) return '';
+  const conds = d.groups.reduce((n, g) => n + ((g.conditions || []).length), 0);
+  return d.groups.length + '组 · ' + conds + '条件';
+}
+
+function fnLabel(name) {
+  const f = FUNCS[name];
+  if (!f) return name;
+  return (f.title || name) + (f.type ? '-' + f.type : '');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+function clone(o) { return o ? JSON.parse(JSON.stringify(o)) : null; }
+
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 2400);
+}
+
+/* ───────────────────────── 表格渲染 ───────────────────────── */
+const PENCIL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const TRASH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
+
+function renderTable() {
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = rules.map((r, i) => {
+    const fns = r.fns.map(n => `<span class="tag${FUNCS[n] && FUNCS[n].type === 'VALIDATION' ? ' judge' : ''}" title="${esc(n)}">${esc(fnLabel(n))}</span>`).join('') || '<span class="muted">-</span>';
+    const sum = summary(r.design);
+    const designCell = sum
+      ? `<span class="tooltip-wrap"><span class="design-filled">${sum}</span><span class="tip">${esc(exprText(r.design))}</span></span>`
+      : `<span class="design-empty">未设计</span>`;
+    return `<tr>
+      <td><span class="${(r.fns || []).length ? '' : 'warn-dot'}" title="${(r.fns || []).length ? '' : '该规则未关联函数，在调用中无法正常审计'}">${(r.fns || []).length ? '' : '⚠ '}</span><span class="name">${esc(r.name)}</span></td>
+      <td>${esc(r.title)}</td>
+      <td>${esc(r.position || '-')}</td>
+      <td class="cell-fn" title="${esc(r.desc)}">${esc(r.desc)}</td>
+      <td class="name">${esc(r.behavior)}</td>
+      <td class="cell-fn" title="${esc(r.fns.join(', '))}">${fns}</td>
+      <td class="cell-fn">${(r.supplements || []).map(esc).join(', ') || '<span class="muted">-</span>'}</td>
+      <td>
+        <div class="design-cell">
+          ${designCell}
+          <button class="pencil" title="规则设计（点击打开弹窗）" onclick="openModal(${i})">${PENCIL}</button>
+        </div>
+      </td>
+      <td>
+        <button class="pencil" title="编辑（原型不演示行内编辑）" onclick="toast('原型不演示行内编辑，请点左侧笔头看规则设计')">${PENCIL}</button>
+        <button class="pencil" title="删除（原型不演示）" onclick="toast('原型不演示删除')">${TRASH}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ───────────────────────── 弹窗状态 ───────────────────────── */
+let editing = -1;
+let draft = null;
+let errors = {};   // key: g{i}c{j} -> message
+
+function openModal(index) {
+  editing = index;
+  const r = rules[index];
+  document.getElementById('modalTitle').innerHTML = '规则设计 · ' + esc(r.title || r.name) +
+    '<small>' + esc(r.name) + ' · ' + esc(r.behavior || '未绑定行为') + ' · ' + esc(r.position || '未设位置') + '</small>';
+  errors = {};
+  if (!r.fns.length) {
+    draft = null;
+    renderEmptyState();
+    return;
+  }
+  draft = clone(r.design) || {
+    combine: 'and',
+    groups: [{ combine: 'and', conditions: [newCondition(r.fns[0])] }],
+    pass_message: '', fail_message: ''
+  };
+  // 兜底：组/条件缺失
+  if (!draft.groups || !draft.groups.length) draft.groups = [{ combine: 'and', conditions: [newCondition(r.fns[0])] }];
+  document.getElementById('mask').classList.add('open');
+  renderModal();
+}
+
+function newCondition(fnName) {
+  const fields = fieldsOf(fnName);
+  const leaf = fields.find(f => !f.isGroup) || fields[0];
+  const op = leaf ? opsForType(leaf.type)[0] : OPS[0];
+  return { function: fnName, field: leaf ? leaf.path : '', operator: op ? op.code : 'eq', values: [''] };
+}
+
+function closeModal() {
+  document.getElementById('mask').classList.remove('open');
+  editing = -1; draft = null; errors = {};
+}
+
+function renderEmptyState() {
+  document.getElementById('mask').classList.add('open');
+  document.getElementById('modalBody').innerHTML = `
+    <div class="empty-box">
+      <div class="big">该规则尚未选择关联函数</div>
+      <div class="small">规则设计只能从本规则的「关联函数」中选择函数。请先在表格中为该规则选择关联函数，再回来设计条件。</div>
+    </div>`;
+  document.getElementById('modalFoot').innerHTML = `<button class="btn" onclick="closeModal()">关闭</button>`;
+}
+
+/* ───────────────────────── 弹窗渲染 ───────────────────────── */
+function renderModal() {
+  const r = rules[editing];
+  const chips = r.fns.map(n => `<span class="tag${FUNCS[n] && FUNCS[n].type === 'VALIDATION' ? ' judge' : ''}">${esc(fnLabel(n))}</span>`).join('');
+
+  const body = `
+    <div class="meta-row">
+      <span><b>绑定行为</b> ${esc(r.behavior || '-')}</span>
+      <span><b>介入位置</b> ${esc(r.position || '-')}</span>
+    </div>
+    <div class="chips">
+      <span class="chips-label">关联函数</span>${chips}
+      <span class="muted" style="font-size:12px">（需增减请回到表格修改关联函数）</span>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <span class="section-title">条件组合</span>
+        <span>
+          <span class="seg-label">组间</span>
+          <span class="seg">
+            <button class="${draft.combine === 'and' ? 'on' : ''}" onclick="setCombine('and')">AND</button>
+            <button class="${draft.combine === 'or' ? 'on' : ''}" onclick="setCombine('or')">OR</button>
+          </span>
+        </span>
+      </div>
+      <div class="section-body">
+        ${draft.groups.map((g, gi) => renderGroup(g, gi)).join('')}
+        <button class="btn" onclick="addGroup()">+ 添加条件组</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><span class="section-title">判断结果</span></div>
+      <div class="section-body">
+        <div class="result-row">
+          <span class="result-label">条件成立</span>
+          <textarea id="passMsg" maxlength="30" rows="1" placeholder="填写条件成立时的结果说明（30 字以内）"
+            oninput="onMsgInput('pass')">${esc(draft.pass_message || '')}</textarea>
+          <span class="counter" id="cntPass">${(draft.pass_message || '').length}/30</span>
+        </div>
+        <div class="result-row">
+          <span class="result-label">条件不成立</span>
+          <textarea id="failMsg" maxlength="30" rows="1" placeholder="填写条件不成立时的结果说明（30 字以内）"
+            oninput="onMsgInput('fail')">${esc(draft.fail_message || '')}</textarea>
+          <span class="counter" id="cntFail">${(draft.fail_message || '').length}/30</span>
+        </div>
+      </div>
+    </div>
+    <div class="muted" style="font-size:12px">ⓘ 条件中的函数必须来自本规则的「关联函数」；该设计<b>仅作为设计期说明</b>，不参与运行期判定。</div>
+  `;
+  document.getElementById('modalBody').innerHTML = body;
+
+  document.getElementById('modalFoot').innerHTML = `
+    <span class="foot-hint">该设计仅保存在设计面，运行期不消费</span>
+    <button class="btn" onclick="closeModal()">取消</button>
+    <button class="btn primary" onclick="saveDesign()">保存设计</button>`;
+}
+
+function renderGroup(g, gi) {
+  const rows = g.conditions.map((c, ci) => renderCondition(c, gi, ci)).join('');
+  const emptyErr = errors['g' + gi] ? `<div class="cond-err">${esc(errors['g' + gi])}</div>` : '';
+  return `
+    <div class="group">
+      <div class="group-head">
+        <span class="group-index">条件组 ${gi + 1}</span>
+        <span class="seg-label">组内</span>
+        <span class="seg">
+          <button class="${g.combine === 'and' ? 'on' : ''}" onclick="setGroupCombine(${gi},'and')">AND</button>
+          <button class="${g.combine === 'or' ? 'on' : ''}" onclick="setGroupCombine(${gi},'or')">OR</button>
+        </span>
+        <span class="spacer"></span>
+        <button class="link-btn danger" onclick="removeGroup(${gi})">删除组</button>
+      </div>
+      ${rows}
+      ${emptyErr}
+      <div class="group-foot"><button class="link-btn" onclick="addCondition(${gi})">+ 添加条件</button></div>
+    </div>`;
+}
+
+function renderCondition(c, gi, ci) {
+  const r = rules[editing];
+  const fnOptions = r.fns.map(n => `<option value="${esc(n)}"${n === c.function ? ' selected' : ''}>${esc(fnLabel(n))}</option>`).join('');
+  const fields = fieldsOf(c.function);
+  const fieldOptions = fields.length
+    ? fields.map(f => `<option value="${esc(f.path)}"${f.path === c.field ? ' selected' : ''}>${'　'.repeat(f.depth)}${f.depth ? '└ ' : ''}${esc(f.label)}${f.type ? ' (' + esc(f.type) + ')' : ''}</option>`).join('')
+    : `<option value="">该函数未声明返回结构</option>`;
+  const meta = fieldMeta(c.function, c.field);
+  const type = meta ? meta.type : '';
+  const opOptions = opsForType(type).map(o => `<option value="${o.code}"${o.code === c.operator ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+  const fnOk = r.fns.includes(c.function);
+  const errKey = 'g' + gi + 'c' + ci;
+  const err = errors[errKey];
+
+  let valueCell = '';
+  const op = opByCode(c.operator);
+  if (!op || op.arity === 0) {
+    valueCell = '<span class="novalue">（无需取值）</span>';
+  } else if (op.code === 'between') {
+    valueCell = `<div class="pair">
+      <input type="number" value="${esc((c.values || [])[0] || '')}" oninput="setValue(${gi},${ci},0,this.value)" placeholder="下限"/>
+      <span>~</span>
+      <input type="number" value="${esc((c.values || [])[1] || '')}" oninput="setValue(${gi},${ci},1,this.value)" placeholder="上限"/>
+    </div>`;
+  } else if (op.code === 'in' || op.code === 'not_in') {
+    valueCell = `<input value="${esc((c.values || []).join(', '))}" oninput="setValueList(${gi},${ci},this.value)" placeholder="多个值用逗号分隔"/>`;
+  } else if (type === 'boolean') {
+    valueCell = `<select onchange="setValue(${gi},${ci},0,this.value)">
+      <option value="true"${(c.values || [])[0] === 'true' ? ' selected' : ''}>true</option>
+      <option value="false"${(c.values || [])[0] === 'false' ? ' selected' : ''}>false</option>
+    </select>`;
+  } else if (type === 'number' || type === 'integer') {
+    valueCell = `<input type="number" value="${esc((c.values || [])[0] || '')}" oninput="setValue(${gi},${ci},0,this.value)" placeholder="填写数值"/>`;
+  } else {
+    valueCell = `<input value="${esc((c.values || [])[0] || '')}" oninput="setValue(${gi},${ci},0,this.value)" placeholder="填写结果值"/>`;
+  }
+
+  const dangling = fnOk ? '' : `<div class="cond-err">函数「${esc(fnLabel(c.function))}」已不在关联函数中，请重新选择或回到表格添加该函数</div>`;
+
+  return `<div class="cond ${(err || !fnOk) ? 'invalid' : ''}">
+    <select onchange="setFn(${gi},${ci},this.value)">${fnOptions}</select>
+    <select onchange="setField(${gi},${ci},this.value)">${fieldOptions}</select>
+    <select onchange="setOperator(${gi},${ci},this.value)">${opOptions}</select>
+    ${valueCell}
+    <button class="pencil" title="删除该条件" onclick="removeCondition(${gi},${ci})">${TRASH}</button>
+    ${err ? `<div class="cond-err">${esc(err)}</div>` : ''}
+    ${dangling}
+  </div>`;
+}
+
+/* ───────────────────────── 交互 ───────────────────────── */
+function setCombine(v) { draft.combine = v; renderModal(); }
+function setGroupCombine(gi, v) { draft.groups[gi].combine = v; renderModal(); }
+
+function addGroup() {
+  draft.groups.push({ combine: 'and', conditions: [newCondition(rules[editing].fns[0])] });
+  renderModal();
+}
+function removeGroup(gi) {
+  draft.groups.splice(gi, 1);
+  if (!draft.groups.length) draft.groups.push({ combine: 'and', conditions: [newCondition(rules[editing].fns[0])] });
+  errors = {};
+  renderModal();
+}
+function addCondition(gi) {
+  draft.groups[gi].conditions.push(newCondition(rules[editing].fns[0]));
+  renderModal();
+}
+function removeCondition(gi, ci) {
+  const g = draft.groups[gi];
+  g.conditions.splice(ci, 1);
+  if (!g.conditions.length) g.conditions.push(newCondition(rules[editing].fns[0]));
+  errors = {};
+  renderModal();
+}
+function setFn(gi, ci, v) {
+  draft.groups[gi].conditions[ci] = newCondition(v);
+  errors = {};
+  renderModal();
+}
+function setField(gi, ci, v) {
+  const c = draft.groups[gi].conditions[ci];
+  c.field = v;
+  const meta = fieldMeta(c.function, v);
+  const ops = opsForType(meta ? meta.type : '');
+  if (!ops.some(o => o.code === c.operator)) {
+    c.operator = ops[0].code;
+    c.values = ops[0].arity > 0 ? [''] : [];
+  }
+  errors = {};
+  renderModal();
+}
+function setOperator(gi, ci, v) {
+  const c = draft.groups[gi].conditions[ci];
+  c.operator = v;
+  const op = opByCode(v);
+  if (!op) { c.values = []; }
+  else if (op.arity === 0) c.values = [];
+  else if (op.arity === 2) c.values = [c.values[0] || '', c.values[1] || ''];
+  else c.values = [c.values[0] || ''];
+  errors = {};
+  renderModal();
+}
+function setValue(gi, ci, idx, v) {
+  const c = draft.groups[gi].conditions[ci];
+  if (!c.values) c.values = [];
+  c.values[idx] = v;
+}
+function setValueList(gi, ci, v) {
+  const c = draft.groups[gi].conditions[ci];
+  c.values = v.split(',').map(s => s.trim()).filter(Boolean);
+}
+function onMsgInput(kind) {
+  const el = document.getElementById(kind === 'pass' ? 'passMsg' : 'failMsg');
+  const cnt = document.getElementById(kind === 'pass' ? 'cntPass' : 'cntFail');
+  if (kind === 'pass') draft.pass_message = el.value; else draft.fail_message = el.value;
+  cnt.textContent = el.value.length + '/30';
+  cnt.className = 'counter' + (el.value.length >= 30 ? ' full' : '');
+}
+
+/* ───────────────────────── 保存校验 ───────────────────────── */
+function validate() {
+  const r = rules[editing];
+  errors = {};
+  const result = { ok: true, msg: '' };
+  const fail = m => { if (result.ok) { result.ok = false; result.msg = m; } };
+
+  if (!draft.groups.length) { fail('请至少添加一个条件组'); }
+  draft.groups.forEach((g, gi) => {
+    if (!g.conditions.length) {
+      errors['g' + gi] = '条件组 ' + (gi + 1) + ' 为空，请添加条件或删除该组';
+      fail(errors['g' + gi]);
+      return;
+    }
+    g.conditions.forEach((c, ci) => {
+      const key = 'g' + gi + 'c' + ci;
+      if (!r.fns.includes(c.function)) {
+        errors[key] = '函数不在该规则的关联函数中';
+        fail('条件组 ' + (gi + 1) + ' 第 ' + (ci + 1) + ' 条：函数不在关联函数中');
+        return;
+      }
+      if (!c.field) {
+        errors[key] = '请选择返回字段';
+        fail('条件组 ' + (gi + 1) + ' 第 ' + (ci + 1) + ' 条：请选择返回字段');
+        return;
+      }
+      const op = opByCode(c.operator);
+      if (!op) { errors[key] = '请选择运算符'; fail('运算符非法'); return; }
+      const filled = (c.values || []).filter(v => String(v).trim() !== '');
+      if (op.arity === 1 && filled.length < 1) { errors[key] = '请填写取值'; fail('条件组 ' + (gi + 1) + ' 第 ' + (ci + 1) + ' 条：请填写取值'); return; }
+      if (op.arity === 2 && filled.length < 2) { errors[key] = '请填写上下限两个取值'; fail('条件组 ' + (gi + 1) + ' 第 ' + (ci + 1) + ' 条：介于需要两个取值'); return; }
+      if (op.arity === -1 && filled.length < 1) { errors[key] = '请填写至少一个取值'; fail('条件组 ' + (gi + 1) + ' 第 ' + (ci + 1) + ' 条：请填写取值'); return; }
+    });
+  });
+
+  const pm = (draft.pass_message || '').trim();
+  const fm = (draft.fail_message || '').trim();
+  if (!pm) { fail('请填写「条件成立」的结果说明'); }
+  if (!fm) { fail('请填写「条件不成立」的结果说明'); }
+  if (pm.length > 30 || fm.length > 30) { fail('结果说明不能超过 30 字'); }
+  return result;
+}
+
+function saveDesign() {
+  const v = validate();
+  if (!v.ok) {
+    renderModal();
+    toast(v.msg, true);
+    return;
+  }
+  const r = rules[editing];
+  r.design = clone(draft);
+  // 清理：无值运算符清空 values；单值去掉多余项
+  r.design.groups.forEach(g => g.conditions.forEach(c => {
+    const op = opByCode(c.operator);
+    if (!op) { c.values = []; return; }
+    if (op.arity === 0) c.values = [];
+    else if (op.arity === 1) c.values = [(c.values || [])[0] || ''];
+    else if (op.arity === 2) c.values = [(c.values || [])[0] || '', (c.values || [])[1] || ''];
+    else c.values = (c.values || []).filter(x => String(x).trim() !== '');
+  }));
+  r.design.pass_message = (draft.pass_message || '').trim();
+  r.design.fail_message = (draft.fail_message || '').trim();
+  renderTable();
+  closeModal();
+  toast('规则设计已保存（原型仅内存态）');
+}
+
+/* ───────────────────────── 初始化 ───────────────────────── */
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.getElementById('mask').addEventListener('click', e => { if (e.target.id === 'mask') closeModal(); });
+renderTable();
+</script>
+</body>
+</html>

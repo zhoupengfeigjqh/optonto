@@ -126,6 +126,12 @@ export interface RuleDetail {
    *  （pass=false 或缺失 pass → fail-closed 拒绝主行为）。 */
   judge_functions?: string[];
   data_supplements?: string[];
+  /**
+   * 规则设计（设计期表达，spec 007）：平台设计面维护的条件组合 + 结果说明。
+   * **运行期不消费**——规则闸只认 `related_functions` / `judge_functions`，
+   * 不要在此读取或派生判定逻辑。
+   */
+  rule_design?: Record<string, unknown> | null;
 }
 
 /** 概念属性信息 */

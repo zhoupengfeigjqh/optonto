@@ -1,12 +1,10 @@
 data_engines:
 - name: CreatePurchaseRecord
-  title: ''
+  title: 创建原材料采购单
   behavior_name: CreatePurchaseRecord
   target:
     data_source_name: aps
     api_name: 创建采购单
-    url: ''
-    method: ''
     params:
       rawMaterialId:
         type: string
@@ -128,13 +126,11 @@ data_engines:
     data.leadTime: ''
     data.status: result.status
 - name: CancelPurchaseRecord
-  title: ''
+  title: 取消原材料采购单
   behavior_name: CancelPurchaseRecord
   target:
     data_source_name: aps
     api_name: 取消原材料采购单
-    url: ''
-    method: ''
     params:
       purchaseOrderId:
         type: string
@@ -177,13 +173,11 @@ data_engines:
     data.rawMaterialId: result.rawMaterialId
     data.rawMaterialName: result.rawMaterialName
 - name: ReceiveRawMaterial
-  title: ''
+  title: 入库原材料
   behavior_name: ReceiveRawMaterial
   target:
     data_source_name: aps
     api_name: 入库原材料
-    url: ''
-    method: ''
     params:
       purchaseOrderId:
         type: string
@@ -234,13 +228,11 @@ data_engines:
     data.rawMaterialId: result.rawMaterialId
     data.rawMaterialName: result.rawMaterialName
 - name: QueryInventory
-  title: ''
+  title: 查询原材料库存信息
   behavior_name: QueryInventory
   target:
     data_source_name: aps
     api_name: 查询原材料库存
-    url: ''
-    method: ''
     params:
       rawMaterialId:
         type: string
@@ -316,13 +308,11 @@ data_engines:
     data[*].availableStock: result[*].availableQuantity
     data[*].unit: result[*].unit
 - name: QueryPurchaseRecords
-  title: ''
+  title: 查询原材料采购单信息
   behavior_name: QueryPurchaseRecords
   target:
     data_source_name: aps
     api_name: 查询原材料采购订单
-    url: ''
-    method: ''
     params:
       purchaseOrderId:
         type: string
@@ -428,13 +418,11 @@ data_engines:
     data[*].relatedOrderName: result[*].relatedOrderName
     data[*].leadTime: ''
 - name: QueryRawMaterials
-  title: ''
+  title: 查询原材料基本信息
   behavior_name: QueryRawMaterials
   target:
     data_source_name: aps
     api_name: 查询原材料基本信息
-    url: ''
-    method: ''
     params:
       rawMaterialId:
         type: string
@@ -494,13 +482,11 @@ data_engines:
     data[*].unit: result[*].unit
     data[*].safetyStock: result[*].safetyStock
 - name: QuerySuppliers
-  title: ''
+  title: 查询供应商信息
   behavior_name: QuerySuppliers
   target:
     data_source_name: aps
     api_name: 供应商查询
-    url: ''
-    method: ''
     params:
       supplierName:
         type: string
@@ -573,13 +559,11 @@ data_engines:
     data[*].contactPerson: result[*].contactPerson
     data[*].contactPhone: result[*].contactPhone
 - name: QuerySupplierCapability
-  title: ''
+  title: 查询供应商供货能力
   behavior_name: QuerySupplierCapability
   target:
     data_source_name: aps
     api_name: 供应商查询
-    url: ''
-    method: ''
     params:
       supplierName:
         type: string

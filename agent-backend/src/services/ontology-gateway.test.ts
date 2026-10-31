@@ -35,8 +35,9 @@ function writeOverlay(filename: string, key: string, items: any[], wrap: boolean
   writeFileSync(join(ontoDir, filename), dump(wrap ? { [key]: items } : items), 'utf-8');
 }
 
-function httpEngine(behavior: string, method: string): any {
-  return { behavior_name: behavior, target: { method, url: 'http://x' } };
+function mcpEngine(behavior: string, tool: string): any {
+  // 引擎唯一形态为 MCP（target.url/method 已于 2026-10-31 从 schema 删除）
+  return { behavior_name: behavior, target: { server_url: 'http://x/mcp', tool_name: tool } };
 }
 
 /** 观测 data_engines overlay 结果：直读私有加载方法的缓存数据（引擎字段不再驱动 isWrite） */
@@ -57,14 +58,14 @@ afterEach(() => {
 
 describe('契约 §2 Overlay 回退', () => {
   it('O1：data_engines.yaml 存在 → 覆盖 ontology.yaml 旧段', () => {
-    writeOntology({ behaviors: [{ name: 'B1' }], data_engines: [httpEngine('B1', 'GET')] });
-    writeOverlay('data_engines.yaml', 'data_engines', [httpEngine('B1', 'POST')], true);
-    expect(loadedEngines()[0].target.method).toBe('POST');
+    writeOntology({ behaviors: [{ name: 'B1' }], data_engines: [mcpEngine('B1', 'query_a')] });
+    writeOverlay('data_engines.yaml', 'data_engines', [mcpEngine('B1', 'query_b')], true);
+    expect(loadedEngines()[0].target.tool_name).toBe('query_b');
   });
 
   it('O2：data_engines.yaml 不存在 → 回退 ontology.yaml 旧段', () => {
-    writeOntology({ behaviors: [{ name: 'B1' }], data_engines: [httpEngine('B1', 'POST')] });
-    expect(loadedEngines()[0].target.method).toBe('POST');
+    writeOntology({ behaviors: [{ name: 'B1' }], data_engines: [mcpEngine('B1', 'query_b')] });
+    expect(loadedEngines()[0].target.tool_name).toBe('query_b');
   });
 
   it('O3：securities.yaml 存在 → 覆盖旧段（everyone 压过 disable）', () => {
@@ -79,13 +80,13 @@ describe('契约 §2 Overlay 回退', () => {
 
   it('O4：独立文件裸列表形态 → 等价接受', () => {
     writeOntology({ behaviors: [{ name: 'B1' }] });
-    writeOverlay('data_engines.yaml', 'data_engines', [httpEngine('B1', 'POST')], false);
+    writeOverlay('data_engines.yaml', 'data_engines', [mcpEngine('B1', 'query_b')], false);
     expect(loadedEngines()).toHaveLength(1);
   });
 
   it('O5：独立文件映射包裹形态 → 等价接受', () => {
     writeOntology({ behaviors: [{ name: 'B1' }] });
-    writeOverlay('data_engines.yaml', 'data_engines', [httpEngine('B1', 'POST')], true);
+    writeOverlay('data_engines.yaml', 'data_engines', [mcpEngine('B1', 'query_b')], true);
     expect(loadedEngines()).toHaveLength(1);
   });
 });
@@ -97,15 +98,15 @@ describe('契约 §3 操作类型推导（isWrite）——2026-09-07 起引擎�
   }
 
   it('T1：op_type=command → 判写', () => {
-    expect(isWrite({ name: 'B1', op_type: 'command' }, [httpEngine('B1', 'GET')])).toBe(true);
+    expect(isWrite({ name: 'B1', op_type: 'command' }, [mcpEngine('B1', 'query_tool')])).toBe(true);
   });
 
   it('T2：op_type=query 显式 → 判读', () => {
-    expect(isWrite({ name: 'B1', op_type: 'query' }, [httpEngine('B1', 'POST')])).toBe(false);
+    expect(isWrite({ name: 'B1', op_type: 'query' }, [mcpEngine('B1', 'query_tool')])).toBe(false);
   });
 
   it('T3：空 op_type + 有引擎 → query（引擎不参与推导）', () => {
-    expect(isWrite({ name: 'B1' }, [httpEngine('B1', 'POST')])).toBe(false);
+    expect(isWrite({ name: 'B1' }, [mcpEngine('B1', 'query_tool')])).toBe(false);
   });
 
   it('T4：空 op_type + 无引擎 → query', () => {

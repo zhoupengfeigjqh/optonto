@@ -94,14 +94,18 @@ export default function DataEngineTable({ ontologyId, activeTab }: Props) {
 
   useEffect(() => { if (activeTab === 'data-engines' || activeTab === 'api-mapping') load(); }, [ontologyId, activeTab]);
 
+  const behaviorTitle = (behaviorName: string) =>
+    behaviors.find(b => b.name === behaviorName)?.title || '';
+
   const getEngine = (behaviorName: string): DataEngine =>
-    engines.find(e => e.behavior_name === behaviorName) || emptyEngine(behaviorName);
+    engines.find(e => e.behavior_name === behaviorName)
+    || emptyEngine(behaviorName, behaviorTitle(behaviorName));
 
   // Ensure saved engine exists before operating; create if not
   const ensureEngine = async (behaviorName: string): Promise<DataEngine> => {
     const existing = engines.find(e => e.behavior_name === behaviorName);
     if (existing) return existing;
-    const de = emptyEngine(behaviorName);
+    const de = emptyEngine(behaviorName, behaviorTitle(behaviorName));
     await createDataEngine(ontologyId, de);
     setEngines(prev => [...prev, de]);
     return de;

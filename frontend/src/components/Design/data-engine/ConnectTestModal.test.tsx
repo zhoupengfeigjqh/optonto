@@ -1,7 +1,7 @@
 /**
  * ConnectTestModal 单测（章程 III：属性传递 / 事件触发 / 边界条件）。
  *
- * 覆盖：目标接口两种展示形态（MCP / 旧 HTTP）、必填标记与参数展示名、
+ * 覆盖：目标接口展示（MCP 形态 / 未配置占位）、必填标记与参数展示名、
  * 按值形态选择输入控件、发送与关闭、引擎缺失与结果缺失时的空态。
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -15,9 +15,10 @@ const mcpEngine = {
   input_mapping: {}, output_mapping: {},
 } as unknown as DataEngine;
 
-const legacyEngine = {
-  name: 'Old', behavior_name: 'Old', title: '',
-  target: { method: 'POST', url: 'http://legacy/api', params: {}, response: {} },
+/** 未配置目标（无 server_url / tool_name）的引擎：仅用于空态展示 */
+const unconfiguredEngine = {
+  name: 'Unconfigured', behavior_name: 'Unconfigured', title: '',
+  target: { params: {}, response: {} },
   input_mapping: {}, output_mapping: {},
 } as unknown as DataEngine;
 
@@ -52,9 +53,9 @@ describe('ConnectTestModal — 属性传递', () => {
     expect(screen.getByText(/MCP\s+query_inventories @ http:\/\/biz:8004\/mcp/)).toBeInTheDocument();
   });
 
-  it('旧 HTTP 形态展示「方法 地址」', () => {
-    setup({ engine: legacyEngine });
-    expect(screen.getByText('POST http://legacy/api')).toBeInTheDocument();
+  it('未配置目标时展示「(未配置)」占位', () => {
+    setup({ engine: unconfiguredEngine });
+    expect(screen.getByText('(未配置)')).toBeInTheDocument();
   });
 
   it('必填参数加星号，并用 paramLabel 展示中文名', () => {
@@ -132,11 +133,6 @@ describe('ConnectTestModal — 边界条件', () => {
     expect(document.querySelectorAll('input.ant-input').length).toBe(0);
   });
 
-  it('目标未配置时地址回退为 (未配置) 占位', () => {
-    setup({ engine: { ...legacyEngine, target: { method: '', url: '', params: {}, response: {} } } });
-    expect(screen.getByText(/\(未配置\)/)).toBeInTheDocument();
-  });
-
   it('多行（JSON 形态）参数改动同样回传参数名与新值', () => {
     const props = setup({ params: { 明细: '{"a":1}' } });
     const textarea = document.querySelector('textarea.ant-input') as HTMLTextAreaElement;
@@ -144,8 +140,8 @@ describe('ConnectTestModal — 边界条件', () => {
     expect(props.onParamChange).toHaveBeenCalledWith('明细', '{"a":2}');
   });
 
-  it('空白引擎对象下不渲染任何内容（防御空 target）', () => {
-    setup({ engine: { ...legacyEngine, target: undefined } });
-    expect(screen.getByText(/POST \(未配置\)/)).toBeInTheDocument();
+  it('target 缺失时同样按未配置展示（防御空 target）', () => {
+    setup({ engine: { ...mcpEngine, target: undefined } });
+    expect(screen.getByText('(未配置)')).toBeInTheDocument();
   });
 });

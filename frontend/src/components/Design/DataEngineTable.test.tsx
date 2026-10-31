@@ -42,7 +42,7 @@ vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
 
 const behaviors = [
   { name: 'QueryInventory', title: '查询库存', params: { 原材料编号: { type: 'string', title: '原材料编号' } }, response: {} },
-  { name: 'CreatePurchaseRecord', title: '', params: {}, response: {} },
+  { name: 'CreatePurchaseRecord', title: '创建原材料采购单', params: {}, response: {} },
 ];
 
 const engines = [
@@ -69,7 +69,7 @@ describe('DataEngineTable — 属性传递', () => {
     mockLoaded();
     render(<DataEngineTable ontologyId={1} activeTab="api-mapping" />);
     expect(await screen.findByText('查询库存')).toBeInTheDocument();
-    expect(screen.getByText('CreatePurchaseRecord')).toBeInTheDocument();
+    expect(screen.getByText('创建原材料采购单')).toBeInTheDocument();
   });
 
   it('已配置目标接口时按钮显示「已设置」，未配置显示「编辑」', async () => {
@@ -227,18 +227,21 @@ describe('DataEngineTable — 映射保存 / 连接测试 / 行为编辑', () =>
     await waitFor(() => expect(vi.mocked(api.updateDataEngine)).toHaveBeenCalledWith(1, 'QueryInventory', expect.objectContaining({ input_mapping: { 原材料编号: 'rawMaterialId', 数量: 'qty' } })));
   });
 
-  it('保存输出映射：尚无引擎的行为走新建', async () => {
+  it('保存输出映射：尚无引擎的行为走新建，title 取自行为中文名', async () => {
     mockLoaded();
     vi.mocked(api.createDataEngine).mockResolvedValue({} as any);
     render(<DataEngineTable ontologyId={1} activeTab="api-mapping" />);
-    const row = (await screen.findByText('CreatePurchaseRecord')).closest('tr') as HTMLElement;
+    const row = (await screen.findByText('创建原材料采购单')).closest('tr') as HTMLElement;
 
     // 按行定位：同一行里有「目标接口设置 / 输入映射 / 输出映射」三个「编辑」按钮，
     // 用索引猜会点错，必须限定在行内取第 3 个（输出映射）
     const buttons = within(row).getAllByRole('button').filter(b => (b.textContent || '').includes('编辑'));
     fireEvent.click(buttons[2]);
     fireEvent.click(await screen.findByRole('button', { name: '保 存' }));
-    await waitFor(() => expect(vi.mocked(api.createDataEngine)).toHaveBeenCalledWith(1, expect.objectContaining({ behavior_name: 'CreatePurchaseRecord' })));
+    await waitFor(() => expect(vi.mocked(api.createDataEngine)).toHaveBeenCalledWith(1, expect.objectContaining({
+      behavior_name: 'CreatePurchaseRecord',
+      title: '创建原材料采购单',
+    })));
   });
 
   it('连接测试发送请求调用行为接口并展示响应', async () => {

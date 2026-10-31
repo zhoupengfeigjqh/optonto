@@ -21,8 +21,6 @@ from .data_engine import (  # noqa: F401
     MAPPING_ANALYSIS_PROMPT,
     ALIGNMENT_SYSTEM_PROMPT,
     ALIGNMENT_PROMPT,
-    TARGET_PARSE_SYSTEM_PROMPT,
-    TARGET_PARSE_PROMPT,
 )
 
 from .function_code import (  # noqa: F401
@@ -30,9 +28,9 @@ from .function_code import (  # noqa: F401
     FUNCTION_CODE_PROMPT,
 )
 
-from .rule_generate import (  # noqa: F401
-    RULE_GENERATE_SYSTEM_PROMPT,
-    RULE_GENERATE_PROMPT,
+from .rule_design_generate import (  # noqa: F401
+    RULE_DESIGN_GENERATE_SYSTEM_PROMPT,
+    RULE_DESIGN_GENERATE_PROMPT,
 )
 
 from .skill_generate import (  # noqa: F401
@@ -52,12 +50,10 @@ __all__ = [
     "MAPPING_ANALYSIS_PROMPT",
     "ALIGNMENT_SYSTEM_PROMPT",
     "ALIGNMENT_PROMPT",
-    "TARGET_PARSE_SYSTEM_PROMPT",
-    "TARGET_PARSE_PROMPT",
     "FUNCTION_CODE_SYSTEM_PROMPT",
     "FUNCTION_CODE_PROMPT",
-    "RULE_GENERATE_SYSTEM_PROMPT",
-    "RULE_GENERATE_PROMPT",
+    "RULE_DESIGN_GENERATE_SYSTEM_PROMPT",
+    "RULE_DESIGN_GENERATE_PROMPT",
     "SKILL_GENERATE_SYSTEM_PROMPT",
     "SKILL_GENERATE_PROMPT",
 ]

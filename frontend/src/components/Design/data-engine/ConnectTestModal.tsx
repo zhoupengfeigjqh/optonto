@@ -45,7 +45,7 @@ export default function ConnectTestModal({
             <code className="text-accent-green text-xs ml-1">
               {engine.target?.server_url
                 ? `MCP  ${engine.target.tool_name} @ ${engine.target.server_url}`
-                : `${engine.target?.method || 'POST'} ${engine.target?.url || '(未配置)'}`}
+                : '(未配置)'}
             </code>
           </div>
           {Object.keys(params).length > 0 && (

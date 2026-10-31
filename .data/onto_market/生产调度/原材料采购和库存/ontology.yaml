@@ -1007,6 +1007,18 @@ rules:
   data_supplements:
   - QueryPurchaseRecords
   - QueryRawMaterials
+  rule_design:
+    combine: and
+    groups:
+    - combine: and
+      conditions:
+      - function: checkRawMaterialUnit
+        field: pass
+        operator: eq
+        values:
+        - 'true'
+    pass_message: 原材料存在且单位一致，允许创建采购单
+    fail_message: 原材料不存在或单位不一致，禁止创建采购单
 - name: V03_ArrivalTimeValidity
   description: 创建采购单时，输入的到位时间（arrivalTime）必须晚于采购发生日（以当前日期为准）。
   behavior: CreatePurchaseRecord
@@ -1017,6 +1029,18 @@ rules:
   position: 前置
   data_supplements:
   - QueryPurchaseRecords
+  rule_design:
+    combine: and
+    groups:
+    - combine: and
+      conditions:
+      - function: checkArrivalTimeValidity
+        field: pass
+        operator: eq
+        values:
+        - 'true'
+    pass_message: 到位时间晚于当前日期，校验通过
+    fail_message: 到位时间不晚于当前日期，校验不通过
 - name: V05_SupplierExistence
   description: 创建采购单时，提供的供应商名称（supplierName）必须存在，不能随便杜撰。
   behavior: CreatePurchaseRecord
@@ -1027,6 +1051,18 @@ rules:
   data_supplements:
   - QueryPurchaseRecords
   - QuerySuppliers
+  rule_design:
+    combine: and
+    groups:
+    - combine: and
+      conditions:
+      - function: checkSupplierExistence
+        field: pass
+        operator: eq
+        values:
+        - 'true'
+    pass_message: 供应商名称存在，允许创建采购单
+    fail_message: 供应商名称不存在，禁止创建采购单
 - name: I01_SafetyStockAlert
   description: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
   behavior: QueryInventory
@@ -1043,6 +1079,24 @@ rules:
   title: 采购到位超期预警
   position: 后置
   data_supplements: []
+  rule_design:
+    combine: and
+    groups:
+    - combine: and
+      conditions:
+      - function: getCurrentDate
+        field: date
+        operator: not_empty
+        values: []
+    - combine: and
+      conditions:
+      - function: filterData
+        field: count
+        operator: gt
+        values:
+        - '0'
+    pass_message: 采购到位已超期，请确认启动入库
+    fail_message: 采购未到期，无需启动入库
 - name: I03_PurchasePurposeInference
   description: IF 采购单的关联客户订单ID（relatedOrderId）为空 THEN 该采购目的可视为“补充库存”。
   behavior: CreatePurchaseRecord

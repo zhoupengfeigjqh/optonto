@@ -55,30 +55,4 @@ ALIGNMENT_PROMPT = """修改本体行为输入输出的数据结构，使之与�
 {{"params": {{...}}, "response": {{...}}}}"""
 
 
-# ─── 数据引擎 — 目标接口智能解析提示词 ──────────────────────────────────────────────────
 
-TARGET_PARSE_SYSTEM_PROMPT = "你是一个API接口文档解析专家。只输出JSON，不输出其他内容。"
-
-TARGET_PARSE_PROMPT = """根据用户提供的目标系统API接口文档片段，解析接口名称、地址、请求方法、数据源名称、输入和输出等内容。
-
-【标准参考模板】（参考模板的参数和返回结构，按此结构解析目标接口）
-输入参数: {template_params}
-返回结构: {template_response}
-
-【解析规则（严格遵守）】
-1. 请参考标准模板中的例子进行解析，要学会举一反三，灵活运用
-2. 参数中的type 只能是: string / number / boolean / enum / array / object
-3. 如果文档没有明确类型，根据示例值推断（数字→number，true/false→boolean，对象→object，列表→array）
-4. 如果文档没有示例值，根据描述和类型生成一个合理的中文示例值
-5. 对于required字段，如果文档中没有明确标注，则默认选填（false）
-6. 从文档中提取接口名称（api_name）、数据源名称（data_source_name）、接口地址（url）和请求方法（method，GET/POST/PATCH/DELETE四选一），找不到则为空字符串
-7. 不要做任何额外的增减操作，也不要输出任何解释或注释。
-
-【用户提供的参数文档】
-{params_content}
-
-【用户提供的返回结构文档】
-{response_content}
-
-严格按以下JSON格式输出：
-{{"api_name": "接口名称或空字符串", "data_source_name": "数据源名称或空字符串", "url": "接口地址或空字符串", "method": "GET/POST/PATCH/DELETE或空字符串", "params": {{...}}, "response": {{...}}}}"""

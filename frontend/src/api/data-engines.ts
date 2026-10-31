@@ -4,8 +4,6 @@ import { request } from './http';
 export interface TargetApiConfig {
   data_source_name: string;
   api_name: string;
-  url: string;
-  method: string;
   params: Record<string, unknown>;
   response: Record<string, unknown>;
   /** MCP 型引擎：下游 MCP 服务地址（Streamable HTTP 端点，选中即落盘） */
@@ -20,6 +18,7 @@ export interface TargetApiConfig {
 
 export interface DataEngine {
   name: string;
+  /** 中文名：恒等于所属行为的中文名（保存时由后端按 behavior_name 同步，前端不单独编辑） */
   title?: string;
   behavior_name: string;
   target: TargetApiConfig;

@@ -146,7 +146,6 @@ export default function TargetConfigModal({ open, behaviorLabel, initialTarget, 
     // server_url+tool_name 落盘自包含；headers 快照自服务配置（远程鉴权，运行期 data-engine-mcp 透传）
     await onSave({
       ...targetData, params, response,
-      url: '', method: '',
       server_url: selectedServerUrl,
       tool_name: selectedToolName,
       headers: server?.headers,
@@ -189,9 +188,6 @@ export default function TargetConfigModal({ open, behaviorLabel, initialTarget, 
             />
           </div>
         </div>
-        {targetData.url && !targetData.server_url && !selectedServerUrl && (
-          <p className="text-yellow-400 text-xs">⚠ 该行为仍是旧 HTTP 直连配置（{targetData.url}），已废弃待迁移：请重新选择 MCP 服务与工具，保存后自动转为 MCP 映射。</p>
-        )}
         <div className="flex gap-2">
           <div className="flex-1">
             <span className="text-text-muted text-xs">数据源名称</span>

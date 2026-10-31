@@ -10,7 +10,7 @@
 import type { DataEngine, TargetApiConfig } from '@/api/client';
 
 export const emptyTarget: TargetApiConfig = {
-  data_source_name: '', api_name: '', url: '', method: '',
+  data_source_name: '', api_name: '',
   params: {}, response: {},
 };
 
@@ -121,11 +121,11 @@ function inferNode(v: unknown): Record<string, unknown> {
   return { type: 'string' };
 }
 
-/** 新建空白引擎（行为名 → 引擎占位，映射前由设计器填充 target） */
-export function emptyEngine(behaviorName: string): DataEngine {
+/** 新建空白引擎（行为名 → 引擎占位，映射前由设计器填充 target）；title 取行为中文名（保存时后端按同一口径同步） */
+export function emptyEngine(behaviorName: string, behaviorTitle = ''): DataEngine {
   return {
     name: behaviorName,
-    title: '',
+    title: behaviorTitle,
     behavior_name: behaviorName,
     target: { ...emptyTarget },
     input_mapping: {},
@@ -139,7 +139,7 @@ export function emptyEngine(behaviorName: string): DataEngine {
 /** 目标接口是否已设置（决定「目标接口设置」按钮显示「已设置 / 编辑」）。 */
 export function hasTargetEndpoint(target?: TargetApiConfig | null): boolean {
   if (!target) return false;
-  return !!(target.server_url || target.tool_name || target.url || target.api_name || target.data_source_name);
+  return !!(target.server_url || target.tool_name || target.api_name || target.data_source_name);
 }
 
 /**

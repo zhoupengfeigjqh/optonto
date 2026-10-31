@@ -2,15 +2,32 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Modal, message, Space, Tooltip } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, RobotOutlined, WarningOutlined } from '@ant-design/icons';
-import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, generateRule, Rule, Behavior, Function } from '@/api/client';
+import { PlusOutlined, DeleteOutlined, EditOutlined, CheckOutlined, CloseOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons';
+import { getRules, createRule, updateRule, deleteRule, getBehaviors, getFunctions, getCommonFunctions, Rule, Behavior, Function } from '@/api/client';
 import ResizableTable from '@/components/ResizableTable';
 import { useTablePagination } from '@/lib/table-pagination';
 import { resolveOpType } from './behavior-op-type';
 import { deriveDataSupplements } from './rule/rule-logic';
 import { functionLabel, functionLabelParts } from './rule/function-label';
+import RuleDesignModal from './rule/RuleDesignModal';
+import {
+  designExpression, designSummary, operatorMeta,
+  type RuleDesign, type RuleFunctionOption,
+} from './rule/rule-design';
 
 interface Props { ontologyId: number; activeTab?: string; }
+
+/** 规则设计弹窗的打开上下文（打开时快照，避免编辑态 setState 异步读到旧值） */
+interface DesignTarget {
+  name: string;
+  title: string;
+  /** 规则描述：智能生成的上下文依据 */
+  description: string;
+  behavior: string;
+  position: string;
+  functions: RuleFunctionOption[];
+  value: RuleDesign | null;
+}
 
 // ─── Main Component ───────────────────────────────────────────────────────
 
@@ -23,8 +40,9 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
   const [editData, setEditData] = useState<Record<string, any>>({});
   const { pagination, goToRow } = useTablePagination();
 
-  // smart generate loading
-  const [genLoading, setGenLoading] = useState(false);
+  // 规则设计弹窗（spec 007）：弹窗只改 editData，仍由行尾 ✓ 统一落盘
+  const [designOpen, setDesignOpen] = useState(false);
+  const [designTarget, setDesignTarget] = useState<DesignTarget | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -59,10 +77,10 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     setEditData(p => ({ ...p, data_supplements: derived }));
   }, [editingKey, editData.behavior, editData.related_functions, editData.data_supplements, funcs, behaviors]);
 
-  const emptyEdit = { name: '', title: '', description: '', position: '', behavior: '', related_functions: [], data_supplements: [] };
+  const emptyEdit = { name: '', title: '', description: '', position: '', behavior: '', related_functions: [], data_supplements: [], rule_design: null };
   const handleAdd = () => { setEditData({ ...emptyEdit }); setEditingKey('__new__'); goToRow(rules.length); };
   const handleEdit = (r: Rule) => {
-    setEditData({ name: r.name, title: r.title || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: r.data_supplements || [] });
+    setEditData({ name: r.name, title: r.title || '', description: r.description, position: r.position || '', behavior: r.behavior || '', related_functions: r.related_functions || [], data_supplements: r.data_supplements || [], rule_design: r.rule_design ?? null });
     setEditingKey(r.name);
   };
   const handleCancel = () => { setEditingKey(''); setEditData({}); };
@@ -75,6 +93,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         position: editData.position || '',
         behavior: editData.behavior || '', related_functions: editData.related_functions || [],
         data_supplements: editData.data_supplements || [],
+        rule_design: editData.rule_design ?? null,
       };
       const isNew = editingKey === '__new__';
       if (isNew) {
@@ -95,21 +114,40 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     });
   };
 
-  /** AI 选择关联函数（调 /rules/generate，从可用函数清单中选出 related_functions 并返回选择理由） */
-  const handleGenerateFunctions = async () => {
-    if (!editData.name?.trim()) { message.warning('请先填写规则名称'); return; }
-    setGenLoading(true);
-    try {
-      const result = await generateRule(ontologyId, {
-        rule_name: editData.name.trim(),
-        rule_title: editData.title?.trim() || '',
-        rule_description: editData.description?.trim() || '',
-        behavior: editData.behavior || '',
+  /** 打开规则设计弹窗：非编辑态先进入行内编辑态，并把弹窗上下文做快照 */
+  const handleOpenDesign = (record: Rule) => {
+    const isNewRow = record.name === '__new__';
+    const editing = isEditing(record) || (editingKey === '__new__' && isNewRow);
+    const relatedFunctions: string[] = (editing ? editData.related_functions : record.related_functions) || [];
+
+    if (!editing) {
+      setEditData({
+        name: record.name, title: record.title || '', description: record.description || '',
+        position: record.position || '', behavior: record.behavior || '',
+        related_functions: relatedFunctions, data_supplements: record.data_supplements || [],
+        rule_design: record.rule_design ?? null,
       });
-      setEditData(p => ({ ...p, related_functions: result.related_functions || [] }));
-      message.success(result.reasoning ? `AI 选择完成：${result.reasoning}` : 'AI 已选择关联函数');
-    } catch (e: any) { message.error('生成失败: ' + e.message); }
-    finally { setGenLoading(false); }
+      setEditingKey(record.name);
+    }
+
+    setDesignTarget({
+      name: record.name,
+      title: record.title || '',
+      description: (editing ? editData.description : record.description) || '',
+      behavior: record.behavior || '',
+      position: record.position || '',
+      functions: funcs
+        .filter(f => relatedFunctions.includes(f.name))
+        .map(f => ({
+          name: f.name,
+          title: f.title,
+          type: f.type,
+          origin: (f as any).origin,
+          response: (f as any).response,
+        })),
+      value: (editing ? (editData.rule_design ?? null) : (record.rule_design ?? null)) as RuleDesign | null,
+    });
+    setDesignOpen(true);
   };
 
   const renderCell = (val: any, record: Rule, dataIndex: string, render?: (v: any) => any) => {
@@ -123,21 +161,16 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
     if (dataIndex === 'behavior') return <Select size="small" allowClear placeholder="选择" value={editData.behavior || undefined} onChange={v => setEditData(p => ({...p, behavior: v || ''}))} options={behaviorOptions} style={{width:'100%'}} popupClassName="!bg-dark-card" />;
     if (dataIndex === 'related_functions') {
       return (
-        <div className="flex items-center gap-1">
-          <Select
-            size="small"
-            mode="multiple"
-            placeholder="选择关联函数（VALIDATION 型本体函数为判断函数）"
-            value={editData.related_functions || []}
-            onChange={v => setEditData(p => ({ ...p, related_functions: v }))}
-            options={functionOptions}
-            style={{ width: '100%' }}
-            popupClassName="!bg-dark-card"
-          />
-          <Tooltip title="AI 从可用函数清单中选择关联函数">
-            <Button size="small" type="text" icon={<RobotOutlined />} loading={genLoading} onClick={handleGenerateFunctions} />
-          </Tooltip>
-        </div>
+        <Select
+          size="small"
+          mode="multiple"
+          placeholder="选择关联函数（VALIDATION 型本体函数为判断函数）"
+          value={editData.related_functions || []}
+          onChange={v => setEditData(p => ({ ...p, related_functions: v }))}
+          options={functionOptions}
+          style={{ width: '100%' }}
+          popupClassName="!bg-dark-card"
+        />
       );
     }
     if (dataIndex === 'data_supplements') {
@@ -161,7 +194,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
             <Button
               size="small"
               type="text"
-              icon={<RobotOutlined />}
+              icon={<ReloadOutlined />}
               onClick={() => setEditData(p => ({ ...p, data_supplements: deriveDataSupplements({
                 behavior: p.behavior || '',
                 relatedFunctions: p.related_functions || [],
@@ -205,6 +238,27 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
       });
     }) },
     { title: '数据补充', dataIndex: 'data_supplements', key: 'data_supplements', width: 140, ellipsis: true, render: (v: any, r: Rule) => renderCell(v, r, 'data_supplements', (list: string[]) => list?.map(name => behaviors.find(b => b.name === name)?.title || name).join(', ') || '-') },
+    { title: '规则设计', dataIndex: 'rule_design', key: 'rule_design', width: 118,
+      render: (_: any, r: Rule) => {
+        const rowEditing = isEditing(r) || (editingKey === '__new__' && r.name === '__new__');
+        const design = (rowEditing ? editData.rule_design : r.rule_design) as RuleDesign | null | undefined;
+        const summary = designSummary(design);
+        const expression = design ? designExpression(design, c => {
+          const op = operatorMeta(c.operator);
+          const values = (c.values || []).join(', ');
+          return `${c.field || '?'} ${op?.label || '?'}${op && op.arity === 0 ? '' : ` ${values}`}`.trim();
+        }) : '';
+        return (
+          <div className="flex items-center gap-1">
+            {summary
+              ? <Tooltip title={expression}><span className="text-text-primary text-xs">{summary}</span></Tooltip>
+              : <span className="text-text-muted text-xs">未设计</span>}
+            <Tooltip title="规则设计（点击打开弹窗）">
+              <Button size="small" type="text" icon={<EditOutlined />} onClick={() => handleOpenDesign(r)} />
+            </Tooltip>
+          </div>
+        );
+      } },
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, record: Rule) => {
@@ -222,8 +276,28 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
         <h3 className="text-base font-semibold text-text-primary">规则管理</h3>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={editingKey !== ''}>新增规则</Button>
       </div>
-      <p className="text-text-muted text-xs mb-3">配置行为执行前后的约束规则（规则绑定唯一行为；约束逻辑由「关联函数」承载——其中本体且类型为 VALIDATION 的判断函数返回 data.pass/reason，前置规则判断不通过时系统拒绝主行为；数据补充按关联函数声明的关联概念自动推导对应的查询行为，可手工增减）</p>
+      <p className="text-text-muted text-xs mb-3">配置行为执行前后的约束规则（规则绑定唯一行为；约束逻辑由「关联函数」承载，前置规则判断不通过时系统拒绝主行为；数据补充按关联函数声明的关联概念自动推导对应的查询行为，可手工增减；「规则设计」把关联函数的判断组合成可读逻辑）</p>
       <ResizableTable dataSource={dataSource} columns={columns} rowKey="_key" loading={loading} pagination={pagination} />
+      {designTarget && (
+        <RuleDesignModal
+          open={designOpen}
+          ontologyId={ontologyId}
+          ruleName={designTarget.name}
+          ruleTitle={designTarget.title}
+          ruleDescription={designTarget.description}
+          behaviorName={designTarget.behavior}
+          behaviorLabel={behaviors.find(b => b.name === designTarget.behavior)?.title || designTarget.behavior}
+          position={designTarget.position}
+          functions={designTarget.functions}
+          value={designTarget.value}
+          onCancel={() => setDesignOpen(false)}
+          onSave={(design) => {
+            setEditData(p => ({ ...p, rule_design: design }));
+            setDesignOpen(false);
+            message.success('规则设计已更新，点行尾 ✓ 保存到规则');
+          }}
+        />
+      )}
     </div>
   );
 }
