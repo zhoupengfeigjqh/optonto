@@ -115,7 +115,7 @@ def delete_thread_dir(thread_id: str) -> None:
     fs_store.delete_tree(tdir)
 
 
-def resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[int], Optional[int]]:
+def resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[str], Optional[str]]:
     """(scenario_id, ontology_id)：**身份唯一来源 = ontology.yaml.metadata**；不可信时 (None, None)。
 
     线程/对话记录要落 id 时统一走这里（与清单、依赖注入同一口径），不读 meta.json/目录名。
@@ -124,7 +124,7 @@ def resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[int], 
         ident = ontology_identity_by_name(scenario_name, ontology_name)
         if not ident:
             return None, None
-        return int(ident["scenario_id"]), int(ident["ontology_id"])
+        return ident["scenario_id"], ident["ontology_id"]      # 已是数字字符串（"1"）
     except Exception:
         return None, None
 

@@ -46,7 +46,7 @@ vi.mock('../services/mcp-config-store.js', () => ({
  * 分类标记 = 顶层 x-category / x-title；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
  * ontology_id 是必填业务参数（由 LLM 填写）。
  */
-function ontoTool(category: string, _bareName: string, title: string, ontologyId: number,
+function ontoTool(category: string, _bareName: string, title: string, ontologyId: string,
                 ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,

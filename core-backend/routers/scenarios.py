@@ -28,12 +28,12 @@ async def create_scenario_api(data: dict):
 
 
 @router.get("/{scenario_id}")
-async def get_scenario_api(scenario_id: int):
+async def get_scenario_api(scenario_id: str):
     return registry.require_scenario(scenario_id)
 
 
 @router.put("/{scenario_id}")
-async def update_scenario_api(scenario_id: int, data: dict):
+async def update_scenario_api(scenario_id: str, data: dict):
     name = data.get("name")
     if name:
         existing = registry.scenario_by_name(name)
@@ -55,7 +55,7 @@ async def update_scenario_api(scenario_id: int, data: dict):
 
 
 @router.delete("/{scenario_id}")
-async def delete_scenario_api(scenario_id: int):
+async def delete_scenario_api(scenario_id: str):
     scenario = registry.require_scenario(scenario_id)
     # Check if any ontologies exist
     if registry.list_ontologies_by_scenario(scenario["name"]):

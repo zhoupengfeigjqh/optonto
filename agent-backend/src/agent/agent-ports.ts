@@ -40,7 +40,7 @@ export interface AgentFactoryPort {
   /** 创建子 Agent（执行专家）。policy 由 buildSubtaskPolicy 一处派生（完整策略对象，不存在半设防形态） */
   createChildAgent(context: SkillContext, policy: SubtaskPolicy): Promise<AgentPort>;
   /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
-  callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;
+  callFunctionTool(functionName: string, ontologyId: string, params: Record<string, any>): Promise<{ text: string; isError: boolean }>;
   /** 可挂载工具目录（本体行为/本体函数/公共函数/其他MCP工具四类），父 Agent listPlannableFunctions 工具与规划校验共用 */
   getMountableToolCatalog(): Promise<MountableToolInfo[]>;
   closeAll(): Promise<void>;

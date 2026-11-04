@@ -1,6 +1,6 @@
 {
-  "id": 2,
-  "scenario_id": 1,
+  "id": "2",
+  "scenario_id": "1",
   "name": "订单排程",
   "description": "客户订单排程管理，涵盖订单、排产任务、排产结果和算法参数",
   "creator": "system",

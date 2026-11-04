@@ -124,7 +124,7 @@ def _filter_list(data, keyword: str | None, fields: list[str]):
     return matched if matched else _not_found(f"未找到包含关键词 '{keyword}' 的结果")
 
 
-def _load_ontology_or_error(ontology_id: int) -> tuple[dict, str, str]:
+def _load_ontology_or_error(ontology_id: str) -> tuple[dict, str, str]:
     try:
         return data_store.load_ontology_data_by_id(ontology_id)
     except KeyError:

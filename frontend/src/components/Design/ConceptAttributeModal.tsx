@@ -25,7 +25,7 @@ interface Props {
   concept: Concept | null;
   /** 父概念的有效属性（收窄边界来源） */
   parentAttrs: Attribute[];
-  ontologyId: number;
+  ontologyId: string;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }

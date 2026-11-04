@@ -86,7 +86,7 @@ export function validateAllParams(catalog: FunctionCatalogView, plan: SubTaskPla
  * 返回违例子任务列表（空数组 = 通过）。allowed 为空集（通用模式）时任何子任务都违例——
  * 但通用模式父 Agent 未挂 submit_plan，规划到不了这里，本函数无需特判。
  */
-export function validateOntologyScope(plan: SubTaskPlan, allowed: ReadonlySet<number>): SubTask[] {
+export function validateOntologyScope(plan: SubTaskPlan, allowed: ReadonlySet<string>): SubTask[] {
   return plan.subtasks.filter(st => !allowed.has(st.ontology_id));
 }
 

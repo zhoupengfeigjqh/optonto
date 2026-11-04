@@ -132,7 +132,7 @@ def _merge_yaml_files(yaml_paths: list[Path], version: str) -> OntologyData:
     return merged
 
 
-def _finalize_metadata(merged: OntologyData, ontology_id: int, ontology_name: str, sc_name: str) -> None:
+def _finalize_metadata(merged: OntologyData, ontology_id: str, ontology_name: str, sc_name: str) -> None:
     """给合并结果补上身份四元组（preview 与 deploy 共用，保证展示与落盘一致）。
 
     shard_hash 已在 _merge_yaml_files 中计算，此处不再处理。
@@ -156,7 +156,7 @@ def _resolve_version_docs(ontology_name: str, version: str) -> tuple[list[dict],
 
 
 @router.get("/versions")
-async def list_deploy_versions(ontology_id: int):
+async def list_deploy_versions(ontology_id: str):
     """列出该本体所有「至少有一个已生成 yaml」的版本及其文档明细。"""
     _, ontology_name = await get_ontology_names(ontology_id)
     by_version = _collect_version_docs(ontology_name)
@@ -168,7 +168,7 @@ async def list_deploy_versions(ontology_id: int):
 
 
 @router.get("/preview")
-async def preview_deploy(ontology_id: int, version: str):
+async def preview_deploy(ontology_id: str, version: str):
     """拼接该版本的所有 yaml，返回去重合并后的完整本体（不落盘）。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     docs, paths = _resolve_version_docs(ontology_name, version)
@@ -183,7 +183,7 @@ async def preview_deploy(ontology_id: int, version: str):
 
 
 @router.get("/deployed")
-async def get_deployed_ontology(ontology_id: int):
+async def get_deployed_ontology(ontology_id: str):
     """获取当前已部署的 ontology.yaml 原文（用于「已部署版本」查看）。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     content = ontology_yaml_text(sc_name, ontology_name)
@@ -198,7 +198,7 @@ def _get_deployed_version(scenario_name: str, ontology_name: str) -> str:
 
 
 @router.get("/version-exists")
-async def check_version_exists(ontology_id: int, version: str):
+async def check_version_exists(ontology_id: str, version: str):
     """检查指定版本是否已存档到 ontology_versions/{version}/。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     exists = version_exists(sc_name, ontology_name, version)
@@ -206,7 +206,7 @@ async def check_version_exists(ontology_id: int, version: str):
 
 
 @router.get("/version-preview")
-async def preview_version(ontology_id: int, version: str):
+async def preview_version(ontology_id: str, version: str):
     """从 ontology_versions/{version}/ 读取已存档的三个 yaml 文件，返回合并内容。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     if not version_exists(sc_name, ontology_name, version):
@@ -224,7 +224,7 @@ async def preview_version(ontology_id: int, version: str):
 
 
 @router.post("/save-version")
-async def save_version(ontology_id: int, body: dict):
+async def save_version(ontology_id: str, body: dict):
     """将 thread 分片合并后输出到 ontology_versions/{version}/ 三个 yaml 文件（「本体合并」按钮）。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     version = (body.get("version") or "").strip()
@@ -248,14 +248,14 @@ async def save_version(ontology_id: int, body: dict):
 
 
 @router.get("/deployed-version")
-async def get_deployed_version_info(ontology_id: int):
+async def get_deployed_version_info(ontology_id: str):
     """获取当前部署的版本号。"""
     sc_name, ontology_name = await get_ontology_names(ontology_id)
     return {"deployed_version": _get_deployed_version(sc_name, ontology_name)}
 
 
 @router.post("/deploy")
-async def deploy_ontology(ontology_id: int, body: dict):
+async def deploy_ontology(ontology_id: str, body: dict):
     """部署指定版本到 onto_market/{scenario}/{ontology}/。
 
     1. 先备份当前部署的三个文件到 ontology_versions/{当前部署版本}/

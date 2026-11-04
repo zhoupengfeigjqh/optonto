@@ -1,9 +1,14 @@
 ---
 name: raw-material-inventory
-description: 原材料采购和库存本体技能，涵盖原材料、供应商、采购记录、库存等核心概念，支持采购单创建、取消、入库、库存查询、采购记录查询、原材料查询、供应商查询及供货能力查询等行为，并定义了从库存查询到采购入库的完整业务流程。
+description: 包括原材料、库存、采购单和供应商的相关技能
+metadata:
+  ontology_id: '1'
+  ontology_name: 原材料采购和库存
+  scenario_id: '1'
+  scenario_name: 生产调度
 ---
 
-# 原材料采购和库存本体技能
+# 原材料库存和采购本体技能
 
 ## 0 本体基本信息
 本体名称（ontology_name）: 原材料采购和库存
@@ -11,55 +16,135 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 场景名称（scenario_name）: 生产调度
 场景id（scenario_id）: 1
 
-## 1概念与关系
+## 1 概念详情
 【重点：特别注意，概念-属性-关系代表着该领域的最基本业务逻辑，智能体的任务生成和执行都必须从该网络出发展开】
 
-- **原材料（RawMaterial）**：表示企业生产所需的各类原材料，包含原材料编号（rawMaterialId）、原材料名称（rawMaterialName）、单位（unit）和安全库存（safetyStock）等属性。
-- **供应商（Supplier）**：表示为企业提供原材料的供应商主体，包含供应商编号（supplierId）、供应商名称（supplierName）、地址（address）、联系人（contactPerson）和联系电话（contactPhone）等属性。
-- **原材料采购记录（PurchaseRecord）**：记录每一笔原材料采购的详细信息，包含采购记录编号（purchaseRecordId）、原材料编号（rawMaterialId）、原材料名称（rawMaterialName）、采购时间（purchaseTime）、到位时间（arrivalTime）、到位数量（arrivalQuantity）、单位（unit）、等待周期（leadTime）、供应商名称（supplierName）、关联订单编号（relatedOrderId）和关联订单名称（relatedOrderName）等属性。
-- **原材料库存（RawMaterialInventory）**：表示原材料的库存快照信息，包含库存编号（inventoryId）、原材料编号（rawMaterialId）、原材料名称（rawMaterialName）、材料类型（materialType）、待入库量（pendingReceiptQuantity）、累计库存量（cumulativeStockQuantity）、可用库存（availableStock）和单位（unit）等属性。
-- **客户订单（CustomerOrder）**：表示客户下达的生产订单，包含客户订单编号（customerOrderId）、客户订单名称（customerOrderName）、批次号（batchNumber）、缓冲期（bufferPeriod）、订单类型（orderType）和状态（status）等属性。
-- **交货能力（DeliveryCapability）**：表示供应商对特定原材料的供货能力，包含原材料编号（rawMaterialId）、原材料名称（rawMaterialName）、供应商名称（supplierName）、供应商编号（supplierId）、交货周期（leadTime）和最小起订量（minCount）等属性。
+| 概念名 | 展示名称 | 概念描述 | 术语集 |
+|---|---|---|---|
+| RawMaterial | 原材料 | 生产过程中消耗的外部输入物料，是采购和库存管理的核心对象。 | 物料；原料 |
+| Supplier | 供应商 | 原材料的供应方，可以供应一种或多种原材料。 | 供货商 |
+| PurchaseRecord | 原材料采购记录 | 一次具体的原材料采购行为，关联了采购的原材料、供应商以及驱动采购的客户订单。 | 采购单；采购记录 |
+| RawMaterialInventory | 原材料库存 | 特定原材料在当前时刻的库存状态快照，包括待入库、可用和累计库存量。 | 库存；库存快照 |
+| CustomerOrder | 客户订单 | 客户下达的销售订单或询单，是驱动原材料采购的源头需求。 | 客单；销售订单 |
+| DeliveryCapability | 交货能力 | 供应商的交货能力，包括交货周期、最低交货数量等 | 供货能力；供应能力 |
 
-概念之间的关系如下：
-- **hasRawInventory（拥有库存）**：原材料（RawMaterial）与原材料库存（RawMaterialInventory）之间为1:1关系，即一种原材料对应一条库存记录。关系类型：functional、inverse_functional。
-- **recordsRawMaterial（记录原材料）**：原材料采购记录（PurchaseRecord）与原材料（RawMaterial）之间为N:1关系，即多条采购记录可对应同一种原材料。关系类型：functional。
-- **orderedFromSupplier（从...采购）**：原材料采购记录（PurchaseRecord）与供应商（Supplier）之间为N:1关系，即多条采购记录可对应同一供应商。关系类型：functional。
-- **containsPurchaseRecord（包含采购记录）**：客户订单（CustomerOrder）与原材料采购记录（PurchaseRecord）之间为1:N关系，即一个客户订单可包含多条采购记录。关系类型：inverse_functional。
-- **hasCapability（拥有供应能力）**：供应商（Supplier）与交货能力（DeliveryCapability）之间为1:N关系，即一个供应商可具备多种原材料的交货能力。关系类型：inverse_functional。
-整个关系体系以原材料（RawMaterial）和供应商（Supplier）为核心，通过采购记录（PurchaseRecord）将客户订单（CustomerOrder）、库存（RawMaterialInventory）和交货能力（DeliveryCapability）串联起来，形成从客户需求、采购执行到库存管理的完整业务逻辑链条。
+## 2 概念间的关系
 
-## 2重要业务流程
+| 关系名 | 展示名称 | 源概念 → 目标概念 | 基数 | 关联字段 | 关系说明 |
+|---|---|---|---|---|---|
+| HasRawInventory | 拥有库存 | RawMaterial → RawMaterialInventory | 1:1 | RawMaterial.rawMaterialId = RawMaterialInventory.rawMaterialId | 每个原材料有且仅有一条对应的最新库存快照。 |
+| RecordsRawMaterial | 记录原材料 | PurchaseRecord → RawMaterial | N:1 | PurchaseRecord.rawMaterialId = RawMaterial.rawMaterialId | 多个采购记录可以指向同一种原材料，但一个采购记录只采购一种原材料。 |
+| OrderedFromSupplier | 从...采购 | PurchaseRecord → Supplier | N:1 | PurchaseRecord.supplierName = Supplier.supplierName | 多个采购记录可以从同一个供应商采购，但一个采购记录只对应一个供应商。 |
+| ContainsPurchaseRecord | 包含采购记录 | CustomerOrder → PurchaseRecord | 1:N | CustomerOrder.customerOrderId = PurchaseRecord.relatedOrderId | 一个客户订单可以包含多个采购记录，但一个采购记录最多只能关联一个客户订单。 |
+| HasCapability | 拥有供应能力 | Supplier → DeliveryCapability | 1:N | Supplier.supplierId = DeliveryCapability.supplierId | 一个供应商可以包含多个原材料的供应能力，但一个交货能力只对应一个供应商 |
+
+关系体系以原材料（RawMaterial）为核心：原材料通过 HasRawInventory 关联其唯一的库存快照（RawMaterialInventory），通过 RecordsRawMaterial 被多条采购记录（PurchaseRecord）引用；采购记录通过 OrderedFromSupplier 指向供应商（Supplier），并通过 ContainsPurchaseRecord 由客户订单（CustomerOrder）驱动；供应商通过 HasCapability 拥有多条交货能力（DeliveryCapability）。由此形成「客户订单 → 采购记录 → 原材料/供应商 → 库存」的完整业务逻辑链条。
+
+## 3 概念属性及约束
+
+**原材料（RawMaterial）**
+
+| 属性名 | 展示名称 | 类型 | 约束 |
+|---|---|---|---|
+| rawMaterialId | 原材料编号 | string | 唯一；必填 |
+| rawMaterialName | 原材料名称 | string | 必填 |
+| unit | 单位 | string | 必填 |
+| safetyStock | 安全库存 | number | - |
+| status | 状态 | string | 必填；枚举=[有效, 无效] |
+
+**供应商（Supplier）**
+
+| 属性名 | 展示名称 | 类型 | 约束 |
+|---|---|---|---|
+| supplierId | 供应商编号 | string | 唯一；必填 |
+| supplierName | 供应商名称 | string | 唯一；必填 |
+| address | 地址 | string | - |
+| contactPerson | 联系人 | string | - |
+| contactPhone | 联系电话 | string | - |
+
+**原材料采购记录（PurchaseRecord）**
+
+| 属性名 | 展示名称 | 类型 | 约束 |
+|---|---|---|---|
+| purchaseRecordId | 采购单号 | string | 唯一；必填 |
+| rawMaterialId | 原材料编号 | string | - |
+| rawMaterialName | 原材料名称 | string | - |
+| purchaseTime | 采购时间 | string | - |
+| arrivalTime | 到位时间 | string | - |
+| arrivalQuantity | 到位数量 | number | - |
+| unit | 单位 | string | - |
+| leadTime | 等待周期 | number | - |
+| supplierName | 供应商名称 | string | - |
+| relatedOrderId | 关联订单编号 | string | - |
+| relatedOrderName | 关联订单名称 | string | - |
+
+**原材料库存（RawMaterialInventory）**
+
+| 属性名 | 展示名称 | 类型 | 约束 |
+|---|---|---|---|
+| inventoryId | 库存编号 | string | 唯一；必填 |
+| rawMaterialId | 原材料编号 | string | - |
+| rawMaterialName | 原材料名称 | string | - |
+| materialType | 材料类型 | string | - |
+| pendingReceiptQuantity | 待入库量 | number | - |
+| cumulativeStockQuantity | 累计库存量 | number | - |
+| availableStock | 可用库存 | number | - |
+| unit | 单位 | string | - |
+
+**客户订单（CustomerOrder）**
+
+| 属性名 | 展示名称 | 类型 | 约束 |
+|---|---|---|---|
+| customerOrderId | 订单编号 | string | 唯一；必填 |
+| customerOrderName | 订单名称 | string | - |
+| batchNumber | 订单批次号 | string | - |
+| bufferPeriod | 订单缓冲周期 | number | - |
+| orderType | 订单类型 | enum | - |
+| status | 订单状态 | enum | - |
+
+**交货能力（DeliveryCapability）**
+
+| 属性名 | 展示名称 | 类型 | 约束 |
+|---|---|---|---|
+| rawMaterialId | 原材料编号 | string | - |
+| rawMaterialName | 原材料名称 | string | - |
+| supplierName | 供应商名称 | string | - |
+| supplierId | 供应商编号 | string | - |
+| leadTime | 交货周期 | number | - |
+| minCount | 最小交货数 | number | - |
+
+## 4 重要业务流程
 【重点：重点业务流程，用于任务执行逻辑的参考，注意这里不是该流程是唯一固定的】
 
-**原材料采购到入库（ProcureAndReceiveRawMaterial）** 是原材料库存和采购领域的核心业务流程，具体步骤如下：
-1. **查询库存（QueryInventory）**：用户或系统查询原材料库存，判断是否需要采购。
-2. **创建采购单（CreatePurchaseRecord）**：根据库存情况或客户订单需求，创建原材料采购单。
-3. **查询采购记录（QueryPurchaseRecords）**：定期或主动按需查询采购记录，跟踪已创建的采购单状态。
-4. **入库原材料（ReceiveRawMaterial）**：确认原材料到货，执行入库操作，更新库存。
+原材料采购到入库（ProcureAndReceiveRawMaterial）：完成从库存查询到采购、入库的完整流程。
 
-## 3行为
+- step: QueryInventory（用户或系统查询原材料库存，判断是否需要采购。）衔接=串行
+- step: CreatePurchaseRecord（根据库存情况或客户订单需求，创建原材料采购单。）衔接=串行
+- step: QueryPurchaseRecords（定期或主动按需查询采购记录，跟踪已创建的采购单状态。）衔接=串行
+- step: ReceiveRawMaterial（确认原材料到货，执行入库操作，更新库存。）衔接=串行
 
-### 3.1 CreatePurchaseRecord
-- **类型**: command（命令）
+## 5 行为
+
+### 5.1 CreatePurchaseRecord
+- **类型**: create（创建）
 - **行为描述**: 创建一笔新的原材料采购记录。
 - **输入参数**:
 ```json
 {
-  "rawMaterialId": {"type": "string", "required": true, "description": "", "example": "RM-001", "title": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": true, "description": "", "example": "高强度钢板", "title": "原材料名称"},
-  "arrivalQuantity": {"type": "number", "required": true, "description": "", "example": 50, "title": "到位数量"},
-  "supplierName": {"type": "string", "required": true, "description": "", "example": "XX钢铁集团", "title": "供应商名称"},
-  "arrivalTime": {"type": "string", "required": true, "description": "", "example": "2023-11-10", "title": "到位时间"},
-  "relatedOrderId": {"type": "string", "required": false, "description": "", "example": "SO-20231025-001", "title": "关联订单编号"},
-  "relatedOrderName": {"type": "string", "required": false, "description": "", "example": "客户A-项目X订单", "title": "关联订单名称"},
-  "unit": {"type": "string", "required": true, "description": "", "example": "吨", "title": "单位"}
+  "rawMaterialId": {"type": "string", "title": "原材料编号", "required": true, "example": "RM-001"},
+  "rawMaterialName": {"type": "string", "title": "原材料名称", "required": true, "example": "高强度钢板"},
+  "arrivalQuantity": {"type": "number", "title": "到位数量", "required": true, "example": 50},
+  "supplierName": {"type": "string", "title": "供应商名称", "required": true, "example": "XX钢铁集团"},
+  "arrivalTime": {"type": "string", "title": "到位时间", "required": true, "example": "2023-11-10"},
+  "relatedOrderId": {"type": "string", "title": "关联订单编号", "required": false, "example": "SO-20231025-001"},
+  "relatedOrderName": {"type": "string", "title": "关联订单名称", "required": false, "example": "客户A-项目X订单"},
+  "unit": {"type": "string", "title": "单位", "required": true, "example": "吨"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "object",
     "properties": {
@@ -79,22 +164,22 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
   }
 }
 ```
-- **相关概念**: 原材料（RawMaterial）、供应商（Supplier）、原材料采购记录（PurchaseRecord）、客户订单（CustomerOrder）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `CreatePurchaseRecord` 及其输入参数。
+- **相关概念**: 原材料采购记录（PurchaseRecord）、原材料（RawMaterial）、供应商（Supplier）、客户订单（CustomerOrder）
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `CreatePurchaseRecord`，参数即上述输入参数。
 
-### 3.2 CancelPurchaseRecord
-- **类型**: command（命令）
+### 5.2 CancelPurchaseRecord
+- **类型**: update（更新）
 - **行为描述**: 取消一笔已创建但尚未入库的采购记录。
 - **输入参数**:
 ```json
 {
-  "purchaseRecordId": {"type": "string", "required": true, "description": "", "example": "PO-20231027-001", "title": "采购单号"}
+  "purchaseRecordId": {"type": "string", "title": "采购单号", "required": true, "example": "PO-20231027-001"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "object",
     "properties": {
@@ -106,21 +191,21 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料采购记录（PurchaseRecord）、原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `CancelPurchaseRecord` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `CancelPurchaseRecord`，参数即上述输入参数。
 
-### 3.3 ReceiveRawMaterial
-- **类型**: command（命令）
+### 5.3 ReceiveRawMaterial
+- **类型**: update（更新）
 - **行为描述**: 将原材料采购入库。
 - **输入参数**:
 ```json
 {
-  "purchaseRecordId": {"type": "string", "required": true, "description": "", "example": "PO-20231027-001", "title": "采购单号"}
+  "purchaseRecordId": {"type": "string", "title": "采购单号", "required": true, "example": "PO-20231027-001"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "object",
     "properties": {
@@ -132,22 +217,22 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料采购记录（PurchaseRecord）、原材料库存（RawMaterialInventory）、原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `ReceiveRawMaterial` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `ReceiveRawMaterial`，参数即上述输入参数。
 
-### 3.4 QueryInventory
+### 5.4 QueryInventory
 - **类型**: query（查询）
 - **行为描述**: 根据原材料ID或名称查询其最新的库存快照。
 - **输入参数**:
 ```json
 {
-  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "title": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "title": "原材料名称"}
+  "rawMaterialId": {"type": "string", "title": "原材料编号", "required": false, "example": "RM-001"},
+  "rawMaterialName": {"type": "string", "title": "原材料名称", "required": false, "example": "高强度钢板"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "array",
     "items": {
@@ -167,23 +252,23 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料库存（RawMaterialInventory）、原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QueryInventory` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `QueryInventory`，参数即上述输入参数。
 
-### 3.5 QueryPurchaseRecords
+### 5.5 QueryPurchaseRecords
 - **类型**: query（查询）
 - **行为描述**: 根据采购单/原材料/关联客单来查询采购记录列表。
 - **输入参数**:
 ```json
 {
-  "purchaseRecordId": {"type": "string", "required": false, "description": "", "example": "PO-20231027-001", "title": "采购单号"},
-  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "title": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "title": "原材料名称"}
+  "purchaseRecordId": {"type": "string", "title": "采购单号", "required": false, "example": "PO-20231027-001"},
+  "rawMaterialId": {"type": "string", "title": "原材料编号", "required": false, "example": "RM-001"},
+  "rawMaterialName": {"type": "string", "title": "原材料名称", "required": false, "example": "高强度钢板"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "array",
     "items": {
@@ -206,22 +291,22 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料采购记录（PurchaseRecord）、原材料（RawMaterial）、供应商（Supplier）、客户订单（CustomerOrder）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QueryPurchaseRecords` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `QueryPurchaseRecords`，参数即上述输入参数。
 
-### 3.6 QueryRawMaterials
+### 5.6 QueryRawMaterials
 - **类型**: query（查询）
 - **行为描述**: 根据原材料ID或名称查询原材料的基础信息。
 - **输入参数**:
 ```json
 {
-  "rawMaterialId": {"type": "string", "required": false, "description": "", "example": "RM-001", "title": "原材料编号"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "高强度钢板", "title": "原材料名称"}
+  "rawMaterialId": {"type": "string", "title": "原材料编号", "required": false, "example": "RM-001"},
+  "rawMaterialName": {"type": "string", "title": "原材料名称", "required": false, "example": "高强度钢板"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "array",
     "items": {
@@ -237,22 +322,22 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QueryRawMaterials` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `QueryRawMaterials`，参数即上述输入参数。
 
-### 3.7 QuerySuppliers
+### 5.7 QuerySuppliers
 - **类型**: query（查询）
 - **行为描述**: 根据供应商名或原材料名查询供应商。
 - **输入参数**:
 ```json
 {
-  "supplierName": {"type": "string", "required": false, "description": "", "example": "宝钢钢铁集团", "title": "供应商名称，模糊匹配"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "钢板008", "title": "原材料名称"}
+  "supplierName": {"type": "string", "title": "供应商名称", "required": false, "example": "宝钢钢铁集团"},
+  "rawMaterialName": {"type": "string", "title": "原材料名称", "required": false, "example": "钢板008"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "array",
     "items": {
@@ -269,22 +354,22 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 供应商（Supplier）、原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySuppliers` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `QuerySuppliers`，参数即上述输入参数。
 
-### 3.8 QuerySupplierCapability
+### 5.8 QuerySupplierCapability
 - **类型**: query（查询）
 - **行为描述**: 根据供应商名或原材料名，查询供应商供货能力。
 - **输入参数**:
 ```json
 {
-  "supplierName": {"type": "string", "required": false, "description": "", "example": "宝钢钢铁集团", "title": "供应商名称"},
-  "rawMaterialName": {"type": "string", "required": false, "description": "", "example": "钢板008", "title": "原材料名称"}
+  "supplierName": {"type": "string", "title": "供应商名称", "required": false, "example": "宝钢钢铁集团"},
+  "rawMaterialName": {"type": "string", "title": "原材料名称", "required": false, "example": "钢板008"}
 }
 ```
 - **输出结构**:
 ```json
 {
-  "code": {"type": "number", "example": 0},
+  "code": {"type": "integer", "example": 0},
   "data": {
     "type": "array",
     "items": {
@@ -300,4 +385,4 @@ description: 原材料采购和库存本体技能，涵盖原材料、供应商�
 }
 ```
 - **相关概念**: 交货能力（DeliveryCapability）、供应商（Supplier）、原材料（RawMaterial）
-- **执行方式**: 行为已 facade 化为 MCP 工具——直接调用与行为同名的工具，参数为 `QuerySupplierCapability` 及其输入参数。
+- **执行方式**: 行为已 facade 化为 MCP 工具——**工具名即行为名**，直接调用工具 `QuerySupplierCapability`，参数即上述输入参数。

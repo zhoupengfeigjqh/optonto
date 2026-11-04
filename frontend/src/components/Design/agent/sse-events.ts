@@ -44,9 +44,9 @@ export interface SubTask {
   description: string;
   guidance?: string;
   scenario_name: string;
-  scenario_id?: number;
+  scenario_id?: string;
   ontology_name: string;
-  ontology_id: number;
+  ontology_id: string;
   depends_on?: number[];
   related_functions?: string[];
   /** 展示名（后端 enrichPlanDisplay 注入，纯展示不参与校验） */

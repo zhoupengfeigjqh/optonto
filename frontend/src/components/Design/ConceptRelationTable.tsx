@@ -18,7 +18,7 @@ import {
 import ResizableTable from '@/components/ResizableTable';
 import { useTablePagination } from '@/lib/table-pagination';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 const ADDABLE_TYPE_OPTIONS = [
   { label: '等价 (EquivalentClass)', value: 'EquivalentClass' },

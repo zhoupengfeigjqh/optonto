@@ -1,8 +1,8 @@
 metadata:
   scenario_name: 生产调度
-  scenario_id: 1
+  scenario_id: '1'
   ontology_name: 订单排程
-  ontology_id: 2
+  ontology_id: '2'
 concepts:
 - name: Order
   description: 客户销售订单或询单，包含订单头信息

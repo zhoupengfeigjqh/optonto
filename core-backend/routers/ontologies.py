@@ -29,7 +29,7 @@ async def list_all_ontologies_api():
 
 
 @router.get("/by-scenario/{scenario_id}")
-async def list_ontologies_api(scenario_id: int):
+async def list_ontologies_api(scenario_id: str):
     scenario = ontology_registry.require_scenario(scenario_id)
     return ontology_registry.list_ontologies_by_scenario(scenario["name"])
 
@@ -67,7 +67,7 @@ async def create_ontology_api(data: dict):
 
 
 @router.get("/{ontology_id}")
-async def get_ontology_api(ontology_id: int):
+async def get_ontology_api(ontology_id: str):
     ontology, scenario_name, ontology_name = ontology_registry.require_ontology(ontology_id)
     ontology["scenario_name"] = scenario_name
     # deployed_version 与清单口径同源（services.deployed_version_of 读 ontology.yaml.metadata）
@@ -76,7 +76,7 @@ async def get_ontology_api(ontology_id: int):
 
 
 @router.put("/{ontology_id}")
-async def update_ontology_api(ontology_id: int, data: dict):
+async def update_ontology_api(ontology_id: str, data: dict):
     _, scenario_name, ontology_name = ontology_registry.require_ontology(ontology_id)
 
     name = data.get("name")
@@ -101,21 +101,21 @@ async def update_ontology_api(ontology_id: int, data: dict):
 
 
 @router.delete("/{ontology_id}")
-async def delete_ontology_api(ontology_id: int):
+async def delete_ontology_api(ontology_id: str):
     ontology_registry.require_ontology(ontology_id)
     ontology_registry.delete_ontology(ontology_id)
     return {"message": "本体已删除"}
 
 
 @router.get("/{ontology_id}/data")
-async def get_ontology_data_api(ontology_id: int):
+async def get_ontology_data_api(ontology_id: str):
     """Load full ontology data (concepts, relations, etc.) from YAML."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     return load_ontology_data(sc_name, on_name)
 
 
 @router.put("/{ontology_id}/data")
-async def update_ontology_data_api(ontology_id: int, data: OntologyData):
+async def update_ontology_data_api(ontology_id: str, data: OntologyData):
     """Save full ontology data to YAML."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     save_ontology_data(sc_name, on_name, data)

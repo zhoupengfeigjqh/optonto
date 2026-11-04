@@ -21,10 +21,26 @@ logger = logging.getLogger(__name__)
 load_env()
 
 
+def _skill_meta(ontology_id: str, scenario_name: str, ontology_name: str) -> dict:
+    """本体/场景四元组（写入 SKILL.md 头部 metadata）。
+
+    键名与顺序同 ``ontology.yaml.metadata`` 与 agent 侧 SkillLoader 的口径；
+    id 一律为**数字字符串**（``"1"``，不是 1）。场景查不到时**省略 scenario_id**
+    （绝不写 null，回读会变字符串 "null"）。
+    """
+    scenario = ontology_registry.scenario_by_name(scenario_name)
+    meta = {"ontology_id": str(ontology_id), "ontology_name": ontology_name}
+    scenario_id = scenario.get("id") if scenario else None
+    if scenario_id is not None:
+        meta["scenario_id"] = str(scenario_id)
+    meta["scenario_name"] = scenario_name
+    return meta
+
+
 # ─── List Skills ───────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_skills(ontology_id: int):
+async def list_skills(ontology_id: str):
     """技能列表：description 取自 SKILL.md frontmatter（不再读技能级 meta.json）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     return skill_store.list_skills(sc_name, on_name)
@@ -33,7 +49,7 @@ async def list_skills(ontology_id: int):
 # ─── Get Skill Content ─────────────────────────────────────────────────────
 
 @router.get("/{skill_name}/content")
-async def get_skill_content(ontology_id: int, skill_name: str):
+async def get_skill_content(ontology_id: str, skill_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     return {"content": skill_store.read_skill_md(sc_name, on_name, skill_name), "skill_name": skill_name}
 
@@ -41,16 +57,20 @@ async def get_skill_content(ontology_id: int, skill_name: str):
 # ─── Save Skill Content ────────────────────────────────────────────────────
 
 @router.put("/{skill_name}/content")
-async def save_skill_content(ontology_id: int, skill_name: str, body: dict):
+async def save_skill_content(ontology_id: str, skill_name: str, body: dict):
+    """保存技能正文。头部 ``metadata`` 由服务端按当前本体/场景注入（前端无需传、也不可篡改）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
-    skill_store.write_skill_md(sc_name, on_name, skill_name, body.get("content", ""))
+    skill_store.write_skill_md(
+        sc_name, on_name, skill_name, body.get("content", ""),
+        meta=_skill_meta(ontology_id, sc_name, on_name),
+    )
     return {"message": "技能文件已保存"}
 
 
 # ─── Delete Skill ───────────────────────────────────────────────────────────
 
 @router.delete("/{skill_name}")
-async def delete_skill(ontology_id: int, skill_name: str):
+async def delete_skill(ontology_id: str, skill_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     skill_store.delete_skill(sc_name, on_name, skill_name)
     return {"message": "技能已删除"}
@@ -59,7 +79,7 @@ async def delete_skill(ontology_id: int, skill_name: str):
 # ─── Update Skill Description ────────────────────────────────────────────────
 
 @router.put("/{skill_name}/meta")
-async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
+async def update_skill_meta(ontology_id: str, skill_name: str, body: dict):
     """更新技能描述（**单一来源 = SKILL.md frontmatter**；技能名创建后固定）。
 
     只重写头部 frontmatter 的 description，正文与其他字段原样保留。
@@ -68,7 +88,9 @@ async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
     """
     sc_name, on_name = await get_ontology_names(ontology_id)
     ok = skill_store.rewrite_description(
-        sc_name, on_name, skill_name, str(body.get("description", "") or ""))
+        sc_name, on_name, skill_name, str(body.get("description", "") or ""),
+        meta=_skill_meta(ontology_id, sc_name, on_name),
+    )
     if not ok:
         raise InvalidInputError("SKILL.md 头部 frontmatter 不合法，无法更新描述")
     return {"message": "技能已更新"}
@@ -77,7 +99,7 @@ async def update_skill_meta(ontology_id: int, skill_name: str, body: dict):
 # ─── Generate Skill ─────────────────────────────────────────────────────────
 
 @router.post("/{skill_name}/generate")
-async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(default={})):
+async def generate_skill(ontology_id: str, skill_name: str, body: dict = Body(default={})):
     if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", skill_name) or len(skill_name) > 64:
         raise InvalidInputError("技能名称必须为小写字母/数字/连字符，1-64字符")
     if "claude" in skill_name.lower() or "anthropic" in skill_name.lower():
@@ -92,14 +114,13 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
 
     from config import SKILL_GENERATE_SYSTEM_PROMPT, SKILL_GENERATE_PROMPT
 
-    scenario = ontology_registry.scenario_by_name(sc_name)
-    scenario_id = scenario.get("id", "") if scenario else ""
+    meta = _skill_meta(ontology_id, sc_name, on_name)
 
     prompt = SKILL_GENERATE_PROMPT.format(
         ontology_name=on_name,
         ontology_id=str(ontology_id),
         scenario_name=sc_name,
-        scenario_id=str(scenario_id),
+        scenario_id=str(meta.get("scenario_id", "")),
         ontology_yaml=ontology_yaml,
         skill_template=skill_template,
         skill_name=skill_name,
@@ -129,6 +150,9 @@ async def generate_skill(ontology_id: int, skill_name: str, body: dict = Body(de
         # 描述单一来源 = SKILL.md frontmatter：用户填了"技能简介"就用它覆盖模型写的 description
         if description.strip():
             content = skill_store.with_description(content, description.strip()) or content
+
+        # 头部 metadata（本体/场景四元组）由服务端落盘前注入 —— 不依赖模型输出，且覆盖模型可能抄错的 id
+        content = skill_store.stamp_metadata(content, meta) or content
 
         skill_store.write_skill_md(sc_name, on_name, skill_name, content)
 

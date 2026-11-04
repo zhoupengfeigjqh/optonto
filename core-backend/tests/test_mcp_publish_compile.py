@@ -52,7 +52,7 @@ class FunctionCompileCase(unittest.TestCase):
         _, tools = store.compile_tools(oid, store.KIND_ONTOLOGY_FUNCTION, [fname])
         schema = tools[0]["inputSchema"]
         prop = schema["properties"]["ontology_id"]
-        self.assertEqual(prop["type"], "integer")
+        self.assertEqual(prop["type"], "string")          # id 是数字字符串，不是 integer
         self.assertNotIn("const", prop)                 # 不再是发布绑定值
         self.assertIn("ontology_id", schema["required"])  # LLM 必须填写
         self.assertIn("必填", prop["description"])
@@ -172,12 +172,13 @@ class BuildEntryCase(unittest.TestCase):
         self.assertEqual(config["tools"][0]["ontologyScope"]["ontology_id"], entry["ontology_id"])
         self.assertEqual(config["tools"][0]["category"], CATEGORY_FUNCTION)
 
-    def test_ontology_id_must_be_positive_int(self):
+    def test_ontology_id_must_be_positive_int_string(self):
         with self.assertRaises(InvalidInputError):
             store.validate_ontology_id("abc")
         with self.assertRaises(InvalidInputError):
             store.validate_ontology_id(0)
-        self.assertEqual(store.validate_ontology_id("3"), 3)
+        self.assertEqual(store.validate_ontology_id("3"), "3")   # 数字字符串，不转 int
+        self.assertEqual(store.validate_ontology_id(3), "3")     # 入参为 int 时也归一为字符串
 
 
 if __name__ == "__main__":

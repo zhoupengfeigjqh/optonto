@@ -11,7 +11,7 @@ import {
 import ResizableTable from '@/components/ResizableTable';
 import { resolveOpType } from './behavior-op-type';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 /** 权限范围特殊值：everyone=所有用户（默认）、disable=全部禁用。将来用户表落地后追加用户/组织选项。 */
 const SCOPE_OPTIONS = [

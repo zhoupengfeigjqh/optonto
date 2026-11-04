@@ -26,16 +26,16 @@ export interface DataEngine {
   output_mapping: Record<string, string>;
 }
 
-export const getDataEngines = (ontologyId: number) =>
+export const getDataEngines = (ontologyId: string) =>
   request<DataEngine[]>(`/api/ontologies/${ontologyId}/data-engines`);
 
-export const createDataEngine = (ontologyId: number, data: DataEngine) =>
+export const createDataEngine = (ontologyId: string, data: DataEngine) =>
   request<DataEngine>(`/api/ontologies/${ontologyId}/data-engines`, { method: 'POST', body: JSON.stringify(data) });
 
-export const updateDataEngine = (ontologyId: number, name: string, data: DataEngine) =>
+export const updateDataEngine = (ontologyId: string, name: string, data: DataEngine) =>
   request<DataEngine>(`/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
-export const analyzeMapping = (ontologyId: number, name: string, body?: {
+export const analyzeMapping = (ontologyId: string, name: string, body?: {
   onto_input_fields: string[];
   target_input_fields: string[];
   onto_output_fields: string[];
@@ -46,13 +46,13 @@ export const analyzeMapping = (ontologyId: number, name: string, body?: {
     { method: 'POST', body: body ? JSON.stringify(body) : undefined }
   );
 
-export const callBehavior = (ontologyId: number, name: string, params: Record<string, any>) =>
+export const callBehavior = (ontologyId: string, name: string, params: Record<string, any>) =>
   request<{ status_code: number; headers: Record<string, string>; data: any }>(
     `/api/ontologies/${ontologyId}/behaviors/${encodeURIComponent(name)}/call`,
     { method: 'POST', body: JSON.stringify({ params }) }
   );
 
-export const smartAlign = (ontologyId: number, name: string) =>
+export const smartAlign = (ontologyId: string, name: string) =>
   request<{ params: Record<string, unknown>; response: Record<string, unknown> }>(
     `/api/ontologies/${ontologyId}/data-engines/${encodeURIComponent(name)}/smart-align`,
     { method: 'POST' }

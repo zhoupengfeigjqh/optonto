@@ -15,7 +15,7 @@ import {
   type RuleDesign, type RuleFunctionOption,
 } from './rule/rule-design';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 /** 规则设计弹窗的打开上下文（打开时快照，避免编辑态 setState 异步读到旧值） */
 interface DesignTarget {

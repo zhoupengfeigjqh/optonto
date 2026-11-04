@@ -35,7 +35,7 @@ export interface SubtaskRunnerDeps {
   /** run 级安全闸（全 run 共享）：工具层 disable 命中置位后，本 runner 据此返回 securityViolation 失败 */
   securityGate: SecurityGate;
   /** 直连调用函数/MCP 工具（函数子任务确定性执行，不经子 Agent LLM）。返回 MCP 结果文本与是否出错。 */
-  callFunctionTool: (functionName: string, ontologyId: number, params: Record<string, any>) => Promise<{ text: string; isError: boolean }>;
+  callFunctionTool: (functionName: string, ontologyId: string, params: Record<string, any>) => Promise<{ text: string; isError: boolean }>;
 }
 
 /**
@@ -84,7 +84,7 @@ export class SubtaskRunner {
     // 子 Agent 上下文直接取子任务自身字段：多个子任务可指向不同本体
     const context: SkillContext = {
       scenario_name: subTask.scenario_name,
-      scenario_id: subTask.scenario_id ?? 0,
+      scenario_id: subTask.scenario_id ?? '',      // id 是数字字符串
       ontology_name: subTask.ontology_name,
       ontology_id: subTask.ontology_id,
     };

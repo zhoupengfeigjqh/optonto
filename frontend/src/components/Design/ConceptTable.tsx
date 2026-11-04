@@ -12,7 +12,7 @@ import { useTablePagination } from '@/lib/table-pagination';
 import ConceptAttributeModal from './ConceptAttributeModal';
 import { parentCandidates } from './concept-inheritance';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 export default function ConceptTable({ ontologyId, activeTab }: Props) {
   const [concepts, setConcepts] = useState<Concept[]>([]);

@@ -14,7 +14,7 @@ import {
 import { splitDoc, ALL, KEY_LABELS } from '@/utils/yaml-segments';
 
 interface Props {
-  ontologyId: number;
+  ontologyId: string;
   activeTab?: string;
 }
 

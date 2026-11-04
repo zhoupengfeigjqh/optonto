@@ -22,6 +22,7 @@ from pathlib import Path
 
 import data_store
 from publish_upstream import KIND_BEHAVIOR
+from tool_contract import normalize_id, same_id
 
 
 def registry_path() -> Path:
@@ -40,7 +41,7 @@ def _read_registry(registry_file: Path | None = None) -> list[dict]:
 
 
 def published_behavior_names(
-    ontology_id: int | None = None, registry_file: Path | None = None,
+    ontology_id: str | None = None, registry_file: Path | None = None,
 ) -> set[str]:
     """已发布为工具的**行为名**集合（可按本体收窄）。
 
@@ -52,10 +53,11 @@ def published_behavior_names(
     为准，此处只用于降低"列出后必然被拒"的无谓一轮。
     """
     names: set[str] = set()
+    wanted = normalize_id(ontology_id)
     for entry in _read_registry(registry_file):
         if not isinstance(entry, dict) or entry.get("kind") != KIND_BEHAVIOR:
             continue
-        if ontology_id is not None and entry.get("ontology_id") != int(ontology_id):
+        if wanted is not None and not same_id(entry.get("ontology_id"), wanted):
             continue
         items = entry.get("items")
         if not isinstance(items, list):

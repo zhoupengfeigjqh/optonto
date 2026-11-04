@@ -30,7 +30,7 @@ const DESIGN_TABS = [
 export default function DesignPage() {
   const params = useParams();
   const router = useRouter();
-  const ontologyId = Number(params.id);
+  const ontologyId = String(params.id);   // id 全链路为数字字符串（不做 Number 强转）
 
   const [ontology, setOntology] = useState<Ontology | null>(null);
   const [loading, setLoading] = useState(true);

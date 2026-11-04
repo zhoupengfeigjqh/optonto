@@ -69,20 +69,20 @@ export const effectiveAttributes = (c?: Concept | null): Attribute[] => [
   ...(c?.inherited_attributes || []),
 ];
 
-export const getConcepts = (ontologyId: number) =>
+export const getConcepts = (ontologyId: string) =>
   request<Concept[]>(`/api/ontologies/${ontologyId}/concepts`);
 
-export const createConcept = (ontologyId: number, data: Concept) =>
+export const createConcept = (ontologyId: string, data: Concept) =>
   request<Concept>(`/api/ontologies/${ontologyId}/concepts`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteConcept = (ontologyId: number, name: string) =>
+export const deleteConcept = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/concepts/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const updateConcept = (ontologyId: number, name: string, data: Concept) =>
+export const updateConcept = (ontologyId: string, name: string, data: Concept) =>
   request<Concept>(`/api/ontologies/${ontologyId}/concepts/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 export const updateAttributes = (
-  ontologyId: number,
+  ontologyId: string,
   conceptName: string,
   attributes: Attribute[],
   attributeRestrictions?: Record<string, AttributeRestriction>,
@@ -108,16 +108,16 @@ export interface Relation {
   title?: string;
 }
 
-export const getRelations = (ontologyId: number) =>
+export const getRelations = (ontologyId: string) =>
   request<Relation[]>(`/api/ontologies/${ontologyId}/relations`);
 
-export const createRelation = (ontologyId: number, data: Relation) =>
+export const createRelation = (ontologyId: string, data: Relation) =>
   request<Relation>(`/api/ontologies/${ontologyId}/relations`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteRelation = (ontologyId: number, name: string) =>
+export const deleteRelation = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/relations/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const updateRelation = (ontologyId: number, name: string, data: Relation) =>
+export const updateRelation = (ontologyId: string, name: string, data: Relation) =>
   request<Relation>(`/api/ontologies/${ontologyId}/relations/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // ─── ConceptRelation（概念关系：类级公理，无基数） ─────────────────────────────
@@ -141,16 +141,16 @@ export interface ConceptRelation {
   description?: string;
 }
 
-export const getConceptRelations = (ontologyId: number) =>
+export const getConceptRelations = (ontologyId: string) =>
   request<ConceptRelation[]>(`/api/ontologies/${ontologyId}/concept-relations`);
 
-export const createConceptRelation = (ontologyId: number, data: ConceptRelation) =>
+export const createConceptRelation = (ontologyId: string, data: ConceptRelation) =>
   request<ConceptRelation>(`/api/ontologies/${ontologyId}/concept-relations`, { method: 'POST', body: JSON.stringify(data) });
 
-export const updateConceptRelation = (ontologyId: number, name: string, data: ConceptRelation) =>
+export const updateConceptRelation = (ontologyId: string, name: string, data: ConceptRelation) =>
   request<ConceptRelation>(`/api/ontologies/${ontologyId}/concept-relations/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
-export const deleteConceptRelation = (ontologyId: number, name: string) =>
+export const deleteConceptRelation = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/concept-relations/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
 // ─── Function ───────────────────────────────────────────────────────────────
@@ -167,32 +167,32 @@ export interface Function {
   type?: string;
 }
 
-export const getFunctions = (ontologyId: number) =>
+export const getFunctions = (ontologyId: string) =>
   request<Function[]>(`/api/ontologies/${ontologyId}/functions`);
 
 export const getCommonFunctions = () =>
   request<any[]>('/api/common-functions');
 
 
-export const createFunction = (ontologyId: number, data: Function) =>
+export const createFunction = (ontologyId: string, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteFunction = (ontologyId: number, name: string) =>
+export const deleteFunction = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const getFunctionCode = (ontologyId: number, name: string) =>
+export const getFunctionCode = (ontologyId: string, name: string) =>
   request<{ content: string; exists: boolean; code_file: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/code`);
 
-export const saveFunctionCode = (ontologyId: number, name: string, code: string) =>
+export const saveFunctionCode = (ontologyId: string, name: string, code: string) =>
   request<{ message: string; code_file: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/code`, { method: 'PUT', body: JSON.stringify({ code }) });
 
-export const generateFunctionCode = (ontologyId: number, name: string) =>
+export const generateFunctionCode = (ontologyId: string, name: string) =>
   request<{ code: string; code_file: string }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/generate-code`, { method: 'POST' });
 
-export const executeFunction = (ontologyId: number, name: string, params: any) =>
+export const executeFunction = (ontologyId: string, name: string, params: any) =>
   request<{ success: boolean; data: any; error: any }>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}/execute`, { method: 'POST', body: JSON.stringify({ params }) });
 
-export const updateFunction = (ontologyId: number, name: string, data: Function) =>
+export const updateFunction = (ontologyId: string, name: string, data: Function) =>
   request<Function>(`/api/ontologies/${ontologyId}/functions/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // ─── Behavior ──────────────────────────────────────────────────────────────
@@ -212,16 +212,16 @@ export interface Behavior {
   to_status?: string;
 }
 
-export const getBehaviors = (ontologyId: number) =>
+export const getBehaviors = (ontologyId: string) =>
   request<Behavior[]>(`/api/ontologies/${ontologyId}/behaviors`);
 
-export const createBehavior = (ontologyId: number, data: Behavior) =>
+export const createBehavior = (ontologyId: string, data: Behavior) =>
   request<Behavior>(`/api/ontologies/${ontologyId}/behaviors`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteBehavior = (ontologyId: number, name: string) =>
+export const deleteBehavior = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/behaviors/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const updateBehavior = (ontologyId: number, name: string, data: Behavior) =>
+export const updateBehavior = (ontologyId: string, name: string, data: Behavior) =>
   request<Behavior>(`/api/ontologies/${ontologyId}/behaviors/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // ─── Rule ──────────────────────────────────────────────────────────────────
@@ -297,21 +297,21 @@ export interface RuleDesignGenerateResult {
   elapsed_ms: number;
 }
 
-export const getRules = (ontologyId: number) =>
+export const getRules = (ontologyId: string) =>
   request<Rule[]>(`/api/ontologies/${ontologyId}/rules`);
 
-export const generateRuleDesign = (ontologyId: number, data: RuleDesignGeneratePayload) =>
+export const generateRuleDesign = (ontologyId: string, data: RuleDesignGeneratePayload) =>
   request<RuleDesignGenerateResult>(`/api/ontologies/${ontologyId}/rules/design/generate`, {
     method: 'POST', body: JSON.stringify(data),
   });
 
-export const createRule = (ontologyId: number, data: Rule) =>
+export const createRule = (ontologyId: string, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteRule = (ontologyId: number, name: string) =>
+export const deleteRule = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/rules/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const updateRule = (ontologyId: number, name: string, data: Rule) =>
+export const updateRule = (ontologyId: string, name: string, data: Rule) =>
   request<Rule>(`/api/ontologies/${ontologyId}/rules/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // ─── Business Process ──────────────────────────────────────────────────────
@@ -331,16 +331,16 @@ export interface Process {
   steps?: ProcessStep[];
 }
 
-export const getProcesses = (ontologyId: number) =>
+export const getProcesses = (ontologyId: string) =>
   request<Process[]>(`/api/ontologies/${ontologyId}/processes`);
 
-export const createProcess = (ontologyId: number, data: Process) =>
+export const createProcess = (ontologyId: string, data: Process) =>
   request<Process>(`/api/ontologies/${ontologyId}/processes`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteProcess = (ontologyId: number, name: string) =>
+export const deleteProcess = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/processes/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const updateProcess = (ontologyId: number, name: string, data: Process) =>
+export const updateProcess = (ontologyId: string, name: string, data: Process) =>
   request<Process>(`/api/ontologies/${ontologyId}/processes/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // ─── Security（行为安全管控，独立 securities.yaml 全花名册存储，六字段齐全） ────────
@@ -359,14 +359,14 @@ export interface Security {
   confirm_content?: string;
 }
 
-export const getSecurities = (ontologyId: number) =>
+export const getSecurities = (ontologyId: string) =>
   request<Security[]>(`/api/ontologies/${ontologyId}/securities`);
 
-export const createSecurity = (ontologyId: number, data: Security) =>
+export const createSecurity = (ontologyId: string, data: Security) =>
   request<Security>(`/api/ontologies/${ontologyId}/securities`, { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteSecurity = (ontologyId: number, action_name: string) =>
+export const deleteSecurity = (ontologyId: string, action_name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/securities/${encodeURIComponent(action_name)}`, { method: 'DELETE' });
 
-export const updateSecurity = (ontologyId: number, action_name: string, data: Security) =>
+export const updateSecurity = (ontologyId: string, action_name: string, data: Security) =>
   request<Security>(`/api/ontologies/${ontologyId}/securities/${encodeURIComponent(action_name)}`, { method: 'PUT', body: JSON.stringify(data) });

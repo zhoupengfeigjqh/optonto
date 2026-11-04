@@ -28,7 +28,7 @@ GET /api/mcp/published/{name}/tools
       "inputSchema": {
         "type": "object",
         "properties": {
-          "ontology_id": { "type": "integer", "description": "本体 ID（必填）" },
+          "ontology_id": { "type": "string", "description": "本体 ID（必填，数字字符串，如 \"1\"）" },
           "warehouse": { "type": "string", "description": "仓库" }
         },
         "required": ["ontology_id", "warehouse"],

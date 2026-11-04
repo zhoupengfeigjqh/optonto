@@ -84,7 +84,7 @@ def _function_owners() -> dict:
     return _load_function_index()
 
 
-def _load_ontology_or_error(ontology_id: int):
+def _load_ontology_or_error(ontology_id: str):
     try:
         return data_store.load_ontology_data_by_id(ontology_id)
     except KeyError:
@@ -107,7 +107,7 @@ async def _handle_execute_function(request: Request) -> JSONResponse:
         # 数据归属：调用方指定的本体必须是该函数真正所属的本体
         owner = _function_owners().get(fname)
         require_ontology_match((owner or {}).get("ontology_id"), oid, "函数 %s" % fname, owner_label(owner))
-        data, sc_name, on_name = _load_ontology_or_error(int(oid))
+        data, sc_name, on_name = _load_ontology_or_error(oid)   # id 已是数字字符串
         fn = next((g for g in data.get("functions") or [] if isinstance(g, dict) and g.get("name") == fname), None)
         if fn is None:
             return JSONResponse({"detail": "函数不存在"}, status_code=404)

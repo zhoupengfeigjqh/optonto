@@ -16,9 +16,9 @@ const DEPLOYED_YAML = `metadata:
   source_thread: 线程A
   created_at: '2026-10-01 10:00:00'
   scenario_name: 生产调度
-  scenario_id: 3
+  scenario_id: '3'
   ontology_name: 采购本体
-  ontology_id: 7
+  ontology_id: '7'
   deployed_version: v1.2
 concepts:
 - name: PurchaseOrder

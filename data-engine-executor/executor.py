@@ -159,7 +159,7 @@ def _ensure_mcp(engine: dict) -> None:
                          f"请在映射页重新选择 MCP 服务与工具")
 
 
-async def execute_engine(ontology_id: int, engine_name: str, params: dict) -> dict:
+async def execute_engine(ontology_id: str, engine_name: str, params: dict) -> dict:
     """按引擎名调用（设计器连接测试路径，core /data-engines/{name}/call 转发至此）。"""
     try:
         data, _sc, _on = data_store.load_ontology_data_by_id(ontology_id)
@@ -172,7 +172,7 @@ async def execute_engine(ontology_id: int, engine_name: str, params: dict) -> di
     return await _call_engine_mcp(engine, params)
 
 
-async def execute_behavior(ontology_id: int, behavior_name: str, params: dict) -> dict:
+async def execute_behavior(ontology_id: str, behavior_name: str, params: dict) -> dict:
     """按行为名调用（行为工具执行路径）：查引擎绑定 → MCP 分发。"""
     try:
         data, _sc, _on = data_store.load_ontology_data_by_id(ontology_id)

@@ -2,25 +2,29 @@
   {
     "name": "test001",
     "kind": "ontology_function",
-    "ontology_id": 1,
+    "ontology_id": "1",
     "ontology_name": "原材料采购和库存",
     "items": [
       "sumRawNotArrivalQty",
-      "checkRawMaterialUnit"
+      "checkRawMaterialUnit",
+      "checkArrivalTimeValidity",
+      "checkSupplierExistence",
+      "checkRelatedOrderExistence",
+      "inferPurchasePurpose"
     ],
-    "tool_count": 2,
-    "host_port": 8025,
+    "tool_count": 6,
+    "host_port": 8021,
     "transport": "streamable",
-    "container_name": "optonto-mcp-publish-test001-7c0ba3",
-    "token": "aU_8jNuf8HcWxZzT-NIdGPnaV1qJ9bdw",
+    "container_name": "optonto-mcp-publish-test001-6b31b9",
+    "token": "P1DHfpkfyw801dQjrm6HdTzfWQODDFAL",
     "tools": [
       {
         "name": "sumRawNotArrivalQty",
         "title": "原材料未到位数",
         "category": "本体函数",
         "ontologyScope": {
-          "ontology_id": 1,
-          "scenario_id": 1,
+          "ontology_id": "1",
+          "scenario_id": "1",
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
@@ -29,9 +33,10 @@
           "type": "object",
           "properties": {
             "ontology_id": {
-              "type": "integer",
+              "type": "string",
               "title": "本体ID",
-              "description": "本体 ID（必填）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致"
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
             },
             "filterRawMaterialName": {
               "type": "string",
@@ -90,8 +95,8 @@
         "title": "校验采购原材料单位一致性",
         "category": "本体函数",
         "ontologyScope": {
-          "ontology_id": 1,
-          "scenario_id": 1,
+          "ontology_id": "1",
+          "scenario_id": "1",
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
@@ -100,9 +105,10 @@
           "type": "object",
           "properties": {
             "ontology_id": {
-              "type": "integer",
+              "type": "string",
               "title": "本体ID",
-              "description": "本体 ID（必填）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致"
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
             },
             "rawMaterialId": {
               "type": "string",
@@ -147,31 +153,285 @@
             "rawMaterialSet"
           ]
         }
+      },
+      {
+        "name": "checkArrivalTimeValidity",
+        "title": "校验采购到位时间合理性",
+        "category": "本体函数",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "校验采购到位时间合理性：校验采购单的到位时间（arrivalTime）晚于采购发生日（当前日期）。服务于前置规则 V03。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "arrivalTime": {
+              "type": "string",
+              "title": "到位时间",
+              "example": "2023-11-10",
+              "minLength": 1
+            },
+            "currentDate": {
+              "type": "string",
+              "title": "采购发生日（当前日期）",
+              "example": "2023-10-27",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "ontology_id",
+            "arrivalTime",
+            "currentDate"
+          ]
+        }
+      },
+      {
+        "name": "checkSupplierExistence",
+        "title": "校验采购供应商存在性",
+        "category": "本体函数",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "校验采购供应商存在性：校验采购单的供应商名称存在于供应商主数据。服务于前置规则 V05。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "supplierName": {
+              "type": "string",
+              "title": "供应商名称",
+              "example": "XX钢铁集团",
+              "minLength": 1
+            },
+            "supplierSet": {
+              "type": "array",
+              "title": "供应商主数据集",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "supplierName": {
+                    "type": "string",
+                    "title": "供应商名称",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "supplierName"
+                ]
+              }
+            }
+          },
+          "required": [
+            "ontology_id",
+            "supplierName",
+            "supplierSet"
+          ]
+        }
+      },
+      {
+        "name": "checkRelatedOrderExistence",
+        "title": "校验采购关联订单存在性",
+        "category": "本体函数",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "校验采购关联订单存在性：校验采购单的关联客户订单：未填写通过，填写时必须存在于客户订单集合（客户订单数据需跨本体提供）。服务于前置规则 I04。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "relatedOrderId": {
+              "type": "string",
+              "title": "关联客户订单编号",
+              "example": "SO-20231025-001"
+            },
+            "customerOrderSet": {
+              "type": "array",
+              "title": "客户订单集",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "customerOrderId": {
+                    "type": "string",
+                    "title": "客户订单编号",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "customerOrderId"
+                ]
+              }
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
+        "name": "inferPurchasePurpose",
+        "title": "推导采购目的",
+        "category": "本体函数",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "推导采购目的：根据关联客户订单推导采购目的（未关联→补充库存；否则→生产订单备料）。服务于后置规则 I03（推导型，不阻断）。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "relatedOrderId": {
+              "type": "string",
+              "title": "关联客户订单编号",
+              "example": "SO-20231025-001"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
       }
     ],
-    "created_at": "2026-10-30T15:30:10+00:00"
+    "created_at": "2026-11-04T07:27:13+00:00"
   },
   {
-    "name": "test321",
+    "name": "test002",
     "kind": "behavior",
-    "ontology_id": 1,
+    "ontology_id": "1",
     "ontology_name": "原材料采购和库存",
     "items": [
-      "CancelPurchaseRecord"
+      "CreatePurchaseRecord",
+      "CancelPurchaseRecord",
+      "ReceiveRawMaterial",
+      "QueryInventory",
+      "QueryPurchaseRecords",
+      "QueryRawMaterials",
+      "QuerySuppliers",
+      "QuerySupplierCapability"
     ],
-    "tool_count": 1,
-    "host_port": 8024,
+    "tool_count": 8,
+    "host_port": 8022,
     "transport": "streamable",
-    "container_name": "optonto-mcp-publish-test321-515bbc",
-    "token": "NzauMBpgaqCLDzurggoKXRB2y-kUApQh",
+    "container_name": "optonto-mcp-publish-test002-7100f5",
+    "token": "B2r3zfRupt05ZZ4fJoSx5OUG3FGW_PKV",
     "tools": [
+      {
+        "name": "CreatePurchaseRecord",
+        "title": "创建原材料采购单",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "创建原材料采购单：创建一笔新的原材料采购记录。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "rawMaterialId": {
+              "type": "string",
+              "title": "原材料编号",
+              "example": "RM-001",
+              "minLength": 1
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "高强度钢板",
+              "minLength": 1
+            },
+            "arrivalQuantity": {
+              "type": "number",
+              "title": "到位数量",
+              "example": 50
+            },
+            "supplierName": {
+              "type": "string",
+              "title": "供应商名称",
+              "example": "XX钢铁集团",
+              "minLength": 1
+            },
+            "arrivalTime": {
+              "type": "string",
+              "title": "到位时间",
+              "example": "2023-11-10",
+              "minLength": 1
+            },
+            "relatedOrderId": {
+              "type": "string",
+              "title": "关联订单编号",
+              "example": "SO-20231025-001"
+            },
+            "relatedOrderName": {
+              "type": "string",
+              "title": "关联订单名称",
+              "example": "客户A-项目X订单"
+            },
+            "unit": {
+              "type": "string",
+              "title": "单位",
+              "example": "吨",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "ontology_id",
+            "rawMaterialId",
+            "rawMaterialName",
+            "arrivalQuantity",
+            "supplierName",
+            "arrivalTime",
+            "unit"
+          ]
+        }
+      },
       {
         "name": "CancelPurchaseRecord",
         "title": "取消原材料采购单",
         "category": "本体行为",
         "ontologyScope": {
-          "ontology_id": 1,
-          "scenario_id": 1,
+          "ontology_id": "1",
+          "scenario_id": "1",
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
@@ -180,9 +440,10 @@
           "type": "object",
           "properties": {
             "ontology_id": {
-              "type": "integer",
+              "type": "string",
               "title": "本体ID",
-              "description": "本体 ID（必填）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致"
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
             },
             "purchaseRecordId": {
               "type": "string",
@@ -196,8 +457,226 @@
             "purchaseRecordId"
           ]
         }
+      },
+      {
+        "name": "ReceiveRawMaterial",
+        "title": "入库原材料",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "入库原材料：将原材料采购入库。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "purchaseRecordId": {
+              "type": "string",
+              "title": "采购单号",
+              "example": "PO-20231027-001",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "ontology_id",
+            "purchaseRecordId"
+          ]
+        }
+      },
+      {
+        "name": "QueryInventory",
+        "title": "查询原材料库存信息",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询原材料库存信息：根据原材料ID或名称查询其最新的库存快照。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "rawMaterialId": {
+              "type": "string",
+              "title": "原材料编号",
+              "example": "RM-001"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "高强度钢板"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
+        "name": "QueryPurchaseRecords",
+        "title": "查询原材料采购单信息",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询原材料采购单信息：根据采购单/原材料/关联客单来查询采购记录列表。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "purchaseRecordId": {
+              "type": "string",
+              "title": "采购单号",
+              "example": "PO-20231027-001"
+            },
+            "rawMaterialId": {
+              "type": "string",
+              "title": "原材料编号",
+              "example": "RM-001"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "高强度钢板"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
+        "name": "QueryRawMaterials",
+        "title": "查询原材料基本信息",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询原材料基本信息：根据原材料ID或名称查询原材料的基础信息。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "rawMaterialId": {
+              "type": "string",
+              "title": "原材料编号",
+              "example": "RM-001"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "高强度钢板"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
+        "name": "QuerySuppliers",
+        "title": "查询供应商信息",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询供应商信息：根据供应商名或原材料名查询供应商（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "supplierName": {
+              "type": "string",
+              "title": "供应商名称",
+              "example": "宝钢钢铁集团"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "钢板008"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
+        "name": "QuerySupplierCapability",
+        "title": "查询供应商供货能力",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询供应商供货能力：根据供应商名或原材料名，查询供应商供货能力（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "supplierName": {
+              "type": "string",
+              "title": "供应商名称",
+              "example": "宝钢钢铁集团"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "钢板008"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
       }
     ],
-    "created_at": "2026-10-30T15:30:22+00:00"
+    "created_at": "2026-11-04T07:27:56+00:00"
   }
 ]

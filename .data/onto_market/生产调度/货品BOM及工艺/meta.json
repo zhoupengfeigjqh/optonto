@@ -1,6 +1,6 @@
 {
-  "id": 4,
-  "scenario_id": 1,
+  "id": "4",
+  "scenario_id": "1",
   "name": "货品BOM及工艺",
   "description": "货品BOM及工艺路径管理，涵盖货品、BOM、工艺路径及资源需求",
   "creator": "system",

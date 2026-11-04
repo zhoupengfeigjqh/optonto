@@ -8,7 +8,7 @@ from errors import NotFoundError
 from services import ontology_registry
 
 
-async def get_ontology_names(ontology_id: int):
+async def get_ontology_names(ontology_id: str):
     """ontology_id → (scenario_name, ontology_name)，**身份唯一来源 = ontology.yaml.metadata**。
 
     所有按本体操作的路由共用（行为/函数/规则/技能/数据引擎/部署/文件…）。身份不可信的

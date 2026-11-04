@@ -4,8 +4,8 @@ import type { Behavior, Concept, ConceptRelation, Function, Process, Relation, R
 import type { DataEngine } from './data-engines';
 
 export interface Ontology {
-  id: number;
-  scenario_id: number;
+  id: string;
+  scenario_id: string;
   name: string;
   description: string;
   creator: string;
@@ -29,12 +29,12 @@ export interface OntologyData {
   functions?: Function[];
 }
 
-export const getOntologies = (scenarioId: number) =>
+export const getOntologies = (scenarioId: string) =>
   request<Ontology[]>(`/api/ontologies/by-scenario/${scenarioId}`);
 
 /** 跨场景全量本体列表（智能体对话的本体范围选择器用；条目含 scenario_name/ontology_name） */
 export interface OntologyScopeOption {
-  id: number;
+  id: string;
   scenario_name: string;
   ontology_name: string;
   description?: string;
@@ -42,19 +42,19 @@ export interface OntologyScopeOption {
 export const listAllOntologies = () =>
   request<OntologyScopeOption[]>('/api/ontologies');
 
-export const createOntology = (data: { scenario_id: number; name: string; description?: string; creator?: string }) =>
+export const createOntology = (data: { scenario_id: string; name: string; description?: string; creator?: string }) =>
   request<Ontology>('/api/ontologies', { method: 'POST', body: JSON.stringify(data) });
 
-export const deleteOntology = (id: number) =>
+export const deleteOntology = (id: string) =>
   request<{ message: string }>(`/api/ontologies/${id}`, { method: 'DELETE' });
 
-export const getOntology = (id: number) =>
+export const getOntology = (id: string) =>
   request<Ontology>(`/api/ontologies/${id}`);
 
-export const updateOntology = (id: number, data: { name?: string; description?: string; creator?: string }) =>
+export const updateOntology = (id: string, data: { name?: string; description?: string; creator?: string }) =>
   request<Ontology>(`/api/ontologies/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 
-export const getOntologyData = (id: number) =>
+export const getOntologyData = (id: string) =>
   request<OntologyData>(`/api/ontologies/${id}/data`);
 
 // ─── 本体 YAML 文件 ───────────────────────────────────────────────────────
@@ -65,8 +65,8 @@ export interface YamlFile {
   updated_at?: string;
 }
 
-export const getFileContent = (ontologyId: number) =>
+export const getFileContent = (ontologyId: string) =>
   request<YamlFile>(`/api/ontologies/${ontologyId}/files/content`);
 
-export const saveFileContent = (ontologyId: number, data: YamlFile) =>
+export const saveFileContent = (ontologyId: string, data: YamlFile) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/files/content`, { method: 'PUT', body: JSON.stringify(data) });

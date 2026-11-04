@@ -28,14 +28,14 @@ load_env()
 # ─── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_data_engines(ontology_id: int):
+async def list_data_engines(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.data_engines
 
 
 @router.post("", status_code=201)
-async def create_data_engine(ontology_id: int, item: DataEngineItem):
+async def create_data_engine(ontology_id: str, item: DataEngineItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     ensure_unique(data.data_engines, item.name, "数据引擎")
@@ -45,7 +45,7 @@ async def create_data_engine(ontology_id: int, item: DataEngineItem):
 
 
 @router.put("/{engine_name}")
-async def update_data_engine(ontology_id: int, engine_name: str, item: DataEngineItem):
+async def update_data_engine(ontology_id: str, engine_name: str, item: DataEngineItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     idx = find_index(data.data_engines, engine_name, "数据引擎")
@@ -56,7 +56,7 @@ async def update_data_engine(ontology_id: int, engine_name: str, item: DataEngin
 
 
 @router.delete("/{engine_name}")
-async def delete_data_engine(ontology_id: int, engine_name: str):
+async def delete_data_engine(ontology_id: str, engine_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     idx = find_index(data.data_engines, engine_name, "数据引擎")
@@ -75,7 +75,7 @@ class AnalyzeMappingRequest(BaseModel):
 
 
 @router.post("/{engine_name}/analyze-mapping")
-async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappingRequest = AnalyzeMappingRequest()):
+async def analyze_mapping(ontology_id: str, engine_name: str, body: AnalyzeMappingRequest = AnalyzeMappingRequest()):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -129,7 +129,7 @@ async def analyze_mapping(ontology_id: int, engine_name: str, body: AnalyzeMappi
 # ─── Smart Align ────────────────────────────────────────────────────────────────
 
 @router.post("/{engine_name}/smart-align")
-async def smart_align(ontology_id: int, engine_name: str):
+async def smart_align(ontology_id: str, engine_name: str):
     """Use LLM to align ontology behavior params/response field names with target API."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -179,7 +179,7 @@ async def smart_align(ontology_id: int, engine_name: str):
 
 
 @router.post("/{engine_name}/call")
-async def call_engine(ontology_id: int, engine_name: str, body: dict):
+async def call_engine(ontology_id: str, engine_name: str, body: dict):
     """调用目标 MCP 工具（经数据引擎映射）—— 降级转发 data-engine-executor。
 
     设计器连接测试与 Agent 行为调用走同一执行器（消灭双执行路径）；

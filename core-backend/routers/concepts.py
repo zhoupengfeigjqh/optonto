@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/concepts", tags=["概�
 
 
 @router.get("", response_model=list[ConceptView])
-async def list_concepts(ontology_id: int):
+async def list_concepts(ontology_id: str):
     """概念列表：自有属性 + 派生继承属性（spec 005，继承项只读）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -49,7 +49,7 @@ async def list_concepts(ontology_id: int):
 
 
 @router.put("/{concept_name}/attributes")
-async def update_attributes(ontology_id: int, concept_name: str, body: Any):
+async def update_attributes(ontology_id: str, concept_name: str, body: Any):
     """Update the attribute list of a concept.
 
     兼容两种请求体：
@@ -91,7 +91,7 @@ async def update_attributes(ontology_id: int, concept_name: str, body: Any):
 
 
 @router.put("/{concept_name}")
-async def update_concept(ontology_id: int, concept_name: str, item: ConceptItem):
+async def update_concept(ontology_id: str, concept_name: str, item: ConceptItem):
     """Update a concept."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -115,7 +115,7 @@ async def update_concept(ontology_id: int, concept_name: str, item: ConceptItem)
 
 
 @router.post("", status_code=201)
-async def create_concept(ontology_id: int, item: ConceptItem):
+async def create_concept(ontology_id: str, item: ConceptItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -132,7 +132,7 @@ async def create_concept(ontology_id: int, item: ConceptItem):
 
 
 @router.delete("/{concept_name}")
-async def delete_concept(ontology_id: int, concept_name: str):
+async def delete_concept(ontology_id: str, concept_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 

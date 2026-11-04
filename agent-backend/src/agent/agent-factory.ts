@@ -9,7 +9,7 @@ import { resolveDeepSeekModel } from '../services/llm.js';
 import { buildParentPrompt, buildGeneralPrompt, CHILD_SYSTEM_PROMPT, timeNote } from './prompts.js';
 import { toolResultToText } from '../utils/text-utils.js';
 import { subtaskFieldsSchema } from './subtask-contract.js';
-import { toFiniteNum } from './param-contract.js';
+import { normalizeId } from '../utils/ids.js';
 import { createLoadSkillTool, createSubmitPlanTool, createListPlannableFunctionsTool } from './parent-tools.js';
 import { wrapExecuteWithErrorBudget } from './error-budget.js';
 import { buildDisableMessage, securityTerminateResult } from './security-policy.js';
@@ -174,11 +174,12 @@ export class AgentFactory {
     const execute = async (toolCallId: string, params: any) => {
       const p = params as any;
       if (hasOntologyIdParam) {
-        const oid = Number(p?.ontology_id);
-        if (!allowedOntologyIds.has(oid)) {
+        const oid = normalizeId(p?.ontology_id);
+        if (oid === undefined || !allowedOntologyIds.has(oid)) {
           throw new Error(`ontology_id=${p?.ontology_id} 不在本次对话的本体范围内（允许：${allowedList}），请改用允许的本体 ID`);
         }
-        return originalExecute(toolCallId, params);
+        // 归一后再下发：MCP 侧声明的 id 参数是字符串，不能把 LLM 传来的 1 原样转发
+        return originalExecute(toolCallId, { ...p, ontology_id: oid });
       }
       const result = await originalExecute(toolCallId, params);
       // 全局清单工具：过滤出允许的场景/本体（形状可识别才过滤，解析失败放行）
@@ -188,7 +189,8 @@ export class AgentFactory {
         if (!Array.isArray(data)) return result;
         const isScenarioList = tool.name === 'listScenarios';
         const filtered = data.filter((item: any) => {
-          const id = Number(item?.id ?? item?.ontology_id);
+          const id = normalizeId(item?.id ?? item?.ontology_id);
+          if (id === undefined) return false;
           return isScenarioList ? allowedScenarioIds.has(id) : allowedOntologyIds.has(id);
         });
         return { ...(result as any), content: [{ type: 'text', text: JSON.stringify(filtered, null, 2) }] };
@@ -246,7 +248,7 @@ export class AgentFactory {
    * 复用 discoverTools 的原始 execute（内含 ontology_id/scenario_id 数字强转 + isError→抛错），调用一次即返回。
    * 不抛异常：错误一律折叠为 { isError: true }，由 orchestrator 记入结果，避免函数失败打断整波并行。
    */
-  async callFunctionTool(functionName: string, ontologyId: number, params: Record<string, any>): Promise<{ text: string; isError: boolean }> {
+  async callFunctionTool(functionName: string, ontologyId: string, params: Record<string, any>): Promise<{ text: string; isError: boolean }> {
     const all = await this.discoverTools();
     const found = all.find(tool => tool.name === functionName);
     if (!found) {
@@ -456,10 +458,18 @@ export class AgentFactory {
             ontologyScope: readOntologyScope(inputSchema),
             execute: async (toolCallId, params) => {
               if (!client) throw new Error('MCP 未连接');
-              const p = params as any;
-              // LLM 可能传字符串类型，强制转数字；非法值抛错置工具失败，子 Agent 可自纠
-              if (p.ontology_id !== undefined) p.ontology_id = toFiniteNum(p.ontology_id, 'ontology_id');
-              if (p.scenario_id !== undefined) p.scenario_id = toFiniteNum(p.scenario_id, 'scenario_id');
+              const p = { ...(params as any) };
+              // id 全链路是**数字字符串**：LLM 可能填 1，这里归一为 "1" 再下发。
+              // 不能做数字强转——强转既与 MCP 声明（type=string）冲突，也与发布声明里的字符串 id 对不上。
+              for (const key of ['ontology_id', 'scenario_id']) {
+                const raw = p[key];
+                if (raw === undefined || raw === null || raw === '') continue;
+                const normalized = normalizeId(raw);
+                if (normalized === undefined) {
+                  throw new Error(`${key} 非法：${String(raw)}（应为数字字符串，如 "1"）`);
+                }
+                p[key] = normalized;
+              }
               const result = await client.callTool(toolName, p);
               const text = toolResultToText(result.content);
               if (result.isError) {

@@ -76,8 +76,8 @@ class IdentityCase(unittest.TestCase):
         rows = metadata.list_all_ontologies()
         self.assertEqual(len(rows), 1)
         r = rows[0]
-        self.assertEqual((r["id"], r["ontology_id"]), (42, 42))   # id 键同样只认 metadata
-        self.assertEqual(r["scenario_id"], 7)
+        self.assertEqual((r["id"], r["ontology_id"]), ("42", "42"))   # id 只认 metadata 且恒为字符串
+        self.assertEqual(r["scenario_id"], "7")
         self.assertEqual((r["scenario_name"], r["ontology_name"]), ("生产调度", "甲"))
         self.assertEqual(r["name"], "甲")                  # 本体名同样只认 metadata
         self.assertEqual(r["deployed_version"], "v1.0")    # 版本同通道
@@ -114,8 +114,8 @@ class IdentityCase(unittest.TestCase):
         md_now = self.read_md("新场景", "新名")
         self.assertEqual(
             {k: md_now.get(k) for k in ("scenario_name", "scenario_id", "ontology_name", "ontology_id")},
-            {"scenario_name": "新场景", "scenario_id": 3,
-             "ontology_name": "新名", "ontology_id": 9})
+            {"scenario_name": "新场景", "scenario_id": "3",
+             "ontology_name": "新名", "ontology_id": "9"})
         rows = metadata.list_all_ontologies()                     # 回刷后立即可见
         self.assertEqual([r["ontology_name"] for r in rows], ["新名"])
 
@@ -154,8 +154,8 @@ class IdentityCase(unittest.TestCase):
     def test_按名取身份(self) -> None:
         self.write_ontology("s", "a", oid=7, sid=3)
         self.assertEqual(metadata.ontology_identity_by_name("s", "a"),
-                         {"scenario_name": "s", "scenario_id": 3,
-                          "ontology_name": "a", "ontology_id": 7})
+                         {"scenario_name": "s", "scenario_id": "3",
+                          "ontology_name": "a", "ontology_id": "7"})
         self.assertIsNone(metadata.ontology_identity_by_name("s", "不存在"))   # 无 yaml
         self.write_ontology("s", "bad", oid=8, md={"ontology_id": None})
         self.assertIsNone(metadata.ontology_identity_by_name("s", "bad"))      # 四元组不全
@@ -170,8 +170,8 @@ class IdentityCase(unittest.TestCase):
     def test_注册表_id_取值收口(self) -> None:
         self.write_scenario("s", sid=5)
         self.write_ontology("s", "a", oid=9)
-        self.assertEqual(metadata.registry_ids("s", "a"), (5, 9))     # 名字取目录/入参，id 取注册表
-        self.assertEqual(metadata.registry_ids("s", "不存在"), (5, None))
+        self.assertEqual(metadata.registry_ids("s", "a"), ("5", "9"))  # 名字取目录/入参，id 取注册表
+        self.assertEqual(metadata.registry_ids("s", "不存在"), ("5", None))
 
     # ─── metadata 段缓存（切页签性能：只缓存 metadata 段，文件改动必须失效）────────────
     def test_metadata_段缓存按文件指纹失效(self) -> None:

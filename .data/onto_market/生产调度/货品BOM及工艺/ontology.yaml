@@ -1,8 +1,8 @@
 metadata:
   scenario_name: 生产调度
-  scenario_id: 1
+  scenario_id: '1'
   ontology_name: 货品BOM及工艺
-  ontology_id: 4
+  ontology_id: '4'
 concepts:
 - name: Product
   description: 企业生产输出的物料，包含成品和半成品

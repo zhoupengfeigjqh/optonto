@@ -37,7 +37,7 @@ import MCPPublish from './MCPPublish';
 import * as api from '@/api/client';
 
 const publishedSvc = {
-  name: 'order-query', kind: 'behavior', ontology_id: 2, ontology_name: '订单排程',
+  name: 'order-query', kind: 'behavior', ontology_id: '2', ontology_name: '订单排程',
   items: ['QueryOrder'], tool_count: 1, host_port: 8030, transport: 'streamable',
   token: 'tk', container_name: 'c', created_at: '', status: 'running', running: true,
 };

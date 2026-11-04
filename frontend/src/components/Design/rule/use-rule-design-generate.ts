@@ -19,7 +19,7 @@ export interface RuleDesignGenerateState {
   generate: (payload: RuleDesignGeneratePayload) => Promise<RuleDesignGenerateResult>;
 }
 
-export function useRuleDesignGenerate(ontologyId: number): RuleDesignGenerateState {
+export function useRuleDesignGenerate(ontologyId: string): RuleDesignGenerateState {
   const [loading, setLoading] = useState(false);
 
   const generate = useCallback(async (

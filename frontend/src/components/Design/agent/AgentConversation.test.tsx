@@ -195,7 +195,7 @@ describe('AgentConversation — SSE 事件路由（事件触发）', () => {
     // 后端确认规划后连发 plan_received（结构化，含用户编辑）+ token（文本摘要）；
     // 修复前前端对 plan_received 零处理、零引用（写而不读的死契约）
     vi.mocked(agentApi.agentChatStream).mockResolvedValue(okResponse([
-      { type: 'plan_received', plan: { subtasks: [{ seq: 1, behavior: 'QueryInventory', description: '盘点当前库存数量', params: {}, scenario_name: '生产调度', ontology_name: '原材料采购和库存', ontology_id: 1 }] } },
+      { type: 'plan_received', plan: { subtasks: [{ seq: 1, behavior: 'QueryInventory', description: '盘点当前库存数量', params: {}, scenario_name: '生产调度', ontology_name: '原材料采购和库存', ontology_id: '1' }] } },
       { type: 'done' },
     ]) as any);
 
@@ -576,7 +576,7 @@ describe('AgentConversation — 规划确认回执失败（C3）', () => {
    */
   const openPlanConfirm = () => ({ ok: true, body: sseStream([
     { type: 'plan_confirm', confirmId: 'c1', plan: { subtasks: [
-      { seq: 1, behavior: 'QueryInventory', description: '查库存', params: {}, scenario_name: '生产调度', ontology_name: '原材料采购和库存', ontology_id: 1 },
+      { seq: 1, behavior: 'QueryInventory', description: '查库存', params: {}, scenario_name: '生产调度', ontology_name: '原材料采购和库存', ontology_id: '1' },
     ] } },
     // 不带 done：真实后端在用户响应前不会发 done（done 语义是"本轮结束、关闭弹窗"）
   ]) } as any);

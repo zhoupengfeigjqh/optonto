@@ -34,7 +34,7 @@ export interface PlanRepairCtx {
   submittedPlan: PlanSubmission;
   emit: EventChannel;
   catalog: FunctionCatalogView;
-  allowedOntologyIds: ReadonlySet<number>;
+  allowedOntologyIds: ReadonlySet<string>;
 }
 
 /** 规划闸门依赖：本体元信息 + 带超时的父Agent prompt（orchestrator 注入其 parentPrompt） */

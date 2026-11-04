@@ -7,7 +7,7 @@ import { getProcesses, createProcess, updateProcess, deleteProcess, getBehaviors
 import ResizableTable from '@/components/ResizableTable';
 import { useTablePagination } from '@/lib/table-pagination';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 const CONNECTION_OPTIONS = [
   { label: '串行', value: '串行' },

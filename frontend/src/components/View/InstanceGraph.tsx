@@ -30,7 +30,7 @@ import {
 echarts.use([TooltipComponent, TitleComponent, GraphChart, CanvasRenderer]);
 
 interface Props {
-  ontologyId: number;
+  ontologyId: string;
 }
 
 // ─── 组件 ────────────────────────────────────────────────────────────────

@@ -42,30 +42,76 @@ def _iter_dirs(path: Path) -> list[Path]:
 
 
 def _read_meta(path: Path) -> Optional[dict]:
-    """读取 meta.json；缺失、为空或损坏一律返回 None（调用方跳过该条目）。"""
+    """读取 meta.json；缺失、为空或损坏一律返回 None（调用方跳过该条目）。
+
+    读出即**规范化 id 字段**（``id`` / ``scenario_id`` → 数字字符串 "1"）：
+    本函数是所有 meta.json 读取的唯一出口，在这里收口可保证下游拿到的 id 只有一种类型，
+    也兼容历史上写成整数的存量文件（无需先迁移也能正常工作）。
+    """
     data = fs_store.read_json(path)
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    for key in ("id", "scenario_id"):
+        if key in data:
+            data[key] = normalize_id(data[key])
+    return data
+
+
+# ─── ID 口径 ───────────────────────────────────────────────────────────────────
+
+# id 唯一口径：**数字字符串**（"1"，不是 1）。全部读写/比较/传参一律字符串，
+# 只有"取下一个号"这一处（_next_*）临时转整数做 +1，随即转回字符串。
+_ID_NUMERIC_KEYS = ("id", "scenario_id")
+_IDENTITY_ID_KEYS = ("scenario_id", "ontology_id")
+
+
+def normalize_id(value) -> Optional[str]:
+    """把任意来源的 id 规范化为数字字符串；空值/非法值 → None。
+
+    接受：``"1"`` / ``1`` / ``1.0`` / 前后带空白的字符串；拒绝：None / 空串 / 布尔 / 容器。
+    刻意**不校验是否为纯数字**：id 形式由注册表分配，读取侧只做类型归一（避免读取比写入更严，
+    否则一个手工改坏的文件会让整条链路 404 而不是给出可诊断的告警）。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    return None
+
+
+def id_as_int(value) -> int:
+    """id → 整数（**仅供「取下一个号」这类算术**；其余场景一律用字符串）。非法 → 0。"""
+    normalized = normalize_id(value)
+    try:
+        return int(normalized) if normalized is not None else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 # ─── ID generation (scan-based) ────────────────────────────────────────────────
 
-def _next_scenario_id() -> int:
+def _next_scenario_id() -> str:
     max_id = 0
     for d in _iter_dirs(ONTO_MARKET_DIR):
         meta = _read_meta(d / "meta.json")
         if meta:
-            max_id = max(max_id, meta.get("id", 0))
-    return max_id + 1
+            max_id = max(max_id, id_as_int(meta.get("id")))
+    return str(max_id + 1)
 
 
-def _next_ontology_id() -> int:
+def _next_ontology_id() -> str:
     max_id = 0
     for scenario_dir in _iter_dirs(ONTO_MARKET_DIR):
         for ontology_dir in _iter_dirs(scenario_dir):
             meta = _read_meta(ontology_dir / "meta.json")
             if meta:
-                max_id = max(max_id, meta.get("id", 0))
-    return max_id + 1
+                max_id = max(max_id, id_as_int(meta.get("id")))
+    return str(max_id + 1)
 
 
 # ─── Scenario CRUD ─────────────────────────────────────────────────────────────
@@ -81,7 +127,10 @@ def list_scenarios() -> list[dict]:
     return scenarios
 
 
-def get_scenario_by_id(scenario_id: int) -> Optional[dict]:
+def get_scenario_by_id(scenario_id: str) -> Optional[dict]:
+    scenario_id = normalize_id(scenario_id)           # 入参归一，避免 "1" / 1 混型
+    if scenario_id is None:
+        return None
     for s in list_scenarios():
         if s.get("id") == scenario_id:
             return s
@@ -108,7 +157,7 @@ def create_scenario(name: str, description: str = "") -> dict:
     return scenario
 
 
-def update_scenario(scenario_id: int, name: Optional[str] = None, description: Optional[str] = None) -> Optional[dict]:
+def update_scenario(scenario_id: str, name: Optional[str] = None, description: Optional[str] = None) -> Optional[dict]:
     scenario = get_scenario_by_id(scenario_id)
     if not scenario:
         return None
@@ -127,7 +176,7 @@ def update_scenario(scenario_id: int, name: Optional[str] = None, description: O
     return scenario
 
 
-def delete_scenario(scenario_id: int) -> bool:
+def delete_scenario(scenario_id: str) -> bool:
     scenario = get_scenario_by_id(scenario_id)
     if not scenario:
         return False
@@ -231,6 +280,8 @@ def read_ontology_identity(ontology_dir: Path, *, scenario_dir_name: str,
     """
     md = _read_ontology_yaml_metadata(ontology_dir)
     ident = {k: md.get(k) for k in _IDENTITY_KEYS}
+    for key in _IDENTITY_ID_KEYS:                     # id 一律数字字符串（兼容存量 int）
+        ident[key] = normalize_id(ident[key])
     if any(v is None or v == "" for v in ident.values()):
         return None
     if ident["scenario_name"] != scenario_dir_name or ident["ontology_name"] != ontology_dir_name:
@@ -270,25 +321,29 @@ def list_all_ontologies() -> list[dict]:
     return results
 
 
-def get_ontology_by_id(ontology_id: int) -> Optional[tuple[dict, str, str]]:
+def get_ontology_by_id(ontology_id: str) -> Optional[tuple[dict, str, str]]:
     """**物理定位**本体（供改名/删除等目录操作）：返回 (meta.json, 场景目录名, 本体目录名)。
 
     返回的名字是**目录名**（物理路径锚点），用于拼路径/移动目录，不是身份读取出口。
     匹配优先 yaml.metadata.ontology_id（身份唯一来源），再回退注册表 id —— 回退是刻意的：
     身份不可信（如 metadata 名字与目录不一致）时仍要能通过接口改名/删除来修复，否则只能手工改文件。
     """
+    ontology_id = normalize_id(ontology_id)
+    if ontology_id is None:
+        return None
     for scenario_dir in _iter_dirs(ONTO_MARKET_DIR):
         for ontology_dir in _iter_dirs(scenario_dir):
             meta = _read_meta(ontology_dir / "meta.json")
             if not meta:
                 continue
             md = _read_ontology_yaml_metadata(ontology_dir)
-            if md.get("ontology_id") == ontology_id or meta.get("id") == ontology_id:
+            if (normalize_id(md.get("ontology_id")) == ontology_id
+                    or meta.get("id") == ontology_id):
                 return meta, scenario_dir.name, ontology_dir.name
     return None
 
 
-def registry_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[int], Optional[int]]:
+def registry_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[str], Optional[str]]:
     """(scenario_id, ontology_id)：**id 的分配权在注册表**（meta.json，扫描现有 id 取 max+1）。
 
     yaml.metadata 里的 id 是它的读取镜像；写入侧（``save_ontology_data`` /
@@ -318,7 +373,7 @@ def create_ontology(scenario_name: str, name: str, description: str = "", creato
     return ontology
 
 
-def update_ontology(ontology_id: int, name: Optional[str] = None, description: Optional[str] = None, creator: Optional[str] = None) -> Optional[dict]:
+def update_ontology(ontology_id: str, name: Optional[str] = None, description: Optional[str] = None, creator: Optional[str] = None) -> Optional[dict]:
     result = get_ontology_by_id(ontology_id)
     if not result:
         return None
@@ -342,7 +397,7 @@ def update_ontology(ontology_id: int, name: Optional[str] = None, description: O
     return ontology
 
 
-def delete_ontology(ontology_id: int) -> bool:
+def delete_ontology(ontology_id: str) -> bool:
     result = get_ontology_by_id(ontology_id)
     if not result:
         return False
@@ -364,13 +419,16 @@ def ontology_identity_by_name(scenario_name: str, ontology_name: str) -> Optiona
                                   ontology_dir_name=ontology_name)
 
 
-def get_ontology_name_by_id(ontology_id: int) -> Optional[tuple[str, str]]:
+def get_ontology_name_by_id(ontology_id: str) -> Optional[tuple[str, str]]:
     """ontology_id → (scenario_name, ontology_name)：**身份唯一来源 = ontology.yaml.metadata**。
 
     供 `dependencies.get_ontology_names`（所有按本体操作的路由共用）使用——与清单同一口径：
     身份不可信（metadata 缺失/不全/与目录名不一致）的本体在此等同于"不存在"（调用方 404），
     日志已有对应告警（见 list_all_ontologies）。
     """
+    ontology_id = normalize_id(ontology_id)           # 入参也归一：int/"1"/" 1 " 等价
+    if ontology_id is None:
+        return None
     for o in list_all_ontologies():
         if o.get("id") == ontology_id:
             return o["scenario_name"], o["ontology_name"]

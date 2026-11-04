@@ -5,9 +5,9 @@ metadata:
   deployed_version: v1.0
   shard_hash: d8d9a8bb2ad1b019
   scenario_name: 生产调度
-  scenario_id: 1
+  scenario_id: '1'
   ontology_name: 原材料采购和库存
-  ontology_id: 1
+  ontology_id: '1'
 concepts:
 - name: RawMaterial
   description: 生产过程中消耗的外部输入物料，是采购和库存管理的核心对象。

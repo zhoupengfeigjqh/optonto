@@ -95,16 +95,34 @@ SCOPE_KEY = "x-ontology-scope"
 SYSTEM_PARAMS = frozenset({ONTOLOGY_ID_KEY})
 
 
+def normalize_id(value):
+    """id 唯一口径：**数字字符串**（``"1"``）。任意来源归一化；空/非法 → None。
+
+    全平台（core / 运行面 / agent / 前端）读写与传参一律字符串：本函数是 MCP 侧的
+    归一口（core 侧同规则实现在 ``repositories.metadata.normalize_id``，两处规则必须一致）。
+    刻意保留"数字字符串"而非 UUID：id 由注册表扫描分配，形式是递增整数文本。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    return None
+
+
+def same_id(a, b) -> bool:
+    """id 等价判定（两侧都归一后比较）：``1`` / ``"1"`` / ``1.0`` 等价。"""
+    left, right = normalize_id(a), normalize_id(b)
+    return left is not None and left == right
+
+
 def _same_owner_id(a, b) -> bool:
-    """归属 id 等价判定：兼容 ``1`` / ``"1"`` / ``1.0`` 三种表示。"""
-    if a == b:
-        return True
-    if a is None or b is None or a == "" or b == "":
-        return False
-    try:
-        return int(a) == int(b)
-    except (TypeError, ValueError):
-        return False
+    """归属 id 等价判定（历史名，语义 = :func:`same_id`）。"""
+    return same_id(a, b)
 
 
 def require_ontology_id(value, label: str):
@@ -115,9 +133,10 @@ def require_ontology_id(value, label: str):
     本体回退**：转发方必须显式声明在操作哪个本体——跨本体的行为/函数同名时（工具名不带本体
     前缀），回退会静默路由到错误本体。
     """
-    if value is None or value == "":
+    normalized = normalize_id(value)                 # 入口即归一：全链路只流动字符串
+    if normalized is None:
         raise ValueError(f"{label} 缺少 ontology_id")
-    return value
+    return normalized
 
 
 def require_scope_match(scope, requested_owner, label: str):
@@ -347,10 +366,10 @@ def params_to_input_schema(params: dict, concepts=None, *,
     required: list[str] = []
     if require_ontology_id:
         props[ONTOLOGY_ID_KEY] = {
-            "type": "integer",
+            "type": "string",
             "title": "本体ID",
-            "description": "本体 ID（必填）：本工具所属本体；请填写当前操作的本体 ID，"
-                           "执行底座会校验其与工具发布声明是否一致",
+            "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；"
+                           "请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
         }
         required.append(ONTOLOGY_ID_KEY)
     for k, v in (params or {}).items():
@@ -408,7 +427,10 @@ def build_query_schema(extra_properties: dict | None = None, *,
     props: dict = {}
     required: list[str] = []
     if requires_ontology:
-        props["ontology_id"] = {"type": "integer", "title": "本体ID", "description": "本体 ID"}
+        props["ontology_id"] = {
+            "type": "string", "title": "本体ID",
+            "description": "本体 ID（数字字符串，如 \"1\"）",
+        }
         required.append("ontology_id")
     props.update(extra_properties or {})
     return {"type": "object", "properties": props, "required": required}

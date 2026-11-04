@@ -28,9 +28,9 @@ export interface Thread {
   created_at: string;
   updated_at: string;
   scenario_name: string;
-  scenario_id?: number;
+  scenario_id?: string;
   ontology_name: string;
-  ontology_id?: number;
+  ontology_id?: string;
   /** 本次对话的本体范围（用户显式选择）。空数组 = 通用问答模式（不挂业务工具） */
   ontology_scope: OntologySelection[];
 }
@@ -50,9 +50,9 @@ export interface ThreadSummary {
  */
 export interface SkillContext {
   scenario_name: string;
-  scenario_id: number;
+  scenario_id: string;
   ontology_name: string;
-  ontology_id: number;
+  ontology_id: string;
 }
 
 /**
@@ -99,9 +99,9 @@ export interface SubTask {
   description: string;
   guidance?: string;
   scenario_name: string;
-  scenario_id?: number;
+  scenario_id?: string;
   ontology_name: string;
-  ontology_id: number;
+  ontology_id: string;
   depends_on?: number[];
   /** 父 Agent 指定的本子任务可能用到的函数（英文函数名，含公共函数）。与规则声明的 related_functions 取并集后挂载给子 Agent。 */
   related_functions?: string[];

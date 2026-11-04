@@ -15,14 +15,14 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/rules", tags=["规则"]
 
 
 @router.get("")
-async def list_rules(ontology_id: int):
+async def list_rules(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.rules
 
 
 @router.post("", status_code=201)
-async def create_rule(ontology_id: int, item: RuleItem):
+async def create_rule(ontology_id: str, item: RuleItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -38,7 +38,7 @@ async def create_rule(ontology_id: int, item: RuleItem):
 
 
 @router.put("/{rule_name}")
-async def update_rule(ontology_id: int, rule_name: str, item: RuleItem):
+async def update_rule(ontology_id: str, rule_name: str, item: RuleItem):
     """Update a rule."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -54,7 +54,7 @@ async def update_rule(ontology_id: int, rule_name: str, item: RuleItem):
 
 
 @router.post("/design/generate", response_model=RuleDesignGenerateResponse)
-async def generate_design(ontology_id: int, body: RuleDesignGenerateRequest):
+async def generate_design(ontology_id: str, body: RuleDesignGenerateRequest):
     """智能生成规则设计草稿（spec 008）：上下文 = 规则描述 + 该规则的**全部**关联函数。
 
     只读端点：不落盘；返回的 `rule_design` 已按保存路径同口径校验，由人工在弹窗确认后随规则保存。
@@ -79,7 +79,7 @@ async def generate_design(ontology_id: int, body: RuleDesignGenerateRequest):
 
 
 @router.delete("/{rule_name}")
-async def delete_rule(ontology_id: int, rule_name: str):
+async def delete_rule(ontology_id: str, rule_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 

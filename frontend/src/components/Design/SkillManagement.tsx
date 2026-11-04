@@ -7,7 +7,7 @@ import { getSkills, getSkillContent, saveSkillContent, deleteSkill, generateSkil
 import MarkdownEditor from '@/components/MarkdownEditor';
 import { renderMarkdown } from '@/lib/markdown';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 export default function SkillManagement({ ontologyId, activeTab }: Props) {
   const [skills, setSkills] = useState<SkillSummary[]>([]);
@@ -40,12 +40,20 @@ export default function SkillManagement({ ontologyId, activeTab }: Props) {
       title: <span style={{color:'#fff'}}>技能文件说明</span>,
       content: (
         <div className="text-text-secondary text-sm space-y-2">
-          <p>技能文件头部结构已固定，请勿修改：</p>
+          <p>技能文件头部结构已固定：</p>
           <pre className="bg-dark-bg border border-dark-border rounded p-2 text-xs font-mono text-yellow-400">{`---
 name: <英文名>
 description: <技能描述>
+metadata:            # 保存时由系统按当前本体自动写入
+  ontology_id: <本体id>
+  ontology_name: <本体名称>
+  scenario_id: <场景id>
+  scenario_name: <场景名称>
 ---`}</pre>
-          <p>修改内容时请保持 <code className="text-yellow-400">name</code> 为英文且头部结构不变。</p>
+          <p>
+            修改内容时请保持 <code className="text-yellow-400">name</code> 为英文；
+            <code className="text-yellow-400">metadata</code> 段由系统维护，手改会在保存时被覆盖。
+          </p>
         </div>
       ),
       okText: '我知道了',

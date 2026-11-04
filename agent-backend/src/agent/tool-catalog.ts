@@ -66,8 +66,8 @@ export const SCOPE_KEY = 'x-ontology-scope';
 
 /** 本体归属（发布时固化的工具元数据）——平台内部判定用，LLM 不可见。工具名即裸名，故不含 name。 */
 export interface OntologyScope {
-  ontology_id: number | string;
-  scenario_id?: number | string;
+  ontology_id: string;
+  scenario_id?: string | string;
   scenario_name?: string;
   ontology_name?: string;
 }

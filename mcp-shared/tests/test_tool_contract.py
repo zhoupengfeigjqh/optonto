@@ -37,7 +37,7 @@ def test_空串ontology_id报错():
 
 
 def test_传入ontology_id原样返回():
-    assert require_ontology_id(1, "行为 QueryA") == 1
+    assert require_ontology_id(1, "行为 QueryA") == "1"   # 入口即归一为数字字符串
     assert require_ontology_id("2", "行为 QueryA") == "2"  # 类型规整不在本函数职责内
 
 
@@ -159,7 +159,7 @@ def test_本体上下文缺省键自动省略():
 def test_必填形态_ontology_id进required且带填写说明():
     schema, conflicts = params_to_input_schema(
         {"qty": {"type": "integer", "required": True}}, require_ontology_id=True)
-    assert schema["properties"]["ontology_id"]["type"] == "integer"
+    assert schema["properties"]["ontology_id"]["type"] == "string"
     assert "const" not in schema["properties"]["ontology_id"]
     assert "ontology_id" in schema["required"]
     assert schema["required"] == ["ontology_id", "qty"]  # 本体 id 置首，业务必填其后

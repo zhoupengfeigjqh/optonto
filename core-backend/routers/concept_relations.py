@@ -42,7 +42,7 @@ def _stored_name_index(data, name: str) -> int:
 
 
 @router.get("", response_model=list[ConceptRelationItem])
-async def list_concept_relations(ontology_id: int):
+async def list_concept_relations(ontology_id: str):
     """概念关系清单：派生的 SubClassOf 在前，用户登记的等价/互斥在后。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -50,7 +50,7 @@ async def list_concept_relations(ontology_id: int):
 
 
 @router.post("", status_code=201)
-async def create_concept_relation(ontology_id: int, item: ConceptRelationItem):
+async def create_concept_relation(ontology_id: str, item: ConceptRelationItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     # 写操作先自愈：清掉与概念设计失配的 SubClassOf 锚点，避免占用名称/干扰校验
@@ -72,7 +72,7 @@ async def create_concept_relation(ontology_id: int, item: ConceptRelationItem):
 
 
 @router.put("/{relation_name}")
-async def update_concept_relation(ontology_id: int, relation_name: str, item: ConceptRelationItem):
+async def update_concept_relation(ontology_id: str, relation_name: str, item: ConceptRelationItem):
     """更新概念关系。
 
     - SubClassOf 行：只接受 ``source_attr`` / ``target_attr``（其余字段一律忽略并保持派生值）；
@@ -119,7 +119,7 @@ async def update_concept_relation(ontology_id: int, relation_name: str, item: Co
 
 
 @router.delete("/{relation_name}")
-async def delete_concept_relation(ontology_id: int, relation_name: str):
+async def delete_concept_relation(ontology_id: str, relation_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     cr.prune_stale_sub_class_links(data)

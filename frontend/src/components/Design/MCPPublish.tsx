@@ -47,7 +47,7 @@ const TOOL_FETCHERS: Partial<Record<CardKey, () => Promise<ToolInfo[]>>> = {
 /** 两块视图（右上角切换）：fixed=固定发布（平台内置）/ published=自建发布（动态容器） */
 type PublishView = 'fixed' | 'published';
 
-export default function MCPPublish({ ontologyId }: { ontologyId: number }) {
+export default function MCPPublish({ ontologyId }: { ontologyId: string }) {
   const [cards, setCards] = useState<Record<CardKey, CardState>>({
     ontologyQuery: { ...INIT }, commonFunction: { ...INIT }, functionExecutor: { ...INIT },
     dataEngine: { ...INIT }, business: { ...INIT },

@@ -14,7 +14,7 @@ import { attrLabel, buildOntologyGraph, CATEGORY_LABELS, type GraphNode } from '
 echarts.use([TooltipComponent, TitleComponent, GraphChart, CanvasRenderer]);
 
 interface Props {
-  ontologyId: number;
+  ontologyId: string;
 }
 
 export default memo(function OntologyGraph({ ontologyId }: Props) {

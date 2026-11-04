@@ -6,7 +6,7 @@ import { EyeOutlined, DeleteOutlined } from '@ant-design/icons';
 import { listRequirements, deleteRequirementFile, RequirementItem } from '@/api/client';
 import RequirementViewer from './RequirementViewer';
 
-interface Props { ontologyId: number; activeTab?: string; scenarioName?: string; ontologyName?: string; }
+interface Props { ontologyId: string; activeTab?: string; scenarioName?: string; ontologyName?: string; }
 
 export default function RequirementSummary({ ontologyId: _oid, activeTab, scenarioName, ontologyName }: Props) {
   const [items, setItems] = useState<RequirementItem[]>([]);

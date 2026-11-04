@@ -203,7 +203,7 @@ def _remove_quietly(container_name: str) -> None:
         pass
 
 
-async def create_publish(*, ontology_id: int, name, kind, items, host_port, transport) -> dict:
+async def create_publish(*, ontology_id: str, name, kind, items, host_port, transport) -> dict:
     """校验 → 编译工具快照 → 起容器 → 就绪探测 → 落注册表。
 
     **先起容器、后落注册表**：起不来时不留脏记录（用户改配置重试即可）；落盘后若容器异常，

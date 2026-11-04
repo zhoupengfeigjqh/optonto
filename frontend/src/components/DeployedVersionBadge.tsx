@@ -6,7 +6,7 @@ import { load as parseYaml } from 'js-yaml';
 import { getDeployedOntology } from '@/api/client';
 
 interface Props {
-  ontologyId: number;
+  ontologyId: string;
   deployedVersion: string;
   /** 小尺寸（用于卡片） */
   compact?: boolean;

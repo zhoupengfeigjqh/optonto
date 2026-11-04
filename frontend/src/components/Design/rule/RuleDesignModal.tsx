@@ -31,7 +31,7 @@ import {
 interface Props {
   open: boolean;
   /** 本体 id（智能生成端点需要） */
-  ontologyId: number;
+  ontologyId: string;
   ruleName: string;
   ruleTitle?: string;
   /** 规则描述：智能生成的主要依据 */

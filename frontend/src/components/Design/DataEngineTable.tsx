@@ -32,7 +32,7 @@ import ConnectTestModal from './data-engine/ConnectTestModal';
 import BehaviorEditModal from './data-engine/BehaviorEditModal';
 import { AnalyzeResultModal, SmartActionConfirmModal } from './data-engine/SmartActionModals';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 // ─── component ───────────────────────────────────────────────────────────────
 

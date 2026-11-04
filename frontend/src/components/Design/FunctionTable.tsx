@@ -10,7 +10,7 @@ import JsonEditor from '@/components/JsonEditor';
 import { useTablePagination } from '@/lib/table-pagination';
 import { FUNCTION_TYPE_OPTIONS, functionTypeLabel } from './function-type-labels';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 export default function FunctionTable({ ontologyId, activeTab }: Props) {
   const [funcs, setFuncs] = useState<Function[]>([]);

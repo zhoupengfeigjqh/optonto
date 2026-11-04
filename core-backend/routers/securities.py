@@ -11,14 +11,14 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/securities", tags=["安
 
 
 @router.get("")
-async def list_securities(ontology_id: int):
+async def list_securities(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.securities
 
 
 @router.post("", status_code=201)
-async def create_security(ontology_id: int, item: SecurityItem):
+async def create_security(ontology_id: str, item: SecurityItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -30,7 +30,7 @@ async def create_security(ontology_id: int, item: SecurityItem):
 
 
 @router.put("/{action_name}")
-async def update_security(ontology_id: int, action_name: str, item: SecurityItem):
+async def update_security(ontology_id: str, action_name: str, item: SecurityItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -43,7 +43,7 @@ async def update_security(ontology_id: int, action_name: str, item: SecurityItem
 
 
 @router.delete("/{action_name}")
-async def delete_security(ontology_id: int, action_name: str):
+async def delete_security(ontology_id: str, action_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 

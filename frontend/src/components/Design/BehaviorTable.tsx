@@ -8,7 +8,7 @@ import ResizableTable from '@/components/ResizableTable';
 import JsonEditor from '@/components/JsonEditor';
 import { useTablePagination } from '@/lib/table-pagination';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 export default function BehaviorTable({ ontologyId, activeTab }: Props) {
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);

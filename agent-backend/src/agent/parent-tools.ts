@@ -23,6 +23,7 @@ import { Type } from '@sinclair/typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { subtaskFieldsSchema } from './subtask-contract.js';
 import { toFiniteNum } from './param-contract.js';
+import { normalizeId, sameId } from '../utils/ids.js';
 import { CATEGORY, type MountableToolInfo } from './tool-catalog.js';
 import type { SkillSelection, SubTaskPlan } from '../types.js';
 
@@ -83,12 +84,13 @@ export function createSubmitPlanTool(onPlanSubmitted?: (plan: SubTaskPlan) => vo
     }),
     execute: async (toolCallId, params) => {
       const plan = params as { subtasks: Array<Record<string, any>> };
-      // 规整数值字段：LLM 可能输出字符串数字，统一转 number 供拓扑排序/seq 匹配使用。
-      // 非法值直接抛错 → submit_plan 工具报错，父 Agent 看到后可自纠，避免 NaN 静默跳过。
+      // 规整字段：seq / depends_on 是**数值**（拓扑排序用）；scenario_id / ontology_id 是**数字字符串**。
+      // 非法值直接抛错 → submit_plan 工具报错，父 Agent 看到后可自纠，避免 NaN / undefined 静默跳过。
       for (const st of plan.subtasks) {
         st.seq = toFiniteNum(st.seq, '子任务 seq');
-        st.scenario_id = st.scenario_id != null && st.scenario_id !== '' ? toFiniteNum(st.scenario_id, `子任务 ${st.seq} 的 scenario_id`) : undefined;
-        st.ontology_id = toFiniteNum(st.ontology_id, `子任务 ${st.seq} 的 ontology_id`);
+        st.scenario_id = normalizeId(st.scenario_id);
+        st.ontology_id = normalizeId(st.ontology_id);
+        if (st.ontology_id === undefined) throw new Error(`子任务 ${st.seq} 缺少 ontology_id`);
         if (Array.isArray(st.depends_on)) st.depends_on = st.depends_on.map(d => toFiniteNum(d, `子任务 ${st.seq} 的 depends_on`));
         // 行为/函数互斥：有且只有一个非空。缺键/空白统一规整为空串并回写——
         // 下游校验器与执行分支用 `if (st.function)` 裸真值判别，" " 这类空白串不规约会走错分支。
@@ -135,34 +137,37 @@ export function createSubmitPlanTool(onPlanSubmitted?: (plan: SubTaskPlan) => vo
  */
 export function createListPlannableFunctionsTool(
   getCatalog: GetCatalogFn,
-  allowedOntologyIds: ReadonlySet<number>,
+  allowedOntologyIds: ReadonlySet<string>,
 ): AgentTool {
   return {
     name: 'listPlannableFunctions',
     label: '列出可规划函数/工具',
     description: '列出当前可规划为子任务的函数/工具清单（本体函数 / 公共函数 / 其他 MCP 工具，含名称、分类、描述、完整参数结构、本体函数所属场景/本体）。用于规划函数子任务（function 字段）、行为子任务的 related_functions、以及填子任务 params。参数 ontology_id（按本体过滤，仅滤本体函数，且必须在本次对话本体范围内）与 keyword（按名称/描述搜索）均可选，与关系；都不传返回范围内全部。只读，不会调用这些工具。',
     parameters: Type.Object({
-      ontology_id: Type.Optional(Type.Union([Type.Number(), Type.String()], { description: '本体 ID（可选）。填了则本体函数只返回该本体下的（必须在本次对话本体范围内）；公共函数/其他MCP工具为全局工具，不受此过滤' })),
+      ontology_id: Type.Optional(Type.String({ description: '本体 ID（可选，**数字字符串**如 "1"）。填了则本体函数只返回该本体下的（必须在本次对话本体范围内）；公共函数/其他MCP工具为全局工具，不受此过滤' })),
       keyword: Type.Optional(Type.String({ description: '搜索关键词（可选），模糊匹配函数/工具名称或描述' })),
     }),
     execute: async (_toolCallId, params) => {
       const p = params as any;
-      // LLM 可能传字符串数字，统一规整；非法值抛错让父 Agent 自纠
-      const oid = p?.ontology_id !== undefined && p?.ontology_id !== null && p?.ontology_id !== ''
-        ? toFiniteNum(p.ontology_id, 'ontology_id')
-        : undefined;
+      // LLM 可能传数字，统一规整为**数字字符串**（全链路 id 都是字符串）
+      const oid = normalizeId(p?.ontology_id);
       // 本体范围硬闸：显式指定了范围外的本体 → 报错（不静默返空，避免 LLM 误判"该本体无函数"）
       if (oid !== undefined && !allowedOntologyIds.has(oid)) {
         throw new Error(`ontology_id=${oid} 不在本次对话的本体范围内（允许：${[...allowedOntologyIds].join('、')}）`);
       }
       const kw = typeof p?.keyword === 'string' && p.keyword.trim() !== '' ? p.keyword.trim().toLowerCase() : undefined;
+      // 本体归属判定：归一后入集合（不做 Number 强转，避免 "1"/1 混型静默过滤掉工具）
+      const inScope = (id: unknown): boolean => {
+        const normalized = normalizeId(id);
+        return normalized !== undefined && allowedOntologyIds.has(normalized);
+      };
       let catalog = (await getCatalog())
         // 本体行为不进本清单：行为子任务规划走 listOntoBehaviors（**就绪**行为花名册+规则关联），这里只列函数/工具
         .filter(t => t.category !== CATEGORY.BEHAVIOR)
         // 本体范围硬过滤：本体函数恒限定在允许集内；全局工具（公共函数/其他MCP工具）无本体归属，始终保留
-        .filter(t => t.category !== CATEGORY.FUNCTION || allowedOntologyIds.has(Number(t.scope?.ontology_id)));
+        .filter(t => t.category !== CATEGORY.FUNCTION || inScope(t.scope?.ontology_id));
       if (oid !== undefined) {
-        catalog = catalog.filter(t => t.category !== CATEGORY.FUNCTION || Number(t.scope?.ontology_id) === oid);
+        catalog = catalog.filter(t => t.category !== CATEGORY.FUNCTION || sameId(t.scope?.ontology_id, oid));
       }
       if (kw !== undefined) {
         catalog = catalog.filter(t => t.name.toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw));

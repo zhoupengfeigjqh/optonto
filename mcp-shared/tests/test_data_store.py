@@ -73,9 +73,9 @@ def test_身份与本体名取自metadata而非目录或meta_json(market):
     rows = data_store.list_all_ontologies()
     assert len(rows) == 1
     row = rows[0]
-    assert row["id"] == 42                       # ← metadata.ontology_id（id 键也只认 metadata）
-    assert row["ontology_id"] == 42
-    assert row["scenario_id"] == 7               # ← metadata.scenario_id（不是 meta.json 的 999）
+    assert row["id"] == "42"                     # ← metadata.ontology_id（id 键也只认 metadata，数字字符串）
+    assert row["ontology_id"] == "42"
+    assert row["scenario_id"] == "7"             # ← metadata.scenario_id（不是 meta.json 的 999）
     assert row["scenario_name"] == "生产调度"      # ← metadata.scenario_name
     assert row["ontology_name"] == "原材料采购和库存"
     assert row["name"] == "原材料采购和库存"        # ← metadata.ontology_name（不是 meta.json 的"旧名字"）
@@ -103,7 +103,7 @@ def test_yaml损坏按不可信跳过且不影响其他本体与路由(market):
     make_ontology(market, "s", "good", oid=1, version="v2.0")
     make_ontology(market, "s", "broken", oid=2, yaml_text="metadata: [unclosed\n")
     rows = data_store.list_all_ontologies()
-    assert [r["id"] for r in rows] == [1]
+    assert [r["id"] for r in rows] == ["1"]
     assert data_store.get_ontology_names(1) == ("s", "good")
     assert data_store.get_ontology_names(2) is None          # 不可信 → 路由也查不到（不误导）
     assert data_store.load_ontology_data_by_id(1)[2] == "good"
@@ -143,13 +143,13 @@ def test_多本体各自身份正确(market):
     make_ontology(market, "乙场景", "本体三", oid=13, sid=2, version="v2.3")
     got = {(r["scenario_name"], r["ontology_name"]): (r["id"], r["scenario_id"], r["deployed_version"])
            for r in data_store.list_all_ontologies()}
-    assert got[("甲场景", "本体一")] == (11, 1, "v1.0")
-    assert got[("甲场景", "本体二")] == (12, 1, "")
-    assert got[("乙场景", "本体三")] == (13, 2, "v2.3")
+    assert got[("甲场景", "本体一")] == ("11", "1", "v1.0")
+    assert got[("甲场景", "本体二")] == ("12", "1", "")
+    assert got[("乙场景", "本体三")] == ("13", "2", "v2.3")
 
 
 def test_identity辅助函数口径一致(market):
     make_ontology(market, "s", "a", oid=1, sid=5, version="v9")
     assert data_store.ontology_identity("s", "a") == {
-        "scenario_name": "s", "scenario_id": 5, "ontology_name": "a", "ontology_id": 1}
+        "scenario_name": "s", "scenario_id": "5", "ontology_name": "a", "ontology_id": "1"}
     assert data_store.ontology_identity("s", "不存在") is None

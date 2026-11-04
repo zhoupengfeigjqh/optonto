@@ -2,6 +2,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
 import { PathAccessController } from '../security/path-access-controller.js';
+import { normalizeId } from '../utils/ids.js';
 import type { SkillInfo, SkillDescription, SkillContext, SkillSelection, OntologySelection, ConversationScope } from '../types.js';
 
 /**
@@ -72,11 +73,12 @@ export class SkillLoader {
     try {
       const raw = load(readFileSync(this.pac.resolveOntologyYamlPath(scenario, ontology), 'utf-8'));
       const md = (raw as { metadata?: Record<string, unknown> } | null)?.metadata;
-      const ontologyId = Number(md?.['ontology_id']);
-      const scenarioId = Number(md?.['scenario_id']);
+      // id 一律数字字符串：不做 Number() 强转（强转会让 "1" 与发布声明的字符串 id 对不上）
+      const ontologyId = normalizeId(md?.['ontology_id']);
+      const scenarioId = normalizeId(md?.['scenario_id']);
       const scenarioName = String(md?.['scenario_name'] ?? '');
       const ontologyName = String(md?.['ontology_name'] ?? '');
-      if (!Number.isFinite(ontologyId) || !Number.isFinite(scenarioId)) return null;
+      if (ontologyId === undefined || scenarioId === undefined) return null;
       if (scenarioName !== scenario || ontologyName !== ontology) return null; // 身份只认 metadata 的自述
       return { scenario_name: scenarioName, scenario_id: scenarioId, ontology_name: ontologyName, ontology_id: ontologyId };
     } catch {
@@ -91,7 +93,7 @@ export class SkillLoader {
    *  - skills：所选本体目录下全部技能（自动关联，用户无感；无技能的本体照样可选，知识为空而已）
    */
   resolveScope(selections: OntologySelection[]): ConversationScope {
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     const contexts: SkillContext[] = [];
     const skills: SkillSelection[] = [];
     for (const sel of selections) {

@@ -28,6 +28,8 @@ from pathlib import Path
 
 import yaml
 
+from tool_contract import normalize_id
+
 logger = logging.getLogger("mcp-shared.data_store")
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/.data"))
@@ -68,6 +70,9 @@ def list_scenarios() -> list[dict]:
             continue
         data = _read_json(d / "meta.json")
         if isinstance(data, dict):
+            for key in ("id", "scenario_id"):        # id 一律数字字符串（兼容存量 int）
+                if key in data:
+                    data[key] = normalize_id(data[key])
             scenarios.append(data)
     scenarios.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
     return scenarios
@@ -95,6 +100,8 @@ def _identity_from_metadata(md: dict, scenario_dir_name: str,
                             ontology_dir_name: str) -> dict | None:
     """metadata 段 → 身份四元组；任一项为空或与所在目录名不一致 → None（调用方跳过并告警）。"""
     ident = {k: md.get(k) for k in _IDENTITY_KEYS}
+    for key in ("scenario_id", "ontology_id"):      # id 一律数字字符串（兼容存量 int）
+        ident[key] = normalize_id(ident[key])
     if any(v is None or v == "" for v in ident.values()):
         return None
     if ident["scenario_name"] != scenario_dir_name or ident["ontology_name"] != ontology_dir_name:
@@ -143,10 +150,13 @@ def list_all_ontologies() -> list[dict]:
     return results
 
 
-def get_ontology_names(ontology_id: int) -> tuple[str, str] | None:
-    """ontology_id → (scenario_name, ontology_name)；未找到返回 None。"""
+def get_ontology_names(ontology_id: str) -> tuple[str, str] | None:
+    """ontology_id（数字字符串）→ (scenario_name, ontology_name)；未找到返回 None。"""
+    oid = normalize_id(ontology_id)                 # 入参归一，避免调用方传 int
+    if oid is None:
+        return None
     for o in list_all_ontologies():
-        if o.get("id") == ontology_id:
+        if o.get("id") == oid:
             return o["scenario_name"], o["ontology_name"]
     return None
 
@@ -319,7 +329,7 @@ def load_ontology_data(scenario_name: str, ontology_name: str) -> dict:
     return data
 
 
-def load_ontology_data_by_id(ontology_id: int) -> tuple[dict, str, str]:
+def load_ontology_data_by_id(ontology_id: str) -> tuple[dict, str, str]:
     """ontology_id → (data, scenario_name, ontology_name)；本体不存在抛 KeyError。"""
     names = get_ontology_names(ontology_id)
     if names is None:

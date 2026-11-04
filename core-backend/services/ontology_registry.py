@@ -23,11 +23,11 @@ def list_scenarios() -> list[dict]:
     return metadata.list_scenarios()
 
 
-def get_scenario(scenario_id: int) -> Optional[dict]:
+def get_scenario(scenario_id: str) -> Optional[dict]:
     return metadata.get_scenario_by_id(scenario_id)
 
 
-def require_scenario(scenario_id: int) -> dict:
+def require_scenario(scenario_id: str) -> dict:
     """取场景，不存在 → 404。"""
     scenario = metadata.get_scenario_by_id(scenario_id)
     if not scenario:
@@ -43,11 +43,11 @@ def create_scenario(name: str, description: str = "") -> dict:
     return metadata.create_scenario(name, description)
 
 
-def update_scenario(scenario_id: int, *, name=None, description=None) -> Optional[dict]:
+def update_scenario(scenario_id: str, *, name=None, description=None) -> Optional[dict]:
     return metadata.update_scenario(scenario_id, name=name, description=description)
 
 
-def delete_scenario(scenario_id: int) -> None:
+def delete_scenario(scenario_id: str) -> None:
     metadata.delete_scenario(scenario_id)
 
 
@@ -67,12 +67,12 @@ def list_ontologies_by_scenario(scenario_name: str) -> list[dict]:
     return metadata.list_ontologies_by_scenario(scenario_name)
 
 
-def find_ontology(ontology_id: int) -> Optional[tuple[dict, str, str]]:
+def find_ontology(ontology_id: str) -> Optional[tuple[dict, str, str]]:
     """按 id 定位本体：返回 (本体行, 场景名, 本体名)；不存在返回 None。"""
     return metadata.get_ontology_by_id(ontology_id)
 
 
-def require_ontology(ontology_id: int) -> tuple[dict, str, str]:
+def require_ontology(ontology_id: str) -> tuple[dict, str, str]:
     """按 id 定位本体，不存在 → 404。"""
     result = metadata.get_ontology_by_id(ontology_id)
     if not result:
@@ -80,7 +80,7 @@ def require_ontology(ontology_id: int) -> tuple[dict, str, str]:
     return result
 
 
-def scenario_and_ontology_of(ontology_id: int) -> Optional[tuple[str, str]]:
+def scenario_and_ontology_of(ontology_id: str) -> Optional[tuple[str, str]]:
     """ontology_id → (场景名, 本体名)；身份不可信/不存在返回 None。
 
     按本体操作的路由共用（行为/函数/规则/技能/数据引擎/部署/文件…）。
@@ -93,11 +93,11 @@ def create_ontology(*, scenario_name: str, name: str, description: str = "", cre
         scenario_name=scenario_name, name=name, description=description, creator=creator)
 
 
-def update_ontology(ontology_id: int, *, name=None, description=None, creator=None) -> Optional[dict]:
+def update_ontology(ontology_id: str, *, name=None, description=None, creator=None) -> Optional[dict]:
     return metadata.update_ontology(ontology_id, name=name, description=description, creator=creator)
 
 
-def delete_ontology(ontology_id: int) -> None:
+def delete_ontology(ontology_id: str) -> None:
     metadata.delete_ontology(ontology_id)
 
 

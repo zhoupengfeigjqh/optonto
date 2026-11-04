@@ -86,7 +86,7 @@ async def test_all():
 
         # ─── 4. list_behaviors ────────────────────────────────
         print("\n[4] list_behaviors(ontology_id=1) — 列出本体 1 的行为")
-        result = await session.call_tool("list_behaviors", {"ontology_id": 1})
+        result = await session.call_tool("list_behaviors", {"ontology_id": "1"})
         data = json.loads(result.content[0].text)
         if isinstance(data, list):
             ok(f"本体1 有 {len(data)} 个行为")
@@ -97,7 +97,7 @@ async def test_all():
 
         # ─── 5. list_concepts ─────────────────────────────────
         print("\n[5] list_concepts(ontology_id=1) — 列出本体 1 的概念")
-        result = await session.call_tool("list_concepts", {"ontology_id": 1})
+        result = await session.call_tool("list_concepts", {"ontology_id": "1"})
         data_concepts = json.loads(result.content[0].text)  # 后面 get_concept_* 会复用
         if isinstance(data_concepts, list):
             ok(f"本体1 有 {len(data_concepts)} 个概念")
@@ -112,7 +112,7 @@ async def test_all():
         if data_concepts:
             cname = data_concepts[0]["name"]
             result = await session.call_tool("get_concept_attributes", {
-                "ontology_id": 1, "concept_name": cname
+                "ontology_id": "1", "concept_name": cname
             })
             attrs = json.loads(result.content[0].text)
             if isinstance(attrs, list):
@@ -126,7 +126,7 @@ async def test_all():
 
         # ─── 7. list_relations ────────────────────────────────
         print("\n[7] list_relations(ontology_id=1) — 列出本体 1 的关系")
-        result = await session.call_tool("list_relations", {"ontology_id": 1})
+        result = await session.call_tool("list_relations", {"ontology_id": "1"})
         data_rels = json.loads(result.content[0].text)  # 后面 get_concept_relations 会复用
         if isinstance(data_rels, list):
             ok(f"本体1 有 {len(data_rels)} 个关系")
@@ -141,7 +141,7 @@ async def test_all():
         if data_concepts:
             cname = data_concepts[0]["name"]
             result = await session.call_tool("get_concept_relations", {
-                "ontology_id": 1, "concept_name": cname
+                "ontology_id": "1", "concept_name": cname
             })
             rels = json.loads(result.content[0].text)
             if isinstance(rels, list):
@@ -155,7 +155,7 @@ async def test_all():
 
         # ─── 9. list_functions ────────────────────────────────
         print("\n[9] list_functions(ontology_id=1) — 列出本体 1 的函数")
-        result = await session.call_tool("list_functions", {"ontology_id": 1})
+        result = await session.call_tool("list_functions", {"ontology_id": "1"})
         data = json.loads(result.content[0].text)
         if isinstance(data, list):
             ok(f"本体1 有 {len(data)} 个函数")
@@ -166,7 +166,7 @@ async def test_all():
 
         # ─── 10. list_securities ──────────────────────────────
         print("\n[10] list_securities(ontology_id=1) — 列出本体 1 的安全信息")
-        result = await session.call_tool("list_securities", {"ontology_id": 1})
+        result = await session.call_tool("list_securities", {"ontology_id": "1"})
         data = json.loads(result.content[0].text)
         if isinstance(data, list):
             ok(f"本体1 有 {len(data)} 条安全信息")
@@ -207,7 +207,7 @@ async def test_all():
 
         # ─── 13. search_behaviors ─────────────────────────────
         print("\n[13] search_behaviors(ontology_id=1, keyword='查询') — 模糊搜索行为")
-        result = await session.call_tool("search_behaviors", {"ontology_id": 1, "keyword": "查询"})
+        result = await session.call_tool("search_behaviors", {"ontology_id": "1", "keyword": "查询"})
         data = json.loads(result.content[0].text)
         if isinstance(data, list):
             ok(f"搜索到 {len(data)} 个行为")
@@ -220,7 +220,7 @@ async def test_all():
 
         # ─── 14. search_concepts ──────────────────────────────
         print("\n[14] search_concepts(ontology_id=1, keyword='订单') — 模糊搜索概念")
-        result = await session.call_tool("search_concepts", {"ontology_id": 1, "keyword": "订单"})
+        result = await session.call_tool("search_concepts", {"ontology_id": "1", "keyword": "订单"})
         data = json.loads(result.content[0].text)
         if isinstance(data, list):
             ok(f"搜索到 {len(data)} 个概念")
@@ -233,7 +233,7 @@ async def test_all():
 
         # ─── 15. search_functions ─────────────────────────────
         print("\n[15] search_functions(ontology_id=1, keyword='计算') — 模糊搜索函数")
-        result = await session.call_tool("search_functions", {"ontology_id": 1, "keyword": "计算"})
+        result = await session.call_tool("search_functions", {"ontology_id": "1", "keyword": "计算"})
         data = json.loads(result.content[0].text)
         if isinstance(data, list):
             ok(f"搜索到 {len(data)} 个函数")
@@ -251,7 +251,7 @@ async def test_all():
         # ─── 16. execute_behavior ─────────────────────────────
         print("\n[16] execute_behavior(不存在的行为) — 测试错误处理")
         result = await session.call_tool("execute_behavior", {
-            "ontology_id": 1,
+            "ontology_id": "1",
             "behavior_name": "_test_nonexistent_behavior_",
             "params": {},
         })

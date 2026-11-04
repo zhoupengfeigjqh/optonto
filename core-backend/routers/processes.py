@@ -12,14 +12,14 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/processes", tags=["ä¸šå
 
 
 @router.get("")
-async def list_processes(ontology_id: int):
+async def list_processes(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.processes
 
 
 @router.post("", status_code=201)
-async def create_process(ontology_id: int, item: ProcessItem):
+async def create_process(ontology_id: str, item: ProcessItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -33,7 +33,7 @@ async def create_process(ontology_id: int, item: ProcessItem):
 
 
 @router.put("/{process_name}")
-async def update_process(ontology_id: int, process_name: str, item: ProcessItem):
+async def update_process(ontology_id: str, process_name: str, item: ProcessItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -47,7 +47,7 @@ async def update_process(ontology_id: int, process_name: str, item: ProcessItem)
 
 
 @router.delete("/{process_name}")
-async def delete_process(ontology_id: int, process_name: str):
+async def delete_process(ontology_id: str, process_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 

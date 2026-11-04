@@ -79,7 +79,7 @@ async def _handle_call_behavior(request: Request) -> JSONResponse:
         entry = behavior_index.behavior_entries().get(bname)
         require_ontology_match((entry or {}).get("ontology_id"), oid, f"行为 {bname}", owner_label(entry))
         # 系统参数剥离：ontology_id 不进业务参数、不进映射翻译
-        result = await executor.execute_behavior(int(oid), bname, strip_system_params(body.get("params")))
+        result = await executor.execute_behavior(oid, bname, strip_system_params(body.get("params")))
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     except Exception as e:
@@ -95,7 +95,7 @@ async def _handle_call_engine(request: Request) -> JSONResponse:
         oid = require_ontology_id(body.get("ontology_id"), f"数据引擎 {ename}")
         # 有意**不**做系统参数剥离：引擎 params 是用户自定义字段（SYSTEM_PARAMS 只属本体执行类），
         # 剥了会误删真名为 ontology_id 的引擎参数。
-        result = await executor.execute_engine(int(oid), ename, body.get("params") or {})
+        result = await executor.execute_engine(oid, ename, body.get("params") or {})
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
     except Exception as e:

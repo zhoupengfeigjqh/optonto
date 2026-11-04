@@ -12,14 +12,14 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/relations", tags=["å…³ç
 
 
 @router.get("")
-async def list_relations(ontology_id: int):
+async def list_relations(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.relations
 
 
 @router.post("", status_code=201)
-async def create_relation(ontology_id: int, item: RelationItem):
+async def create_relation(ontology_id: str, item: RelationItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -33,7 +33,7 @@ async def create_relation(ontology_id: int, item: RelationItem):
 
 
 @router.put("/{relation_name}")
-async def update_relation(ontology_id: int, relation_name: str, item: RelationItem):
+async def update_relation(ontology_id: str, relation_name: str, item: RelationItem):
     """Update a relation."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -48,7 +48,7 @@ async def update_relation(ontology_id: int, relation_name: str, item: RelationIt
 
 
 @router.delete("/{relation_name}")
-async def delete_relation(ontology_id: int, relation_name: str):
+async def delete_relation(ontology_id: str, relation_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 

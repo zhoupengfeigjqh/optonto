@@ -56,13 +56,13 @@ def _ensure_global_unique(name: str, sc_name: str, on_name: str) -> None:
 # ─── CRUD ─────────────────────────────────────────────────────────────────
 
 @router.get("")
-async def list_functions(ontology_id: int):
+async def list_functions(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     return load_ontology_data(sc_name, on_name).functions
 
 
 @router.post("", status_code=201)
-async def create_function(ontology_id: int, item: FunctionItem):
+async def create_function(ontology_id: str, item: FunctionItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -77,7 +77,7 @@ async def create_function(ontology_id: int, item: FunctionItem):
 
 
 @router.put("/{function_name}")
-async def update_function(ontology_id: int, function_name: str, item: FunctionItem):
+async def update_function(ontology_id: str, function_name: str, item: FunctionItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -92,7 +92,7 @@ async def update_function(ontology_id: int, function_name: str, item: FunctionIt
 
 
 @router.delete("/{function_name}")
-async def delete_function(ontology_id: int, function_name: str):
+async def delete_function(ontology_id: str, function_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -109,7 +109,7 @@ async def delete_function(ontology_id: int, function_name: str):
 # ─── Code Read/Write ──────────────────────────────────────────────────────
 
 @router.get("/{function_name}/code")
-async def get_function_code(ontology_id: int, function_name: str):
+async def get_function_code(ontology_id: str, function_name: str):
     """读取函数代码（含是否存在）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -123,7 +123,7 @@ async def get_function_code(ontology_id: int, function_name: str):
 
 
 @router.put("/{function_name}/code")
-async def save_function_code(ontology_id: int, function_name: str, body: dict):
+async def save_function_code(ontology_id: str, function_name: str, body: dict):
     """保存函数代码并同步 code_file 引用（入口静态校验不通过则不落盘）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -148,7 +148,7 @@ async def save_function_code(ontology_id: int, function_name: str, body: dict):
 # ─── Generate Code ─────────────────────────────────────────────────────────
 
 @router.post("/{function_name}/generate-code")
-async def generate_function_code(ontology_id: int, function_name: str):
+async def generate_function_code(ontology_id: str, function_name: str):
     """用 LLM 生成 Python 代码并落盘（生成物过同一道入口校验，不合格不落地）。"""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -192,7 +192,7 @@ async def generate_function_code(ontology_id: int, function_name: str):
 # ─── Execute Code ──────────────────────────────────────────────────────────
 
 @router.post("/{function_name}/execute")
-async def execute_function(ontology_id: int, function_name: str, body: dict):
+async def execute_function(ontology_id: str, function_name: str, body: dict):
     """执行函数代码 —— 降级转发本体函数执行服务（core 执行归零）。
 
     统一入口约定（与公共函数一致）：def run(params: dict) -> dict，整包传参；

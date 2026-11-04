@@ -11,7 +11,7 @@ import { Segmented } from 'antd';
 import ObjectRelationTable from './ObjectRelationTable';
 import ConceptRelationTable from './ConceptRelationTable';
 
-interface Props { ontologyId: number; activeTab?: string; }
+interface Props { ontologyId: string; activeTab?: string; }
 
 type RelationView = 'concept' | 'object';
 

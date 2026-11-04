@@ -44,17 +44,17 @@ vi.mock('../services/mcp-config-store.js', () => ({
  * 分类标记 = 顶层 x-category / x-title；本体上下文 = 顶层 x-ontology-scope（元数据，非参数）；
  * ontology_id 是必填业务参数（由 LLM 填写）。
  */
-export function ontoTool(category: string, _bareName: string, title: string, ontologyId: number,
+export function ontoTool(category: string, _bareName: string, title: string, ontologyId: string,
                 ontologyName: string, props: Record<string, any>, required: string[]) {
   return { type: 'object',
     'x-category': category,
     'x-title': title,
     'x-ontology-scope': {
-      ontology_id: ontologyId, scenario_id: 1,
+      ontology_id: ontologyId, scenario_id: '1',
       scenario_name: '生产调度', ontology_name: ontologyName,
     },
     properties: {
-      ontology_id: { type: 'integer' },
+      ontology_id: { type: 'string' },
       ...props,
     },
     required };
@@ -65,7 +65,7 @@ export function queryTool(title: string, props: Record<string, any> = {}) {
   return { type: 'object',
     'x-category': '本体查询',
     'x-title': title,
-    properties: { ontology_id: { type: 'integer' }, ...props },
+    properties: { ontology_id: { type: 'string' }, ...props },
     required: ['ontology_id'] };
 }
 // MCPClient 假实现：listTools 返回混合工具集（本体行为工具 + 本体函数 + 本体查询 + 公共函数 + 外部工具）。
@@ -78,21 +78,21 @@ vi.mock('../services/mcp-client.js', () => ({
       return { tools: [
         // 本体行为工具（工具名即行为名；编译 inputSchema 含约束）
         { name: 'CreatePurchaseRecord', description: '创建采购记录',
-          inputSchema: ontoTool('本体行为', 'CreatePurchaseRecord', '创建采购记录', 1, '原材料采购和库存',
+          inputSchema: ontoTool('本体行为', 'CreatePurchaseRecord', '创建采购记录', '1', '原材料采购和库存',
             { rawMaterialId: { type: 'string', minLength: 1 }, qty: { type: 'integer', minimum: 1, maximum: 100 } },
             ['ontology_id', 'rawMaterialId']) },
         { name: 'QuerySupplier', description: '查询供应商',
-          inputSchema: ontoTool('本体行为', 'QuerySupplier', '查询供应商', 1, '原材料采购和库存',
+          inputSchema: ontoTool('本体行为', 'QuerySupplier', '查询供应商', '1', '原材料采购和库存',
             { supplierName: { type: 'string' } }, ['ontology_id']) },
         // 另一本体的行为（不在合法集合 → 不挂载）
         { name: 'DeleteInventory', description: '删除库存',
-          inputSchema: ontoTool('本体行为', 'DeleteInventory', '删除库存', 2, '订单排程', {}, ['ontology_id']) },
+          inputSchema: ontoTool('本体行为', 'DeleteInventory', '删除库存', '2', '订单排程', {}, ['ontology_id']) },
         // 本体函数
         { name: 'calcSafetyStock', description: '计算安全库存',
-          inputSchema: ontoTool('本体函数', 'calcSafetyStock', '计算安全库存', 1, '原材料采购和库存',
+          inputSchema: ontoTool('本体函数', 'calcSafetyStock', '计算安全库存', '1', '原材料采购和库存',
             { currentStock: { type: 'number' }, safetyStock: { type: 'number' } }, ['ontology_id']) },
         { name: 'sumRawNotArrivalQty', description: '未到位数求和',
-          inputSchema: ontoTool('本体函数', 'sumRawNotArrivalQty', '未到位数求和', 2, '订单排程',
+          inputSchema: ontoTool('本体函数', 'sumRawNotArrivalQty', '未到位数求和', '2', '订单排程',
             { purchaseRecordSet: { type: 'array' } }, ['ontology_id']) },
         // 本体查询工具（父 Agent 专属）
         { name: 'listOntoBehaviors', description: '列出本体行为', inputSchema: queryTool('查询行为清单') },
@@ -161,7 +161,7 @@ export type CapturedMsg = { role: string; content: any };
 
 /** 测试对话作用域：本体 1（允许集 = {1}） */
 export const SCOPE: ConversationScope = {
-  contexts: [{ scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 }],
+  contexts: [{ scenario_name: '生产调度', scenario_id: '1', ontology_name: '原材料采购和库存', ontology_id: '1' }],
   skills: [],
 };
 /** 通用问答模式（零本体） */
@@ -209,7 +209,7 @@ export function mkFactory(): AgentFactory {
  */
 export async function captureChildTools(legalCalls?: LegalCalls, security?: ChildSecurityCtx, ruleGate?: RuleGate) {
   await mkFactory().createChildAgent(
-    { scenario_name: '生产调度', scenario_id: 1, ontology_name: '原材料采购和库存', ontology_id: 1 },
+    { scenario_name: '生产调度', scenario_id: '1', ontology_name: '原材料采购和库存', ontology_id: '1' },
     mkPolicy({ legalCalls, security, ruleGate }),
   );
   expect(mockedAgent).toHaveBeenCalledTimes(1);

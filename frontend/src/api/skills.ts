@@ -15,20 +15,20 @@ export interface SkillContent {
   skill_name: string;
 }
 
-export const getSkills = (ontologyId: number) =>
+export const getSkills = (ontologyId: string) =>
   request<SkillSummary[]>(`/api/ontologies/${ontologyId}/skills`);
 
-export const getSkillContent = (ontologyId: number, name: string) =>
+export const getSkillContent = (ontologyId: string, name: string) =>
   request<SkillContent>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/content`);
 
-export const saveSkillContent = (ontologyId: number, name: string, content: string) =>
+export const saveSkillContent = (ontologyId: string, name: string, content: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/content`, { method: 'PUT', body: JSON.stringify({ content }) });
 
-export const deleteSkill = (ontologyId: number, name: string) =>
+export const deleteSkill = (ontologyId: string, name: string) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}`, { method: 'DELETE' });
 
-export const updateSkillMeta = (ontologyId: number, name: string, data: { name?: string; description?: string }) =>
+export const updateSkillMeta = (ontologyId: string, name: string, data: { name?: string; description?: string }) =>
   request<{ message: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/meta`, { method: 'PUT', body: JSON.stringify(data) });
 
-export const generateSkill = (ontologyId: number, name: string, description?: string) =>
+export const generateSkill = (ontologyId: string, name: string, description?: string) =>
   request<{ message: string; skill_name: string; content: string }>(`/api/ontologies/${ontologyId}/skills/${encodeURIComponent(name)}/generate`, { method: 'POST', body: JSON.stringify({ description: description || '' }) });

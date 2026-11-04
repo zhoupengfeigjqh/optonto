@@ -71,7 +71,7 @@ export const ALL_PUBLISH_TRANSPORTS: PublishTransport[] = ['streamable', 'sse'];
 export interface PublishedService {
   name: string;
   kind: PublishKind;
-  ontology_id: number;
+  ontology_id: string;
   ontology_name: string;
   items: string[];
   tool_count: number;
@@ -123,7 +123,7 @@ export interface PublishMeta {
 }
 
 export interface CreatePublishPayload {
-  ontology_id: number;
+  ontology_id: string;
   name: string;
   kind: PublishKind;
   items: string[];

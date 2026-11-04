@@ -14,9 +14,10 @@ import HomeDialogs from './home-dialogs';
 
 export default function HomePage() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState<number | null>(null);
+  // id 全链路为数字字符串（"1"），State 与索引键都按字符串声明
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
-  const [ontoCounts, setOntoCounts] = useState<Record<number, {concepts:number; relations:number; behaviors:number; rules:number}>>({});
+  const [ontoCounts, setOntoCounts] = useState<Record<string, {concepts:number; relations:number; behaviors:number; rules:number}>>({});
 
   // Dialogs
   const [showNewScenario, setShowNewScenario] = useState(false);
@@ -56,7 +57,7 @@ export default function HomePage() {
       const list = await getOntologies(selectedScenarioId);
       setOntologies(list);
       const dataList = await Promise.allSettled(list.map(o => getOntologyData(o.id)));
-      const counts: Record<number, {concepts:number; relations:number; behaviors:number; rules:number}> = {};
+      const counts: Record<string, {concepts:number; relations:number; behaviors:number; rules:number}> = {};
       list.forEach((o, i) => {
         const r = dataList[i];
         if (r.status === 'fulfilled') {

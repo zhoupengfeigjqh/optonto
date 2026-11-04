@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from config import DATA_DIR
 from errors import ConflictError, InvalidInputError, NotFoundError
-from repositories import fs_store
+from repositories import fs_store, metadata
 # 发布类型常量唯一权威在 mcp-shared/publish_upstream（core 侧经 bridge 转出）：
 # 本地再写一份字符串常量，一旦门面侧改名就会静默漂移（与 2026-10-04 环境变量漂移同源）。
 from services.mcp_contract_bridge import (
@@ -144,13 +144,16 @@ def validate_kind(kind) -> str:
     return kind
 
 
-def validate_ontology_id(value) -> int:
-    """本体 id 规整为整数（早失败）：非法值报 400，而不是让下游按"本体不存在"报 404。"""
-    try:
-        oid = int(value)
-    except (TypeError, ValueError):
+def validate_ontology_id(value) -> str:
+    """本体 id 规整为**数字字符串**（``"1"``；早失败→400，而非让下游按"本体不存在"报 404）。
+
+    全平台 id 口径是字符串，这里只做"是否为正整数形态"的校验并回写字符串，
+    **不再把调用方的 id 转成 int**——转成 int 会让注册表里出现第二种类型。
+    """
+    oid = str(value).strip() if value is not None else ""
+    if not oid.isdigit():
         raise InvalidInputError("ontology_id 必须是本体数字 ID")
-    if oid <= 0:
+    if int(oid) <= 0:
         raise InvalidInputError("ontology_id 必须是正整数")
     return oid
 
@@ -171,7 +174,7 @@ def _description(item: dict, ontology_name: str, note: str) -> str:
     return f"{desc}（本体「{ontology_name}」）" + note
 
 
-def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, list[dict]]:
+def compile_tools(ontology_id: str, kind: str, items: list[str]) -> tuple[str, list[dict]]:
     """勾选项 → (本体中文名, 工具清单)。inputSchema 已编译、本体上下文已写入。
 
     形态（契约 ③）：
@@ -179,7 +182,12 @@ def compile_tools(ontology_id: int, kind: str, items: list[str]) -> tuple[str, l
     - ``x-ontology-scope`` 是**发布时固化的工具元数据**（本体身份四元组），不是参数：
       agent 侧据它做归属过滤/挂载，执行底座据它做一致性校验，LLM 看不到也填不了；
     - 分类标记取真实归位（本体函数 / 本体行为），agent 侧零适配即可挂载。
+
+    ``ontology_id`` 入参即归一为数字字符串（直接调用方可能传 int），避免 scope 里漏出第二种类型。
     """
+    ontology_id = metadata.normalize_id(ontology_id)
+    if ontology_id is None:
+        raise InvalidInputError("ontology_id 必须是本体数字 ID")
     from repositories.metadata import get_ontology_name_by_id
     from services import load_ontology_data
     from services.mcp_contract_bridge import (
@@ -313,7 +321,7 @@ def build_run_kwargs(entry: dict) -> dict:
     }
 
 
-def build_entry(*, ontology_id: int, name, kind, items, host_port, transport) -> dict:
+def build_entry(*, ontology_id: str, name, kind, items, host_port, transport) -> dict:
     """校验 + 编译 → 生成注册表条目（**不落盘、不起容器**，便于路由分步处理失败）。
 
     失败语义：名称/端口冲突 400（ConflictError 口径）、类型与勾选项非法 400、

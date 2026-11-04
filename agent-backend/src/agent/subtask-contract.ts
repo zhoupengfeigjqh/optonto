@@ -29,8 +29,9 @@ export interface SubtaskField {
   marker?: '✅' | '❌';
 }
 
-// 数值字段放宽为 number|string：TypeBox 不做字符串数字强转，
-// 由 submit_plan 的 execute 回调统一规整为 number（规避 LLM 输出 "1" 导致校验失败的场景）
+// 数值字段（seq / depends_on）放宽为 number|string：TypeBox 不做字符串数字强转，
+// 由 submit_plan 的 execute 回调统一规整为 number（规避 LLM 输出 "1" 导致校验失败的场景）。
+// 注意：scenario_id / ontology_id **不是**数值字段，它们是数字字符串（见下方 Type.String）。
 const numLike = (): TSchema => Type.Union([Type.Number(), Type.String()]);
 
 export const SUBTASK_FIELDS: SubtaskField[] = [
@@ -67,16 +68,16 @@ export const SUBTASK_FIELDS: SubtaskField[] = [
     prompt: '所属场景名称',
   },
   {
-    name: 'scenario_id', required: true, schema: numLike(),
-    prompt: '所属场景 ID',
+    name: 'scenario_id', required: true, schema: Type.String(),
+    prompt: '所属场景 ID（**字符串**，如 "1"；不是数字）',
   },
   {
     name: 'ontology_name', required: true, schema: Type.String(),
     prompt: '所属本体名称',
   },
   {
-    name: 'ontology_id', required: true, schema: numLike(),
-    prompt: '所属本体 ID',
+    name: 'ontology_id', required: true, schema: Type.String(),
+    prompt: '所属本体 ID（**字符串**，如 "1"；不是数字）',
   },
   {
     name: 'depends_on', required: false, schema: Type.Array(numLike()),

@@ -2,7 +2,7 @@
 import { request } from './http';
 
 export interface Scenario {
-  id: number;
+  id: string;
   name: string;
   description: string;
   created_at: string;
@@ -12,5 +12,5 @@ export interface Scenario {
 export const getScenarios = () => request<Scenario[]>('/api/scenarios');
 export const createScenario = (data: { name: string; description?: string }) =>
   request<Scenario>('/api/scenarios', { method: 'POST', body: JSON.stringify(data) });
-export const updateScenario = (id: number, data: { name?: string; description?: string }) =>
+export const updateScenario = (id: string, data: { name?: string; description?: string }) =>
   request<Scenario>(`/api/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) });

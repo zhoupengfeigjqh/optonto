@@ -26,7 +26,7 @@ import AgentApp from './AgentApp';
 import MCPConfigPanel from './MCPConfig';
 
 export interface DesignContentProps {
-  ontologyId: number;
+  ontologyId: string;
   activeSection: string;
   activeTab: string;
   /** 从对话链接进入时预选的线程 id */

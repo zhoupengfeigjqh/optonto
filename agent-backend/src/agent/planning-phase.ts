@@ -72,7 +72,7 @@ export interface PlanningArgs {
   session: RunSession;
   message: string;
   scope: ConversationScope;
-  allowedOntologyIds: ReadonlySet<number>;
+  allowedOntologyIds: ReadonlySet<string>;
   history: ThreadMessage[];
   emit: EventChannel;
 }

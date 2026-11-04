@@ -12,14 +12,14 @@ router = APIRouter(prefix="/api/ontologies/{ontology_id}/behaviors", tags=["行�
 
 
 @router.get("")
-async def list_behaviors(ontology_id: int):
+async def list_behaviors(ontology_id: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
     return data.behaviors
 
 
 @router.post("", status_code=201)
-async def create_behavior(ontology_id: int, item: BehaviorItem):
+async def create_behavior(ontology_id: str, item: BehaviorItem):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -33,7 +33,7 @@ async def create_behavior(ontology_id: int, item: BehaviorItem):
 
 
 @router.put("/{behavior_name}")
-async def update_behavior(ontology_id: int, behavior_name: str, item: BehaviorItem):
+async def update_behavior(ontology_id: str, behavior_name: str, item: BehaviorItem):
     """Update a behavior."""
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
@@ -53,7 +53,7 @@ async def update_behavior(ontology_id: int, behavior_name: str, item: BehaviorIt
 
 
 @router.delete("/{behavior_name}")
-async def delete_behavior(ontology_id: int, behavior_name: str):
+async def delete_behavior(ontology_id: str, behavior_name: str):
     sc_name, on_name = await get_ontology_names(ontology_id)
     data = load_ontology_data(sc_name, on_name)
 
@@ -69,7 +69,7 @@ async def delete_behavior(ontology_id: int, behavior_name: str):
 # ─── Behavior Call ────────────────────────────────────────────────────────────
 
 @router.post("/{behavior_name}/call")
-async def call_behavior_endpoint(ontology_id: int, behavior_name: str, body: dict):
+async def call_behavior_endpoint(ontology_id: str, behavior_name: str, body: dict):
     """Call a behavior — 降级转发 data-engine-mcp（core 运行期执行归零，消灭双执行路径）。
 
     执行实现已迁至 data-engine-mcp executor（唯一形态 MCP）；

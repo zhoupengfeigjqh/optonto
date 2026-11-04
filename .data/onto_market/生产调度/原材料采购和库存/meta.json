@@ -1,6 +1,6 @@
 {
-  "id": 1,
-  "scenario_id": 1,
+  "id": "1",
+  "scenario_id": "1",
   "name": "原材料采购和库存",
   "description": "生产过程中消耗的外部输入物料，需采购和考虑库存",
   "creator": "system",

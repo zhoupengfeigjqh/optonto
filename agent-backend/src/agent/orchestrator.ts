@@ -270,7 +270,7 @@ export class Orchestrator {
   private async wavePhase(
     session: RunSession,
     plan: SubTaskPlan,
-    allowedOntologyIds: ReadonlySet<number>,
+    allowedOntologyIds: ReadonlySet<string>,
     emit: EventChannel,
   ): Promise<SubTask[]> {
     session.disableTokens(); // 子任务执行和反馈不流到聊天区，避免重复

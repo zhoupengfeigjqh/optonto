@@ -13,6 +13,7 @@ from typing import Optional
 from config import DATA_DIR
 from errors import InternalError, NotFoundError
 from repositories import fs_store
+from repositories.metadata import normalize_id
 from services import get_ontology_dir
 
 SKILL_TEMPLATE_PATH = DATA_DIR / "templates/skill_template.md"
@@ -55,6 +56,12 @@ def description_of(content: str) -> str:
     return str(fm.get("description") or "") if isinstance(fm, dict) else ""
 
 
+def _rebuild_frontmatter(content: str, fm: dict) -> str:
+    """用给定映射重建头部，正文逐字保留（`---` 收尾与正文原样衔接）。"""
+    body = content[content.find("\n---", 4) + 4:]
+    return "---\n" + fs_store.dump_yaml(fm) + "---" + body
+
+
 def with_description(content: str, description: str) -> Optional[str]:
     """把 description 写回 SKILL.md 的 frontmatter：**只重写头部块，正文与其他字段原样保留**。
 
@@ -68,18 +75,56 @@ def with_description(content: str, description: str) -> Optional[str]:
     if not isinstance(fm, dict) or not fm:
         return None
     fm["description"] = description
-    body = content[content.find("\n---", 4) + 4:]
-    return "---\n" + fs_store.dump_yaml(fm) + "---" + body
+    return _rebuild_frontmatter(content, fm)
+
+
+def stamp_metadata(content: str, meta: Optional[dict]) -> Optional[str]:
+    """把本体/场景四元组写入 frontmatter 的 ``metadata`` 段（保存时由服务端确定性注入）。
+
+    口径（与 ``ontology.yaml.metadata``、agent 侧 SkillLoader.resolveOntologyContext 同名同序）：
+    ``ontology_id`` / ``ontology_name`` / ``scenario_id`` / ``scenario_name``。
+
+    - **整体覆盖**：已有 ``metadata``（含模型抄错的本体 id）一律丢弃，以落盘时刻的上下文为准；
+      因此本函数幂等，重复保存不会产生嵌套或重复块。
+    - **放在头部末尾**：``skill_entry`` 只扫头部窗口找 name/description，避免把 description 挤出窗口。
+    - 值为 ``None`` / ``""`` 的键**直接省略**，绝不写 ``null``（回读会变成字符串 "null"）。
+    - frontmatter 不合法（非 `---` 包裹 / 解析不出映射）→ 返回 None，由调用方决定（不静默篡改）。
+    """
+    if not meta:
+        return content
+    block = frontmatter_block(content)
+    if block is None:
+        return None
+    fm = fs_store.parse_yaml(block, default={})
+    if not isinstance(fm, dict) or not fm:
+        return None
+    fm.pop("metadata", None)                                  # 先删再插 = 恒在头部末尾
+    values = {}
+    for key, value in meta.items():
+        if value is None or value == "":
+            continue
+        # id 一律落成**数字字符串**（"1"）：调用方传 int 也在此归一，文件里不出现裸数字
+        values[key] = normalize_id(value) if key in ("ontology_id", "scenario_id") else value
+        if values[key] is None:
+            values.pop(key)
+    if not values:
+        return content
+    fm["metadata"] = values
+    return _rebuild_frontmatter(content, fm)
 
 
 # ─── 读 ─────────────────────────────────────────────────────────────────────────
 
 def skill_entry(skill_dir_path: Path) -> dict:
-    """技能目录 → 列表条目（description 取自 frontmatter；头部 300 字符做格式校验）。"""
+    """技能目录 → 列表条目（description 取自 frontmatter；头部窗口做格式校验）。
+
+    窗口 600 字符：头部除 name/description 外还有 metadata 段（本体四元组），
+    窗口过窄会把 description 挤出去导致误报「缺少 description」。
+    """
     md_path = skill_dir_path / SKILL_MD_NAME
     has_md = fs_store.exists(md_path)
     content = fs_store.read_text(md_path) if has_md else ""
-    head = content[:300]
+    head = content[:600]
     has_name_en = bool(re.search(r"\nname: [a-zA-Z]", head))
     has_desc = "\ndescription:" in head
     format_ok = bool(has_md and head.startswith("---\n") and has_name_en and has_desc)
@@ -124,14 +169,27 @@ def read_skill_template() -> str:
 
 # ─── 写 ─────────────────────────────────────────────────────────────────────────
 
-def write_skill_md(scenario_name: str, ontology_name: str, skill_name: str, content: str) -> None:
-    """写入 SKILL.md（目录自动创建，同名覆盖）。"""
+def write_skill_md(
+    scenario_name: str, ontology_name: str, skill_name: str, content: str,
+    meta: Optional[dict] = None,
+) -> None:
+    """写入 SKILL.md（目录自动创建，同名覆盖）。
+
+    ``meta`` = 本体/场景四元组，落盘前由 :func:`stamp_metadata` 注入头部 ``metadata`` 段。
+    头部不合法时（如用户在编辑器里删掉了 ``---``）→ **不注入、原样落盘**，
+    由列表的 ``format_error`` 暴露问题，不阻断保存。
+    """
+    if meta:
+        content = stamp_metadata(content, meta) or content
     path = skill_md_path(scenario_name, ontology_name, skill_name)
     fs_store.ensure_dir(path.parent)
     fs_store.write_text(path, content)
 
 
-def rewrite_description(scenario_name: str, ontology_name: str, skill_name: str, description: str) -> bool:
+def rewrite_description(
+    scenario_name: str, ontology_name: str, skill_name: str, description: str,
+    meta: Optional[dict] = None,
+) -> bool:
     """改写 SKILL.md frontmatter 的 description；frontmatter 非法 → False（调用方报 400）。"""
     md_path = skill_md_path(scenario_name, ontology_name, skill_name)
     if not fs_store.exists(md_path):
@@ -140,6 +198,8 @@ def rewrite_description(scenario_name: str, ontology_name: str, skill_name: str,
     updated = with_description(content, description)
     if updated is None:
         return False
+    if meta:
+        updated = stamp_metadata(updated, meta) or updated
     fs_store.write_text(md_path, updated)
     return True
 
