@@ -28,12 +28,6 @@ from services import parse_yaml_text, thread_store
 
 router = APIRouter(prefix="/api/threads", tags=["对话"])
 
-# 「本体生成」可按用户勾选裁剪的一级目录（metadata 恒输出，不在此列）
-_FILTERABLE_SECTIONS = (
-    "concepts", "concept_relations", "relations", "functions", "behaviors",
-    "rules", "processes", "securities", "data_engines",
-)
-
 # 北京时间（固定 +08:00 偏移；不依赖 tzdata，容器内同样可用）
 # 仅用于对外展示型时间（如 ontology.yaml 的 metadata.created_at）；
 # 内部排序/缓存用的 updated_at 等仍统一用 UTC。
@@ -321,10 +315,13 @@ async def generate_ontology(thread_id: str, body: dict):
                     "processes", "securities", "data_engines"):
             if not ontology_dict.get(key):
                 ontology_dict.pop(key, None)
-        # 兜底硬过滤：模型若仍输出了未勾选的一级目录，直接丢弃（metadata 恒保留）
+        # 兜底硬过滤：只保留 metadata + 用户勾选的节，其余一律丢弃。
+        # securities / data_engines 由「本体明细」维护、不靠 AI 生成（唯一权威来源 = 设计面保存）；
+        # 模型若幻觉输出这两个节或任何未知节，也在此一并丢弃。
         if selected:
+            keep = {"metadata", *selected}
             for key in list(ontology_dict):
-                if key in _FILTERABLE_SECTIONS and key not in selected:
+                if key not in keep:
                     ontology_dict.pop(key)
 
         # Output to the SAME directory as the md: {本体名}_{内容}.yaml, 同名覆盖

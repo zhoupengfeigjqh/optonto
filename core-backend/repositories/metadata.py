@@ -200,6 +200,27 @@ def list_ontology_dir_names(scenario_name: str) -> list[str]:
     return sorted(d.name for d in _iter_dirs(ONTO_MARKET_DIR / scenario_name))
 
 
+def stamp_identity(metadata_dict: dict, *, scenario_name: str, ontology_name: str,
+                   ontology_id_fallback: Optional[str] = None) -> None:
+    """把本体身份四元组写进 ``metadata`` 映射——**唯一写入实现**。
+
+    四个写入方共用（save / save-version / 改名回刷 / 部署合并），避免"同一身份、三种写法"漂移：
+
+    - 名字取当前（目录）名；
+    - id 取注册表（``registry_ids``，分配权威）；注册表查不到本体 id 时回退 ``ontology_id_fallback``
+      （仅预览等极端场景由调用方显式传入，save 路径不传 = 不兜底）；
+    - 恒清理已废弃的 ``name`` 键（本体名以 ``ontology_name`` 为准，读取侧已无任何消费方）。
+    """
+    scenario_id, ontology_id = registry_ids(scenario_name, ontology_name)
+    if ontology_id is None:
+        ontology_id = ontology_id_fallback
+    metadata_dict.pop("name", None)
+    metadata_dict["scenario_name"] = scenario_name
+    metadata_dict["scenario_id"] = scenario_id
+    metadata_dict["ontology_name"] = ontology_name
+    metadata_dict["ontology_id"] = ontology_id
+
+
 def refresh_identity_metadata(scenario_name: str, ontology_name: str) -> bool:
     """按当前目录名 + 注册表回刷 `<本体>/ontology.yaml` 的 metadata 身份四元组。
 
@@ -207,6 +228,7 @@ def refresh_identity_metadata(scenario_name: str, ontology_name: str) -> bool:
     而身份的唯一读取来源就是 metadata（落后 → 读取侧判为不可信 → 清单/路由整条跳过）。
 
     只 patch metadata 段并原样写回（不重写语义模型，避免丢失模型中未声明的历史字段）。
+    身份写入统一经 :func:`stamp_identity`（与其他写入方同口径）。
     返回 False = 未找到本体目录/ontology.yaml（调用方按需告警）。
     """
     ontology_dir = ONTO_MARKET_DIR / scenario_name / ontology_name
@@ -215,14 +237,10 @@ def refresh_identity_metadata(scenario_name: str, ontology_name: str) -> bool:
     raw = fs_store.read_yaml(path)
     if not meta or not isinstance(raw, dict):
         return False
-    scenario_id, ontology_id = registry_ids(scenario_name, ontology_name)
     md = raw.get("metadata")
     if not isinstance(md, dict):
         md = {}
-    md["scenario_name"] = scenario_name
-    md["scenario_id"] = scenario_id
-    md["ontology_name"] = ontology_name
-    md["ontology_id"] = ontology_id
+    stamp_identity(md, scenario_name=scenario_name, ontology_name=ontology_name)
     raw["metadata"] = md
     fs_store.write_yaml(path, raw)
     return True
@@ -319,6 +337,16 @@ def list_all_ontologies() -> list[dict]:
             results.append(row)
     results.sort(key=lambda o: o.get("updated_at", ""), reverse=True)
     return results
+
+
+def deployed_version_of(scenario_name: str, ontology_name: str) -> str:
+    """当前部署版本（``ontology.yaml.metadata.deployed_version``）；无则空串。
+
+    metadata 读取走 ``_read_ontology_yaml_metadata``（带缓存），与清单同源，
+    避免「单本体 GET」这条热路径每次都全量解析 ontology.yaml（见契约 §4）。
+    """
+    md = _read_ontology_yaml_metadata(ONTO_MARKET_DIR / scenario_name / ontology_name)
+    return str(md.get("deployed_version") or "")
 
 
 def get_ontology_by_id(ontology_id: str) -> Optional[tuple[dict, str, str]]:

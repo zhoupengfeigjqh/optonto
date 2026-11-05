@@ -140,7 +140,7 @@ behaviors:
       type: string
       title: 状态
       required: true
-      example: active
+      example: 有效
     user:
       type: object
       title: 用户信息
@@ -209,7 +209,7 @@ behaviors:
       type: string
       title: 订单状态
       required: true
-      example: active
+      example: 有效
     orderDate:
       type: string
       title: 订单日期

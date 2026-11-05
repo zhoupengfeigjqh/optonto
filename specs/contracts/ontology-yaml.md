@@ -61,9 +61,10 @@
 | 位置 | 职责 |
 | :-- | :-- |
 | `repositories/metadata.registry_ids` | **唯一**的"从注册表取 (scenario_id, ontology_id)"实现 |
-| `services._stamp_identity_metadata` | save / save-version 共用：把四元组写进 `data.metadata`（名字取当前名，id 取注册表） |
-| `repositories/metadata.refresh_identity_metadata` | 改名（场景/本体）与部署后回刷（只 patch 四键，保留其他字段） |
-| `routers/deploy._finalize_metadata` | 合并/预览时写入（同样经 `registry_ids`） |
+| `repositories/metadata.stamp_identity` | **唯一**的"把四元组写进 metadata 映射"实现：取注册表 id、恒清废弃 `name` 键、本体 id 缺失可回退调用方入参 |
+| `services._stamp_identity_metadata` | save / save-version 共用：委托 `stamp_identity`（名字取当前名，id 取注册表） |
+| `repositories/metadata.refresh_identity_metadata` | 改名（场景/本体）与部署后回刷：委托 `stamp_identity`（只 patch 四键，保留其他字段） |
+| `routers/deploy._finalize_metadata` | 合并/预览时写入：委托 `stamp_identity`（传入 `ontology_id` 作兜底） |
 
 ## 2. Overlay 回退规则（两端一致）
 

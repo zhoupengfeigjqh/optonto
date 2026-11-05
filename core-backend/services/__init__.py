@@ -95,32 +95,45 @@ def ensure_ontology_dir(scenario_name: str, ontology_name: str) -> Path:
     return fs_store.ensure_dir(get_ontology_dir(scenario_name, ontology_name))
 
 
-def _load_data_engines_file(scenario_name: str, ontology_name: str) -> Optional[list[DataEngineItem]]:
-    """读取独立数据引擎文件；文件不存在返回 None（调用方回退 ontology.yaml 旧段）。
+def _read_engines_file(path: Path) -> list[DataEngineItem]:
+    """读数据引擎独立文件（**调用方保证文件存在**）；兼容「顶层 data_engines: 列表」与「整个文件即列表」。
 
-    兼容两种形态：顶层 data_engines: 列表（标准），或整个文件就是一个列表。
-    解析失败抛错给调用方——宁可报错也不静默回退到旧段（避免新旧内容不一致难排查）。
+    解析失败抛错给调用方——宁可报错也不静默回退到旧段（见契约 §2 有意分歧）。
     """
-    path = _get_data_engines_path(scenario_name, ontology_name)
-    if not fs_store.exists(path):
-        return None
     raw = fs_store.read_yaml_strict(path) or {}
     items = raw.get("data_engines", []) if isinstance(raw, dict) else raw
     return [DataEngineItem(**e) for e in (items or [])]
 
 
-def _load_securities_file(scenario_name: str, ontology_name: str) -> Optional[list[SecurityItem]]:
-    """读取独立安全管控文件；文件不存在返回 None（调用方回退 ontology.yaml 旧段）。
-
-    兼容两种形态：顶层 securities: 列表（标准），或整个文件就是一个列表。
-    解析失败抛错给调用方——宁可报错也不静默回退到旧段（避免新旧内容不一致难排查）。
-    """
-    path = _get_securities_path(scenario_name, ontology_name)
-    if not fs_store.exists(path):
-        return None
+def _read_securities_file(path: Path) -> list[SecurityItem]:
+    """读安全管控独立文件（**调用方保证文件存在**）；形态兼容同 ``_read_engines_file``。"""
     raw = fs_store.read_yaml_strict(path) or {}
     items = raw.get("securities", []) if isinstance(raw, dict) else raw
     return [SecurityItem(**e) for e in (items or [])]
+
+
+def _overlay_split_files(base_dir: Path, data: OntologyData) -> OntologyData:
+    """把独立文件 data_engines.yaml / securities.yaml 覆盖进 data（存在才覆盖，缺失回退 ontology.yaml 旧段）。
+
+    供「当前部署目录」与「版本存档目录」两处复用（B2 去重）。
+    """
+    engines_path = base_dir / "data_engines.yaml"
+    securities_path = base_dir / "securities.yaml"
+    if fs_store.exists(engines_path):
+        data.data_engines = _read_engines_file(engines_path)
+    if fs_store.exists(securities_path):
+        data.securities = _read_securities_file(securities_path)
+    return data
+
+
+def _load_from_dir(base_dir: Path) -> OntologyData:
+    """从目录读 ontology.yaml（缺失→空数据），再覆盖独立文件 data_engines/securities。"""
+    onto_path = base_dir / "ontology.yaml"
+    data = OntologyData()
+    if fs_store.exists(onto_path):
+        raw = fs_store.read_yaml_strict(onto_path) or {}
+        data = OntologyData(**raw)
+    return _overlay_split_files(base_dir, data)
 
 
 # 与前端 behavior-op-type.resolveOpType / agent ontology-gateway isWrite 同一推导规则
@@ -173,22 +186,7 @@ def _sync_engine_titles(data: OntologyData) -> None:
 
 def _load_ontology_data_uncached(scenario_name: str, ontology_name: str) -> OntologyData:
     """读盘 + 解析（load_ontology_data 的缓存未命中路径）。"""
-    yaml_path = get_yaml_path(scenario_name, ontology_name)
-    if fs_store.exists(yaml_path):
-        raw = fs_store.read_yaml_strict(yaml_path) or {}
-        data = OntologyData(**raw)
-    else:
-        data = OntologyData()
-
-    # 数据引擎独立存放：data_engines.yaml 存在则以其为准，否则回退 ontology.yaml 旧段
-    engines = _load_data_engines_file(scenario_name, ontology_name)
-    if engines is not None:
-        data.data_engines = engines
-    # 安全管控独立存放：securities.yaml 存在则以其为准，否则回退 ontology.yaml 旧段
-    securities = _load_securities_file(scenario_name, ontology_name)
-    if securities is not None:
-        data.securities = securities
-    return data
+    return _load_from_dir(get_ontology_dir(scenario_name, ontology_name))
 
 
 def _mtime_ns(path: Path) -> int:
@@ -229,21 +227,14 @@ def _invalidate_ontology_cache(scenario_name: str, ontology_name: str) -> None:
 
 
 def _stamp_identity_metadata(data: OntologyData, scenario_name: str, ontology_name: str) -> None:
-    """把身份四元组固化进 `data.metadata`（**写侧唯一实现**，save 与 save_version 共用）。
+    """把身份四元组固化进 `data.metadata`（save 与 save_version 共用）。
 
-    - 名字取当前（目录）名；
-    - id 取注册表（分配权威）——统一经 `repositories.metadata.registry_ids`，避免多处各自查 id；
-    - 清理已废弃的 `metadata.name`（本体名以 `metadata.ontology_name` 为准）。
+    身份写入统一经 ``repositories.metadata.stamp_identity``（唯一实现），与其他写入方同口径。
     """
-    from repositories.metadata import registry_ids
-    scenario_id, ontology_id = registry_ids(scenario_name, ontology_name)
+    from repositories.metadata import stamp_identity
     if not isinstance(data.metadata, dict):
         data.metadata = {}
-    data.metadata.pop("name", None)
-    data.metadata["scenario_name"] = scenario_name
-    data.metadata["scenario_id"] = scenario_id
-    data.metadata["ontology_name"] = ontology_name
-    data.metadata["ontology_id"] = ontology_id
+    stamp_identity(data.metadata, scenario_name=scenario_name, ontology_name=ontology_name)
 
 
 def _compact_concept_relations(ontology_dict: dict) -> None:
@@ -266,13 +257,13 @@ def _compact_concept_relations(ontology_dict: dict) -> None:
             row.pop(key)
 
 
-def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyData) -> None:
-    """Save ontology data to YAML file."""
-    yaml_path = get_yaml_path(scenario_name, ontology_name)
-    ensure_ontology_dir(scenario_name, ontology_name)
+def _prepare_split_output(data: OntologyData, scenario_name: str, ontology_name: str) -> tuple[dict, list, list]:
+    """保存前统一预处理：stamp 身份 + 同步引擎标题/安全花名册 + 剥离两个独立文件段。
 
+    返回 ``(ontology_dict, engines, securities)``。``save_ontology_data`` 与
+    ``save_ontology_version`` 共用，保证「编辑保存」与「版本存档」的写盘产物口径一致。
+    """
     _stamp_identity_metadata(data, scenario_name, ontology_name)
-
     # 数据引擎/安全管控拆写到独立文件；ontology.yaml 彻底不含这两个键（唯一权威来源 = 独立文件）。
     # 安全管控先做全花名册同步（补新行为默认条目、刷新 title/op_type 快照、移除已删行为），
     # 并回写 data.securities 让调用方在同一请求内读到同步后的结果。
@@ -285,17 +276,27 @@ def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyDat
     ontology_dict.pop("data_engines", None)
     ontology_dict.pop("securities", None)
     _compact_concept_relations(ontology_dict)
+    return ontology_dict, engines, data.securities
 
-    fs_store.write_yaml(yaml_path, ontology_dict)
+
+def _write_split_files(directory: Path, ontology_dict: dict, engines: list, securities: list) -> None:
+    """把 ontology.yaml + 独立 data_engines.yaml / securities.yaml 写进指定目录（B1 去重）。"""
+    fs_store.write_yaml(directory / "ontology.yaml", ontology_dict)
     fs_store.write_yaml(
-        _get_data_engines_path(scenario_name, ontology_name),
+        directory / "data_engines.yaml",
         {"data_engines": [e.model_dump(exclude_none=True) for e in engines]},
     )
     fs_store.write_yaml(
-        _get_securities_path(scenario_name, ontology_name),
-        {"securities": [s.model_dump(exclude_none=True) for s in data.securities]},
+        directory / "securities.yaml",
+        {"securities": [s.model_dump(exclude_none=True) for s in securities]},
     )
 
+
+def save_ontology_data(scenario_name: str, ontology_name: str, data: OntologyData) -> None:
+    """Save ontology data to YAML file."""
+    ensure_ontology_dir(scenario_name, ontology_name)
+    ontology_dict, engines, securities = _prepare_split_output(data, scenario_name, ontology_name)
+    _write_split_files(get_ontology_dir(scenario_name, ontology_name), ontology_dict, engines, securities)
     _invalidate_ontology_cache(scenario_name, ontology_name)
 
 
@@ -333,60 +334,22 @@ def version_exists(scenario_name: str, ontology_name: str, version: str) -> bool
 def save_ontology_version(scenario_name: str, ontology_name: str, version: str, data: OntologyData) -> None:
     """将合并后的本体数据保存到 ontology_versions/{version}/ 三个 yaml 文件。
 
-    逻辑与 save_ontology_data 一致：数据引擎/安全管控拆写独立文件。
+    逻辑与 save_ontology_data 一致：数据引擎/安全管控拆写独立文件（共用 _prepare_split_output）。
     """
     vdir = fs_store.ensure_dir(_get_version_dir(scenario_name, ontology_name, version))
-
-    _stamp_identity_metadata(data, scenario_name, ontology_name)
-
-    # 数据引擎/安全管控拆写
-    engines = data.data_engines
-    _sync_engine_titles(data)
-    data.securities = _sync_securities_roster(data)
-    ontology_data = data.model_copy(update={"data_engines": [], "securities": []})
-    ontology_dict = ontology_data.model_dump(exclude_none=True)
-    ontology_dict.pop("data_engines", None)
-    ontology_dict.pop("securities", None)
-    _compact_concept_relations(ontology_dict)
-
-    fs_store.write_yaml(vdir / "ontology.yaml", ontology_dict)
-    fs_store.write_yaml(vdir / "data_engines.yaml", {"data_engines": [e.model_dump(exclude_none=True) for e in engines]})
-    fs_store.write_yaml(vdir / "securities.yaml", {"securities": [s.model_dump(exclude_none=True) for s in data.securities]})
+    ontology_dict, engines, securities = _prepare_split_output(data, scenario_name, ontology_name)
+    _write_split_files(vdir, ontology_dict, engines, securities)
 
 
 def load_ontology_version(scenario_name: str, ontology_name: str, version: str) -> OntologyData:
     """从 ontology_versions/{version}/ 读取三个 yaml 文件，合并为 OntologyData。
 
-    如果版本目录不存在或文件不全，抛出 FileNotFoundError。
+    如果版本目录不存在，抛出 FileNotFoundError（读取逻辑与部署目录共用 _load_from_dir）。
     """
     vdir = _get_version_dir(scenario_name, ontology_name, version)
     if not fs_store.exists(vdir):
         raise FileNotFoundError(f"本体版本目录不存在: {vdir}")
-
-    data = OntologyData()
-
-    # 读取 ontology.yaml
-    onto_path = vdir / "ontology.yaml"
-    if fs_store.exists(onto_path):
-        data = OntologyData(**(fs_store.read_yaml_strict(onto_path) or {}))
-
-    # 读取 securities.yaml
-    sec_path = vdir / "securities.yaml"
-    if fs_store.exists(sec_path):
-        raw = fs_store.read_yaml_strict(sec_path) or {}
-        items = raw.get("securities", []) if isinstance(raw, dict) else raw
-        if items:
-            data.securities = [SecurityItem(**e) for e in items]
-
-    # 读取 data_engines.yaml
-    de_path = vdir / "data_engines.yaml"
-    if fs_store.exists(de_path):
-        raw = fs_store.read_yaml_strict(de_path) or {}
-        items = raw.get("data_engines", []) if isinstance(raw, dict) else raw
-        if items:
-            data.data_engines = [DataEngineItem(**e) for e in items]
-
-    return data
+    return _load_from_dir(vdir)
 
 
 def copy_ontology_to_deploy(scenario_name: str, ontology_name: str, version: str) -> None:
@@ -447,14 +410,22 @@ def read_ontology_yaml_dict(scenario_name: str, ontology_name: str) -> dict:
 
 
 def write_ontology_yaml_dict(scenario_name: str, ontology_name: str, raw: dict) -> None:
-    """写回部署 ontology.yaml（仅用于 metadata 级改动，如 deployed_version）。"""
+    """写回部署 ontology.yaml（仅用于 metadata 级改动，如 deployed_version）。
+
+    与 ``write_yaml_raw`` 同口径：写后显式失效进程内缓存（不依赖 mtime 粒度）。
+    """
     fs_store.write_yaml(get_yaml_path(scenario_name, ontology_name), raw)
+    _invalidate_ontology_cache(scenario_name, ontology_name)
 
 
 def deployed_version_of(scenario_name: str, ontology_name: str) -> str:
-    """当前部署版本（``ontology.yaml.metadata.deployed_version``）；无则空串。"""
-    meta = read_ontology_yaml_dict(scenario_name, ontology_name).get("metadata")
-    return str(meta.get("deployed_version") or "") if isinstance(meta, dict) else ""
+    """当前部署版本（``ontology.yaml.metadata.deployed_version``）；无则空串。
+
+    读取经 ``repositories.metadata.deployed_version_of``（走 metadata 段缓存，与清单同源），
+    不再全量解析 ontology.yaml（契约 §1 唯一读取出口 + §4 缓存语义）。
+    """
+    from repositories.metadata import deployed_version_of as _metadata_deployed_version
+    return _metadata_deployed_version(scenario_name, ontology_name)
 
 
 def ontology_yaml_updated_at(scenario_name: str, ontology_name: str) -> str:

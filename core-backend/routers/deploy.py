@@ -136,14 +136,15 @@ def _finalize_metadata(merged: OntologyData, ontology_id: str, ontology_name: st
     """给合并结果补上身份四元组（preview 与 deploy 共用，保证展示与落盘一致）。
 
     shard_hash 已在 _merge_yaml_files 中计算，此处不再处理。
-    名字取当前（目录）名；id 由注册表分配——统一走 ``registry_ids``（与 save_ontology_data 同一口径），
-    避免多处各自查 id。注册表查不到时回退调用方传入的 ontology_id（仅 preview 的极端场景）。
+    身份写入统一经 ``repositories.metadata.stamp_identity``（与 save_ontology_data /
+    refresh_identity_metadata 同一实现）；注册表查不到本体 id 时回退调用方传入的
+    ontology_id（仅 preview 的极端场景）。
     """
-    scenario_id, oid = ontology_registry.registry_ids(sc_name, ontology_name)
-    merged.metadata["scenario_name"] = sc_name
-    merged.metadata["scenario_id"] = scenario_id
-    merged.metadata["ontology_name"] = ontology_name
-    merged.metadata["ontology_id"] = oid if oid is not None else ontology_id
+    from repositories.metadata import stamp_identity
+    if not isinstance(merged.metadata, dict):
+        merged.metadata = {}
+    stamp_identity(merged.metadata, scenario_name=sc_name, ontology_name=ontology_name,
+                   ontology_id_fallback=ontology_id)
 
 
 def _resolve_version_docs(ontology_name: str, version: str) -> tuple[list[dict], list[Path]]:
