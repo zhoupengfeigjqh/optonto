@@ -1,6 +1,6 @@
 [
   {
-    "name": "test001",
+    "name": "test1",
     "kind": "ontology_function",
     "ontology_id": "1",
     "ontology_name": "原材料采购和库存",
@@ -15,8 +15,8 @@
     "tool_count": 6,
     "host_port": 8021,
     "transport": "streamable",
-    "container_name": "optonto-mcp-publish-test001-6b31b9",
-    "token": "P1DHfpkfyw801dQjrm6HdTzfWQODDFAL",
+    "container_name": "optonto-mcp-publish-test1-02c20c",
+    "token": "qHA_Npky2R8TRF41-QFOG0O4twrX0A-F",
     "tools": [
       {
         "name": "sumRawNotArrivalQty",
@@ -325,10 +325,10 @@
         }
       }
     ],
-    "created_at": "2026-11-04T07:27:13+00:00"
+    "created_at": "2026-11-06T15:07:47+00:00"
   },
   {
-    "name": "test002",
+    "name": "test2",
     "kind": "behavior",
     "ontology_id": "1",
     "ontology_name": "原材料采购和库存",
@@ -337,16 +337,16 @@
       "CancelPurchaseRecord",
       "ReceiveRawMaterial",
       "QueryInventory",
-      "QueryPurchaseRecords",
       "QueryRawMaterials",
+      "QueryPurchaseRecords",
       "QuerySuppliers",
       "QuerySupplierCapability"
     ],
     "tool_count": 8,
     "host_port": 8022,
     "transport": "streamable",
-    "container_name": "optonto-mcp-publish-test002-7100f5",
-    "token": "B2r3zfRupt05ZZ4fJoSx5OUG3FGW_PKV",
+    "container_name": "optonto-mcp-publish-test2-92ef33",
+    "token": "Y9gtXqzgndtjVF4RPWnqb989TgOzjfpu",
     "tools": [
       {
         "name": "CreatePurchaseRecord",
@@ -528,6 +528,42 @@
         }
       },
       {
+        "name": "QueryRawMaterials",
+        "title": "查询原材料基本信息",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询原材料基本信息：根据原材料ID或名称查询原材料的基础信息。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "rawMaterialId": {
+              "type": "string",
+              "title": "原材料编号",
+              "example": "RM-001"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "高强度钢板"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
         "name": "QueryPurchaseRecords",
         "title": "查询原材料采购单信息",
         "category": "本体行为",
@@ -551,42 +587,6 @@
               "type": "string",
               "title": "采购单号",
               "example": "PO-20231027-001"
-            },
-            "rawMaterialId": {
-              "type": "string",
-              "title": "原材料编号",
-              "example": "RM-001"
-            },
-            "rawMaterialName": {
-              "type": "string",
-              "title": "原材料名称",
-              "example": "高强度钢板"
-            }
-          },
-          "required": [
-            "ontology_id"
-          ]
-        }
-      },
-      {
-        "name": "QueryRawMaterials",
-        "title": "查询原材料基本信息",
-        "category": "本体行为",
-        "ontologyScope": {
-          "ontology_id": "1",
-          "scenario_id": "1",
-          "scenario_name": "生产调度",
-          "ontology_name": "原材料采购和库存"
-        },
-        "description": "查询原材料基本信息：根据原材料ID或名称查询原材料的基础信息。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "ontology_id": {
-              "type": "string",
-              "title": "本体ID",
-              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
-              "minLength": 1
             },
             "rawMaterialId": {
               "type": "string",
@@ -677,6 +677,6 @@
         }
       }
     ],
-    "created_at": "2026-11-04T07:27:56+00:00"
+    "created_at": "2026-11-06T15:08:03+00:00"
   }
 ]
