@@ -5,6 +5,7 @@
 - **执行链**：行为名 → 反查**就绪**数据引擎（契约 ⑥）→ 映射翻译入参 → 调下游 MCP
   （``target.server_url`` + ``target.tool_name``）→ 映射翻译出参；
 - **执行端点**：``/call-behavior``（按行为名执行）、``/call-engine``（按引擎名直调）。
+  路径常量与另两个执行底座同源：``mcp-shared/executor_paths.py``。
 
 **工具面已下线**（2026-10-19 方案 B，用户拍板）：本服务是**零工具执行底座**
 （``transport=none``，不挂 ``/mcp``、``/sse``，外部误连直接 404）。对 Agent 提供
@@ -30,6 +31,7 @@ for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+from executor_paths import CALL_BEHAVIOR, CALL_ENGINE
 from mcp_app import TRANSPORT_NONE, build_mcp_app
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -107,7 +109,7 @@ starlette_app = build_mcp_app(
     None, _list_tools, "optonto-data-engine-executor",
     transport=TRANSPORT_NONE,
     extra_routes=[
-        Route("/call-behavior", endpoint=_handle_call_behavior, methods=["POST"]),
-        Route("/call-engine", endpoint=_handle_call_engine, methods=["POST"]),
+        Route(CALL_BEHAVIOR, endpoint=_handle_call_behavior, methods=["POST"]),
+        Route(CALL_ENGINE, endpoint=_handle_call_engine, methods=["POST"]),
     ],
 )

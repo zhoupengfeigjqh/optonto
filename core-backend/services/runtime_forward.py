@@ -3,8 +3,12 @@
 设计器测试按钮与 Agent 真实调用必须走同一条路径（消灭双执行路径）：
 
 - **本体行为 / 数据引擎**执行 → ``optonto-data-engine-executor:8005`` 的 ``/call-behavior``、``/call-engine``
-- **本体函数**执行           → ``optonto-ontology-function-executor:8006`` 的 ``/execute-function``
+- **本体函数**执行           → ``optonto-ontology-function-executor:8006`` 的 ``/execute-ontology-function``
 - **公共函数**执行           → ``optonto-common-function-mcp:8007`` 的 ``/execute-common-function``
+
+路径**不在本模块硬编码**：``mcp-shared/executor_paths.py`` 是四个执行端点的唯一来源，
+由本模块转出给 routers（同一个常量也被服务端 ``Route(...)`` 与自建发布门面读取，
+故"core 打哪个路径"与"服务挂哪个路径"不可能漂移）。
 
 三类函数的语义差别（勿混用）：本体函数**有本体归属**（执行前做归属一致性校验、必填 ontology_id）；
 公共函数**是平台级能力**（无 ontology_id、不做归属校验），它的执行与对外发布合体在同一个服务
@@ -22,6 +26,12 @@ import os
 import httpx
 
 from errors import UpstreamResponseError, UpstreamTimeoutError, UpstreamUnavailableError
+from services.mcp_contract_bridge import (
+    CALL_BEHAVIOR,
+    CALL_ENGINE,
+    EXECUTE_COMMON_FUNCTION,
+    EXECUTE_ONTOLOGY_FUNCTION,
+)
 
 # 三个执行/能力服务的地址（键名即角色，避免"函数"一词两义）
 DATA_ENGINE_EXECUTOR_URL = os.getenv("DATA_ENGINE_EXECUTOR_URL", "http://optonto-data-engine-executor:8005")

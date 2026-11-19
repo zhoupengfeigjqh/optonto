@@ -236,8 +236,8 @@ class UpstreamAddressCase(TopologyCase):
         block = re.search(r"key === 'functionExecutor'.*?endpoints:\s*\[([^\]]*)\]", text, re.DOTALL)
         self.assertIsNotNone(block, "未找到本体函数执行服务的端点清单（配置片段）")
         endpoints = re.findall(r"/([a-z-]+)", block.group(1))
-        self.assertEqual(endpoints, ["execute-function"],
-                         f"本体函数执行服务的端点清单应只含 execute-function，实际 {endpoints}")
+        self.assertEqual(endpoints, ["execute-ontology-function"],
+                         f"本体函数执行服务的端点清单应只含 execute-ontology-function，实际 {endpoints}")
 
 
 _UI_KEY_TO_SERVER = {
@@ -428,6 +428,43 @@ class FixedSnippetCase(TopologyCase):
         self.assertIn("internalEndpoint", snippets, "第二段应由声明里的容器内地址生成")
         for forbidden in ('"enabled"', '"business_data"', '"allowed_tools"', '"builtin"'):
             self.assertNotIn(forbidden, snippets, f"配置片段不得写入平台管理字段 {forbidden}")
+
+
+class EndpointPathCase(TopologyCase):
+    """执行端点路径 ⇄ 唯一来源 ``mcp-shared/executor_paths.py``（2026-11-16 新增）。
+
+    防的是**路径字面量再次分散**：此前四个端点路径以字面量出现在服务端 ``Route(...)``、
+    自建发布转发契约、core 四个 router 里（共 8 处）。改名漏一处的表现是运行期 404，
+    导入期完全无感——正是本期把 ``/execute-function`` 改成 ``/execute-ontology-function``
+    时最怕的失败模式。
+    """
+
+    _SERVICE_SERVERS = (
+        "data-engine-executor/server.py",
+        "ontology-function-executor/server.py",
+        "common-function-mcp/server.py",
+    )
+
+    def test_服务端Route用共享常量(self):
+        """只看**执行端点**：`/functions`、`/health` 这类自检/运维视图本来就是字面量，不在契约内。"""
+        for rel in self._SERVICE_SERVERS:
+            text = self.read(rel)
+            self.assertIn("from executor_paths import", text,
+                          f"{rel}: 端点路径应从 executor_paths 取，不要写字面量")
+            self.assertNotRegex(text, r'''Route\(\s*["']/(?:execute|call)-''',
+                                f"{rel}: Route 里出现字面量执行端点路径（改路径时必然漏掉这里）")
+
+    def test_自建发布转发契约用共享常量(self):
+        text = self.read("mcp-shared/publish_upstream.py")
+        self.assertIn("from executor_paths import", text,
+                      "publish_upstream 的 path 应取 executor_paths，不要写字面量")
+        self.assertNotIn('"path": "/', text, "publish_upstream 里出现了硬编码路径")
+
+    def test_core转发用共享常量(self):
+        for name in ("functions.py", "behaviors.py", "data_engines.py", "common_functions.py"):
+            text = self.read(f"core-backend/routers/{name}")
+            self.assertNotRegex(text, r"""["']/(?:execute|call)-""",
+                                f"routers/{name}: 端点路径硬编码，应 import runtime_forward 转出的常量")
 
 
 if __name__ == "__main__":

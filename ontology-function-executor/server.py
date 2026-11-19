@@ -33,6 +33,7 @@ for _p in (Path(__file__).resolve().parent.parent / "mcp-shared",):
         sys.path.insert(0, str(_p))
 
 import data_store
+from executor_paths import EXECUTE_ONTOLOGY_FUNCTION
 from function_runner import run_function_code
 from mcp_app import TRANSPORT_NONE, build_mcp_app
 from starlette.requests import Request
@@ -93,7 +94,7 @@ def _load_ontology_or_error(ontology_id: str):
 # ─── 执行端点（唯一实现；core 设计器测试与自建发布-函数共用）──────────────────────
 
 async def _handle_execute_function(request: Request) -> JSONResponse:
-    """POST /execute-function {ontology_id, scope, function_name, params}（ontology_id 必填）。
+    """POST /execute-ontology-function {ontology_id, scope, function_name, params}（ontology_id 必填）。
 
     ``ontology_id`` 由调用方（LLM）填写；``scope`` 是自建发布时固化的本体上下文。两道闸：
     ① 发布声明 == 调用意图（``require_scope_match``，无 scope 时跳过——设计期 REST 调用）；
@@ -146,7 +147,7 @@ starlette_app = build_mcp_app(
     None, _list_tools, "optonto-ontology-function-executor",
     transport=TRANSPORT_NONE,
     extra_routes=[
-        Route("/execute-function", endpoint=_handle_execute_function, methods=["POST"]),
+        Route(EXECUTE_ONTOLOGY_FUNCTION, endpoint=_handle_execute_function, methods=["POST"]),
         Route("/functions", endpoint=_handle_list_functions, methods=["GET"]),
     ],
 )

@@ -33,9 +33,9 @@ async def execute_common_function(func_name: str, body: dict):
 
     Convention: def run(params: dict) -> dict。返回值已由执行器出口归一为统一信封（success/data/error），透传返回。
     """
-    from services.runtime_forward import COMMON_FUNCTION_MCP_URL, forward_call
+    from services.runtime_forward import COMMON_FUNCTION_MCP_URL, EXECUTE_COMMON_FUNCTION, forward_call
     return await forward_call(
-        COMMON_FUNCTION_MCP_URL, "/execute-common-function",
+        COMMON_FUNCTION_MCP_URL, EXECUTE_COMMON_FUNCTION,
         {"function_name": func_name, "params": body.get("params", {})},
         "common-function-mcp",
     )

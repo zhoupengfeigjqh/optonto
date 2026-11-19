@@ -223,7 +223,7 @@ def test_函数发布转发到本体函数执行服务():
     _patch_client(s, fake)
     out = asyncio.run(s.handle_call_tool("calcOrderAmount", {"qty": 3, "ontology_id": 999}))
     call = fake.calls[0]
-    assert call["url"] == "http://optonto-ontology-function-executor:8006/execute-function"
+    assert call["url"] == "http://optonto-ontology-function-executor:8006/execute-ontology-function"
     # ontology_id = 调用方填写的值（门面不覆盖、不校验）；scope = 该工具发布时固化的元数据；
     # params 只留业务参数。一致性判定在执行底座（契约 ④-1）
     assert call["json"] == {
@@ -266,7 +266,7 @@ def test_上游地址可由环境变量覆盖(monkeypatch):
     _patch_client(s, fake)
     monkeypatch.setenv("ONTOLOGY_FUNCTION_EXECUTOR_URL", "http://other-host:9999")
     asyncio.run(s.handle_call_tool("calcOrderAmount", {"ontology_id": 3}))
-    assert fake.calls[0]["url"] == "http://other-host:9999/execute-function"
+    assert fake.calls[0]["url"] == "http://other-host:9999/execute-ontology-function"
 
 
 def test_下游错误置isError并带出状态码():

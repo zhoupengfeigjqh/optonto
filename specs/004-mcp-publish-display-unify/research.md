@@ -93,7 +93,7 @@
 
 **决策**：**保持既有正则可解析**，只做追加式修改：
 - `catalog.ts` 每条仍以 `key: '…',` 开头、以 `\n  },` 收尾，单引号字符串不变；新增 `clientKey` / `internalEndpoint` 放在 `endpoint` 之后；
-- `config-snippets.ts` 保留 `key === 'functionExecutor'` 分支与 `endpoints: ['POST /execute-function']` 形态，保住 `test_公共函数迁移后旧端点只允许出现在归位说明里` 的解析；
+- `config-snippets.ts` 保留 `key === 'functionExecutor'` 分支与 `endpoints: ['POST /execute-ontology-function']` 形态，保住 `test_公共函数迁移后旧端点只允许出现在归位说明里` 的解析；
 - 保留 `clientTypeOf(def.transport)` 的调用形态（护栏断言该字符串存在），避免“手写 type”；
 - 新增一条护栏断言（同批加）：三个对外固定服务的片段生成结果**都含两段**，且 `internalEndpoint` 指向真实容器（复用 `assert_url_real`）。
 

@@ -3,7 +3,7 @@
 一个镜像、N 个实例：用户在「MCP发布 → 数据引擎」页勾选本体的函数或行为 → core 编译工具清单
 并把配置经环境变量 ``PUBLISH_CONFIG_JSON`` 注入 → 本服务按 ``kind`` **转发**到对应执行底座：
 
-- ``kind=ontology_function`` → ``ontology-function-executor:8006/execute-function``（本体函数执行唯一实现）
+- ``kind=ontology_function`` → ``ontology-function-executor:8006/execute-ontology-function``（本体函数执行唯一实现）
 - ``kind=behavior``          → ``data-engine-executor:8005/call-behavior``（行为映射执行唯一实现）
 
 **本服务不执行任何东西**：零挂载、不读 .data、不含执行实现——本体函数与本体行为的执行语义

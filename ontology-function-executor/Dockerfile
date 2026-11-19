@@ -1,6 +1,6 @@
 # optonto-ontology-function-executor — 本体函数执行服务（零工具执行底座）
 # build context = 仓库根（需 COPY mcp-shared）
-# 零工具：服务不挂 /mcp 与 /sse，只提供 /execute-function、/execute-common-function（内网调用）
+# 零工具：服务不挂 /mcp 与 /sse，只提供 /execute-ontology-function（内网调用；公共函数执行在 8007）
 FROM python:3.12-slim
 
 WORKDIR /app

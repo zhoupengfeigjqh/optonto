@@ -94,7 +94,7 @@ def test_查询工具参数矩阵():
 def test_不挂载执行端点():
     """执行职责已迁至 ontology-function-executor；此处留着就是双实现（宪法：单一来源）。"""
     paths = {r.path for r in server.starlette_app.routes}
-    assert "/execute-function" not in paths
+    assert "/execute-ontology-function" not in paths
     assert "/execute-common-function" not in paths
 
 

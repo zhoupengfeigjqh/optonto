@@ -10,6 +10,9 @@
 - 本地直跑：``<repo>/core-backend/services/...`` → ``<repo>/mcp-shared``。
 
 本模块只做路径注入 + 转出符号，**不含任何编译逻辑**。
+
+另外转出四个**执行端点路径**（``executor_paths``）：core 的 router 与服务端的 ``Route(...)``
+读同一份常量，避免"改了调用方、没改服务端"这类只能靠运行期 404 发现的漂移。
 """
 
 import sys
@@ -19,6 +22,12 @@ _SHARED_DIR = Path(__file__).resolve().parents[2] / "mcp-shared"
 if _SHARED_DIR.is_dir() and str(_SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(_SHARED_DIR))
 
+from executor_paths import (  # noqa: E402
+    CALL_BEHAVIOR,
+    CALL_ENGINE,
+    EXECUTE_COMMON_FUNCTION,
+    EXECUTE_ONTOLOGY_FUNCTION,
+)
 from publish_registry import published_behavior_names  # noqa: E402
 from publish_upstream import (  # noqa: E402
     KIND_BEHAVIOR as PUBLISH_KIND_BEHAVIOR,
@@ -37,8 +46,12 @@ from tool_contract import (  # noqa: E402
 )
 
 __all__ = [
+    "CALL_BEHAVIOR",
+    "CALL_ENGINE",
     "CATEGORY_BEHAVIOR",
     "CATEGORY_FUNCTION",
+    "EXECUTE_COMMON_FUNCTION",
+    "EXECUTE_ONTOLOGY_FUNCTION",
     "PUBLISH_KIND_BEHAVIOR",
     "PUBLISH_KIND_ONTOLOGY_FUNCTION",
     "behavior_concept_names",

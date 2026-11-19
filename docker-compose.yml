@@ -146,7 +146,7 @@ services:
       - optonto-net
 
   # ─── 公共函数 MCP 服务（平台通用算力：发布 + 执行一体，自包含）────────────────
-  # 对外：/mcp 发布 7 个公共函数工具（filterData/aggregateData/dateDiff 等，跨本体共享）
+  # 对外：/mcp 发布多个公共函数工具（filterData/aggregateData/dateDiff 等，跨本体共享）
   # 与本体函数的处理刻意不同：公共函数无本体归属、执行是纯内存计算，故"发布什么就执行什么"；
   # 本体函数有归属、对外需按本体切片，故其执行底座不对外（见下一服务）。
   optonto-common-function-mcp:

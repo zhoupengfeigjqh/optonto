@@ -110,7 +110,7 @@ export function staticServiceConfig(
   if (def.key === 'functionExecutor') {
     return {
       title: '本体函数执行服务（内网执行端点）',
-      json: JSON.stringify({ internal: true, endpoint: 'http://optonto-ontology-function-executor:8006', endpoints: ['POST /execute-function'] }, null, 2),
+      json: JSON.stringify({ internal: true, endpoint: 'http://optonto-ontology-function-executor:8006', endpoints: ['POST /execute-ontology-function'] }, null, 2),
       note: '零工具服务：不挂 /mcp 与 /sse，外部客户端误连直接 404。'
         + '只执行**本体函数**（执行前做归属一致性校验），调用方是 core 设计器测试与自建发布（函数类）。'
         + '公共函数执行不在这里——已迁至公共函数 MCP 服务（8007 /execute-common-function），该服务发布与执行一体。',

@@ -17,7 +17,12 @@ COPY 进各镜像的 ``mcp-shared/``（同一份源码，不可达依赖）—�
 
 **注入与读取的约定**：core 注入**该 kind 对应的那一个**环境变量（不注入另一个），门面只读自己的
 spec 里的那个名字，故不存在"注入了一堆看都不看的变量"。
+
+**路径不在本模块硬编码**：``path`` 取自 ``executor_paths``（四个执行端点的唯一来源）。
+本模块只回答"哪类发布打到哪个底座、用哪个变量名、载荷键叫什么"。
 """
+
+from executor_paths import CALL_BEHAVIOR, EXECUTE_ONTOLOGY_FUNCTION
 
 # 发布类型（语义明确，不与「公共函数」混淆）：
 # - ontology_function 本体函数：有本体归属 → 转发本体函数执行服务（带 ontology_id）
@@ -34,14 +39,14 @@ PUBLISH_UPSTREAMS = {
     KIND_ONTOLOGY_FUNCTION: {
         "env": "ONTOLOGY_FUNCTION_EXECUTOR_URL",
         "default": "http://optonto-ontology-function-executor:8006",
-        "path": "/execute-function",
+        "path": EXECUTE_ONTOLOGY_FUNCTION,
         "target_key": "function_name",
         "label": "本体函数执行服务",
     },
     KIND_BEHAVIOR: {
         "env": "DATA_ENGINE_EXECUTOR_URL",
         "default": "http://optonto-data-engine-executor:8005",
-        "path": "/call-behavior",
+        "path": CALL_BEHAVIOR,
         "target_key": "behavior_name",
         "label": "数据引擎执行服务",
     },

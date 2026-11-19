@@ -10,7 +10,7 @@
 |---|---|---|---|
 | **本体查询 MCP 服务**（固定） | `optonto-ontology-query-mcp` / 8002 | ✅ 内置对外工具面之一 | 回答「本体里有什么」：`list*` 八件套（含 6 个 `listOnto*`），只读无副作用 |
 | **公共函数 MCP 服务**（固定） | `optonto-common-function-mcp` / 8007 | ✅ 7 个公共函数工具 | 平台级通用算力（日期/过滤/聚合/分组）：**无本体归属、跨场景共享、纯计算**；**发布 + 执行一体**（本服务内直接 exec，不转发） |
-| **本体函数执行服务**（固定） | `optonto-ontology-function-executor` / 8006（仅内网） | ❌ 零工具（`transport=none`） | **仅本体函数**执行的唯一实现（`/execute-function`：ontology_id 必填 + 归属一致性校验） |
+| **本体函数执行服务**（固定） | `optonto-ontology-function-executor` / 8006（仅内网） | ❌ 零工具（`transport=none`） | **仅本体函数**执行的唯一实现（`/execute-ontology-function`：ontology_id 必填 + 归属一致性校验） |
 | **数据引擎执行服务**（固定） | `optonto-data-engine-executor` / 8005（仅内网） | ❌ 零工具（`transport=none`，2026-10-19 起） | **本体行为**执行的唯一实现（`/call-behavior`）+ 引擎直调（`/call-engine`）；映射翻译 → 下游 MCP |
 | **业务系统 MCP**（固定） | `optonto-business-mcp` / 8004 | ✅ 外部形态（无平台标记） | 业务侧集成边缘：直连业务系统；**与其他固定服务同权，可启停**（2026-10-04 用户决策）。⚠️ **须在「MCP 配置」标记 `business_data: true`**——否则其原始写接口会以「其他MCP工具」身份进 Agent 目录，可被规划成零确认的函数子任务（见下） |
 | **自建发布**（动态实例） | `optonto-mcp-publish-*` / 宿主 8020-8099（容器内 8100） | ✅ 只发布勾选项（带令牌） | **对外提供执行能力的唯一出口**：按本体切片发布函数或行为，只转发不执行 |
@@ -129,10 +129,10 @@ inputSchema["x-title"] = 同一个 title           ← 平台内投影（agent �
 
 - 系统参数集合：`SYSTEM_PARAMS = {ontology_id}`（`mcp-shared/tool_contract.py`），各发布端共用同一个
   `strip_system_params()`；`scope` 是 body 级元数据，从不属于参数面。
-  **执行入口同口径**（2026-10-01 收口）：本体函数执行服务 8006 `/execute-function`、公共函数 MCP 服务 8007
+  **执行入口同口径**（2026-10-01 收口）：本体函数执行服务 8006 `/execute-ontology-function`、公共函数 MCP 服务 8007
   `/execute-common-function`、数据引擎执行服务 8005 `/call-behavior` 执行前一律剥离；**引擎入口 `/call-engine` 有意不剥**——
   引擎 params 是用户自定义字段（`SYSTEM_PARAMS` 只属本体执行类），剥了会误删真名为 `ontology_id` 的引擎参数。
-- 执行底座 REST 入口（8006 `/execute-function`、8005 `/call-behavior`）的 `ontology_id` 是**路由键**，
+- 执行底座 REST 入口（8006 `/execute-ontology-function`、8005 `/call-behavior`）的 `ontology_id` 是**路由键**，
   缺失一律报错（`require_ontology_id`）、**不做按发布记录回退**（否则跨本体同名工具会静默路由到错误本体）。
 - **归属一致性（契约 ④，两道闸，2026-10-19 收口）**：本体执行类在路由前依次校验
   1. **发布声明闸** `require_scope_match(scope.ontology_id, ontology_id)`：`scope` 来自自建发布的工具元数据
@@ -238,7 +238,7 @@ inputSchema["x-title"] = 同一个 title           ← 平台内投影（agent �
 | 公共函数 MCP（8007） | `streamable` | `/mcp` 单端点 | `http` |
 | 业务系统 MCP（8004） | `streamable` | `/mcp` 单端点 | `http` |
 | 数据引擎执行服务（8005，仅内网） | `none` | **不挂协议端点**（零工具，只有 `/call-behavior`、`/call-engine`） | — |
-| 本体函数执行服务（8006，仅内网） | `none` | **不挂协议端点**（零工具，只有 `/execute-function`） | — |
+| 本体函数执行服务（8006，仅内网） | `none` | **不挂协议端点**（零工具，只有 `/execute-ontology-function`） | — |
 | 自建发布（动态容器） | 发布时可选 `sse` / `streamable` | `/sse` + `/messages/` 或 `/mcp` | `sse` / `http` |
 
 **同一件事的三个名字**（2026-10-05 查官方文档后定稿，三者不得互相混用）：
@@ -327,7 +327,7 @@ inputSchema["x-title"] = 同一个 title           ← 平台内投影（agent �
 
 ### 9.6 依赖关系
 
-自建发布**不自带执行实现**，转发到执行底座：函数 → 本体函数执行服务（8006 /execute-function），
+自建发布**不自带执行实现**，转发到执行底座：函数 → 本体函数执行服务（8006 `/execute-ontology-function`），
 行为 → 数据引擎执行服务（8005 /call-behavior）。因此对应执行服务停机时自建发布会
 不可用（错误文案会指名依赖服务），这是刻意保留的单一执行路径。
 
@@ -394,3 +394,9 @@ inputSchema["x-title"] = 同一个 title           ← 平台内投影（agent �
 
 **回滚**：还原 `server.py` 即恢复工具面；Agent 侧需手动补回 MCP 配置条目（或整提交回滚）。
 决策记录见 `specs/2026-10-19-zero-tool-executor-decision.md`。
+
+## 12. 变更记录
+
+| 日期 | 变更 | 影响面 / 上线要求 |
+|---|---|---|
+| 2026-11-16 | ① 本体函数执行端点 `/execute-function` **更名为 `/execute-ontology-function`**；② 四个执行端点路径收进 `mcp-shared/executor_paths.py`（唯一权威来源） | 理由：`function` 一词有二义（本体函数 vs 公共函数），环境变量名早已消歧为 `ONTOLOGY_FUNCTION_EXECUTOR_URL`，路径当时未跟上；兄弟端点 `/execute-common-function` 本就带命名空间，裸 `function` 是四端点孤例。同步面：三个执行服务端 `Route(...)`、`publish_upstream`、core 四个 router、前端 `config-snippets`、`EndpointPathCase` 护栏。**上线须同批重建 8005 / 8006 / 8007 / 门面镜像，并重建所有运行中的自建发布容器**——路径随镜像烘焙，旧容器会继续打旧路径（404） |

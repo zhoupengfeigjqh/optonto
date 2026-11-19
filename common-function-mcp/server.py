@@ -52,6 +52,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 import data_store
+from executor_paths import EXECUTE_COMMON_FUNCTION
 from function_runner import run_function_code
 from mcp_app import build_mcp_app, tool_kwargs
 from tool_contract import CATEGORY_COMMON, strip_system_params
@@ -169,7 +170,7 @@ async def _handle_list_functions(request: Request) -> JSONResponse:
 starlette_app = build_mcp_app(
     server, _list_tools, "optonto-common-function-mcp",
     extra_routes=[
-        Route("/execute-common-function", endpoint=_handle_execute_common_function, methods=["POST"]),
+        Route(EXECUTE_COMMON_FUNCTION, endpoint=_handle_execute_common_function, methods=["POST"]),
         Route("/functions", endpoint=_handle_list_functions, methods=["GET"]),
     ],
 )

@@ -198,9 +198,9 @@ async def execute_function(ontology_id: str, function_name: str, body: dict):
     统一入口约定（与公共函数一致）：def run(params: dict) -> dict，整包传参；
     返回值已由执行器出口归一为统一信封 {"success", "data", "error"}（读时兼容旧式 {"result": ...}），透传返回。
     """
-    from services.runtime_forward import ONTOLOGY_FUNCTION_EXECUTOR_URL, forward_call
+    from services.runtime_forward import EXECUTE_ONTOLOGY_FUNCTION, ONTOLOGY_FUNCTION_EXECUTOR_URL, forward_call
     return await forward_call(
-        ONTOLOGY_FUNCTION_EXECUTOR_URL, "/execute-function",
+        ONTOLOGY_FUNCTION_EXECUTOR_URL, EXECUTE_ONTOLOGY_FUNCTION,
         {"ontology_id": ontology_id, "function_name": function_name, "params": body.get("params", {})},
         "ontology-mcp",
     )

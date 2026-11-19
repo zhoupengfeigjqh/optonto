@@ -70,7 +70,7 @@ def test_函数执行成功返回统一信封(monkeypatch):
     seen = []
     monkeypatch.setattr(server, "run_function_code",
                         lambda code, params: seen.append(params) or {"success": True, "data": {"ok": 1}, "error": None})
-    resp = TestClient(server.starlette_app).post("/execute-function", json={
+    resp = TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "ontology_id": owner["ontology_id"], "function_name": name, "params": {"x": 1}})
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"] == {"ok": 1}
@@ -85,7 +85,7 @@ def test_系统参数被剥离(monkeypatch):
     seen = []
     monkeypatch.setattr(server, "run_function_code",
                         lambda code, params: seen.append(params) or {"success": True, "data": {}})
-    TestClient(server.starlette_app).post("/execute-function", json={
+    TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "ontology_id": owner["ontology_id"], "function_name": name,
         "params": {"ontology_id": owner["ontology_id"], "biz": 1}})
     assert seen and seen[0] == {"biz": 1}, "ontology_id 必须剥离，业务参数保留"
@@ -102,7 +102,7 @@ def test_归属不一致被拒且不执行(monkeypatch):
     ran = []
     monkeypatch.setattr(server, "run_function_code",
                         lambda code, params: ran.append(params) or {"success": True, "data": {}})
-    resp = TestClient(server.starlette_app).post("/execute-function", json={
+    resp = TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "ontology_id": others[0], "function_name": name, "params": {}})
     assert resp.status_code == 400, resp.text
     assert "归属校验失败" in resp.json()["detail"]
@@ -110,13 +110,13 @@ def test_归属不一致被拒且不执行(monkeypatch):
 
 
 def test_函数不存在返回404():
-    resp = TestClient(server.starlette_app).post("/execute-function", json={
+    resp = TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "ontology_id": 1, "function_name": "__不存在的函数__", "params": {}})
     assert resp.status_code in (400, 404)
 
 
 def test_缺ontology_id被拒():
-    resp = TestClient(server.starlette_app).post("/execute-function", json={
+    resp = TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "function_name": "whatever", "params": {}})
     assert resp.status_code == 400
     assert "ontology_id" in resp.json()["detail"]
@@ -138,7 +138,7 @@ def test_发布scope与调用本体不一致被拒且不执行(monkeypatch):
     ran = []
     monkeypatch.setattr(server, "run_function_code",
                         lambda code, params: ran.append(params) or {"success": True, "data": {}})
-    resp = TestClient(server.starlette_app).post("/execute-function", json={
+    resp = TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "ontology_id": owner["ontology_id"], "function_name": name, "params": {},
         "scope": {"ontology_id": others[0], "ontology_name": "别的本体", "scenario_name": "生产调度"},
     })
@@ -156,7 +156,7 @@ def test_scope一致时正常执行(monkeypatch):
     name, owner = picked
     monkeypatch.setattr(server, "run_function_code",
                         lambda code, params: {"success": True, "data": {"ok": 1}})
-    resp = TestClient(server.starlette_app).post("/execute-function", json={
+    resp = TestClient(server.starlette_app).post("/execute-ontology-function", json={
         "ontology_id": owner["ontology_id"], "function_name": name, "params": {},
         "scope": {"ontology_id": str(owner["ontology_id"]), "ontology_name": owner.get("ontology_name")},
     })
@@ -171,7 +171,7 @@ def test_公共函数端点已迁走():
     """
     paths = {r.path for r in server.starlette_app.routes}
     assert "/execute-common-function" not in paths
-    assert "/execute-function" in paths
+    assert "/execute-ontology-function" in paths
 
 
 # ─── 归属索引 ─────────────────────────────────────────────────────────────────

@@ -17,7 +17,7 @@
 零工具底座**只输出内网执行端点说明**，形态沿用现状：
 
 ```json
-{ "internal": true, "endpoint": "http://optonto-ontology-function-executor:8006", "endpoints": ["POST /execute-function"] }
+{ "internal": true, "endpoint": "http://optonto-ontology-function-executor:8006", "endpoints": ["POST /execute-ontology-function"] }
 ```
 
 ## 2. 片段结构

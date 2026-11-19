@@ -81,9 +81,9 @@ describe('staticServiceConfig：业务系统的登记状态与配置读取失败
 });
 
 describe('staticServiceConfig：零工具底座只给内网端点', () => {
-  it('8006 端点清单只含 /execute-function（不含已迁移的公共函数端点）', () => {
+  it('8006 端点清单只含 /execute-ontology-function（不含已迁移的公共函数端点）', () => {
     const cfg = staticServiceConfig(byKey('functionExecutor'), 'h');
-    expect(cfg.json).toContain('/execute-function');
+    expect(cfg.json).toContain('/execute-ontology-function');
     expect(cfg.json).not.toContain('execute-common-function');
     expect(cfg.json).not.toContain('mcpServers');
     expect(cfg.extra).toBeUndefined();

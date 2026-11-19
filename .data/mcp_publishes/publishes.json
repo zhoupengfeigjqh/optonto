@@ -1,6 +1,6 @@
 [
   {
-    "name": "test1",
+    "name": "test01",
     "kind": "ontology_function",
     "ontology_id": "1",
     "ontology_name": "原材料采购和库存",
@@ -15,8 +15,8 @@
     "tool_count": 6,
     "host_port": 8021,
     "transport": "streamable",
-    "container_name": "optonto-mcp-publish-test1-02c20c",
-    "token": "qHA_Npky2R8TRF41-QFOG0O4twrX0A-F",
+    "container_name": "optonto-mcp-publish-test01-3e0ff4",
+    "token": "rLqoBFh53uiAYOlpzGu68fiQOAjGSK7Q",
     "tools": [
       {
         "name": "sumRawNotArrivalQty",
@@ -100,7 +100,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "校验采购原材料单位一致性：校验采购单的 rawMaterialId 存在于原材料主数据，且 unit 与原材料定义单位一致。服务于前置规则 V01。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "description": "校验采购原材料单位一致性：校验采购单的 rawMaterialId 存在于原材料主数据，且 unit 与原材料定义单位一致。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -164,7 +164,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "校验采购到位时间合理性：校验采购单的到位时间（arrivalTime）晚于采购发生日（当前日期）。服务于前置规则 V03。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "description": "校验采购到位时间合理性：校验采购单的到位时间（arrivalTime）晚于采购发生日（当前日期）（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -204,7 +204,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "校验采购供应商存在性：校验采购单的供应商名称存在于供应商主数据。服务于前置规则 V05。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "description": "校验采购供应商存在性：校验采购单的供应商名称存在于供应商主数据（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -255,7 +255,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "校验采购关联订单存在性：校验采购单的关联客户订单：未填写通过，填写时必须存在于客户订单集合（客户订单数据需跨本体提供）。服务于前置规则 I04。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "description": "校验采购关联订单存在性：校验采购单的关联客户订单：未填写通过，填写时必须存在于客户订单集合（客户订单数据需跨本体提供）（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -303,7 +303,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "推导采购目的：根据关联客户订单推导采购目的（未关联→补充库存；否则→生产订单备料）。服务于后置规则 I03（推导型，不阻断）。（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
+        "description": "推导采购目的：根据关联客户订单推导采购目的（未关联→补充库存；否则→生产订单备料）（本体「原材料采购和库存」）。返回为统一信封 {\"success\": bool, \"data\": 业务数据, \"error\": 业务失败信息}",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -325,10 +325,10 @@
         }
       }
     ],
-    "created_at": "2026-11-06T15:07:47+00:00"
+    "created_at": "2026-11-16T06:26:37+00:00"
   },
   {
-    "name": "test2",
+    "name": "test02",
     "kind": "behavior",
     "ontology_id": "1",
     "ontology_name": "原材料采购和库存",
@@ -337,16 +337,16 @@
       "CancelPurchaseRecord",
       "ReceiveRawMaterial",
       "QueryInventory",
-      "QueryRawMaterials",
       "QueryPurchaseRecords",
+      "QueryRawMaterials",
       "QuerySuppliers",
       "QuerySupplierCapability"
     ],
     "tool_count": 8,
     "host_port": 8022,
     "transport": "streamable",
-    "container_name": "optonto-mcp-publish-test2-92ef33",
-    "token": "Y9gtXqzgndtjVF4RPWnqb989TgOzjfpu",
+    "container_name": "optonto-mcp-publish-test02-ff3b8a",
+    "token": "Tkm5LHP6J1SJ2c2RSiRuwcS6XFDNGIdj",
     "tools": [
       {
         "name": "CreatePurchaseRecord",
@@ -358,7 +358,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "创建原材料采购单：创建一笔新的原材料采购记录。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "创建原材料采购单：创建一笔新的原材料采购记录（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -435,7 +435,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "取消原材料采购单：取消一笔已创建但尚未入库的采购记录。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "取消原材料采购单：取消一笔已创建但尚未入库的采购记录（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -468,7 +468,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "入库原材料：将原材料采购入库。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "入库原材料：将采购的原材料入库（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -501,43 +501,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "查询原材料库存信息：根据原材料ID或名称查询其最新的库存快照。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "ontology_id": {
-              "type": "string",
-              "title": "本体ID",
-              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
-              "minLength": 1
-            },
-            "rawMaterialId": {
-              "type": "string",
-              "title": "原材料编号",
-              "example": "RM-001"
-            },
-            "rawMaterialName": {
-              "type": "string",
-              "title": "原材料名称",
-              "example": "高强度钢板"
-            }
-          },
-          "required": [
-            "ontology_id"
-          ]
-        }
-      },
-      {
-        "name": "QueryRawMaterials",
-        "title": "查询原材料基本信息",
-        "category": "本体行为",
-        "ontologyScope": {
-          "ontology_id": "1",
-          "scenario_id": "1",
-          "scenario_name": "生产调度",
-          "ontology_name": "原材料采购和库存"
-        },
-        "description": "查询原材料基本信息：根据原材料ID或名称查询原材料的基础信息。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "查询原材料库存信息：获取原材料的可用库存、累计库存和待入库等信息（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -573,7 +537,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "查询原材料采购单信息：根据采购单/原材料/关联客单来查询采购记录列表。（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "查询原材料采购单信息：获取原材料采购明细，如关联客户订单、到位信息等（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -605,6 +569,42 @@
         }
       },
       {
+        "name": "QueryRawMaterials",
+        "title": "查询原材料基本信息",
+        "category": "本体行为",
+        "ontologyScope": {
+          "ontology_id": "1",
+          "scenario_id": "1",
+          "scenario_name": "生产调度",
+          "ontology_name": "原材料采购和库存"
+        },
+        "description": "查询原材料基本信息：获取原材料名称、编号、单位和安全库存等基本信息（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ontology_id": {
+              "type": "string",
+              "title": "本体ID",
+              "description": "本体 ID（必填，**数字字符串**，如 \"1\"）：本工具所属本体；请填写当前操作的本体 ID，执行底座会校验其与工具发布声明是否一致",
+              "minLength": 1
+            },
+            "rawMaterialId": {
+              "type": "string",
+              "title": "原材料编号",
+              "example": "RM-001"
+            },
+            "rawMaterialName": {
+              "type": "string",
+              "title": "原材料名称",
+              "example": "高强度钢板"
+            }
+          },
+          "required": [
+            "ontology_id"
+          ]
+        }
+      },
+      {
         "name": "QuerySuppliers",
         "title": "查询供应商信息",
         "category": "本体行为",
@@ -614,7 +614,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "查询供应商信息：根据供应商名或原材料名查询供应商（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "查询供应商信息：获取供应商编号、名称、地址和联系方式等基本信息（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -650,7 +650,7 @@
           "scenario_name": "生产调度",
           "ontology_name": "原材料采购和库存"
         },
-        "description": "查询供应商供货能力：根据供应商名或原材料名，查询供应商供货能力（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
+        "description": "查询供应商供货能力：获取供应商的供货能力，如可供原材料、交货周期等（本体「原材料采购和库存」）。返回为执行结果信封 {\"status_code\": int, \"data\": 业务数据}；下游返回非 2xx 时以错误形式抛出（不会静默返回失败数据）",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -677,6 +677,6 @@
         }
       }
     ],
-    "created_at": "2026-11-06T15:08:03+00:00"
+    "created_at": "2026-11-16T06:26:56+00:00"
   }
 ]
