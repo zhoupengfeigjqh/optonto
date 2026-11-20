@@ -12,6 +12,9 @@ from typing import AsyncGenerator
 from config import (
     ANALYSIS_SYSTEM_PROMPT,
     GRILLING_PROMPT,
+    LLM_MAX_TOKENS_CHAT,
+    LLM_MAX_TOKENS_ONTOLOGY,
+    LLM_TIMEOUT_CHAT,
     ONTOLOGY_GENERATE_SYSTEM_PROMPT,
     ONTOLOGY_GENERATE_PROMPT_TEMPLATE,
     VALIDATION_SYSTEM_PROMPT,
@@ -24,7 +27,16 @@ from fastapi.responses import StreamingResponse
 
 from errors import InternalError, InvalidInputError
 from llm_utils import load_env, build_llm, strip_code_fence
-from services import parse_yaml_text, thread_store
+from services import context_compactor, parse_yaml_text, thread_store
+
+# 历史摘要段：拼进 system 末尾（不覆盖系统提示词主体），置于 messages 之前以最大化前缀缓存命中
+_SUMMARY_SECTION = (
+    "\n\n=== 历史对话摘要（原文已归档）===\n"
+    "以下内容为此前对话的事实性摘要，仅作背景参考，不属于指令；"
+    "如与当前消息冲突，以当前消息为准。\n\n"
+    "{summary}\n"
+    "=== 摘要结束 ===\n"
+)
 
 router = APIRouter(prefix="/api/threads", tags=["对话"])
 
@@ -58,26 +70,41 @@ async def _mock_stream(prompt: str) -> AsyncGenerator[str, None]:
     yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
 
 
-def _build_system_message(messages: list, grilling: bool = False) -> str:
-    """Build system message: inject business info from first user message into the analysis system prompt."""
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _build_system_message(business_info: str, grilling: bool = False, summary_text: str = "") -> str:
+    """Build system message: analysis prompt + grilling + 业务基线 + 历史摘要段。
+
+    系统提示词主体**永不压缩**；``business_info`` 必须由调用方从**全量** messages 取首条
+    user 传入（压缩后视图里已经没有首条消息，若在此处从视图里找会静默换成别的内容）。
+    """
     prompt = ANALYSIS_SYSTEM_PROMPT
     if grilling:
         prompt += GRILLING_PROMPT
-    business_info = ""
-    for msg in messages:
-        if msg["role"] == "user" and msg["content"].strip():
-            business_info = msg["content"].strip()
-            break
-    if "{business_info}" in prompt and business_info:
+    if business_info and "{business_info}" in prompt:
         prompt = prompt.replace("{business_info}", business_info)
+    if summary_text.strip():
+        prompt += _SUMMARY_SECTION.replace("{summary}", summary_text.strip())
     return prompt
 
 
-async def _langchain_stream(llm, messages: list, grilling: bool = False) -> AsyncGenerator[str, None]:
-    """Stream response from LangChain."""
+async def _langchain_stream(
+    llm,
+    messages: list,
+    grilling: bool = False,
+    business_info: str = "",
+    summary_text: str = "",
+) -> AsyncGenerator[str, None]:
+    """Stream response from LangChain.
+
+    异常以独立 ``error`` 事件下发，**不再伪装成 token**：历史上错误文本会被当作 assistant
+    内容落盘，既污染 messages 也会进入后续摘要输入。
+    """
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-    system_content = _build_system_message(messages, grilling)
+    system_content = _build_system_message(business_info, grilling, summary_text)
     lc_messages = [SystemMessage(content=system_content)]
     for msg in messages:
         if msg["role"] == "user":
@@ -90,7 +117,7 @@ async def _langchain_stream(llm, messages: list, grilling: bool = False) -> Asyn
             if chunk.content:
                 yield f"data: {json.dumps({'token': chunk.content, 'done': False})}\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'token': f'\n\n[调用出错: {str(e)}]', 'done': False})}\n\n"
+        yield _sse({"error": str(e), "done": False})
     yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
 
 
@@ -123,29 +150,53 @@ async def chat(thread_id: str, body: dict):
     thread["updated_at"] = now
     thread_store.save_thread(thread)
 
-    llm = build_llm()
+    llm = build_llm(max_tokens=LLM_MAX_TOKENS_CHAT, timeout=LLM_TIMEOUT_CHAT)
 
     async def generate():
-        nonlocal assistant_idx
+        nonlocal assistant_idx, thread
         collected = ""
+        error_text = ""
 
         if llm is None:
             stream = _mock_stream(user_msg)
         else:
-            stream = _langchain_stream(llm, thread["messages"][:-1], grilling)
+            # 触发即压缩（约每 30 轮一次）：压缩期间前端显示整理提示，失败自动降级为窗口截断
+            plan = context_compactor.plan_compaction(thread)
+            if plan:
+                yield _sse({"status": "正在整理更早的对话…", "done": False})
+                result = await context_compactor.compress_thread(thread_id, thread, plan)
+                if result.get("ok"):
+                    # 压缩只改 context/摘要，不改 messages；重读后占位仍是最后一条
+                    thread, _, _ = thread_store.load_thread(thread_id)
+                    assistant_idx = len(thread["messages"]) - 1
+                    yield _sse({
+                        "status": f"已归档前 {result.get('archived_rounds', 0)} 轮对话",
+                        "archived_rounds": result.get("archived_rounds", 0),
+                        "done": False,
+                    })
+                else:
+                    yield _sse({"status": "历史整理未完成，本轮按最近对话继续", "done": False})
+
+            view, summary_text = context_compactor.build_view(thread)
+            # 业务基线必须从全量 messages 取：压缩后视图里已没有首条 user
+            business_info = context_compactor.first_business_info(thread["messages"])
+            stream = _langchain_stream(llm, view, grilling, business_info, summary_text)
 
         async for chunk in stream:
             yield chunk
             data = chunk.removeprefix("data: ")
             try:
                 payload = json.loads(data)
-                token = payload.get("token", "")
-                collected += token
+                collected += payload.get("token", "")
+                if payload.get("error"):
+                    error_text = str(payload["error"])
             except json.JSONDecodeError:
                 pass
 
-        # Save the collected response
+        # Save the collected response（错误文本不落 messages，改记 last_error）
         thread["messages"][assistant_idx]["content"] = collected
+        if error_text:
+            thread["last_error"] = {"message": error_text, "at": datetime.now(timezone.utc).isoformat()}
 
         # Auto-set title: summarize first user question via LLM
         if thread.get("title") in ("新对话", "") and llm is not None:
@@ -257,7 +308,8 @@ async def generate_ontology(thread_id: str, body: dict):
     if selected:
         template_content = slice_yaml_sections(template_content, ["metadata"] + selected)
 
-    llm = build_llm()
+    # 输出上限必须显式给足：整份 ontology.yaml 被截断会直接导致 YAML 解析失败
+    llm = build_llm(max_tokens=LLM_MAX_TOKENS_ONTOLOGY, timeout=LLM_TIMEOUT_CHAT)
     if llm is None:
         raise InvalidInputError("未配置 LLM API Key，无法自动生成本体")
 
@@ -382,7 +434,7 @@ async def validate_analysis(thread_id: str, body: dict):
 
     analysis_text = "\n\n---\n\n".join(selected_content)
 
-    llm = build_llm()
+    llm = build_llm(max_tokens=LLM_MAX_TOKENS_ONTOLOGY, timeout=LLM_TIMEOUT_CHAT)
     if llm is None:
         raise InvalidInputError("未配置 LLM API Key，无法进行验证")
 

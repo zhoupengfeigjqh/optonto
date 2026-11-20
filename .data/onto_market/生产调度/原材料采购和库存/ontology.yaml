@@ -1074,47 +1074,6 @@ rules:
         - 'true'
     pass_message: 供应商名称存在，允许创建采购单
     fail_message: 供应商名称不存在，禁止创建采购单
-- name: I01_SafetyStockAlert
-  description: IF 可用库存availableStock < 原材料的safetyStock THEN 推送预警，建议创建采购单或关注库存。
-  behavior: QueryInventory
-  related_functions: []
-  title: 安全库存预警
-  position: 后置
-  data_supplements: []
-- name: I02_ArrivalOverdueAlert
-  description: IF 当前日期 >= 采购单arrivalTime  THEN 提示用户是否启动入库操作。
-  behavior: QueryPurchaseRecords
-  related_functions:
-  - filterData
-  - getCurrentDate
-  title: 采购到位超期预警
-  position: 后置
-  data_supplements: []
-  rule_design:
-    combine: and
-    groups:
-    - combine: and
-      conditions:
-      - function: getCurrentDate
-        field: date
-        operator: not_empty
-        values: []
-      - function: filterData
-        field: count
-        operator: gt
-        values:
-        - '0'
-    pass_message: 上述采购已到位，你可以启动入库操作
-    fail_message: 目前并无超期原材料
-- name: I03_PurchasePurposeInference
-  description: IF 采购单的关联客户订单ID（relatedOrderId）为空 THEN 该采购目的可视为“补充库存”。
-  behavior: CreatePurchaseRecord
-  related_functions:
-  - inferPurchasePurpose
-  title: 采购目的推理
-  position: 后置
-  data_supplements:
-  - QueryPurchaseRecords
 - name: I04_RelatedOrderValidation
   description: 创建采购单时，如果客户订单relatedOrderId不为空，则必须存在于客户订单中
   behavior: CreatePurchaseRecord
@@ -1124,6 +1083,18 @@ rules:
   position: 前置
   data_supplements:
   - QueryPurchaseRecords
+  rule_design:
+    combine: and
+    groups:
+    - combine: and
+      conditions:
+      - function: checkRelatedOrderExistence
+        field: pass
+        operator: eq
+        values:
+        - 'true'
+    pass_message: 关联订单校验通过，可创建采购单
+    fail_message: 关联订单不存在，禁止创建采购单
 processes:
 - name: ProcureAndReceiveRawMaterial
   title: 原材料采购到入库

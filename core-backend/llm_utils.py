@@ -25,8 +25,17 @@ def load_env() -> None:
         pass
 
 
-def build_llm(temperature: float = 0.7, streaming: bool = True):
-    """构建 LangChain 聊天模型。未安装依赖或缺 API Key 时返回 None（走 mock）。"""
+def build_llm(
+    temperature: float = 0.7,
+    streaming: bool = True,
+    max_tokens: int | None = None,
+    timeout: int | None = None,
+):
+    """构建 LangChain 聊天模型。未安装依赖或缺 API Key 时返回 None（走 mock）。
+
+    ``max_tokens`` / ``timeout`` 仅在显式传入时下发：历史上各调用方均未设置输出上限，
+    这里保持「不传即不改变既有行为」，只让新增调用（对话/摘要/本体生成）显式声明。
+    """
     if ChatOpenAI is None:
         return None
     api_key = os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or ""
@@ -34,13 +43,18 @@ def build_llm(temperature: float = 0.7, streaming: bool = True):
     model = os.environ.get("LLM_MODEL", "deepseek-chat")
     if not api_key:
         return None
-    return ChatOpenAI(
-        model=model,
-        openai_api_key=api_key,
-        openai_api_base=api_url,
-        temperature=temperature,
-        streaming=streaming,
-    )
+    kwargs: dict = {
+        "model": model,
+        "openai_api_key": api_key,
+        "openai_api_base": api_url,
+        "temperature": temperature,
+        "streaming": streaming,
+    }
+    if max_tokens:
+        kwargs["max_tokens"] = max_tokens
+    if timeout:
+        kwargs["timeout"] = timeout
+    return ChatOpenAI(**kwargs)
 
 
 def strip_code_fence(text: str) -> str:
@@ -58,12 +72,14 @@ async def llm_text(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.3,
+    max_tokens: int | None = None,
+    timeout: int | None = None,
 ):
     """调 LLM 取文本（剥离围栏）。返回 (text, raw)：
     - LLM 不可用（未配置/无依赖）→ (None, None)
     - 成功 → (text, raw)
     """
-    llm = build_llm(temperature=temperature, streaming=False)
+    llm = build_llm(temperature=temperature, streaming=False, max_tokens=max_tokens, timeout=timeout)
     if llm is None:
         return None, None
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -76,13 +92,15 @@ async def llm_json(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.3,
+    max_tokens: int | None = None,
+    timeout: int | None = None,
 ):
     """调 LLM 取 JSON（剥离围栏 + json.loads）。返回 (parsed, stripped)：
     - LLM 不可用（未配置/无依赖）→ (None, None)
     - JSON 解析失败 → (None, stripped_text)，调用方自行决定报错文案
     - 成功 → (dict, stripped_text)
     """
-    text, _ = await llm_text(system_prompt, user_prompt, temperature)
+    text, _ = await llm_text(system_prompt, user_prompt, temperature, max_tokens=max_tokens, timeout=timeout)
     if text is None:
         return None, None
     try:

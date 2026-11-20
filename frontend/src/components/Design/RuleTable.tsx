@@ -183,7 +183,7 @@ export default function RuleTable({ ontologyId, activeTab }: Props) {
           <Select
             size="small"
             mode="multiple"
-            placeholder="自动推导，可手工增减"
+            placeholder="自动推导，不可手工增减"
             value={editData.data_supplements || []}
             onChange={v => setEditData(p => ({...p, data_supplements: v}))}
             options={queryBehaviorOptions}

@@ -18,6 +18,18 @@ export interface ThreadMessage {
   timestamp: string;
 }
 
+/** 上下文归档状态：早期对话被压缩成摘要后注入系统提示词（messages 全量仍在后端） */
+export interface ThreadContext {
+  /** 归档摘要（≤2000 tokens），已注入 system prompt 末尾 */
+  summary: string;
+  /** 已归档的消息下标（messages[0:covered_until] 已压入摘要） */
+  covered_until: number;
+  /** 已归档的对话轮数（用于展示） */
+  archived_rounds?: number;
+  summary_tokens?: number;
+  updated_at?: string;
+}
+
 export interface Thread {
   id: string;
   title: string;
@@ -28,6 +40,10 @@ export interface Thread {
   messages: ThreadMessage[];
   /** 最新一次「验证」的分析结果（后端临时保存，仅保留最新一次） */
   validate_result?: { result: string; updated_at: string } | null;
+  /** 上下文归档状态（未归档时缺省） */
+  context?: ThreadContext | null;
+  /** 最近一次调用错误（不再混入 messages） */
+  last_error?: { message: string; at: string } | null;
 }
 
 export const getThreads = (query: string = '') =>

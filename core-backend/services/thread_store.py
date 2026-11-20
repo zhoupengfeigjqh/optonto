@@ -212,9 +212,15 @@ def update_thread(thread_id: str, *, title=None, status=None) -> dict:
 
 
 def clear_messages(thread_id: str) -> None:
-    """清空线程消息但保留线程本身。"""
+    """清空线程消息但保留线程本身。
+
+    上下文摘要与要素清单必须同时清掉：否则「清空对话」后模型仍能从摘要里读到旧内容，
+    属于数据一致性问题（摘要只是 messages 的派生物，不能比原文活得更久）。
+    """
     data, _, _ = load_thread(thread_id)
     data["messages"] = []
+    data.pop("context", None)
+    data.pop("digest", None)
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     save_thread(data)
 

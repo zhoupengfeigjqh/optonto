@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { Button, Input, Modal, message, Space, Spin, Switch, Tooltip } from 'antd';
-import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, FileSearchOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, FileSearchOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage } from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
 
@@ -33,6 +33,19 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [validateTime, setValidateTime] = useState('');
   const [savedValidate, setSavedValidate] = useState<{ result: string; updated_at: string } | null>(null);
   const [grilling, setGrilling] = useState(true);
+  // 上下文归档：早期轮次被压成摘要后注入系统提示词，原文仍在后端 messages 中
+  const [archived, setArchived] = useState<{ rounds: number; summary: string; tokens?: number } | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [statusText, setStatusText] = useState('');
+  const [errorText, setErrorText] = useState('');
+
+  const applyArchive = (ctx?: { summary?: string; covered_until?: number; archived_rounds?: number; summary_tokens?: number } | null) => {
+    if (ctx && (ctx.covered_until || 0) > 0) {
+      setArchived({ rounds: ctx.archived_rounds || 0, summary: ctx.summary || '', tokens: ctx.summary_tokens });
+    } else {
+      setArchived(null);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -42,11 +55,20 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       setVersion(thread.version || '');
       setMessages(thread.messages || []);
       setSavedValidate(thread.validate_result || null);
+      applyArchive(thread.context);
     } catch (e: any) {
       message.error('加载对话失败: ' + e.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  /** 压缩刚发生时只刷新归档状态（不重拉全量消息，避免长会话重渲染） */
+  const refreshArchive = async () => {
+    try {
+      const thread = await getThread(threadId, scenarioName, ontologyName);
+      applyArchive(thread.context);
+    } catch { /* 刷新失败不影响本轮对话 */ }
   };
 
   useEffect(() => { load(); }, [threadId]);
@@ -60,6 +82,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
     if (!text || sending) return;
     setInput('');
     setSending(true);
+    setErrorText('');
 
     const userMsg: ThreadMessage = { role: 'user', content: text, timestamp: new Date().toISOString() };
     setMessages(prev => [...prev, userMsg]);
@@ -67,6 +90,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
     const assistantMsg: ThreadMessage = { role: 'assistant', content: '', timestamp: '' };
     setMessages(prev => [...prev, assistantMsg]);
 
+    let archiveDirty = false;
     abortRef.current = new AbortController();
     try {
       const response = await chatStream(threadId, text, grilling);
@@ -90,32 +114,32 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
+            // 元事件（status / error / archived_rounds）可与 token 同包，也可能单独成包：
+            // 一律先处理，再决定是否追加正文（不能用 continue 提前跳过）
+            if (data.status) setStatusText(data.status);
+            if (data.error) setErrorText(String(data.error));
+            if (data.archived_rounds) archiveDirty = true;
             if (data.done) break;
-            setMessages(prev => {
-              const updated = [...prev];
-              const last = updated[updated.length - 1];
-              if (last.role === 'assistant') {
-                updated[updated.length - 1] = { ...last, content: last.content + (data.token || '') };
-              }
-              return updated;
-            });
+            if (typeof data.token === 'string' && data.token) {
+              setMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last.role === 'assistant') {
+                  updated[updated.length - 1] = { ...last, content: last.content + data.token };
+                }
+                return updated;
+              });
+            }
           } catch { /* skip parse errors */ }
         }
       }
     } catch (e: any) {
-      if (e.name !== 'AbortError') {
-        setMessages(prev => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last.role === 'assistant' && !last.content) {
-            updated[updated.length - 1] = { ...last, content: `\n\n[错误: ${e.message}]` };
-          }
-          return updated;
-        });
-      }
+      if (e.name !== 'AbortError') setErrorText(e.message || '对话请求失败');
     } finally {
       setSending(false);
+      setStatusText('');
       abortRef.current = null;
+      if (archiveDirty) refreshArchive();
     }
   };
 
@@ -187,6 +211,8 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
           await clearChat(threadId);
           setMessages([]);
           setSelectedIndex(null);
+          setArchived(null);
+          setErrorText('');
           message.success('对话已清空');
         } catch (e: any) { message.error(e.message); }
       },
@@ -260,6 +286,18 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
         <div className="flex items-center gap-3">
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} className="text-text-muted hover:text-text-primary" />
           <h3 className="text-base font-semibold text-text-primary truncate max-w-md">{title || '新对话'}</h3>
+          {archived && (
+            <Tooltip title="早期对话已压缩为摘要注入上下文，原文仍完整保留，可正常导出与验证">
+              <button
+                type="button"
+                onClick={() => setShowSummary(true)}
+                className="flex items-center gap-1 rounded-full border border-dark-border px-2 py-0.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              >
+                <HistoryOutlined style={{ fontSize: 12 }} />
+                前 {archived.rounds} 轮已归档
+              </button>
+            </Tooltip>
+          )}
         </div>
         <Space>
           <Tooltip title={hasSelected ? '对选中的助手回复做一致性和逻辑自洽性检查' : '请先点击助手回复右下角的 ○ 选中内容'}>
@@ -287,6 +325,12 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
             <p className="text-xs mt-1">输入您的问题或需求描述，如DB schema、API 文档和业务需求等，AI 将协助您梳理</p>
           </div>
         ) : messagesContent}
+        {statusText && (
+          <div className="flex items-center gap-2 px-1 text-xs text-text-muted">
+            <Spin size="small" />
+            <span>{statusText}</span>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -294,6 +338,16 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       {messages.length > 0 && !hasSelected && (
         <div className="text-center text-text-muted text-xs mb-2">
           点击助手回复右下角的 ○ 选中内容，然后点击「导出需求」
+        </div>
+      )}
+
+      {/* Error banner：错误不再混入消息正文（后端也不再落 messages） */}
+      {errorText && (
+        <div className="mb-2 flex items-start justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <span className="break-all">调用出错：{errorText}</span>
+          <button type="button" onClick={() => setErrorText('')} className="shrink-0 text-text-muted hover:text-text-primary">
+            关闭
+          </button>
         </div>
       )}
 
@@ -402,6 +456,25 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Archived summary modal */}
+      <Modal
+        title="已归档的历史摘要"
+        open={showSummary}
+        onCancel={() => setShowSummary(false)}
+        footer={<Button onClick={() => setShowSummary(false)}>关闭</Button>}
+        width={720}
+      >
+        <div className="py-3">
+          <p className="text-text-muted text-xs mb-2">
+            前 {archived?.rounds || 0} 轮对话已压缩为摘要注入上下文（约 {archived?.tokens || 0} tokens）。
+            原始消息仍完整保留，可正常导出与验证。
+          </p>
+          <div className="text-text-secondary text-sm whitespace-pre-wrap max-h-96 overflow-y-auto rounded-lg border border-dark-border bg-dark-bg p-3">
+            {archived?.summary || '暂无摘要'}
+          </div>
         </div>
       </Modal>
     </div>
