@@ -11,6 +11,7 @@ from .functions import router as functions_router
 from .files import router as files_router
 from .threads import router as threads_router
 from .chat import router as chat_router
+from .ontology_refs import router as ontology_refs_router
 from .data_engines import router as data_engines_router
 from .mcp_ctl import router as mcp_ctl_router
 from .mcp_publish import router as mcp_publish_router

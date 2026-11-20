@@ -1,10 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Button, Table, Modal, message, Space, Tag, Input, Spin } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Table, Modal, message, Space, Tag, Input, Spin, Select, Alert } from 'antd';
 import { PlusOutlined, DeleteOutlined, MessageOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
-import { getThreads, createThread, deleteThread, updateThread, ThreadSummary } from '@/api/client';
+import {
+  getThreads, createThread, deleteThread, updateThread, ThreadSummary,
+  listOntologyRefCandidates, precheckOntologyRefs,
+} from '@/api/client';
 import ConversationChat from './ConversationChat';
+import {
+  REF_EMPTY_TEXT, REF_HINT_TEXT, REF_LOAD_FAILED_TEXT,
+  clampSelection, groupConflicts, toRefInputs, toSelectOptions,
+  type ConflictGroup, type RefSelectOption,
+} from './conversation-ontology-refs';
 
 interface Props { activeTab?: string; initialThreadId?: string | null; scenarioName?: string; ontologyName?: string; }
 
@@ -17,6 +25,16 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [newVersion, setNewVersion] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // ─── 存量本体引用（spec 010） ──────────────────────────────────────────
+  const [refOptions, setRefOptions] = useState<RefSelectOption[]>([]);
+  const [refLoading, setRefLoading] = useState(false);
+  const [refLoadFailed, setRefLoadFailed] = useState(false);
+  const [maxRefCount, setMaxRefCount] = useState(20);
+  const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
+  const [prechecking, setPrechecking] = useState(false);
+  const [conflictGroups, setConflictGroups] = useState<ConflictGroup[] | null>(null);
+  const [refTokens, setRefTokens] = useState<{ estimate: number; max: number; allowed: boolean } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -36,19 +54,83 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
     if (initialThreadId) setActiveThreadId(initialThreadId);
   }, [initialThreadId]);
 
+  // 打开新建弹窗时拉候选清单：失败不阻断主流程（仍可只填版本号创建）
+  useEffect(() => {
+    if (!showVersionModal) return;
+    let cancelled = false;
+    setRefLoading(true);
+    setRefLoadFailed(false);
+    listOntologyRefCandidates({ excludeScenario: scenarioName, excludeOntology: ontologyName })
+      .then((res) => {
+        if (cancelled) return;
+        const excluded = scenarioName && ontologyName
+          ? { scenario_name: scenarioName, ontology_name: ontologyName }
+          : undefined;
+        setRefOptions(toSelectOptions(res.candidates, excluded));
+        setMaxRefCount(res.max_count || 20);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setRefOptions([]);
+        setRefLoadFailed(true);
+        message.error(`${REF_LOAD_FAILED_TEXT}: ${e.message}`);
+      })
+      .finally(() => { if (!cancelled) setRefLoading(false); });
+    return () => { cancelled = true; };
+  }, [showVersionModal, scenarioName, ontologyName]);
+
   const handleNew = () => {
     setNewVersion('');
+    setSelectedRefs([]);
+    setConflictGroups(null);
+    setRefTokens(null);
     setShowVersionModal(true);
   };
 
-  const handleConfirmNew = async () => {
-    if (!newVersion.trim()) { message.warning('请输入版本号'); return; }
+  const doCreate = async () => {
+    const refs = toRefInputs(selectedRefs);
     setShowVersionModal(false);
+    setConflictGroups(null);
     setCreating(true);
     try {
-      const thread = await createThread('新对话', scenarioName || '', ontologyName || '', newVersion.trim());
+      const thread = await createThread(
+        '新对话', scenarioName || '', ontologyName || '', newVersion.trim(),
+        refs.length ? refs : undefined,
+      );
       setActiveThreadId(thread.id);
     } catch (e: any) { message.error('创建失败: ' + e.message); } finally { setCreating(false); }
+  };
+
+  /**
+   * 预检 → 分支（spec 010 US3）：
+   * - 超限：阻断并给出可操作提示，保持弹窗打开；
+   * - 有冲突：弹第二层 Modal，取消后**保留**已选状态；
+   * - 无冲突：直接创建。
+   * 预检期间必须有加载态，禁止静默等待（章程 IV 三态）。
+   */
+  const handleConfirmNew = async () => {
+    if (!newVersion.trim()) { message.warning('请输入版本号'); return; }
+    if (selectedRefs.length === 0) { await doCreate(); return; }
+
+    setPrechecking(true);
+    try {
+      const result = await precheckOntologyRefs(toRefInputs(selectedRefs));
+      setRefTokens({ estimate: result.token_estimate, max: result.max_tokens, allowed: result.allowed });
+      if (!result.allowed) {
+        message.error(result.reason || '引用内容超出限制，请减少勾选');
+        return;
+      }
+      if (result.conflicts.length > 0) {
+        setConflictGroups(groupConflicts(result.conflicts));
+        return;
+      }
+      await doCreate();
+    } catch (e: any) {
+      // 预检失败不自动创建：否则会绕过冲突与超限校验
+      message.error('预检失败: ' + e.message);
+    } finally {
+      setPrechecking(false);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -76,6 +158,11 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
       await load();
     } catch (e: any) { message.error(e.message); }
   };
+
+  const selectOptions = useMemo(
+    () => refOptions.map(option => ({ ...option })),
+    [refOptions],
+  );
 
   if (activeThreadId) {
     return <ConversationChat threadId={activeThreadId} onBack={() => { setActiveThreadId(null); load(); }} scenarioName={scenarioName} ontologyName={ontologyName} />;
@@ -141,14 +228,18 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
         className="bg-transparent"
       />
 
-      {/* Version input modal for new conversation */}
+      {/* Version + 引用存量本体 modal for new conversation */}
       <Modal
         title="新建对话"
         open={showVersionModal}
         onOk={handleConfirmNew}
-        onCancel={() => setShowVersionModal(false)}
+        onCancel={() => { if (!prechecking) setShowVersionModal(false); }}
         okText="确认创建"
         cancelText="取消"
+        confirmLoading={prechecking}
+        maskClosable={!prechecking}
+        closable={!prechecking}
+        cancelButtonProps={{ disabled: prechecking }}
       >
         <div className="py-3">
           <label className="text-text-secondary text-sm block mb-2">版本号</label>
@@ -162,6 +253,93 @@ export default function ConversationManager({ activeTab, initialThreadId, scenar
           />
           <p className="text-text-muted text-xs mt-2">请输入本对话的版本号，该版本号将在导出需求时自动填入且不可修改</p>
         </div>
+
+        <div className="pb-1">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-text-secondary text-sm">引用存量本体（可选）</label>
+            {selectedRefs.length > 0 && (
+              <span className="text-text-muted text-xs">已选 {selectedRefs.length} / {maxRefCount}</span>
+            )}
+          </div>
+          <Select
+            mode="multiple"
+            allowClear
+            style={{ width: '100%' }}
+            aria-label="引用存量本体"
+            placeholder={refLoading ? '正在加载…' : '不选则与改动前一致'}
+            loading={refLoading}
+            disabled={refLoading}
+            value={selectedRefs}
+            onChange={(values: string[]) => {
+              const { values: next, truncated } = clampSelection(values, maxRefCount);
+              if (truncated) message.warning(`一次最多引用 ${maxRefCount} 个本体，请分批创建`);
+              setSelectedRefs(next);
+            }}
+            options={selectOptions}
+            optionRender={(option) => {
+              const data = option.data as RefSelectOption;
+              const secondary = data.disabled
+                ? data.reason
+                : [
+                  data.description,
+                  `概念 ${data.counts.concepts} / 函数 ${data.counts.functions} / 行为 ${data.counts.behaviors}`,
+                  data.deployed_version ? `已部署 ${data.deployed_version}` : '',
+                ].filter(Boolean).join(' · ');
+              return (
+                <div className="py-0.5">
+                  <div className="text-text-primary text-sm">{data.label}</div>
+                  <div className="text-text-muted text-xs">{secondary}</div>
+                </div>
+              );
+            }}
+          />
+          <p className="text-text-muted text-xs mt-2">{REF_HINT_TEXT}</p>
+          {refLoadFailed && !refLoading && (
+            <p className="text-text-muted text-xs mt-1">{REF_EMPTY_TEXT}</p>
+          )}
+        </div>
+      </Modal>
+
+      {/* 冲突确认：第二层 Modal，取消后不关闭新建弹窗、不丢已选状态 */}
+      <Modal
+        title="引用本体存在命名冲突"
+        open={conflictGroups !== null}
+        onOk={() => { void doCreate(); }}
+        onCancel={() => setConflictGroups(null)}
+        okText="仍然创建"
+        cancelText="返回调整"
+        width={640}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          className="mb-3"
+          message="冲突不阻止创建，但请确认这些命名为你有意为之"
+        />
+        {refTokens && (
+          <p className="text-text-muted text-xs mb-3">
+            引用内容约 {refTokens.estimate} tokens（上限 {refTokens.max}），仍在范围内
+          </p>
+        )}
+        {conflictGroups?.map(group => (
+          <div key={group.title} className="mb-3">
+            <p className="text-text-primary text-sm font-medium mb-1">{group.title}</p>
+            <ul className="list-disc pl-5">
+              {group.items.map(item => (
+                <li key={item.name} className="text-text-secondary text-sm mb-1">
+                  <span className="text-text-primary">{item.name}</span>
+                  {item.lines.length > 0 && (
+                    <ul className="list-[circle] pl-4">
+                      {item.lines.map(line => (
+                        <li key={line} className="text-text-muted text-xs">{line}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </Modal>
 
       {/* Creating modal */}

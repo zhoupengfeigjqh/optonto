@@ -82,6 +82,12 @@ export default defineConfig({
         'src/components/Design/mcp-publish/catalog.ts',
         // 2026-10-05 MCP 工具清单弹窗（自 MCPConfig.tsx 抽出以满足 500 行约束）
         'src/components/Design/mcp-config/ToolsPickerModal.tsx',
+        // 2026-11-20 需求汇总版本筛选纯逻辑：抽出即为可测，必须同时进门禁（章程 III）
+        'src/components/Design/requirement-version-filter.ts',
+        // 2026-11-20 引用存量本体：纯逻辑（缺失判定 / 快照时间 / 选项拼装）+ 从
+        // ConversationChat 抽出的标签组件，均已配齐单测，随单测一起进门禁
+        'src/components/Design/conversation-ontology-refs.ts',
+        'src/components/Design/OntologyRefTags.tsx',
       ],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**'],
       thresholds: {

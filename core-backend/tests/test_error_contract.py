@@ -42,10 +42,15 @@ class ErrorContractTest(unittest.TestCase):
         body = self._assert_structured(self.client.get("/api/ontologies/99999999"), 404)
         self.assertEqual(body["message"], "本体不存在")
 
-    def test_path_param_validation_error_message_is_string(self):
-        """路径参数类型错误：detail 必须折叠为字符串，而非 FastAPI 默认的错误数组。"""
-        body = self._assert_structured(self.client.get("/api/ontologies/not-an-int"), 422)
-        self.assertIn("参数校验失败", body["message"])
+    def test_unknown_path_param_is_structured_404(self):
+        """路径参数层的失败也走统一结构（而非 Starlette 默认响应）。
+
+        2026-11-20（spec 010 实现期修正）：本体 id 全链路为字符串，已无 int 型路径参数，
+        原「非法 int → 422 且 detail 折叠为字符串」的场景不复存在（断言已过时，实际返回 404）。
+        此处保留「路径参数错误同样结构化」的意图，改为断言 404 的结构与可读性。
+        """
+        body = self._assert_structured(self.client.get("/api/ontologies/not-an-int"), 404)
+        self.assertEqual(body["message"], "本体不存在")
 
     def test_method_not_allowed_is_structured(self):
         """路由层 405 也走统一结构（不返回 Starlette 默认裸响应）。"""

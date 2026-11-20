@@ -1,5 +1,6 @@
 /** 需求线程、对话与需求文件接口 —— 自原 client.ts 拆出，行为不变。 */
 import { request } from './http';
+import type { OntologyRefInput } from './ontology-refs';
 
 export interface ThreadSummary {
   id: string;
@@ -30,6 +31,53 @@ export interface ThreadContext {
   updated_at?: string;
 }
 
+// ─── 存量本体引用快照（spec 010） ────────────────────────────────────────────
+
+export interface OntologyRefCounts {
+  concepts: number;
+  functions: number;
+  behaviors: number;
+}
+
+export interface OntologyRefAttribute {
+  name: string;
+  /** 中文名；缺失时后端不返回该键（不编造） */
+  title?: string;
+  type: string;
+  /** 约束文本（如「唯一；必填」）；无约束时不返回该键 */
+  constraint?: string;
+}
+
+export interface OntologyRefConcept {
+  name: string;
+  title?: string;
+  attributes: OntologyRefAttribute[];
+}
+
+/** 单个被引用本体的快照条目（身份四元组 + 提取项 + 条数） */
+export interface OntologyRefEntry {
+  ontology_id: string;
+  scenario_id: string;
+  scenario_name: string;
+  ontology_name: string;
+  counts: OntologyRefCounts;
+  items: {
+    concepts: OntologyRefConcept[];
+    functions: { name: string; title?: string }[];
+    behaviors: { name: string; title?: string }[];
+  };
+}
+
+/** 线程顶层的引用快照：创建时定格，源本体后续变更不影响 */
+export interface OntologyRefSnapshot {
+  snapshot_at: string;
+  max_tokens: number;
+  token_estimate: number;
+  refs: OntologyRefEntry[];
+  /** 渲染好的 system prompt 段落（每轮直接拼接，不再重渲染） */
+  prompt_text: string;
+}
+
 export interface Thread {
   id: string;
   title: string;
@@ -44,13 +92,36 @@ export interface Thread {
   context?: ThreadContext | null;
   /** 最近一次调用错误（不再混入 messages） */
   last_error?: { message: string; at: string } | null;
+  /** 存量本体引用快照；未引用时**不出现该键**（不是 null） */
+  ontology_refs?: OntologyRefSnapshot;
 }
 
 export const getThreads = (query: string = '') =>
   request<ThreadSummary[]>(`/api/threads${query ? '?' + query : ''}`);
 
-export const createThread = (title: string = '新对话', scenario_name: string = '', ontology_name: string = '', version: string = '') =>
-  request<Thread>('/api/threads', { method: 'POST', body: JSON.stringify({ title, scenario_name, ontology_name, version }) });
+/**
+ * 新建对话线程。
+ *
+ * `ontology_refs`（spec 010）：省略或空数组时**请求体不带该键**——与后端「未引用时线程 JSON
+ * 不出现该字段」的约定一一对应（SC-005 零回归的前提）。
+ */
+export const createThread = (
+  title: string = '新对话',
+  scenario_name: string = '',
+  ontology_name: string = '',
+  version: string = '',
+  ontology_refs?: OntologyRefInput[],
+) =>
+  request<Thread>('/api/threads', {
+    method: 'POST',
+    body: JSON.stringify({
+      title,
+      scenario_name,
+      ontology_name,
+      version,
+      ...(ontology_refs && ontology_refs.length ? { ontology_refs } : {}),
+    }),
+  });
 
 export const getThread = (id: string, scenario?: string, ontology?: string) => {
   let url = `/api/threads/${id}`;

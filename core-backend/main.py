@@ -25,6 +25,7 @@ from routers import (
     files_router,
     threads_router,
     chat_router,
+    ontology_refs_router,
     data_engines_router,
     mcp_ctl_router,
     mcp_publish_router,
@@ -66,6 +67,7 @@ app.include_router(mcp_publish_router)
 app.include_router(files_router)
 app.include_router(threads_router)
 app.include_router(chat_router)
+app.include_router(ontology_refs_router)
 app.include_router(data_engines_router)
 app.include_router(common_functions_router)
 app.include_router(skills_router)

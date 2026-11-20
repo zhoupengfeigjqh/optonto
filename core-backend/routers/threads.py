@@ -7,7 +7,8 @@
 
 from fastapi import APIRouter, Body
 
-from services import thread_store
+from errors import InvalidInputError
+from services import ontology_refs, thread_store
 
 router = APIRouter(prefix="/api/threads", tags=["对话管理"])
 
@@ -29,12 +30,29 @@ async def list_threads(scenario: str = "", ontology: str = ""):
 
 @router.post("", status_code=201)
 async def create_thread(body: dict):
-    """在指定本体下新建对话线程。"""
+    """在指定本体下新建对话线程；可选引用存量本体（spec 010）。
+
+    引用快照在**此处重新生成并校验**（不信任前端预检结果）：失败不落盘、不留目录。
+    预检只用于交互提示，创建才是权威校验点。
+    """
+    scenario_name = body.get("scenario_name", "")
+    ontology_name = body.get("ontology_name", "")
+    snapshot = None
+    refs_input = body.get("ontology_refs")
+    if refs_input:
+        result = ontology_refs.build_snapshot(refs_input)
+        for entry in result["entries"]:
+            if entry["scenario_name"] == scenario_name and entry["ontology_name"] == ontology_name:
+                raise InvalidInputError("不能引用当前对话所属的本体")
+        if not result["allowed"]:
+            raise InvalidInputError(result["reason"])
+        snapshot = result["snapshot"]
     return thread_store.create_thread(
         title=body.get("title", "新对话"),
-        scenario_name=body.get("scenario_name", ""),
-        ontology_name=body.get("ontology_name", ""),
+        scenario_name=scenario_name,
+        ontology_name=ontology_name,
         version=body.get("version", ""),
+        ontology_refs=snapshot,
     )
 
 

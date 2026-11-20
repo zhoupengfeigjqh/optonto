@@ -74,17 +74,25 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _build_system_message(business_info: str, grilling: bool = False, summary_text: str = "") -> str:
-    """Build system message: analysis prompt + grilling + 业务基线 + 历史摘要段。
+def _build_system_message(business_info: str, grilling: bool = False, summary_text: str = "",
+                          ontology_refs_text: str = "") -> str:
+    """Build system message: 本体主体 + grilling + 业务基线 + 存量本体参考 + 历史摘要段。
 
     系统提示词主体**永不压缩**；``business_info`` 必须由调用方从**全量** messages 取首条
     user 传入（压缩后视图里已经没有首条消息，若在此处从视图里找会静默换成别的内容）。
+
+    ``ontology_refs_text``（spec 010）为线程顶层 ``ontology_refs.prompt_text`` 的原文：
+    它是每轮完全相同的**稳定前缀**，必须放在历史摘要之前，才能既保证约束优先于可变摘要，
+    又不破坏「稳定前缀 + 可变尾部」的前缀缓存结构。为空时**整段不追加**——未引用本体的
+    对话与改动前的系统提示词逐字节一致（SC-005）。
     """
     prompt = ANALYSIS_SYSTEM_PROMPT
     if grilling:
         prompt += GRILLING_PROMPT
     if business_info and "{business_info}" in prompt:
         prompt = prompt.replace("{business_info}", business_info)
+    if ontology_refs_text:
+        prompt += ontology_refs_text
     if summary_text.strip():
         prompt += _SUMMARY_SECTION.replace("{summary}", summary_text.strip())
     return prompt
@@ -96,6 +104,7 @@ async def _langchain_stream(
     grilling: bool = False,
     business_info: str = "",
     summary_text: str = "",
+    ontology_refs_text: str = "",
 ) -> AsyncGenerator[str, None]:
     """Stream response from LangChain.
 
@@ -104,7 +113,7 @@ async def _langchain_stream(
     """
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-    system_content = _build_system_message(business_info, grilling, summary_text)
+    system_content = _build_system_message(business_info, grilling, summary_text, ontology_refs_text)
     lc_messages = [SystemMessage(content=system_content)]
     for msg in messages:
         if msg["role"] == "user":
@@ -180,7 +189,13 @@ async def chat(thread_id: str, body: dict):
             view, summary_text = context_compactor.build_view(thread)
             # 业务基线必须从全量 messages 取：压缩后视图里已没有首条 user
             business_info = context_compactor.first_business_info(thread["messages"])
-            stream = _langchain_stream(llm, view, grilling, business_info, summary_text)
+            # 存量本体引用（spec 010）：从**线程顶层**取快照原文，不重新读源本体（FR-016）。
+            # 与 business_info 同理——不能从 messages 派生，否则历史引用会随压缩丢失。
+            refs = thread.get("ontology_refs") or {}
+            ontology_refs_text = str(refs.get("prompt_text") or "")
+            stream = _langchain_stream(
+                llm, view, grilling, business_info, summary_text, ontology_refs_text
+            )
 
         async for chunk in stream:
             yield chunk

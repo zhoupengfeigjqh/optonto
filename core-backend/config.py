@@ -52,6 +52,13 @@ CONTEXT_SINGLE_MSG_MAX_TOKENS = _env_int("CONTEXT_SINGLE_MSG_MAX_TOKENS", 20_000
 # 摘要源对话上限：一次归档的原文过大时先按 token 截断，避免压缩调用自身超限
 CONTEXT_SUMMARY_SOURCE_MAX_TOKENS = _env_int("CONTEXT_SUMMARY_SOURCE_MAX_TOKENS", 120_000)
 
+# ─── 存量本体引用（需求对话新建时选择要复用的本体，spec 010） ──────────────────
+# 注入上限：引用段拼进 system prompt 的体量上限。与 CONTEXT_SINGLE_MSG_MAX_TOKENS 同量级；
+# 判定与注入共用 context_compactor.estimate_tokens，不存在第二套度量。
+ONTOLOGY_REF_MAX_TOKENS = _env_int("ONTOLOGY_REF_MAX_TOKENS", 20_000)
+# 单次引用数量上限：防手滑全选的前置闸门，不替代体量校验
+ONTOLOGY_REF_MAX_COUNT = _env_int("ONTOLOGY_REF_MAX_COUNT", 20)
+
 # LLM 调用参数（此前未设置，输出上限缺失会导致生成本体时 YAML 被截断）
 LLM_MAX_TOKENS_CHAT = _env_int("LLM_MAX_TOKENS_CHAT", 4_096)
 LLM_MAX_TOKENS_SUMMARY = _env_int("LLM_MAX_TOKENS_SUMMARY", 2_000)

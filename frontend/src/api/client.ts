@@ -14,6 +14,7 @@ export * from './ontologies';
 export * from './design';
 export * from './data-engines';
 export * from './threads';
+export * from './ontology-refs';
 export * from './deploy';
 export * from './skills';
 export * from './mcp';

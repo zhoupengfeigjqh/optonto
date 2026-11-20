@@ -1,17 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Button, Table, Modal, message, Tag, Space, Tooltip } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Table, Modal, message, Tag, Space, Tooltip, Select } from 'antd';
 import { EyeOutlined, DeleteOutlined } from '@ant-design/icons';
 import { listRequirements, deleteRequirementFile, RequirementItem } from '@/api/client';
 import RequirementViewer from './RequirementViewer';
+import {
+  ALL_VERSIONS,
+  UNSET_VERSION,
+  VersionOption,
+  buildVersionOptions,
+  filterByVersion,
+  resolveSelectionAfterChange,
+} from './requirement-version-filter';
 
 interface Props { ontologyId: string; activeTab?: string; scenarioName?: string; ontologyName?: string; }
+
+const ALL_EMPTY_TEXT = '暂无导出的需求文档，请先在对话中导出文档';
+const UNSET_EMPTY_TEXT = '没有未填写版本的需求文档';
+const VERSION_EMPTY_TEXT = '该版本下暂无需求文档';
 
 export default function RequirementSummary({ ontologyId: _oid, activeTab, scenarioName, ontologyName }: Props) {
   const [items, setItems] = useState<RequirementItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewing, setViewing] = useState<{ threadId: string; filename: string; scenarioName?: string; ontologyName?: string } | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<string>(ALL_VERSIONS);
 
   const load = async () => {
     setLoading(true);
@@ -21,7 +34,33 @@ export default function RequirementSummary({ ontologyId: _oid, activeTab, scenar
     } catch (e: any) { message.error('加载失败: ' + e.message); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (activeTab === 'requirement-summary') load(); }, [activeTab, scenarioName, ontologyName]);
+  // 切换场景/本体时重新加载，并把筛选重置为「全部」（旧上下文的版本号在此无意义）
+  useEffect(() => {
+    if (activeTab !== 'requirement-summary') return;
+    setSelectedVersion(ALL_VERSIONS);
+    load();
+  }, [activeTab, scenarioName, ontologyName]);
+
+  const options: VersionOption[] = useMemo(() => buildVersionOptions(items), [items]);
+
+  // 派生阶段就校正：选中项已不存在（如刚删掉该版本最后一条）时立刻按「全部」过滤，
+  // 不依赖下面 effect 的事后回落 —— 否则会先渲染一帧空表再跳回来（data-model V7）。
+  const effectiveVersion = useMemo(
+    () => resolveSelectionAfterChange(options, selectedVersion),
+    [options, selectedVersion],
+  );
+  const visibleItems = useMemo(
+    () => filterByVersion(items, effectiveVersion),
+    [items, effectiveVersion],
+  );
+
+  // 状态与提示：仅在选中项真的失效时提示一次
+  useEffect(() => {
+    if (effectiveVersion !== selectedVersion) {
+      setSelectedVersion(effectiveVersion);
+      message.info('当前版本已无需求文档，已显示全部');
+    }
+  }, [effectiveVersion, selectedVersion]);
 
   const handleDelete = (threadId: string, filename: string) => {
     Modal.confirm({
@@ -73,16 +112,32 @@ export default function RequirementSummary({ ontologyId: _oid, activeTab, scenar
     },
   ];
 
+  const emptyText = effectiveVersion === ALL_VERSIONS
+    ? ALL_EMPTY_TEXT
+    : effectiveVersion === UNSET_VERSION
+      ? UNSET_EMPTY_TEXT
+      : VERSION_EMPTY_TEXT;
+
   return (
     <div>
-      <h3 className="text-base font-semibold text-text-primary mb-4">需求汇总</h3>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-text-primary">需求汇总</h3>
+        <Select
+          aria-label="按版本号筛选"
+          value={effectiveVersion}
+          options={options}
+          onChange={(value: string) => setSelectedVersion(value)}
+          disabled={options.length <= 1}
+          style={{ width: 160 }}
+        />
+      </div>
       <p className="text-text-muted text-xs mb-3">查看和管理所有已导出的需求文档。点击「查看」进入文档详情，可进行修改和智能生成本体。输出的本体文件，可在「本体部署」中按版本合并部署。</p>
       <Table
-        dataSource={items}
+        dataSource={visibleItems}
         columns={columns}
         rowKey={(r) => `${r.thread_id}_${r.filename}`}
         loading={loading}
-        locale={{ emptyText: '暂无导出的需求文档，请先在对话中导出文档' }}
+        locale={{ emptyText }}
         pagination={false}
         className="bg-transparent"
       />

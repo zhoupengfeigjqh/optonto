@@ -129,8 +129,13 @@ def resolve_ids(scenario_name: str, ontology_name: str) -> tuple[Optional[str], 
         return None, None
 
 
-def create_thread(*, title: str, scenario_name: str, ontology_name: str, version: str) -> dict:
-    """新建线程（校验入参 → 落盘 → 返回线程对象）。"""
+def create_thread(*, title: str, scenario_name: str, ontology_name: str, version: str,
+                  ontology_refs: Optional[dict] = None) -> dict:
+    """新建线程（校验入参 → 落盘 → 返回线程对象）。
+
+    ``ontology_refs``（spec 010）：存量本体引用快照，由 ``services.ontology_refs.build_snapshot``
+    生成并已校验；为 ``None``/空时**不写该键**——保证未选引用时线程 JSON 与改动前逐字节一致。
+    """
     if not version:
         raise InvalidInputError("请提供版本号(version)")
     if not scenario_name or not ontology_name:
@@ -150,6 +155,8 @@ def create_thread(*, title: str, scenario_name: str, ontology_name: str, version
         "ontology_name": ontology_name,
         "ontology_id": ontology_id,
     }
+    if ontology_refs:
+        thread["ontology_refs"] = ontology_refs
     save_thread(thread)
     return thread
 

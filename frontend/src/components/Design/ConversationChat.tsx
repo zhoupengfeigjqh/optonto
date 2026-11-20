@@ -3,8 +3,13 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { Button, Input, Modal, message, Space, Spin, Switch, Tooltip } from 'antd';
 import { ArrowLeftOutlined, SendOutlined, ClearOutlined, RobotOutlined, UserOutlined, FileTextOutlined, FileSearchOutlined, CheckCircleFilled, CheckCircleOutlined, AuditOutlined, HistoryOutlined } from '@ant-design/icons';
-import { getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage } from '@/api/client';
+import {
+  getThread, chatStream, clearChat, exportThread, validateAnalysis, ThreadMessage,
+  listOntologyRefCandidates, type OntologyRefSnapshot,
+} from '@/api/client';
 import { renderMarkdown } from '@/lib/markdown';
+import OntologyRefTags from './OntologyRefTags';
+import { refIdentityKey } from './conversation-ontology-refs';
 
 interface Props {
   threadId: string;
@@ -38,6 +43,10 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
   const [showSummary, setShowSummary] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [errorText, setErrorText] = useState('');
+  // 存量本体引用快照（spec 010）：创建时定格，源本体后续变更不影响本对话
+  const [refSnapshot, setRefSnapshot] = useState<OntologyRefSnapshot | null>(null);
+  // 当前仍存在的本体身份 key（用于标注「原本体已不存在」）；加载失败则不做判定
+  const [refCandidateKeys, setRefCandidateKeys] = useState<Set<string> | undefined>(undefined);
 
   const applyArchive = (ctx?: { summary?: string; covered_until?: number; archived_rounds?: number; summary_tokens?: number } | null) => {
     if (ctx && (ctx.covered_until || 0) > 0) {
@@ -56,6 +65,14 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
       setMessages(thread.messages || []);
       setSavedValidate(thread.validate_result || null);
       applyArchive(thread.context);
+      const snapshot = thread.ontology_refs ?? null;
+      setRefSnapshot(snapshot);
+      if (snapshot?.refs?.length) {
+        // 非阻塞：候选清单仅用于标注「原本体已不存在」，失败就不做判定
+        listOntologyRefCandidates()
+          .then((res) => setRefCandidateKeys(new Set(res.candidates.map(refIdentityKey))))
+          .catch(() => setRefCandidateKeys(undefined));
+      }
     } catch (e: any) {
       message.error('加载对话失败: ' + e.message);
     } finally {
@@ -286,6 +303,7 @@ export default function ConversationChat({ threadId, onBack, scenarioName, ontol
         <div className="flex items-center gap-3">
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} className="text-text-muted hover:text-text-primary" />
           <h3 className="text-base font-semibold text-text-primary truncate max-w-md">{title || '新对话'}</h3>
+          {refSnapshot && <OntologyRefTags snapshot={refSnapshot} candidateKeys={refCandidateKeys} />}
           {archived && (
             <Tooltip title="早期对话已压缩为摘要注入上下文，原文仍完整保留，可正常导出与验证">
               <button
