@@ -31,6 +31,8 @@ from services.mcp_contract_bridge import (
     CALL_ENGINE,
     EXECUTE_COMMON_FUNCTION,
     EXECUTE_ONTOLOGY_FUNCTION,
+    MCP_CALL_TIMEOUT_S,
+    MCP_CONNECT_TIMEOUT_S,
 )
 
 # 三个执行/能力服务的地址（键名即角色，避免"函数"一词两义）
@@ -39,7 +41,9 @@ ONTOLOGY_FUNCTION_EXECUTOR_URL = os.getenv(
     "ONTOLOGY_FUNCTION_EXECUTOR_URL", "http://optonto-ontology-function-executor:8006")
 COMMON_FUNCTION_MCP_URL = os.getenv("COMMON_FUNCTION_MCP_URL", "http://optonto-common-function-mcp:8007")
 
-_TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+# 转发超时与 MCP 调用同口径（mcp-shared/timeouts.py 唯一来源）：曾为 30s，
+# 会先于执行底座的 60s 掐断，长函数/大数组调用的失败原因被误报成「上游超时」。
+_TIMEOUT = httpx.Timeout(MCP_CALL_TIMEOUT_S, connect=MCP_CONNECT_TIMEOUT_S)
 
 
 async def forward_call(base: str, path: str, payload: dict, service_label: str):

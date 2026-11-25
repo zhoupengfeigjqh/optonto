@@ -11,7 +11,9 @@
  *   后者不再挂 /mcp，行为工具的唯一提供方是自建发布）。
  * - 对外提供"可执行能力"（函数/行为）只有一条路：自建发布。
  */
-import type { McpServiceKey, PublishKind, PublishTransport, ToolInfo } from '@/api/client';
+import type {
+  McpServiceKey, PublishKind, PublishTransport, PublishedService, ToolInfo,
+} from '@/api/client';
 
 /**
  * 工具清单条目：**唯一形状在 `@/api/mcp`**（固定服务 `/tools` 与自建发布工具快照同一结构），
@@ -100,6 +102,25 @@ export interface SelectableItem { name: string; label: string; ready: boolean; h
 
 export const KIND_LABEL: Record<PublishKind, string> = { ontology_function: '本体函数', behavior: '本体行为' };
 export const TRANSPORT_LABEL: Record<PublishTransport, string> = { sse: 'sse', streamable: 'streamable-http' };
+
+/**
+ * 自建发布卡片**标题后缀**：本体 id + 本体名（含中文括号；本体信息缺失时返回空串）。
+ *
+ * 为什么挂在标题上：发布名由用户自拟，几个发布常常长得像（order-query / order-query-2），
+ * 列表里光看名字分不清各自属于哪个本体；跟着标题走，扫一眼就能区分。
+ * 括号内顺序固定 `ontology_id · 本体名`：id 全局稳定、名称可能重名，先给稳定标识。
+ *
+ * 展示口径唯一实现在此（卡片与后续任何列表都调用它），不在各组件里各拼一份。
+ */
+export function ontologySuffix(
+  svc: Pick<PublishedService, 'ontology_id' | 'ontology_name'>,
+): string {
+  const parts = [
+    svc.ontology_id ? `ontology_id=${svc.ontology_id}` : '',
+    svc.ontology_name || '',
+  ].filter(Boolean);
+  return parts.length ? `（${parts.join(' · ')}）` : '';
+}
 
 /**
  * 新建发布的「传输模式」下拉选项文案（含端点形态，帮助选择时判断客户端怎么连）。

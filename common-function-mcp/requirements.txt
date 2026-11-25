@@ -1,7 +1,15 @@
 # optonto-common-function-mcp — 公共函数 MCP 服务
 # 依赖与本体查询服务同档（共用 mcp-shared 的 data_store / function_runner / mcp_app）
+# pandas/numpy 不可省：公共函数 filterData / aggregateData / groupReduce 的代码在 run() 内
+# import pandas/numpy 做内存计算，本服务"发布什么就执行什么"，缺库即整类函数执行失败
+# （No module named 'pandas'）。版本与 ontology-function-executor / ontology-query-mcp 对齐。
+# 上限锚定（2026-11-24）：pandas 4.0 / numpy 3.0 属大版本，函数代码依赖的
+# replace / to_dict / Series 语义存在漂移风险，故锁到下一个大版本；
+# 当前镜像实装 pandas 3.1.1 / numpy 2.5.5，13 个公共函数在容器内全量冒烟通过。
 mcp>=1.0.0,<2.0.0
 uvicorn>=0.30.0
 starlette>=0.37.0
 httpx>=0.27.0
 PyYAML>=6.0
+pandas>=2.0.0,<4.0.0
+numpy>=1.26.0,<3.0.0

@@ -6,8 +6,11 @@
  * **两块同构**：固定服务（compose 常驻）与自建发布（动态容器）在页面上同权并列，
  * 因此信息层级与状态表达共用同一套原子（`StatusBadge` / `InfoRow`）：
  * 标题 + 标签 → 状态位 → 端点 → 传输模式 → 可用工具（数量 + 查看入口）→ 领域信息 → 操作按钮。
- * 差异只体现为“谁有令牌/本体/依赖”这几行领域信息，而不是两套排版——
+ * 差异只体现为“谁有令牌/依赖”这几行领域信息，而不是两套排版——
  * 复制一份 JSX 出来就会漂移，这正是本次统一要消除的问题。
+ *
+ * 自建发布的**标题自带本体身份**（`名称（ontology_id · 本体名）`，口径见 catalog.ontologySuffix）：
+ * 发布名由用户自拟，多个发布常常近名，靠本体区分比多一行「本体：」更容易扫到。
  *
  * 传输模式只对「对外」固定服务展示：两个内网执行底座（8006 / 8005）是平台自己的运行时，
  * 且都是零工具（2026-10-19 方案 B），摆出传输细节只会让人误以为可以直接连。
@@ -21,7 +24,7 @@ import type { ReactNode } from 'react';
 import { Button, Tag } from 'antd';
 import type { PublishedService } from '@/api/client';
 import type { CardState, FixedServiceDef } from './catalog';
-import { FIXED_TRANSPORT_LABEL, KIND_LABEL, TRANSPORT_LABEL } from './catalog';
+import { FIXED_TRANSPORT_LABEL, KIND_LABEL, TRANSPORT_LABEL, ontologySuffix } from './catalog';
 
 /** 卡片状态位：四态同口径（自建发布多一个「容器缺失」，与「已停止」明确区分） */
 type ServiceStatus = 'checking' | 'running' | 'stopped' | 'missing';
@@ -136,7 +139,11 @@ export function PublishedServiceCard({
   return (
     <div className="bg-dark-card border border-dark-border rounded-lg p-5 w-96 flex flex-col">
       <div className="flex items-start justify-between mb-3 gap-2">
-        <span className="text-text-primary text-sm font-semibold break-all">{svc.name}</span>
+        {/* 标题自带本体身份（ontology_id · 本体名）：发布名由用户自拟，近名发布靠本体区分 */}
+        <span className="text-text-primary text-sm font-semibold break-all">
+          <span>{svc.name}</span>
+          <span className="text-text-muted font-normal">{ontologySuffix(svc)}</span>
+        </span>
         <div className="flex items-center gap-1.5 shrink-0">
           <Tag color="blue" className="m-0">{KIND_LABEL[svc.kind]}</Tag>
           <Tag color="green" className="m-0">对外</Tag>
@@ -157,9 +164,9 @@ export function PublishedServiceCard({
             </Button>
           )}
         </div>
-        {/* ── 领域信息：自建发布独有（令牌 / 本体 / 依赖），固定服务没有这几行 ── */}
+        {/* ── 领域信息：自建发布独有（已选工具 / 令牌 / 依赖），固定服务没有这几行 ──
+            本体归属（id · 名称）已并入标题，此处不再重复一行 */}
         <InfoRow label="已选工具">{svc.items.join('、') || '—'}</InfoRow>
-        <InfoRow label="本体">{svc.ontology_name}（ontology_id={svc.ontology_id}）</InfoRow>
         <InfoRow label="访问令牌">
           <code className="text-accent-green">{svc.token}</code>（须带 X-MCP-Token 头）
         </InfoRow>

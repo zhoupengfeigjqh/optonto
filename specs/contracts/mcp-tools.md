@@ -9,11 +9,16 @@
 | 服务 | 容器 / 端口 | 对外发布工具 | 职责（一句话） |
 |---|---|---|---|
 | **本体查询 MCP 服务**（固定） | `optonto-ontology-query-mcp` / 8002 | ✅ 内置对外工具面之一 | 回答「本体里有什么」：`list*` 八件套（含 6 个 `listOnto*`），只读无副作用 |
-| **公共函数 MCP 服务**（固定） | `optonto-common-function-mcp` / 8007 | ✅ 7 个公共函数工具 | 平台级通用算力（日期/过滤/聚合/分组）：**无本体归属、跨场景共享、纯计算**；**发布 + 执行一体**（本服务内直接 exec，不转发） |
+| **公共函数 MCP 服务**（固定） | `optonto-common-function-mcp` / 8007 | ✅ 13 个公共函数工具（数量以 `functions.json` 为准） | 平台级通用算力（日期/过滤/聚合/分组）：**无本体归属、跨场景共享、纯计算**；**发布 + 执行一体**（本服务内直接 exec，不转发） |
 | **本体函数执行服务**（固定） | `optonto-ontology-function-executor` / 8006（仅内网） | ❌ 零工具（`transport=none`） | **仅本体函数**执行的唯一实现（`/execute-ontology-function`：ontology_id 必填 + 归属一致性校验） |
 | **数据引擎执行服务**（固定） | `optonto-data-engine-executor` / 8005（仅内网） | ❌ 零工具（`transport=none`，2026-10-19 起） | **本体行为**执行的唯一实现（`/call-behavior`）+ 引擎直调（`/call-engine`）；映射翻译 → 下游 MCP |
 | **业务系统 MCP**（固定） | `optonto-business-mcp` / 8004 | ✅ 外部形态（无平台标记） | 业务侧集成边缘：直连业务系统；**与其他固定服务同权，可启停**（2026-10-04 用户决策）。⚠️ **须在「MCP 配置」标记 `business_data: true`**——否则其原始写接口会以「其他MCP工具」身份进 Agent 目录，可被规划成零确认的函数子任务（见下） |
 | **自建发布**（动态实例） | `optonto-mcp-publish-*` / 宿主 8020-8099（容器内 8100） | ✅ 只发布勾选项（带令牌） | **对外提供执行能力的唯一出口**：按本体切片发布函数或行为，只转发不执行 |
+
+**超时约定（2026-11-25 用户拍板统一）**：一次 MCP 工具调用（含 core → 执行底座的平台内转发）等待上限统一 **60s**。
+唯一来源 `mcp-shared/timeouts.py::MCP_CALL_TIMEOUT_S`（建连 `MCP_CONNECT_TIMEOUT_S` = 5s）；
+agent-backend 无法 import Python，同值常量单点维护在 `services/mcp-client.ts::MCP_CALL_TIMEOUT_MS`，改一处必须同步另一处。
+nginx 代理侧留 5s 余量（65s），避免与后端同时到期被掐成 504。容器就绪探测（`mcp_publish_containers`）与 LLM 调用超时不属此口径。
 
 **⚠️ 「无平台标记」工具的 Agent 准入（2026-10-05，agent 环节合规审查 C1）**：
 分类标记 `x-category` 是消费端归类的**唯一依据**，无标记者按排除法兜底归为「其他MCP工具」。

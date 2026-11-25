@@ -25,7 +25,7 @@
 | 能否作规则判断函数 | 可（type=VALIDATION → 进 judge_functions → 进裁决闸） | 不可（无 type，只留痕不阻断） |
 
 对外端点：
-- /mcp（streamable HTTP）：发布 7 个公共函数工具
+- /mcp（streamable HTTP）：发布 13 个公共函数工具（数量以 .data/common_functions/functions.json 为准）
 - POST /execute-common-function：core 设计器测试按钮经此调用（内网，与 MCP 面共用同一执行实现）
 - /health、/tools、/functions：运维视图
 

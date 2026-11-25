@@ -17,6 +17,23 @@ export interface McpToolInfo {
 }
 
 /**
+ * 单次 MCP 调用的等待上限（60s）：与 Python 侧 `mcp-shared/timeouts.py` 同值。
+ * 两个来源必须同步改——TS 侧无法 import Python 常量，故在各自唯一位置各写一次。
+ */
+export const MCP_CALL_TIMEOUT_MS = 60_000;
+
+/** 超时竞速：到点 reject。原请求由调用方 invalidate（关连接）回收，避免悬挂连接泄漏。 */
+function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), MCP_CALL_TIMEOUT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
  * MCP 客户端包装器（Streamable HTTP 传输，/sse 结尾的存量服务回退 SSE）。
  * 连接到 optonto-ontology-mcp 等服务的 /mcp 端点，通过 MCP 协议调用本体行为。
  *
@@ -73,7 +90,14 @@ export class MCPClient {
     const transport = this.createTransport();
     // 连接关闭 → 作废当前客户端（仅当没被更新的连接替换过），下次调用惰性重连
     transport.onclose = () => { if (this.client === client) this.client = null; };
-    await client.connect(transport);
+    try {
+      // 握手同样有上限：网络挂起时不能无限等待（与工具调用同口径 60s）
+      await withTimeout(client.connect(transport),
+        `MCP 连接超时（${MCP_CALL_TIMEOUT_MS / 1000} 秒）: ${this.mcpUrl}`);
+    } catch (e) {
+      try { await client.close(); } catch { /* 连接本就没建立，关不掉也无妨 */ }
+      throw e;
+    }
     this.client = client;
     console.log(`[MCP] 已连接到 ${this.mcpUrl}`);
     return client;
@@ -94,7 +118,11 @@ export class MCPClient {
   async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
     const client = await this.ensureConnected();
     try {
-      return await client.callTool({ name, arguments: args }) as McpToolResult;
+      // 超时即视为传输层失败：作废连接（下面的 catch 统一处理），请求随连接关闭被丢弃
+      return await withTimeout(
+        client.callTool({ name, arguments: args }) as Promise<McpToolResult>,
+        `MCP 工具调用超时（${MCP_CALL_TIMEOUT_MS / 1000} 秒）: ${name}`,
+      ) as McpToolResult;
     } catch (e) {
       await this.invalidate(client);
       throw e;
@@ -105,11 +133,13 @@ export class MCPClient {
   async listTools(): Promise<{ tools: McpToolInfo[] }> {
     const client = await this.ensureConnected();
     try {
-      return await client.listTools() as { tools: McpToolInfo[] };
+      return await withTimeout(client.listTools() as Promise<{ tools: McpToolInfo[] }>,
+        `MCP 工具列表获取超时（${MCP_CALL_TIMEOUT_MS / 1000} 秒）: ${this.mcpUrl}`) as { tools: McpToolInfo[] };
     } catch (e) {
       await this.invalidate(client);
       const fresh = await this.ensureConnected();
-      return await fresh.listTools() as { tools: McpToolInfo[] };
+      return await withTimeout(fresh.listTools() as Promise<{ tools: McpToolInfo[] }>,
+        `MCP 工具列表获取超时（${MCP_CALL_TIMEOUT_MS / 1000} 秒）: ${this.mcpUrl}`) as { tools: McpToolInfo[] };
     }
   }
 

@@ -10,9 +10,11 @@
 
 运行：cd common-function-mcp && python -m pytest tests -q
 """
+import ast
 import asyncio
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -147,6 +149,51 @@ def test_运维端点可用():
     assert client.get("/tools").status_code == 200
     listing = client.get("/functions").json()
     assert listing["server"] == "optonto-common-function-mcp"
+
+
+# ─── 依赖声明（防"函数代码 import 了库、镜像里没装"）─────────────────────────────
+
+_COMMON_DIR = _REPO_ROOT / ".data" / "common_functions"
+_REQUIREMENTS = _REPO_ROOT / "common-function-mcp" / "requirements.txt"
+# import 名 → 发行包名的少数例外（本项目公共函数目前无需，留作扩展点）
+_IMPORT_TO_DIST = {"yaml": "pyyaml"}
+
+
+def _third_party_imports() -> set[str]:
+    """公共函数代码里（含 run() 内部）import 的非标准库模块名。"""
+    names: set[str] = set()
+    for code_path in _COMMON_DIR.glob("*.py"):
+        tree = ast.parse(code_path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                names.add(node.module.split(".")[0])
+    return {n for n in names if n not in sys.stdlib_module_names and n != "__future__"}
+
+
+def _declared_packages() -> set[str]:
+    """requirements.txt 声明的发行包名（小写，去版本号/环境标记）。"""
+    declared: set[str] = set()
+    for line in _REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        m = re.match(r"([A-Za-z0-9_.\-]+)", line)
+        if m:
+            declared.add(m.group(1).lower().replace("_", "-"))
+    return declared
+
+
+def test_公共函数代码的第三方依赖必须声明在requirements():
+    """容器只装 requirements 里的包：漏声明 → 整类公共函数运行时 ModuleNotFoundError。"""
+    if not _COMMON_DIR.is_dir():
+        pytest.skip(".data 中无公共函数（DATA_DIR 不可见时不适用）")
+    declared = _declared_packages()
+    missing = {
+        f"{n}（应声明为 {_IMPORT_TO_DIST.get(n, n)}）"
+        for n in _third_party_imports()
+        if _IMPORT_TO_DIST.get(n, n).lower().replace("_", "-") not in declared
+    }
+    assert not missing, "公共函数代码用到但 requirements.txt 未声明: %s" % sorted(missing)
 
 
 # ─── 热加载 ────────────────────────────────────────────────────────────────────

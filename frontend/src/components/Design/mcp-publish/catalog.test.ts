@@ -6,7 +6,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  CLIENT_TYPE, FIXED_SERVICES, FIXED_TRANSPORT_LABEL, clientTypeOf, type FixedTransport,
+  CLIENT_TYPE, FIXED_SERVICES, FIXED_TRANSPORT_LABEL, clientTypeOf, ontologySuffix,
+  type FixedTransport,
 } from './catalog';
 
 const ALL_TRANSPORTS: FixedTransport[] = ['streamable', 'sse', 'none'];
@@ -49,5 +50,24 @@ describe('客户端配置 type 映射（平台传输模式 → 客户端取值�
 
   it('none 没有可粘贴的连接片段 → null（不产出 type）', () => {
     expect(clientTypeOf('none')).toBeNull();
+  });
+});
+
+describe('自建发布标题的本体后缀（区分同名/近名发布）', () => {
+  it('本体信息齐全：括号内为「ontology_id · 本体名」', () => {
+    expect(ontologySuffix({ ontology_id: '2', ontology_name: '订单排程' }))
+      .toBe('（ontology_id=2 · 订单排程）');
+  });
+
+  it('本体名缺失时只挂 id（历史条目不因缺名而丢掉标识）', () => {
+    expect(ontologySuffix({ ontology_id: '2', ontology_name: '' })).toBe('（ontology_id=2）');
+  });
+
+  it('本体 id 缺失时只挂名称', () => {
+    expect(ontologySuffix({ ontology_id: '', ontology_name: '订单排程' })).toBe('（订单排程）');
+  });
+
+  it('两者都缺失：返回空串（标题不出现空括号）', () => {
+    expect(ontologySuffix({ ontology_id: '', ontology_name: '' })).toBe('');
   });
 });

@@ -14,14 +14,16 @@ import logging
 
 import data_store
 from mapper import _translate_input, _translate_output
+from timeouts import MCP_CALL_TIMEOUT_S
 
 logger = logging.getLogger(__name__)
 
 # ─── MCP 下游调用（engine_type: MCP 分发）────────────────────────────
 # 逐调用建连（同一 task 内 connect→call→close），不做跨请求会话缓存：
 # anyio cancel scope 不能跨 task 关闭，缓存会话在并发请求下关闭即炸（实测）。
-# 调用频率低、内网握手代价小，正确性优先；15s 总超时与架构文档 §五/§十四对齐。
-MCP_CALL_TIMEOUT = 15.0
+# 调用频率低、内网握手代价小，正确性优先；总超时与平台 MCP 调用同口径 60s
+# （mcp-shared/timeouts.py 唯一来源，2026-11-25 由 15s 上调）。
+MCP_CALL_TIMEOUT = MCP_CALL_TIMEOUT_S
 
 
 async def _mcp_call_tool(server_url: str, tool_name: str, arguments: dict,
@@ -37,8 +39,10 @@ async def _mcp_call_tool(server_url: str, tool_name: str, arguments: dict,
     from mcp.client.streamable_http import streamablehttp_client
 
     async def _once() -> dict:
-        # 下游为 Streamable HTTP（/mcp 单端点）；无状态模式下每次调用建连即关，无会话残留
-        async with streamablehttp_client(server_url, headers=headers or None, timeout=10) as (read, write, _):
+        # 下游为 Streamable HTTP（/mcp 单端点）；无状态模式下每次调用建连即关，无会话残留。
+        # 传输层 timeout 与调用上限取同一常量：曾写死 10s，会在 60s 调用上限生效前先截断长调用。
+        async with streamablehttp_client(server_url, headers=headers or None,
+                                         timeout=MCP_CALL_TIMEOUT_S) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await asyncio.wait_for(

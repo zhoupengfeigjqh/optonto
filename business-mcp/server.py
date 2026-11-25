@@ -33,10 +33,12 @@ from mcp.types import TextContent, Tool
 
 from mcp_app import build_mcp_app
 from decls import load_tool_decls
+from timeouts import MCP_CALL_TIMEOUT_S
 
 BUSINESS_API_BASE = os.environ.get("BUSINESS_API_BASE", "http://optonto-business-backend:8080")
 TOOLS_YAML = Path(__file__).resolve().parent / "config" / "tools.yaml"
-HTTP_TIMEOUT = 15.0
+# 工具即"一次 MCP 调用"：与平台其余 MCP 调用同口径 60s（mcp-shared/timeouts.py 唯一来源）
+HTTP_TIMEOUT = MCP_CALL_TIMEOUT_S
 
 server = Server("optonto-business-mcp")
 

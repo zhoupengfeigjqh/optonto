@@ -383,10 +383,10 @@ export default function MCPPublish({ ontologyId }: { ontologyId: string }) {
         <section aria-label="固定发布">
           <div className="flex items-center justify-between gap-4 mb-2">
             <span className="text-xs text-text-muted">
-              固定发布为平台内置常驻（不可新建/删除）：<span className="text-accent-blue">本体查询 MCP 服务</span>与
-              <span className="text-accent-blue">公共函数 MCP 服务</span>是两个内置对外工具面；
-              两个<span className="text-accent-blue">执行服务</span>零工具、只在 Docker 内网可达；
-              对外服务的「查看配置」给出宿主与容器内两段
+              固定发布为平台内置常驻（不可新建/删除）：<span className="text-accent-blue">本体查询</span>与
+              <span className="text-accent-blue">公共函数</span>是两个内置对外工具面；
+              两个<span className="text-accent-blue">执行服务</span>只有内网可达；
+              对外服务的「查看配置」给出宿主与容器内两段；业务系统提供仿真数据；
             </span>
             <Button size="small" loading={fixedRefreshing} onClick={() => refresh()}>刷新</Button>
           </div>

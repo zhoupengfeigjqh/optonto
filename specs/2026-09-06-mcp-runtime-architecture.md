@@ -98,7 +98,7 @@ optonto/
 ├── data-engine-executor/      # optonto-data-engine-executor 容器
 │   ├── server.py              # 协议层（薄）
 │   ├── behavior_index.py      # 行为索引：归属校验 + 未就绪区分（工具发布已移交自建发布）
-│   ├── executor.py            # MCP 分发（连接池+重连+15s 超时）/ SQL（只读闸+连接池）+ 契约检查
+│   ├── executor.py            # MCP 分发（逐调用建连+重连+60s 超时）/ SQL（只读闸+连接池）+ 契约检查
 │   ├── Dockerfile
 │   └── requirements.txt
 │
@@ -284,7 +284,7 @@ SQL 路径：Agent → data-engine-executor SQL 行为 → 占位替换 → 只�
 2. **阶段二**：business-mcp 薄服务 + `engine_type: MCP` 分发器 + Java 侧端点包装（tools.yaml 声明） ✅ 已落地（2026-09-07）
    - business-mcp：config/tools.yaml 声明 8 个工具（Java 五控制器全覆盖），input/outputSchema 强制（缺一条启动即失败）；信封 code!=0 / HTTP≥400 → isError 穿透；null 字段递归剔除
    - **协议约束落地形态**：structuredContent 只能是对象且过 SDK jsonschema 校验 → 查询类数组负载统一包 `{"result": [...]}`，文本通道与 structured 同负载（单一形状，映射路径面向它）
-   - **MCP 分发器**：逐调用建连（同一 task 内 connect→call→close），不做跨请求会话缓存——anyio cancel scope 不能跨 task 关闭，缓存会话并发下关闭即炸（实测）；15s 总超时；isError → RuntimeError 穿透
+   - **MCP 分发器**：逐调用建连（同一 task 内 connect→call→close），不做跨请求会话缓存——anyio cancel scope 不能跨 task 关闭，缓存会话并发下关闭即炸（实测）；总超时 60s（2026-11-25 由 15s 上调，唯一来源 `mcp-shared/timeouts.py`）；isError → RuntimeError 穿透
    - core schema 放行：TargetApiConfig + server_url/tool_name/output_fields；MCP 型引擎无 method 语义，op_type 推导落 query（写行为须显式 op_type=command）
    - 验证：pytest 20/20（新增 decls 校验 4 + MCP 分发 4）；docker 实测映射路径（中文字段换名+白名单）、直透路径、错误穿透三条全通
 3. **阶段三**：~~agent-backend 三内置挂载~~（阶段一已按"双内置"落地：business-mcp 是模拟业务系统须手工配置，不内置）+ 可见性管控（配映射即收编）+ MCPClient 鉴权扩展 ✅ 已落地（2026-09-07）
@@ -312,7 +312,7 @@ SQL 路径：Agent → data-engine-executor SQL 行为 → 占位替换 → 只�
 | 风险 | 对策 |
 |---|---|
 | 可见性管控失效 → 规则被绕过 | 清单配置自动生成而非手维护；E2E 断言兜底 |
-| data-engine-executor→下游会话稳定性 | 连接池+断线重连+15s 超时（参考 agent-backend MCPClient） |
+| data-engine-executor→下游会话稳定性 | 逐调用建连+断线重连+60s 超时（与 agent-backend MCPClient 同口径） |
 | 远程 MCP 鉴权/可达性 | headers 扩展（阶段三）；部署 checklist 确认两侧出网 |
 | 存量引擎双形态并存期 | 阶段五前 HTTP 型可用；迁移清单逐条核对 |
 | core 转发链路断裂（data-engine-executor 宕机） | 转发 5s 超时+明确报错；healthcheck 依赖编排 |

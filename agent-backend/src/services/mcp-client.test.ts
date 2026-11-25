@@ -2,7 +2,7 @@
  * MCPClient 单元测试 —— 连接管理经公共接口测试（mock SDK 层，interface 即测试面）。
  * 覆盖：传输选择（/mcp → Streamable HTTP，/sse → 回退 SSE）、惰性连接复用、
  * transport.onclose 断连作废后重建、callTool 传输失败不自动重试（防写操作重发）、
- * listTools 只读重连重试一次、close 幂等。
+ * listTools 只读重连重试一次、close 幂等、建连/调用超时上限（60s）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -11,11 +11,12 @@ const clients: Array<{ idx: number; connect: ReturnType<typeof vi.fn>; callTool:
 const transports: Array<{ kind: 'sse' | 'streamable'; onclose?: () => void }> = [];
 let callToolBehavior: Array<() => Promise<any>> = [];
 let listToolsBehavior: Array<() => Promise<any>> = [];
+let connectBehavior: Array<() => Promise<void>> = [];
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class {
     idx = clients.length;
-    connect = vi.fn().mockResolvedValue(undefined);
+    connect = vi.fn(() => (connectBehavior[this.idx] ?? (() => Promise.resolve()))());
     callTool = vi.fn(() => (callToolBehavior[this.idx] ?? (() => Promise.resolve({ content: [] })))());
     listTools = vi.fn(() => (listToolsBehavior[this.idx] ?? (() => Promise.resolve({ tools: [] })))());
     close = vi.fn().mockResolvedValue(undefined);
@@ -37,13 +38,14 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   },
 }));
 
-import { MCPClient } from './mcp-client.js';
+import { MCPClient, MCP_CALL_TIMEOUT_MS } from './mcp-client.js';
 
 beforeEach(() => {
   clients.length = 0;
   transports.length = 0;
   callToolBehavior = [];
   listToolsBehavior = [];
+  connectBehavior = [];
 });
 
 describe('MCPClient — 连接管理', () => {
@@ -103,5 +105,40 @@ describe('MCPClient — 连接管理', () => {
     await c.close();
     await c.close();
     expect(clients[0].close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MCPClient — 超时（统一 60s）', () => {
+  it('callTool 挂起超过 60s → 抛超时错误并作废连接，不无限等待', async () => {
+    vi.useFakeTimers();
+    try {
+      callToolBehavior[0] = () => new Promise(() => {}); // 永不返回
+      const c = new MCPClient('http://mcp-test/mcp');
+      const pending = c.callTool('slowTool', {});
+      const assertion = expect(pending).rejects.toThrow('MCP 工具调用超时（60 秒）');
+      await vi.advanceTimersByTimeAsync(MCP_CALL_TIMEOUT_MS);
+      await assertion;
+      expect(clients[0].close).toHaveBeenCalled(); // 悬挂连接被关闭，不泄漏
+      // 连接已作废：下一次调用重建
+      await c.listTools();
+      expect(clients).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('建连挂起超过 60s → 抛连接超时并关闭客户端', async () => {
+    vi.useFakeTimers();
+    try {
+      connectBehavior[0] = () => new Promise(() => {});
+      const c = new MCPClient('http://mcp-test/mcp');
+      const pending = c.listTools();
+      const assertion = expect(pending).rejects.toThrow('MCP 连接超时（60 秒）');
+      await vi.advanceTimersByTimeAsync(MCP_CALL_TIMEOUT_MS);
+      await assertion;
+      expect(clients[0].close).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

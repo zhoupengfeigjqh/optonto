@@ -101,6 +101,25 @@ describe('PublishedServiceCard', () => {
     expect(onRemove).toHaveBeenCalledWith(svc);
   });
 
+  it('标题后面自动带本体 id 与本体名（近名发布靠本体区分）', () => {
+    const fn = vi.fn();
+    render(<PublishedServiceCard svc={svc} host="h" onShowConfig={fn} onToggle={fn} onRemove={fn} />);
+    // 名称与后缀同处标题节点：order-query（ontology_id=2 · 订单排程）
+    expect(screen.getByText('order-query').parentElement?.textContent)
+      .toBe('order-query（ontology_id=2 · 订单排程）');
+  });
+
+  it('本体信息缺失时不出现空括号', () => {
+    const fn = vi.fn();
+    render(
+      <PublishedServiceCard
+        svc={{ ...svc, ontology_id: '', ontology_name: '' }} host="h"
+        onShowConfig={fn} onToggle={fn} onRemove={fn}
+      />,
+    );
+    expect(screen.getByText('order-query').parentElement?.textContent).toBe('order-query');
+  });
+
   it('列表读取中（刷新）状态位显示「检查中...」，完成后回到真实状态', () => {
     const fn = vi.fn();
     const { rerender } = render(
@@ -134,7 +153,7 @@ describe('PublishedServiceCard', () => {
     expect(screen.getByText('streamable-http')).toBeTruthy();
     expect(screen.getByText('可用工具：')).toBeTruthy();
     expect(screen.getByText('1')).toBeTruthy();
-    // 领域信息必须保留（令牌 / 本体 / 已选工具 / 依赖）
+    // 领域信息必须保留（令牌 / 已选工具 / 依赖）；本体归属已并入标题，不再单占一行
     expect(screen.getByText('tk')).toBeTruthy();
     expect(screen.getByText('已选工具：')).toBeTruthy();
     expect(screen.getByText('QueryOrder')).toBeTruthy();

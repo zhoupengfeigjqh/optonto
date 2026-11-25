@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { MCPConfigStore } from '../services/mcp-config-store.js';
-import { MCPClient } from '../services/mcp-client.js';
+import { MCPClient, MCP_CALL_TIMEOUT_MS } from '../services/mcp-client.js';
 import { sendError } from '../utils/http-error.js';
 
 /**
@@ -34,8 +34,8 @@ export function createMCPConfigRouter(configStore: MCPConfigStore): Router {
    * body: { url: "http://optonto-ontology-mcp:8002/mcp" }
    * 返回: { success: true, tools: [{name, description, inputSchema, outputSchema}] }
    *
-   * 2026-10-05（审查 M9）：与 /tools 曾是同一逻辑的两份实现（各自的 connect + 15s 超时 +
-   * 工具整形），两份必然漂移。现复用 `withTempClient` + `shapeTools`，超时/整形单点收口。
+   * 2026-10-05（审查 M9）：与 /tools 曾是同一逻辑的两份实现（各自的 connect + 超时 + 工具整形），
+   * 两份必然漂移。现复用 `withTempClient` + `shapeTools`，超时/整形单点收口。
    */
   router.post('/mcp-config/test', async (req: Request, res: Response) => {
     const { url, headers } = req.body as { url: string; headers?: Record<string, string> };
@@ -112,15 +112,23 @@ function shapeTools(result: any) {
   }));
 }
 
-/** 带 15s 超时的临时客户端执行（MCPClient 不接收 AbortSignal；超时/失败后 close 兜底） */
+/**
+ * 带超时的临时客户端执行（MCPClient 不接收 AbortSignal；超时/失败后 close 兜底）。
+ * 超时取 `MCP_CALL_TIMEOUT_MS`（60s，与 Python 侧同口径）——曾写死 15s，
+ * 会比 MCPClient 内部的 60s 先触发，长工具在探测页永远测不出结果。
+ */
 async function withTempClient<T>(url: string, headers: Record<string, string> | undefined,
                                  fn: (c: MCPClient) => Promise<T>): Promise<T> {
   const client = new MCPClient(url, headers);
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('连接超时（15 秒）')), 15000));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`连接超时（${MCP_CALL_TIMEOUT_MS / 1000} 秒）`)), MCP_CALL_TIMEOUT_MS);
+  });
   try {
     return await Promise.race([(async () => { await client.connect(); return fn(client); })(), timeout]);
   } finally {
+    if (timer) clearTimeout(timer);
     try { await client.close(); } catch (e) { console.warn('[mcp-config] 关闭临时连接失败:', e); }
   }
 }

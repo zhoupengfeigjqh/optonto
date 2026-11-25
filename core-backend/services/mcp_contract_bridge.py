@@ -35,6 +35,10 @@ from publish_upstream import (  # noqa: E402
     env_name_of,
     upstream_of,
 )
+from timeouts import (  # noqa: E402
+    MCP_CALL_TIMEOUT_S,
+    MCP_CONNECT_TIMEOUT_S,
+)
 from tool_contract import (  # noqa: E402
     CATEGORY_BEHAVIOR,
     CATEGORY_FUNCTION,
@@ -52,6 +56,8 @@ __all__ = [
     "CATEGORY_FUNCTION",
     "EXECUTE_COMMON_FUNCTION",
     "EXECUTE_ONTOLOGY_FUNCTION",
+    "MCP_CALL_TIMEOUT_S",
+    "MCP_CONNECT_TIMEOUT_S",
     "PUBLISH_KIND_BEHAVIOR",
     "PUBLISH_KIND_ONTOLOGY_FUNCTION",
     "behavior_concept_names",

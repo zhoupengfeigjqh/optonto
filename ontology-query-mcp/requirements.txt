@@ -2,5 +2,6 @@ mcp>=1.0.0,<2.0.0  # pin: 2.0 removed low-level Server decorators (list_tools/ca
 uvicorn>=0.34.0
 starlette>=0.41.0
 PyYAML>=6.0
-pandas>=2.0.0
-numpy>=1.26.0
+# pandas / numpy 上限与 common-function-mcp 同档锚定（2026-11-24）。
+pandas>=2.0.0,<4.0.0
+numpy>=1.26.0,<3.0.0

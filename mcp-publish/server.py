@@ -50,6 +50,7 @@ from publish_upstream import (  # 转发契约的**唯一权威实现**（core �
     KINDS as PUBLISH_KINDS,
     upstream_of,
 )
+from timeouts import MCP_CALL_TIMEOUT_S, MCP_CONNECT_TIMEOUT_S
 from tool_contract import ONTOLOGY_ID_KEY, strip_system_params
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,8 @@ logger = logging.getLogger(__name__)
 # 发布类型与转发契约见 mcp-shared/publish_upstream（唯一权威实现，core 注入侧读同一份）：
 # 注入方（core）与读取方（本模块）共用一份契约，两侧不可能再出现"注入的变量名 ≠ 读取的变量名"。
 
-_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
+# 一次工具调用 = 一次 MCP 调用：上限与平台其余链路同口径（mcp-shared/timeouts.py）
+_TIMEOUT = httpx.Timeout(MCP_CALL_TIMEOUT_S, connect=MCP_CONNECT_TIMEOUT_S)
 
 
 class ConfigError(RuntimeError):
